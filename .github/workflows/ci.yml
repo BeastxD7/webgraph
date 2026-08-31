@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: Engine (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --group dev
+      - run: uv run --package webgraph playwright install --with-deps chromium
+      - name: Lint
+        run: |
+          cd packages/engine
+          uv run ruff check .
+          uv run mypy
+      - name: Test
+        run: cd packages/engine && uv run pytest tests -q
+      - name: Benchmark gate
+        # Fails the build if extraction quality regresses below the current baseline.
+        run: cd packages/engine && uv run webgraph bench ../../benchmark/corpus-v0 --min-page-success 0.80
+
+  api:
+    name: API (python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --group dev
+      - run: uv run --package webgraph-api ruff check apps/api
+      - run: uv run --package webgraph-api mypy --config-file apps/api/pyproject.toml apps/api/src
+      - run: uv run --package webgraph-api pytest apps/api/tests -q
+
+  web:
+    name: Web (next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm web:typecheck
+      - run: pnpm web:lint
+      - run: pnpm web:build
