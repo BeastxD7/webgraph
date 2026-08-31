@@ -683,6 +683,11 @@ Stated plainly, because a limitations section that reads like marketing is worse
   page reachable only by link is close to a coin toss.
 - **No answer generation.** The engine assembles the context; producing an answer from it is
   the caller's job, and deliberately so — there is no model in this codebase.
+- **Derived entities are descriptive, not useful for retrieval.** They exist for sites that
+  publish no structured data, and they measured neutral within a site and produced no
+  cross-site bridges. The working cross-site channel is links.
+- **Graphs live in memory.** Four sites are cached per process and lost on restart. Export to
+  JSONL for anything that should outlive it.
 
 ---
 
