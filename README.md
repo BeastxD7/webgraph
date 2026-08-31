@@ -166,16 +166,34 @@ can be used as a library or through its CLI (`webgraph extract`, `webgraph bench
 technology with a category, an optional version, a confidence, and the evidence that
 produced it.
 
-**Why three sources.** Each carries things the others cannot:
+**Why seven sources.** Each carries things the others cannot, and the gap against a browser
+extension turned out to be sources rather than rules:
 
 | source | carries | example |
 |---|---|---|
-| response headers | server-side stack | `Apache/2.4.37`, `PHP/7.4.33`, `OpenSSL/1.1.1k` |
-| markup | client frameworks, analytics, fonts, CDNs | `<script src=".../gtm.js">` |
-| runtime JavaScript | library versions and *bundled* frameworks | `jQuery.fn.jquery`, `__reactContainer$` |
+| response headers | the server-side stack | `Apache/2.4.37`, `PHP/7.4.33`, `OpenSSL/1.1.1k` |
+| markup | classes and attributes the page emits | `class="elementor-widget"` |
+| same-origin assets | what the site loads *from itself* | `/wp-content/themes/…` |
+| runtime globals | bundled frameworks and exact versions | `fbq.version`, `__reactContainer$` |
+| network log | services invisible in the markup | `us-assets.i.posthog.com` |
+| cookies (from the jar) | what a third-party script set | `__cf_bm` |
+| bundle source | libraries that mount only on interaction | `@radix-ui/react-dialog` |
 
 An early version read only HTML and reported "none detected" for a site running Apache, PHP
-and OpenSSL — all three visible in the response headers it never looked at.
+and OpenSSL — all three visible in the response headers it never looked at. A later one read
+markup and headers and found 4 technologies on a site where Wappalyzer found 17; the missing
+thirteen were not in the markup at all.
+
+**The global list is discovered, not enumerated.** A blank same-origin iframe supplies a
+pristine `window`, and the diff against the real one yields every global the page added.
+Hand-written probes only find what someone thought to name; the diff found `Tinybird` and
+`lenisVersion` with nobody naming them first.
+
+**Some technologies have no fingerprint and must be inferred.** shadcn/ui is not a dependency
+at all — its components are copied into the project's own source, so there is no package
+name, global, request or attribute that says "shadcn". What there reliably is: the packages
+its registry installs. `IMPLICATIONS` states those combinations explicitly, always at reduced
+confidence, with an evidence string naming what the inference came from.
 
 **The hardest part is not matching, it is not matching.** A bare keyword fires on a page
 that merely *writes about* a technology. `docs.astro.build` was once reported as running
@@ -198,14 +216,21 @@ collector scans for those. Same idea for Preact, Vue, Svelte and React Router.
 |---|---|---|---|
 | Vendor a Wappalyzer ruleset | thousands of rules, maintained | every live fork (`enthec`, `HTTPArchive`, `dochne`) is **GPL-3.0**; vendoring would force this project to GPL | rejected on licence, verified via the GitHub API |
 | Call a hosted detection API | no rules to maintain | network dependency, per-request cost, no offline use, opaque evidence | rejected |
-| Hand-written rules | permissive, evidence is auditable, tunable for false positives | coverage is ours to build; currently 144 rules | **chosen** |
+| Hand-written rules | permissive, evidence is auditable, tunable for false positives | coverage is ours to build; currently 237 rules over 157 technologies | **chosen** |
 
 </details>
 
-**Measured.** On `persyn.ai`, detection went from 4 technologies to 15, matching 13 of the
-17 Wappalyzer reports. The four still missed (Radix, shadcn/ui, Tinybird, Cloudflare Bot
-Management) appear only after a user interaction or a later network request, not in the
-homepage's rendered DOM.
+**Measured.** On `persyn.ai`, detection went from **4 technologies to 23**, covering **all 17**
+Wappalyzer reported, with versions matching exactly where the library hides them somewhere
+other than a bare `.version` — Facebook Pixel 2.9.390 from `fbq.version`, core-js 3.32.2 from
+`__core-js_shared__.versions`, Lenis 1.3.18, React Router 6. The six extra are real and
+Wappalyzer missed them.
+
+**And the false positives this created, because a new signal source multiplies both.**
+`data-slot` is a plain web-component attribute that Vercel's Geist uses, so it credited
+nextjs.org with shadcn/ui. `window.L` is Leaflet's global and also anybody's one-letter
+variable. Worst of all, Hacker News was reported as running WordPress because its front page
+linked to a PDF hosted on one — which is why asset rules match only same-origin references.
 
 ---
 
@@ -660,7 +685,7 @@ one reference.
 | Extraction F (chrome removed) | **0.914** | vs a majority vote of three tools |
 | Recall against that vote | 0.989 | `make bench-content` |
 | Wrong-value rate | 0% | enforced by test |
-| Technology fingerprints | 144 rules | 18 categories |
+| Technology fingerprints | 237 rules | 157 technologies, 19 categories |
 
 Seven of the 100 sites block headless browsers entirely (Vercel, Netlify, Render, Behance,
 Dribbble, Work & Co, Etsy) and have no oracle. That is reported rather than excluded
