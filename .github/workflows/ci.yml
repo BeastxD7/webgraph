@@ -54,3 +54,21 @@ jobs:
       - run: pnpm web:typecheck
       - run: pnpm web:lint
       - run: pnpm web:build
+
+      # Horizontal overflow is the responsive failure a desktop browser cannot show, and it
+      # has already reached main once: a `<pre>` in a grid column took the landing page to a
+      # 467px document inside a 390px viewport. The API is deliberately not started -- the
+      # run view renders its error state, which still has to lay out correctly.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-packages --group dev
+      - run: uv run --package webgraph playwright install --with-deps chromium
+      - name: Check responsive layout
+        run: |
+          pnpm --filter @webgraph/web start &
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:3000/ >/dev/null && break
+            sleep 1
+          done
+          uv run --package webgraph python tools/check_responsive.py
