@@ -73,6 +73,7 @@ def build_document(
         text_length=len(text),
         headers=headers,
         runtime=runtime,
+        url=url,
     )
 
     return Document(

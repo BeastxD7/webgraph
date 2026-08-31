@@ -91,6 +91,7 @@ def profile_page(
     text_length: int | None = None,
     headers: dict[str, str] | None = None,
     runtime: RuntimeEvidence | None = None,
+    url: str = "",
 ) -> StackProfile:
     """Identify the stack and decide whether a JavaScript render is required.
 
@@ -132,6 +133,7 @@ def profile_page(
         requests=evidence.requests,
         cookies=evidence.cookies,
         bundle_source=evidence.bundle_source,
+        url=url,
     )
     # The framework list stays the short client-side view; `technologies` is the full picture.
     for tech in technologies:

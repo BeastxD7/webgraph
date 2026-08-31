@@ -124,6 +124,7 @@ class TechRule:
     | `cookie` | a cookie **name**, from the browser jar or `Set-Cookie` |
     | `js` | the **name** of a global the page added to `window` |
     | `request` | any URL the page requested while loading |
+    | `asset` | a `src`/`href` on this page that resolves to **this site** |
     | `source` | the text of the page's own JavaScript bundles |
 
     A capture group named `version` in any pattern is extracted as the version.
@@ -141,6 +142,7 @@ class TechRule:
     cookie: re.Pattern[str] | None = None
     js: re.Pattern[str] | None = None
     request: re.Pattern[str] | None = None
+    asset: re.Pattern[str] | None = None
     source: re.Pattern[str] | None = None
     confidence: int = 100
 
@@ -158,6 +160,7 @@ def _rule(
     cookie: str | None = None,
     js: str | None = None,
     request: str | None = None,
+    asset: str | None = None,
     source: str | None = None,
     confidence: int = 100,
 ) -> TechRule:
@@ -169,9 +172,51 @@ def _rule(
         cookie=_h(cookie) if cookie else None,
         js=_h(js) if js else None,
         request=_h(request) if request else None,
+        asset=_h(asset) if asset else None,
         source=_h(source) if source else None,
         confidence=confidence,
     )
+
+
+_ATTRIBUTE_URL: Final[re.Pattern[str]] = re.compile(
+    r"""(?:src|href|data-src|srcset)\s*=\s*["']([^"']{2,400})["']""", re.IGNORECASE
+)
+
+
+def same_site_assets(html: str, url: str = "") -> list[str]:
+    """Every `src`/`href` on the page that points at **this** site.
+
+    This closes a whole class of false positive. Matching a path fragment anywhere in the
+    markup reports a site as running whatever it happens to link to: Hacker News was reported
+    as WordPress because its front page linked to a PDF at
+    `ajmp.uwr.edu.pl/wp-content/uploads/`. Anchoring to `href=` does not help, because that
+    *was* an href.
+
+    An asset counts as this site's when it is root-relative, relative, or absolute to the
+    same host. With no `url` supplied only the relative forms qualify, which is the
+    conservative reading: better to miss a site that writes absolute URLs to its own domain
+    than to credit one with its neighbour's stack.
+    """
+    host = ""
+    if url:
+        match = re.match(r"https?://([^/]+)", url, re.IGNORECASE)
+        if match:
+            host = match.group(1).lower().removeprefix("www.")
+
+    assets: list[str] = []
+    for found in _ATTRIBUTE_URL.finditer(html):
+        value = found.group(1).strip()
+        if not value or value.startswith(("#", "data:", "javascript:", "mailto:", "tel:")):
+            continue
+        lowered = value.lower()
+        if lowered.startswith(("http://", "https://", "//")):
+            candidate = re.match(r"(?:https?:)?//([^/]+)", lowered)
+            if not host or not candidate:
+                continue
+            if candidate.group(1).removeprefix("www.") != host:
+                continue
+        assets.append(value)
+    return assets
 
 
 TECH_RULES: Final[tuple[TechRule, ...]] = (
@@ -411,11 +456,7 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     # News was reported as WordPress because its front page linked to a PDF hosted on one.
     # These three are all same-site by construction: a root-relative asset path, the REST
     # API discovery link WordPress emits by default, and its own bundled scripts.
-    _rule(
-        "WordPress",
-        "CMS",
-        html=r"(?:src|href)=[\"']/(?:wp-content|wp-includes)/",
-    ),
+    _rule("WordPress", "CMS", asset=r"/?wp-(?:content|includes)/"),
     _rule("WordPress", "CMS", html=r'rel=["\']https://api\.w\.org/["\']'),
     _rule("WordPress", "CMS", html=r"wp-(?:emoji-release|embed|includes/js/wp-)"),
     _rule("WordPress", "CMS", html=r'name="generator"\s+content="WordPress (?P<version>[\d.]+)"'),
@@ -423,18 +464,10 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     # Same anchoring as WordPress, for the same reason: a link to another site's Drupal is
     # not evidence about this one. `drupal-settings-json` is an attribute the page itself
     # emits and needs no anchoring.
-    _rule(
-        "Drupal",
-        "CMS",
-        html=r"drupal-settings-json|(?:src|href)=[\"']/sites/default/files/",
-        confidence=85,
-    ),
-    _rule(
-        "Joomla",
-        "CMS",
-        html=r"(?:src|href)=[\"']/media/(?:jui|system/js)/"
-        r'|name="generator"\s+content="Joomla',
-    ),
+    _rule("Drupal", "CMS", html=r"drupal-settings-json", confidence=85),
+    _rule("Drupal", "CMS", asset=r"/sites/default/files/", confidence=85),
+    _rule("Joomla", "CMS", html=r'name="generator"\s+content="Joomla'),
+    _rule("Joomla", "CMS", asset=r"/media/(?:jui|system/js)/"),
     _rule("Ghost", "CMS", html=r'content="Ghost (?P<version>[\d.]+)"|/ghost/api/'),
     _rule("Contentful", "CMS", html=r"cdn\.contentful\.com|images\.ctfassets\.net"),
     _rule("Sanity", "CMS", html=r"cdn\.sanity\.io"),
@@ -442,10 +475,13 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
 
     # --- Ecommerce ---
     _rule("Shopify", "Ecommerce", html=r"cdn\.shopify\.com|Shopify\.theme|/cdn/shop/"),
-    _rule("WooCommerce", "Ecommerce", html=r"woocommerce/assets|wc-ajax|wp-content/plugins/woocommerce"),
-    _rule("Magento", "Ecommerce", html=r"/static/version\d+/frontend/|Magento_"),
+    _rule("WooCommerce", "Ecommerce", html=r"\bwc-ajax\b"),
+    _rule("WooCommerce", "Ecommerce", asset=r"woocommerce/assets|wp-content/plugins/woocommerce"),
+    _rule("Magento", "Ecommerce", html=r"\bMagento_"),
+    _rule("Magento", "Ecommerce", asset=r"/static/version\d+/frontend/"),
     _rule("BigCommerce", "Ecommerce", html=r"cdn\d*\.bigcommerce\.com"),
-    _rule("PrestaShop", "Ecommerce", html=r"var prestashop|/themes/[^/]+/assets/.*prestashop"),
+    _rule("PrestaShop", "Ecommerce", html=r"var prestashop"),
+    _rule("PrestaShop", "Ecommerce", asset=r"/themes/[^/]+/assets/.*prestashop"),
     _rule("Stripe", "Ecommerce", html=r'(?:src|href)=["\'][^"\']*(?:js\.stripe\.com)'),
     _rule("PayPal", "Ecommerce", html=r'(?:src|href)=["\'][^"\']*(?:paypal\.com/sdk|paypalobjects\.com)'),
 
@@ -474,16 +510,20 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
 
     # --- WordPress themes and page builders (extremely common, previously invisible) ---
     _rule("Astra", "UI frameworks", html=r'wp-content/themes/astra|astra-theme-css|class=\"[^\"]*\bast-(?:container|header|desktop|mobile|site)'),
-    _rule("GeneratePress", "UI frameworks", html=r"wp-content/themes/generatepress"),
-    _rule("OceanWP", "UI frameworks", html=r"wp-content/themes/oceanwp"),
-    _rule("Divi", "UI frameworks", html=r"wp-content/themes/[Dd]ivi|et_pb_"),
-    _rule("Elementor", "UI frameworks", html=r"elementor-(?:widget|section|element)|/elementor/assets/"),
+    _rule("GeneratePress", "UI frameworks", asset=r"wp-content/themes/generatepress"),
+    _rule("OceanWP", "UI frameworks", asset=r"wp-content/themes/oceanwp"),
+    _rule("Divi", "UI frameworks", html=r"\bet_pb_"),
+    _rule("Divi", "UI frameworks", asset=r"wp-content/themes/[Dd]ivi"),
+    _rule("Elementor", "UI frameworks", html=r"elementor-(?:widget|section|element)"),
+    _rule("Elementor", "UI frameworks", asset=r"/elementor/assets/"),
     _rule("WPBakery", "UI frameworks", html=r"js_composer|vc_row"),
     _rule("Beaver Builder", "UI frameworks", html=r"fl-builder"),
-    _rule("Kadence", "UI frameworks", html=r"wp-content/themes/kadence"),
+    _rule("Kadence", "UI frameworks", asset=r"wp-content/themes/kadence"),
     _rule("Yoast SEO", "Miscellaneous", html=r"This site is optimized with the Yoast|yoast-schema-graph"),
-    _rule("WPForms", "Miscellaneous", html=r"wp-content/plugins/wpforms|wpforms-form"),
-    _rule("Contact Form 7", "Miscellaneous", html=r"wpcf7-form|plugins/contact-form-7"),
+    _rule("WPForms", "Miscellaneous", html=r"wpforms-form"),
+    _rule("WPForms", "Miscellaneous", asset=r"wp-content/plugins/wpforms"),
+    _rule("Contact Form 7", "Miscellaneous", html=r"wpcf7-form"),
+    _rule("Contact Form 7", "Miscellaneous", asset=r"plugins/contact-form-7"),
 
     # --- Marketing ---
     _rule("HubSpot", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:js\.hs-scripts\.com|js\.hsforms\.net)'),
@@ -658,6 +698,7 @@ def detect_technologies(
     requests: Sequence[str] = (),
     cookies: Mapping[str, str] | None = None,
     bundle_source: str = "",
+    url: str = "",
 ) -> list[Technology]:
     """Identify technologies from every signal the caller managed to collect.
 
@@ -675,11 +716,14 @@ def detect_technologies(
       included -- `__cf_bm` is the only trace Cloudflare's bot management leaves.
     - `bundle_source` is the text of the page's own JavaScript. Component libraries that
       mount their attributes only on interaction are still named in it.
+    - `url` lets `asset` rules tell this site's own references from links to other people's.
+      Without it, only relative references qualify -- the conservative reading.
 
     Headers are matched case-insensitively by name, since HTTP header casing is arbitrary
     and servers are inconsistent about it.
     """
     normalized_headers = {k.lower(): v for k, v in (headers or {}).items()}
+    assets = same_site_assets(html, url) if html else []
     cookie_names = list(cookies or ())
     set_cookie = normalized_headers.get("set-cookie", "")
     found: dict[str, Technology] = {}
@@ -741,6 +785,14 @@ def detect_technologies(
                 if match:
                     _consider(rule, match, "cookie (Set-Cookie)")
                     continue
+
+        if rule.asset is not None and assets:
+            hit = next((a for a in assets if rule.asset.search(a)), None)
+            if hit is not None:
+                match = rule.asset.search(hit)
+                assert match is not None
+                _consider(rule, match, f"asset: {hit[:90]}")
+                continue
 
         if rule.html is not None and html:
             match = rule.html.search(html)

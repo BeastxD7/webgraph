@@ -391,3 +391,48 @@ class TestOutboundLinksAreNotEvidence:
     def test_drupals_own_settings_attribute_needs_no_anchoring(self) -> None:
         assert "Drupal" in names(detect_technologies('<script type="application/json" '
                                                      'data-drupal-settings-json>{}</script>'))
+
+
+class TestSameOriginAssets:
+    """`asset` rules match only references that resolve to the site being profiled.
+
+    Anchoring to `href=` is not enough: the Hacker News false positive *was* an href. What
+    separates "this site runs WordPress" from "this site links to one" is whose host the
+    reference points at.
+    """
+
+    SITE: ClassVar[str] = "https://mysite.example/page"
+
+    def test_a_link_to_another_sites_theme_is_not_that_theme(self) -> None:
+        html = '<a href="https://other.example/wp-content/themes/divi/x.css">x</a>'
+        assert "Divi" not in names(detect_technologies(html, url=self.SITE))
+
+    def test_a_root_relative_reference_counts(self) -> None:
+        html = '<link href="/wp-content/themes/divi/style.css">'
+        assert "Divi" in names(detect_technologies(html, url=self.SITE))
+
+    def test_an_absolute_reference_to_the_same_host_counts(self) -> None:
+        html = '<link href="https://mysite.example/wp-content/themes/divi/s.css">'
+        assert "Divi" in names(detect_technologies(html, url=self.SITE))
+
+    def test_the_www_variant_is_the_same_host(self) -> None:
+        html = '<script src="https://www.mysite.example/wp-content/plugins/wpforms/a.js"></script>'
+        assert "WPForms" in names(detect_technologies(html, url=self.SITE))
+
+    def test_without_a_url_only_relative_references_count(self) -> None:
+        """The conservative reading: better to miss a site that writes absolute URLs to its
+        own domain than to credit one with its neighbour's stack."""
+        absolute = '<link href="https://mysite.example/wp-content/themes/divi/s.css">'
+        relative = '<link href="/wp-content/themes/divi/s.css">'
+        assert "Divi" not in names(detect_technologies(absolute))
+        assert "Divi" in names(detect_technologies(relative))
+
+    def test_class_based_signals_are_unaffected(self) -> None:
+        """A class the page emits is not a URL and needs no origin check."""
+        assert "Elementor" in names(detect_technologies('<div class="elementor-widget"></div>'))
+
+    def test_data_and_scheme_urls_are_ignored(self) -> None:
+        html = '<img src="data:image/gif;base64,AAA"><a href="mailto:x@y.z">m</a>'
+        from webgraph.profile.technology import same_site_assets
+
+        assert same_site_assets(html, self.SITE) == []

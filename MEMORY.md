@@ -1602,5 +1602,30 @@ page emits, not a URL anyone can link to.
 
 After: `news.ycombinator.com` -> `['HSTS', 'nginx']`; `wordpress.org` still detects WordPress.
 
+### D57 — The fix generalised: a rule kind for same-origin references
+
+Auditing every markup rule for the same exposure found **29** matching a URL-ish fragment
+with no anchoring. Fixing them one at a time by requiring `href=` would not have worked:
+Hacker News's link *was* an href. What separates "this site runs WordPress" from "this site
+links to one" is whose host the reference points at.
+
+So `TechRule` gained an `asset` kind. `same_site_assets(html, url)` collects every
+`src`/`href`/`srcset` that is root-relative, relative, or absolute to the same host --
+`www.` folded -- and `asset` rules match only those. The page URL is threaded from
+`build_document` through `profile_page` for it.
+
+Fourteen rules moved over, and the mixed ones were split so the half that is a class or a JS
+token stays unanchored: WooCommerce keeps `wc-ajax` as markup and moves
+`wp-content/plugins/woocommerce` to an asset; Divi keeps `et_pb_`; Elementor keeps
+`elementor-widget`.
+
+With no `url` supplied only relative references qualify. That is the conservative reading:
+better to miss a site that writes absolute URLs to its own domain than to credit one with its
+neighbour's stack.
+
+Verified: `news.ycombinator.com` -> nginx, HSTS. `wordpress.org` still WordPress.
+`getbootstrap.com` still Astro + Bootstrap. `persyn.ai` still 23 technologies.
+
 Standing lesson, now twice: **every new host- or path-shaped rule must be checked against a
-page that merely links to that technology**, not only against a page that uses it.
+page that merely links to that technology**, not only against a page that uses it -- and the
+check belongs in the rule kind, not in the reviewer's memory.
