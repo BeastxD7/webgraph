@@ -25,12 +25,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "content-type")
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
 
-    def do_OPTIONS(self) -> None:  # noqa: N802
+    def do_OPTIONS(self) -> None:
         self.send_response(204)
         self._cors()
         self.end_headers()
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get("content-length", 0))
         raw = self.rfile.read(length)
         try:
@@ -39,7 +39,7 @@ class Handler(BaseHTTPRequestHandler):
             with OUT.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record) + "\n")
             body = json.dumps({"ok": True, "site": record.get("u"), "links": record.get("n")})
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             body = json.dumps({"ok": False, "error": str(exc)})
         self.send_response(200)
         self._cors()

@@ -33,6 +33,7 @@ Two protections against removing real content
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ __all__ = [
     "detect_boilerplate",
     "detect_site_chrome",
     "strip_boilerplate",
+    "strip_landmarks",
     "strip_site_chrome",
 ]
 
@@ -75,6 +77,54 @@ SLOT_PRESENCE: Final[float] = 0.6
 Lower than the text threshold on purpose: a slot only qualifies as chrome if it *also* never
 varies, which is a much stronger condition than text repetition and needs less corroboration.
 """
+
+
+LANDMARK_XPATH: Final[re.Pattern[str]] = re.compile(r"/(?:nav|footer)(?:\[|/|$)")
+"""Blocks inside `<nav>` or `<footer>`.
+
+These are the page's own statement about what is navigation, which makes excluding them
+structural rather than heuristic -- the same principle the technology rules follow.
+
+It also works where cross-page detection cannot. Chrome detection needs six pages before
+repetition means anything; a landmark is declared on the first one. MDN's CSS reference
+sidebar is a single `<nav>` holding several hundred links, and no amount of statistics over a
+twelve-page sample removed it.
+
+Measured over 13 pages against a majority vote of trafilatura, readability and jusText:
+
+| variant | P | R | F |
+|---|---|---|---|
+| raw | 0.658 | 0.990 | 0.740 |
+| without `nav` and `footer` | **0.727** | **0.990** | **0.811** |
+| also without `aside` and `header` | 0.736 | 0.986 | 0.815 |
+
+`nav` and `footer` only: seven points of F for **no recall at all**. Adding `aside` and
+`header` buys 0.4 more points of F and costs 0.4 of recall, the wrong trade for an engine
+whose stated job is not to lose content -- plenty of sites put real material in an `<aside>`.
+
+On MDN alone: precision 0.066 -> 0.584, recall unchanged at 1.000.
+"""
+
+MIN_LANDMARK_REMAINDER: Final[float] = 0.05
+"""Refuse to leave less than this share of a page. A sitemap or index page is legitimately
+almost all navigation, and returning nothing for it helps nobody."""
+
+
+def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
+    """Drop blocks inside `<nav>` and `<footer>`.
+
+    Unlike cross-page detection this needs a single page, so it applies from the first result
+    of a crawl rather than the sixth.
+    """
+    kept = [block for block in blocks if not LANDMARK_XPATH.search(block.xpath)]
+    if not kept:
+        return list(blocks)
+
+    original = sum(len(b.text) for b in blocks)
+    remaining = sum(len(b.text) for b in kept)
+    if original and remaining / original < MIN_LANDMARK_REMAINDER:
+        return list(blocks)
+    return kept
 
 
 def _key(block: Block) -> str:

@@ -1690,3 +1690,52 @@ geometry (18/18 either way).
 So it defaults off: a script evaluation and 250 ms of settle for 0.3%. Kept because the
 number is worth having written down, and because a page that renders collapsed content only
 on interaction would need it.
+
+### D60 — The 6-page benchmark was flattering everyone, and `<nav>` was worth 8 points
+
+Widening the content benchmark from 6 pages to 15, across long-form prose, documentation,
+encyclopaedic and marketing pages, moved every tool down and the engine furthest:
+
+```
+                     6 pages (docs+prose)     15 pages (mixed)
+trafilatura                    F 0.946              F 0.868
+engine (chrome removed)        F 0.914              F 0.753
+```
+
+A number over one kind of page is a number about that kind of page. The wider corpus is the
+one to trust.
+
+Per-page, the mean was dominated by two outliers rather than a broad weakness: MDN at
+precision **0.066** and Tailwind's install page at 0.026, against most pages within a few
+points of trafilatura (pytest 0.978 vs 0.989, danluu 0.955 vs 0.999).
+
+MDN's problem is a single `<nav>` holding several hundred reference links. Cross-page chrome
+detection cannot touch it -- it needs six pages before repetition means anything, and MDN's
+sidebar varies per page anyway.
+
+**`strip_landmarks`**: drop blocks inside `<nav>` and `<footer>`. Structural, not statistical,
+so it applies to the first page of a crawl.
+
+```
+variant                              P       R       F
+raw                              0.658   0.990   0.740
+without nav and footer           0.727   0.990   0.811
+also without aside and header    0.736   0.986   0.815
+```
+
+`nav` and `footer` only: seven points of F for **no recall at all**. Adding `aside` and
+`header` buys 0.4 more and costs 0.4 of recall -- the wrong trade for an engine whose job is
+not to lose content, since plenty of sites put real material in an `<aside>`.
+
+Shipped in the content-only path alongside cross-page detection, which measured:
+
+```
+engine (raw)              F 0.740
+engine (chrome removed)   F 0.820      recall unchanged at 0.989
+```
+
+MDN alone: precision 0.066 -> 0.584, recall 1.000 throughout. The gap to trafilatura fell
+from 11.5 points to 4.8.
+
+Also: `/api/text` now returns `content_markdown` for a single page, which was impossible
+before -- cross-page detection needs a crawl, a landmark needs one page.

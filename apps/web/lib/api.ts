@@ -11,6 +11,8 @@ export const API_BASE =
 
 export type ReadingOrderMethod =
   | "geometric-xy-cut"
+  /** Most blocks measured; the rest placed beside their source-order neighbours. */
+  | "geometric-anchored"
   | "dom-fallback"
   | "single-block";
 
@@ -47,6 +49,8 @@ export interface TextResponse {
   text: string;
   /** Structure-preserving Markdown: headings, images, links, tables, code. */
   markdown: string;
+  /** The same page with `<nav>` and `<footer>` removed. Empty when it declares neither. */
+  content_markdown: string;
   images: string[];
   tables: number;
 }

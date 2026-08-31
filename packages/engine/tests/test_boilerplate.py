@@ -173,3 +173,69 @@ class TestNearDuplicateGuard:
         chrome = detect_site_chrome(pages)
         kept = strip_site_chrome(pages[0], chrome)
         assert [b.text for b in kept] == [pages[0][1].text]
+
+
+class TestLandmarks:
+    """`<nav>` and `<footer>` are the page's own statement about what is navigation.
+
+    Excluding them is structural rather than statistical, which is what makes it work on the
+    first page of a crawl instead of the sixth. Measured over 13 pages against a majority
+    vote of trafilatura, readability and jusText: F 0.740 -> 0.811 with recall unchanged at
+    0.990. On MDN alone, precision 0.066 -> 0.584.
+    """
+
+    @staticmethod
+    def blocks_of(html: str):
+        from webgraph.pipeline import build_document
+
+        return list(build_document(f"<html><body>{html}</body></html>", "https://e.com/").blocks)
+
+    def test_navigation_is_dropped(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+
+        blocks = self.blocks_of(
+            "<nav><a href='/a'>Alpha</a> <a href='/b'>Beta</a></nav>"
+            "<main><p>" + "Real article content here. " * 12 + "</p></main>"
+        )
+        kept = strip_landmarks(blocks)
+        assert all("Alpha" not in b.text for b in kept)
+        assert any("Real article content" in b.text for b in kept)
+
+    def test_footers_are_dropped(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+
+        blocks = self.blocks_of(
+            "<main><p>" + "Body text of the page. " * 12 + "</p></main>"
+            "<footer><p>Copyright 2026 Example Inc.</p></footer>"
+        )
+        assert all("Copyright" not in b.text for b in strip_landmarks(blocks))
+
+    def test_a_page_with_no_landmarks_is_untouched(self) -> None:
+        """danluu.com has no `<nav>`, and measured identically before and after."""
+        from webgraph.boilerplate import strip_landmarks
+
+        blocks = self.blocks_of("<p>" + "Just an essay, no chrome at all. " * 12 + "</p>")
+        assert len(strip_landmarks(blocks)) == len(blocks)
+
+    def test_an_all_navigation_page_is_not_gutted(self) -> None:
+        """A sitemap or index page is legitimately almost all navigation, and returning
+        nothing for it helps nobody."""
+        from webgraph.boilerplate import strip_landmarks
+
+        blocks = self.blocks_of(
+            "<nav>" + "".join(f"<a href='/p{i}'>Page number {i}</a>" for i in range(40))
+            + "</nav><p>x</p>"
+        )
+        assert len(strip_landmarks(blocks)) == len(blocks)
+
+    def test_aside_and_header_are_kept(self) -> None:
+        """Excluding them buys 0.4 points of F and costs 0.4 of recall -- the wrong trade for
+        an engine whose job is not to lose content. Plenty of sites put real material in an
+        `<aside>`."""
+        from webgraph.boilerplate import strip_landmarks
+
+        blocks = self.blocks_of(
+            "<aside><p>" + "A sidebar note that is real content. " * 8 + "</p></aside>"
+            "<main><p>" + "Main body. " * 12 + "</p></main>"
+        )
+        assert any("sidebar note" in b.text for b in strip_landmarks(blocks))

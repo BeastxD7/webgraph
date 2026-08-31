@@ -184,7 +184,7 @@ def engine_texts(url: str) -> dict[str, str]:
     the honest way to measure it: the feature's whole premise is that it is unavailable to a
     single-page extractor.
     """
-    from webgraph.boilerplate import detect_site_chrome, strip_site_chrome
+    from webgraph.boilerplate import detect_site_chrome, strip_landmarks, strip_site_chrome
     from webgraph.crawl.discovery import discover_by_crawling, load_robots
     from webgraph.crawl.frontier import same_site
     from webgraph.resolve import Strategy, resolve_page
@@ -212,11 +212,12 @@ def engine_texts(url: str) -> dict[str, str]:
         except Exception:
             continue
 
-    stripped = raw
+    # The shipped path: landmarks unconditionally, then cross-page chrome when there are
+    # enough pages for repetition to mean anything.
+    kept = strip_landmarks(list(document.blocks))
     if len(corpus) >= 6:
-        chrome = detect_site_chrome(corpus)
-        kept = strip_site_chrome(list(document.blocks), chrome)
-        stripped = "\n\n".join(b.text for b in kept if b.text.strip())
+        kept = strip_site_chrome(kept, detect_site_chrome(corpus))
+    stripped = "\n\n".join(b.text for b in kept if b.text.strip())
 
     # A third variant, because the first diff run showed what the precision gap actually is.
     # Almost everything the engine keeps and the vote does not is a code block or a table --

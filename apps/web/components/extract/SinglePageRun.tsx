@@ -59,6 +59,9 @@ export default function SinglePageRun({ url }: { url: string }) {
   // The component is keyed by URL, so a new target remounts it and these start clean.
   const [loading, setLoading] = useState(true);
 
+  // Landmarks are declared on the page itself, so a single page gets a content-only view
+  // without the whole-site crawl that cross-page chrome detection needs.
+  const [contentOnly, setContentOnly] = useState(true);
   const [presetIndex, setPresetIndex] = useState(0);
   const [facts, setFacts] = useState<ExtractResponse | null>(null);
   const [mapping, setMapping] = useState(false);
@@ -215,11 +218,33 @@ export default function SinglePageRun({ url }: { url: string }) {
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-            <h2 className="border-b border-line p-4 text-[15px] font-extrabold tracking-tight">
-              Markdown
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
+              <h2 className="text-[15px] font-extrabold tracking-tight">Markdown</h2>
+              {text.content_markdown && (
+                <div role="group" aria-label="Markdown view" className="flex rounded-full bg-sunk p-0.5">
+                  {[
+                    { id: true, label: "Content only" },
+                    { id: false, label: "Full page" },
+                  ].map((option) => (
+                    <button
+                      key={String(option.id)}
+                      type="button"
+                      aria-pressed={contentOnly === option.id}
+                      onClick={() => setContentOnly(option.id)}
+                      className={
+                        contentOnly === option.id
+                          ? "rounded-full bg-surface px-3 py-1 text-[12px] font-bold shadow-sm"
+                          : "rounded-full px-3 py-1 text-[12px] font-semibold text-ink-soft"
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <pre className="max-h-[38rem] overflow-auto p-5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
-              {text.markdown}
+              {contentOnly && text.content_markdown ? text.content_markdown : text.markdown}
             </pre>
           </section>
         </>

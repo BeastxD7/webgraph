@@ -28,6 +28,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from webgraph.boilerplate import strip_landmarks
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
 from webgraph.fetch.static import fetch_static
@@ -164,9 +165,14 @@ class FactOut(BaseModel):
 class PageInfo(BaseModel):
     url: str
     content_hash: str
-    reading_order: Literal["geometric-xy-cut", "dom-fallback", "single-block"]
+    reading_order: Literal[
+        "geometric-xy-cut", "geometric-anchored", "dom-fallback", "single-block"
+    ]
     reading_order_measured: bool = Field(
-        description="False means order was assumed from source, not measured from layout"
+        description="False means order was assumed from source, not measured from layout. "
+        "`geometric-anchored` counts as measured: most blocks were, and the rest -- collapsed "
+        "or offscreen content a browser never lays out -- were placed beside their source-order "
+        "neighbours."
     )
     dom_order_differs: bool = Field(
         description="True when the page uses CSS to reorder content away from source order"
@@ -188,6 +194,12 @@ class TextResponse(BaseModel):
     markdown: str = Field(
         default="",
         description="Structure-preserving Markdown: headings, images, links, tables, code.",
+    )
+    content_markdown: str = Field(
+        default="",
+        description="The same page with `<nav>` and `<footer>` removed. Empty when the page "
+        "declares neither. Cross-page chrome detection needs a whole crawl; landmarks are "
+        "declared on the page itself, so a single page gets this much.",
     )
     images: list[str] = Field(default_factory=list, description="Absolute image URLs found")
     tables: int = Field(default=0, description="Tables extracted with their rows intact")
@@ -305,10 +317,20 @@ async def get_text(request: TextRequest) -> TextResponse:
     images = [b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href]
     tables = sum(1 for b in document.blocks if b.kind is BlockKind.TABLE)
 
+    kept = strip_landmarks(list(document.blocks))
+    content = (
+        to_markdown(
+            document.model_copy(update={"blocks": tuple(kept)}), options=MarkdownOptions()
+        )
+        if len(kept) != len(document.blocks)
+        else ""
+    )
+
     return TextResponse(
         page=_page_info(document, bool(geometry)),
         text=document.text,
         markdown=to_markdown(document, options=MarkdownOptions()),
+        content_markdown=content,
         images=images,
         tables=tables,
     )

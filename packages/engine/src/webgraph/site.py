@@ -25,7 +25,12 @@ from typing import Any
 
 from webgraph.analyze import SiteAnalysis, analyze_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
-from webgraph.boilerplate import SiteChrome, detect_site_chrome, strip_site_chrome
+from webgraph.boilerplate import (
+    SiteChrome,
+    detect_site_chrome,
+    strip_landmarks,
+    strip_site_chrome,
+)
 from webgraph.crawl.discovery import (
     discover_by_crawling,
     discover_sitemap_urls,
@@ -748,8 +753,13 @@ def stream_site(
                     )
 
                 content_md = ""
-                if chrome is not None and chrome.active and page.document is not None:
-                    kept = strip_site_chrome(list(page.document.blocks), chrome)
+                if config.remove_chrome and page.document is not None:
+                    # Landmarks first, and unconditionally: `<nav>` and `<footer>` are
+                    # declared on the page itself, so this works from the first result
+                    # rather than waiting for six pages of repetition to mean something.
+                    kept = strip_landmarks(list(page.document.blocks))
+                    if chrome is not None and chrome.active:
+                        kept = strip_site_chrome(kept, chrome)
                     if len(kept) != len(page.document.blocks):
                         content_md = to_markdown(
                             page.document.model_copy(update={"blocks": tuple(kept)}),

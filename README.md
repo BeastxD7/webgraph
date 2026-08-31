@@ -500,10 +500,16 @@ noise the caller can still see and handle.
 diverse sites:
 
 ```
-raw              F = 0.904
-chrome removed   F = 0.914     recall unchanged at 0.989
-trafilatura      F = 0.946
+raw              F = 0.740
+chrome removed   F = 0.820     recall unchanged at 0.989
+trafilatura      F = 0.868
 ```
+
+Two mechanisms, and they cover different ground. **Landmarks** — `<nav>` and `<footer>` —
+are declared on the page itself, so they apply from the first result of a crawl; that is
+what removes MDN's several-hundred-link sidebar, which no amount of statistics over a
+twelve-page sample would have caught. **Cross-page detection** catches everything a site
+repeats that carries no landmark.
 
 Reproduce with `make bench-content`. `danluu.com` has almost no chrome (2 blocks) and
 correctly changes by roughly zero — the detector does not invent chrome where there is none.
@@ -675,29 +681,38 @@ because comparing token-by-token confuses *whether the right words were kept* wi
 they were split into the same sentences*: an early version of this measurement reported
 F=0.611 where shingles put the same output at 0.796.
 
+Fifteen pages across four kinds of site — long-form prose, documentation, encyclopaedic, and
+marketing. An earlier six-page version was all documentation and long-form prose, and every
+tool scored several points higher on it; a number over one kind of page is a number about
+that kind of page.
+
 ```
                                    P       R       F   P(any)
-  trafilatura                  0.907   0.994   0.946    1.000
-  readability                  0.908   0.993   0.945    1.000
-  engine (chrome removed)      0.852   0.989   0.914    0.937
-  engine (raw)                 0.835   0.989   0.904    0.919
-  engine (prose only)          0.833   0.805   0.810    0.871
-  justext                      0.778   0.398   0.522    0.833
+  readability                  0.864   0.955   0.904    1.000
+  trafilatura                  0.814   0.993   0.868    1.000
+  engine (chrome removed)      0.742   0.989   0.820    0.881
+  engine (raw)                 0.658   0.990   0.740    0.752
+  engine (prose only)          0.664   0.840   0.690    0.725
+  justext                      0.785   0.465   0.571    0.846
 ```
 
-Two rows exist to answer questions rather than to flatter.
+Three rows exist to answer questions rather than to flatter.
+
+`raw` against `chrome removed` is what landmark and cross-page chrome removal buy: **+8.0
+points of F with recall unchanged**, almost all of it precision. On MDN's CSS reference page,
+whose sidebar is a single `<nav>` holding several hundred links, precision goes from 0.066 to
+0.584 with recall staying at 1.000.
 
 `prose only` is the engine with code blocks and tables removed. Recall collapses, which
 settles a question worth settling: the reference extractors *do* keep code and tables, so
-preserving them is not the source of the precision gap — dropping it costs ten points of F.
+preserving them is not the source of the precision gap — dropping it costs thirteen points of F.
 
 `P(any)` scores against the **union** of the references rather than the vote, and is
-meaningful only for the engine rows: a reference scores 1.000 there by construction, which
-is arithmetic and not evidence. For the engine it reads as the share of its output that at
-least one established extractor also kept — so **6.3% of what the engine produces is text no
-reference wanted**, and the rest of the gap to 0.852 is the two-of-three threshold. On
-Jinja's template page, 58.6% of the engine's non-consensus shingles had been kept by exactly
-one reference.
+meaningful only for the engine rows: a reference scores 1.000 there by construction, which is
+arithmetic and not evidence. For the engine it reads as the share of its output that at least
+one established extractor also kept — so **12% of what the engine produces is text no
+reference wanted**, and the rest of the gap is the two-of-three threshold. On Jinja's template
+page, 58.6% of the engine's non-consensus shingles had been kept by exactly one reference.
 
 ### Headline numbers
 
@@ -706,8 +721,8 @@ one reference.
 | Mean route recall | **97.7%** | 93 sites; perfect on 85 |
 | Static-only route recall | 26.5% | same oracle, two levels deep |
 | Render-need prediction | 0/7 | why both fetches are merged |
-| Extraction F (chrome removed) | **0.914** | vs a majority vote of three tools |
-| Recall against that vote | 0.989 | `make bench-content` |
+| Extraction F (chrome removed) | **0.820** | 15 pages, vs a majority vote of three tools |
+| Recall against that vote | 0.989 | second only to trafilatura's 0.993 |
 | Wrong-value rate | 0% | enforced by test |
 | Technology fingerprints | 237 rules | 157 technologies, 19 categories |
 
@@ -728,8 +743,8 @@ quietly.
 | Firecrawl | cheerio + jsdom + turndown | DOM order | none | AGPL / SaaS |
 | Crawl4AI | per-node heuristic scoring | DOM order | none | Apache-2.0 |
 
-**Honest framing.** On single-page main-content extraction, trafilatura and readability both
-score higher (F 0.946 and 0.945, against 0.914 here). They have had years of tuning against
+**Honest framing.** On single-page main-content extraction, readability and trafilatura both
+score higher (F 0.904 and 0.868, against 0.820 here). They have had years of tuning against
 news and blog corpora, and it shows in their precision.
 
 What none of them do is the cross-page work: no tool in that list uses signals that only a
@@ -745,9 +760,11 @@ site.
 
 Stated plainly, because a limitations section that reads like marketing is worse than none.
 
-- **Single-page precision trails trafilatura and readability** (0.852 against 0.907 and
-  0.908). The engine keeps more than it should on some pages, and the cause has not been
-  isolated — the obvious suspect, code blocks and tables, was tested and cleared.
+- **Single-page precision still trails readability and trafilatura** (0.742 against 0.864 and
+  0.814), though most of the gap that existed has been found and closed: `<nav>` and
+  `<footer>` were worth 8 points of F, and code blocks and tables — the obvious suspect —
+  were tested and cleared. What remains is concentrated in a few pages rather than spread
+  evenly, and is not yet explained.
 - **UI affordances survive chrome stripping.** On a documentation sample, "Hide navigation
   sidebar" and "Toggle Light / Dark / Auto colour theme" were not removed: their template
   slots shift between page types, so neither detector catches them.
