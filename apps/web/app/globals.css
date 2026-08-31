@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens
+   ---------------------------------------------------------------------------
+   The palette is sampled from the hero photograph -- deep field green, hazy
+   sky, warm earth -- so type and chrome sit inside the image's world rather
+   than on top of it.
+
+   The page commits to a single light treatment on purpose: the hero is a
+   photograph with a bright sky, and a dark variant would either lose the
+   photograph or invert its meaning. Every colour below is stated explicitly so
+   the page never borrows a host background.
+   --------------------------------------------------------------------------- */
+@theme {
+  --color-ink: #0f1a14;
+  --color-ink-soft: #4f6157;
+  --color-ink-faint: #8a988f;
+  --color-inverse: #ffffff;
+
+  --color-haze: #f5f7f3;
+  --color-surface: #ffffff;
+  --color-sunk: #eef1ea;
+
+  --color-line: rgb(15 26 20 / 0.10);
+  --color-line-strong: rgb(15 26 20 / 0.18);
+
+  /* Accent: the green of spring wheat in the photograph. */
+  --color-leaf-50: #f1f8ec;
+  --color-leaf-100: #ddefd0;
+  --color-leaf-300: #93c874;
+  --color-leaf-500: #4d9a2f;
+  --color-leaf-600: #3f8527;
+  --color-leaf-700: #326a20;
+
+  --color-clay: #a9784a;
+  --color-flag-warn: #9a6b12;
+  --color-flag-bad: #a63a2f;
+
+  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-manrope), ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  --shadow-card: 0 1px 2px rgb(15 26 20 / 0.04), 0 10px 30px rgb(15 26 20 / 0.06);
+  --shadow-lift: 0 2px 8px rgb(15 26 20 / 0.07), 0 24px 60px rgb(15 26 20 / 0.14);
+  --shadow-glass: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 20px 50px rgb(15 26 20 / 0.16);
+
+  --animate-drift: drift 9s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  0% { left: -25%; }
+  100% { left: 100%; }
+}
+
+@keyframes drift {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    background: var(--color-haze);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-haze);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--color-leaf-100);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-leaf-600);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* Displayed numbers line up in columns all over the run view. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  /* The crop marks bracketing the prompt card in the reference design. */
+  .crop-mark::before,
+  .crop-mark::after {
+    content: "";
+    position: absolute;
+    width: 1px;
+    background: rgb(255 255 255 / 0.75);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
