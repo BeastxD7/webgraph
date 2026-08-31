@@ -265,7 +265,18 @@ class TestAssembly:
 
 
 class TestScoringChoices:
-    """Both of these were measured, and both times the obvious implementation lost."""
+    """Each of these was measured, and each time the obvious implementation lost."""
+
+    def test_anchor_feedback_is_off_by_default(self) -> None:
+        """Re-seeding with the site's names for what the matches link to sounds like it must
+        help. Measured across three sites and four discount settings, the best no-overlap
+        recall was always with it off."""
+        import inspect
+
+        from webgraph.graph.retrieve import ContextAssembler as Assembler
+
+        signature = inspect.signature(Assembler.assemble)
+        assert signature.parameters["feedback"].default is False
 
     def test_evidence_accumulates_across_paths(self) -> None:
         """A section reached from two seeds should outrank one reached from a single seed of

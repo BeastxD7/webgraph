@@ -73,6 +73,10 @@ HEADING_UBIQUITY: Final[float] = 0.5
 DEDUP_PREFIX_CHARS: Final[int] = 300
 """Characters of a section's opening used to recognise a near-duplicate."""
 
+FEEDBACK_DISCOUNT: Final[float] = 0.5
+"""How much a section found through anchor feedback is worth, against one that matched the
+question directly. Feedback should add, never displace."""
+
 MENTION_WEIGHT: Final[float] = 0.25
 """Weight of a shared-entity edge, relative to a link.
 
@@ -233,6 +237,52 @@ class ContextAssembler:
             )
             for score, section_id_ in scored[:limit]
         ]
+
+    def anchor_feedback(self, seeds: list[ScoredSection], *, terms: int = 8) -> list[str]:
+        """Terms taken from the anchor text on links out of the seed sections.
+
+        Classic relevance feedback expands a query with words from the documents that
+        matched. This expands it with words the site uses to *point at* what those documents
+        link to -- which is a different and better source, because an anchor is a human
+        naming the target, and the target is precisely what a similarity search cannot reach.
+
+        Only anchors on links inside a matching section count. A link elsewhere on the page
+        was not part of what matched, and a documentation page has fifty of them.
+
+        **Measured, and off by default.** It sounds like it must help and it does not. Across
+        three sites and four discount settings, the best no-overlap recall was always with
+        feedback *off*:
+
+        ```
+        feedback   attrs no-overlap   pytest   jinja
+          off               34.0%      14.7%   78.4%
+          0.15              28.0%      14.7%   75.7%
+          0.30              28.7%      14.0%   74.3%
+          0.50              31.3%      13.3%   75.7%
+        ```
+
+        Kept because it is an obvious idea that someone will otherwise implement again, and
+        the argument against it is the table rather than an opinion.
+        """
+        weighted: dict[str, float] = defaultdict(float)
+        for seed in seeds:
+            in_section = self.graph.section_links.get(seed.section.id, set())
+            if not in_section:
+                continue
+            page_key = seed.section.page_key
+            for target in in_section:
+                link = self.graph.links.get((page_key, target))
+                if link is None or not link.anchors:
+                    continue
+                specificity = self.graph.link_specificity(target)
+                if specificity < 0.15:
+                    continue
+                for token in tokenize(" ".join(link.anchors)):
+                    if len(token) > 2 and self._df[token] < self._n * 0.4:
+                        weighted[token] += seed.score * specificity
+
+        ranked = sorted(weighted.items(), key=lambda pair: (-pair[1], pair[0]))
+        return [term for term, _ in ranked[:terms]]
 
     # -- expansion -----------------------------------------------------
 
@@ -419,10 +469,32 @@ class ContextAssembler:
         accumulate: bool = True,
         normalize: bool = True,
         mention_weight: float = MENTION_WEIGHT,
+        feedback: bool = False,
+        feedback_discount: float = FEEDBACK_DISCOUNT,
     ) -> Assembled:
         """Seed, expand, then spend the budget in tiers."""
         budget = budget or Budget()
         seeds = self.score_sections(query, limit=seed_limit)
+
+        if feedback and seeds:
+            # Re-seed with the site's own names for what the matches link to. Scored at a
+            # discount, so a feedback hit never outranks something that matched the question
+            # itself.
+            terms = self.anchor_feedback(seeds)
+            if terms:
+                seen = {s.section.id for s in seeds}
+                for extra in self.score_sections(" ".join(terms), limit=seed_limit):
+                    if extra.section.id in seen:
+                        continue
+                    seeds.append(
+                        ScoredSection(
+                            section=extra.section,
+                            score=extra.score * feedback_discount,
+                            hops=0,
+                            reason=f"the site calls this {' / '.join(terms[:3])}",
+                        )
+                    )
+                seeds.sort(key=lambda s: (-s.score, s.section.id))
         ranked = (
             self.expand(
                 seeds,

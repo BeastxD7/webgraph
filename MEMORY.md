@@ -1499,3 +1499,36 @@ error.
 
 Verified end to end: crawl attrs.org, kill the API, restart, ask a question -- answered from
 the revived graph with no re-crawl.
+
+### D52 — At a tight budget, retrieval is zero-sum. Adding candidates does not help.
+
+Three separate ideas this session, each of which sounded certain to improve recall, each
+measured neutral or worse:
+
+| idea | result |
+|---|---|
+| Reserve budget for neighbours (D38) | flat across 0.0-0.8; the gold page was already reached and merely ranked low |
+| Shared-entity mention edges (D45) | within a point either way at every weight from 0.0 to 0.7 |
+| Anchor-text relevance feedback | best no-overlap recall was always with it **off** |
+
+The one change that did help was **mass-conserving propagation** (D38), which added nothing
+and rebalanced what was already there: weak-overlap recall 75.0% -> 97.2% on attrs.
+
+The pattern is not a coincidence. At a budget of 3-4% of the site, the context holds about
+fifteen sections and the retriever already reaches the gold page in 100% of the failures.
+Every additional candidate displaces one that matched. **Improvement has to come from
+ranking, not from recall of candidates**, and any future idea of the form "also consider X"
+should be assumed neutral until a number says otherwise.
+
+Anchor feedback measurements, three sites x four discounts:
+
+```
+feedback   attrs no-overlap   pytest   jinja
+  off               34.0%      14.7%   78.4%
+  0.15              28.0%      14.7%   75.7%
+  0.30              28.7%      14.0%   74.3%
+  0.50              31.3%      13.3%   75.7%
+```
+
+The code is kept, off by default, because it is an obvious idea someone will otherwise
+implement again and the argument against it should be a table rather than an opinion.
