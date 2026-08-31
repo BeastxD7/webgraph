@@ -451,14 +451,18 @@ noise the caller can still see and handle.
 diverse sites:
 
 ```
-raw              F = 0.725
-chrome-stripped  F = 0.760     recall unchanged on all four (0.903 / 0.986 / 0.991 / 0.995)
-trafilatura      F = 0.903
+raw              F = 0.904
+chrome removed   F = 0.914     recall unchanged at 0.989
+trafilatura      F = 0.946
 ```
 
-Precision gains ranged from +0.001 to +0.093. `danluu.com` has almost no chrome (2 blocks)
-and correctly changed by roughly zero — the detector does not invent chrome where there is
-none.
+Reproduce with `make bench-content`. `danluu.com` has almost no chrome (2 blocks) and
+correctly changes by roughly zero — the detector does not invent chrome where there is none.
+
+*(An earlier, unreproducible version of this measurement reported 0.725 → 0.760 against
+trafilatura at 0.903. It used a different page set and a method that no longer exists. The
+numbers above supersede it and are not comparable to it — the point of committing the
+benchmark is that this cannot happen again.)*
 
 ---
 
@@ -563,8 +567,9 @@ in the footer as that licence requires and recorded in
 Two benchmarks, because the engine makes two separable claims.
 
 ```bash
-make bench          # extraction quality against the corpus
-make bench-routes   # route discovery against a real-browser oracle
+make bench           # schema extraction against the corpus
+make bench-content   # main content against three other extractors
+make bench-routes    # route discovery against a real-browser oracle
 make bench-routes-quick
 ```
 
@@ -577,6 +582,30 @@ build if page success drops below the floor.
 **`benchmark/route_discovery`** drives a real browser as the oracle across 100 sites,
 explores two levels deep on both sides, and scores recall.
 
+**`benchmark/content_quality`** scores main-content extraction against a majority vote of
+trafilatura, readability and jusText. There is no ground truth for "the main content of this
+page" that survives contact with a real website, so the reference is what two of three
+independent extractors agree on — not a claim that the vote is right, but that it is
+independent of this engine and stable between runs. Comparison is on 5-word shingles,
+because comparing token-by-token confuses *whether the right words were kept* with *whether
+they were split into the same sentences*: an early version of this measurement reported
+F=0.611 where shingles put the same output at 0.796.
+
+```
+                                   P       R       F
+  trafilatura                  0.907   0.994   0.946
+  readability                  0.908   0.993   0.945
+  engine (chrome removed)      0.852   0.989   0.914
+  engine (raw)                 0.835   0.989   0.904
+  engine (prose only)          0.833   0.805   0.810
+  justext                      0.778   0.398   0.522
+```
+
+The `prose only` row is the engine with code blocks and tables removed. Recall collapses,
+which settles a question worth settling: the reference extractors *do* keep code and tables,
+so preserving them is not the source of the precision gap — dropping them costs ten points
+of F.
+
 ### Headline numbers
 
 | measurement | value | context |
@@ -584,8 +613,8 @@ explores two levels deep on both sides, and scores recall.
 | Mean route recall | **97.7%** | 93 sites; perfect on 85 |
 | Static-only route recall | 26.5% | same oracle, two levels deep |
 | Render-need prediction | 0/7 | why both fetches are merged |
-| Extraction F (chrome-stripped) | 0.760 | vs a majority vote of three tools |
-| Recall against that vote | 0.90–0.995 | the highest of any tool compared |
+| Extraction F (chrome removed) | **0.914** | vs a majority vote of three tools |
+| Recall against that vote | 0.989 | `make bench-content` |
 | Wrong-value rate | 0% | enforced by test |
 | Technology fingerprints | 144 rules | 18 categories |
 
@@ -606,9 +635,9 @@ quietly.
 | Firecrawl | cheerio + jsdom + turndown | DOM order | none | AGPL / SaaS |
 | Crawl4AI | per-node heuristic scoring | DOM order | none | Apache-2.0 |
 
-**Honest framing.** On raw single-page main-content extraction, trafilatura scores higher
-(F 0.903 vs 0.760 here). It has had years of tuning against news and blog corpora, and that
-shows.
+**Honest framing.** On single-page main-content extraction, trafilatura and readability both
+score higher (F 0.946 and 0.945, against 0.914 here). They have had years of tuning against
+news and blog corpora, and it shows in their precision.
 
 What none of them do is the cross-page work: no tool in that list uses signals that only a
 whole-site crawler has, and none recovers reading order from measured geometry. Those are
@@ -623,8 +652,9 @@ site.
 
 Stated plainly, because a limitations section that reads like marketing is worse than none.
 
-- **Raw single-page precision trails trafilatura** (F 0.760 vs 0.903). The engine keeps more
-  than it should on some pages.
+- **Single-page precision trails trafilatura and readability** (0.852 against 0.907 and
+  0.908). The engine keeps more than it should on some pages, and the cause has not been
+  isolated — the obvious suspect, code blocks and tables, was tested and cleared.
 - **UI affordances survive chrome stripping.** On a documentation sample, "Hide navigation
   sidebar" and "Toggle Light / Dark / Auto colour theme" were not removed: their template
   slots shift between page types, so neither detector catches them.

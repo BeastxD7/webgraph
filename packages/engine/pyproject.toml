@@ -26,6 +26,13 @@ dev = [
     "mypy>=1.14",
     "lxml-stubs>=0.5.1",
 ]
+bench = [
+    # Reference extractors for the content-quality benchmark. Not runtime dependencies and
+    # never vendored -- the engine is scored *against* these, so they must stay outside it.
+    "trafilatura>=2.0",
+    "readability-lxml>=0.8.1",
+    "justext>=3.0",
+]
 
 [build-system]
 requires = ["hatchling"]

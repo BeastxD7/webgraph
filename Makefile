@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint bench clean
+.PHONY: help install api web dev test lint bench bench-content clean
 
 help:
 	@echo "webgraph — development commands"
@@ -8,7 +8,8 @@ help:
 	@echo "  make web       Run the frontend on :3000"
 	@echo "  make test      Run every test suite"
 	@echo "  make lint      Lint and type-check everything"
-	@echo "  make bench     Score extraction against the benchmark corpus"
+	@echo "  make bench     Score schema extraction against the benchmark corpus"
+	@echo "  make bench-content Score main-content extraction against three other tools"
 	@echo "  make bench-routes  Score route discovery against a real-browser oracle"
 	@echo ""
 	@echo "Run 'make api' and 'make web' in two terminals for the full stack."
@@ -37,6 +38,12 @@ lint:
 
 bench:
 	cd packages/engine && uv run webgraph bench ../../benchmark/corpus-v0
+
+bench-content:
+	cd packages/engine && uv run --group bench python ../../benchmark/content_quality/run.py
+
+bench-content-diff:
+	cd packages/engine && uv run --group bench python ../../benchmark/content_quality/run.py --diff
 
 bench-routes:
 	cd packages/engine && uv run python ../../benchmark/route_discovery/run.py

@@ -1374,3 +1374,48 @@ site's introduction to be one subject. A bridge that wrong is worse than no brid
 The working cross-site channel is the link one (D42/D43), which measured 8 real edges with
 anchors naming each relationship. That is the answer to "how do the sites connect"; entities
 are a weaker second channel that currently connects nothing.
+
+
+---
+
+## The content benchmark became reproducible (2026-09-01, session 11)
+
+### D46 — A number that cannot be re-run is not a measurement
+
+`F=0.760` and `trafilatura 0.903` were quoted in MEMORY.md and in the README as measured
+facts. Checked tonight: **trafilatura, readability and jusText were not even installed**, and
+the script that produced those numbers no longer existed. The project's central quality claim
+was unreproducible.
+
+`benchmark/content_quality/run.py` fixes that, committed, with the reference extractors as a
+`bench` dependency group and `make bench-content` to run it. Fresh numbers over six pages:
+
+```
+                                   P       R       F
+  trafilatura                  0.907   0.994   0.946
+  readability                  0.908   0.993   0.945
+  engine (chrome removed)      0.852   0.989   0.914
+  engine (raw)                 0.835   0.989   0.904
+  engine (prose only)          0.833   0.805   0.810
+  justext                      0.778   0.398   0.522
+```
+
+**These supersede the old figures and are not comparable to them** -- different page set,
+different method. The gap to trafilatura is 3.2 points, not the 14 the old numbers implied.
+Whether that is improvement or a friendlier corpus cannot be told, which is the whole
+argument for committing the harness.
+
+### D47 — The precision gap is not code and tables
+
+`--diff` lists what the engine keeps that no two reference extractors kept. On Jinja's
+template page it was dominated by code blocks and filter tables -- which looked like the
+references discarding real documentation content and the engine being penalised for keeping
+it.
+
+Tested rather than believed. The `prose only` row is the engine with code, tables and figure
+captions removed: precision does **not** improve (0.835 -> 0.833) and recall collapses
+(0.989 -> 0.805). So the references do keep code and tables, structure preservation is not
+the cause of the gap, and dropping it would cost ten points of F.
+
+The excess is real but small -- 8,186 characters of 113,756 on that page -- and its cause is
+still unisolated. Recorded as open rather than guessed at.
