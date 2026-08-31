@@ -1532,3 +1532,27 @@ feedback   attrs no-overlap   pytest   jinja
 
 The code is kept, off by default, because it is an obvious idea someone will otherwise
 implement again and the argument against it should be a table rather than an opinion.
+
+### D53 — Page-level evidence: the fourth negative, and the point to stop
+
+A section inheriting some of its page's standing is how people actually search -- find the
+right page, then the right part of it. Sections currently compete independently, so a page
+with six matching sections ranks no better than one that matched by luck.
+
+Measured across the same three sites:
+
+```
+weight   attrs no-overlap   pytest weak   jinja no-overlap
+  0.00             32.0%          52.5%              78.4%
+  0.25             32.0%          42.5%              78.4%
+  1.00             28.7%          37.5%              73.0%
+```
+
+It buys a little single-hop recall on a corpus already at 92-100% and costs the multi-hop
+buckets that have room to improve. Weighted zero.
+
+**Four careful negatives in a row is a signal, not a run of bad luck.** The retrieval design
+is at a local optimum for this benchmark and further parameter work would be fitting noise.
+Stopping. The next real gain needs a different *kind* of change -- a vector seeder measured
+against BM25, or a larger budget regime where the allocation is not zero-sum -- not another
+weight.

@@ -73,6 +73,13 @@ HEADING_UBIQUITY: Final[float] = 0.5
 DEDUP_PREFIX_CHARS: Final[int] = 300
 """Characters of a section's opening used to recognise a near-duplicate."""
 
+PAGE_EVIDENCE_WEIGHT: Final[float] = 0.0
+"""How much of its page's total score a section inherits.
+
+Zero: the sweep in `apply_page_evidence` found it neutral at best and harmful on the buckets
+with room to improve. The parameter stays so the measurement can be repeated.
+"""
+
 FEEDBACK_DISCOUNT: Final[float] = 0.5
 """How much a section found through anchor feedback is worth, against one that matched the
 question directly. Feedback should add, never displace."""
@@ -286,6 +293,51 @@ class ContextAssembler:
 
     # -- expansion -----------------------------------------------------
 
+    def apply_page_evidence(
+        self, ranked: list[ScoredSection], *, weight: float = PAGE_EVIDENCE_WEIGHT
+    ) -> list[ScoredSection]:
+        """Let a section inherit some of the standing of the page it is on.
+
+        Sections compete independently, so a page where six sections match the question ranks
+        no better than a page where one section matched by luck. That is not how anyone
+        searches a website: you find the right *page*, then the right part of it.
+
+        The page's evidence is the sum of its sections' scores, normalised against the best
+        page so the boost is a multiplier rather than a second scale. `weight` is how much of
+        it a section inherits.
+
+        **Measured, and weighted zero by default.** It helps single-hop retrieval slightly on
+        a corpus already at 92-100%, and costs the multi-hop buckets that actually have room
+        to improve:
+
+        ```
+        weight   attrs no-overlap   pytest weak   jinja no-overlap
+          0.00             32.0%          52.5%              78.4%
+          0.25             32.0%          42.5%              78.4%
+          1.00             28.7%          37.5%              73.0%
+        ```
+
+        Kept for the same reason as anchor feedback: the idea is obvious, and the argument
+        against it should be a table.
+        """
+        if not ranked or weight <= 0:
+            return ranked
+
+        by_page: dict[str, float] = defaultdict(float)
+        for item in ranked:
+            by_page[item.section.page_key] += item.score
+        best = max(by_page.values()) or 1.0
+
+        return [
+            ScoredSection(
+                section=item.section,
+                score=item.score * (1 + weight * by_page[item.section.page_key] / best),
+                hops=item.hops,
+                reason=item.reason,
+            )
+            for item in ranked
+        ]
+
     def expand(
         self,
         seeds: list[ScoredSection],
@@ -471,6 +523,7 @@ class ContextAssembler:
         mention_weight: float = MENTION_WEIGHT,
         feedback: bool = False,
         feedback_discount: float = FEEDBACK_DISCOUNT,
+        page_evidence: float = PAGE_EVIDENCE_WEIGHT,
     ) -> Assembled:
         """Seed, expand, then spend the budget in tiers."""
         budget = budget or Budget()
@@ -507,6 +560,9 @@ class ContextAssembler:
             if seeds
             else []
         )
+
+        ranked = self.apply_page_evidence(ranked, weight=page_evidence)
+        ranked.sort(key=lambda s: (-s.score, s.section.id))
 
         full_cap = int(budget.max_chars * budget.full_share)
         used_opening_holder = [0]
