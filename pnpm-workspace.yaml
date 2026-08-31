@@ -1,0 +1,10 @@
+packages:
+  - "apps/web"
+
+allowBuilds:
+  unrs-resolver: set this to true or false
+
+# unrs-resolver ships a native binary used by eslint's module resolver. Approved
+# explicitly rather than globally so any *new* build script still requires review.
+onlyBuiltDependencies:
+  - unrs-resolver

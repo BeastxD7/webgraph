@@ -1,0 +1,11 @@
+{
+  "name": "webgraph-monorepo",
+  "private": true,
+  "scripts": {
+    "web:dev": "pnpm --filter @webgraph/web dev",
+    "web:build": "pnpm --filter @webgraph/web build",
+    "web:typecheck": "pnpm --filter @webgraph/web typecheck",
+    "web:lint": "pnpm --filter @webgraph/web lint"
+  },
+  "packageManager": "pnpm@11.24.0"
+}
