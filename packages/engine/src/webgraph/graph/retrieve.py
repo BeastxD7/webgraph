@@ -70,6 +70,16 @@ B: Final[float] = 0.75
 DEDUP_PREFIX_CHARS: Final[int] = 300
 """Characters of a section's opening used to recognise a near-duplicate."""
 
+MENTION_WEIGHT: Final[float] = 0.25
+"""Weight of a shared-entity edge, relative to a link.
+
+Set by sweep, not by intuition. Entities derived from anchor consensus produce many
+mentions, and at the 0.7 that structural edges get they cost recall: measured -0.7 points
+on average across three sites, because a section that merely names the same subject is much
+weaker evidence than a link someone chose to write. The value of these edges is between
+sites, where link edges are sparse, so the weight is set to be harmless within one.
+"""
+
 HEADING_WEIGHT: Final[int] = 3
 """A heading term is worth three body terms. Headings are the author's own summary of the
 section, and a query matching one is a much stronger signal than a passing mention."""
@@ -224,6 +234,7 @@ class ContextAssembler:
         per_page: int = 4,
         accumulate: bool = True,
         normalize: bool = True,
+        mention_weight: float = MENTION_WEIGHT,
     ) -> list[ScoredSection]:
         """Widen the seed set along real edges.
 
@@ -245,7 +256,7 @@ class ContextAssembler:
         for hop in range(1, max_hops + 1):
             next_frontier: list[ScoredSection] = []
             for item in frontier:
-                neighbours = self._neighbours(item, query_terms, per_page)
+                neighbours = self._neighbours(item, query_terms, per_page, mention_weight)
                 # Mass conservation. A seed spreads a fixed amount of evidence across its
                 # neighbours rather than handing each of them a full copy of its own score.
                 #
@@ -298,7 +309,11 @@ class ContextAssembler:
         return sorted(best.values(), key=lambda s: (-s.score, s.section.id))
 
     def _neighbours(
-        self, item: ScoredSection, query_terms: set[str], per_page: int
+        self,
+        item: ScoredSection,
+        query_terms: set[str],
+        per_page: int,
+        mention_weight: float = MENTION_WEIGHT,
     ) -> list[tuple[Section, str, float]]:
         """Neighbours of one section, each with a weight in [0, 1].
 
@@ -370,7 +385,7 @@ class ContextAssembler:
                 if other is not None and other.id != item.section.id:
                     entity = graph.entities.get(entity_key)
                     name = entity.name if entity and entity.name else entity_key
-                    out.append((other, f"also describes {name}", 0.7))
+                    out.append((other, f"also describes {name}", mention_weight))
 
         # URL hierarchy: a parent page states what a whole section of the site is for.
         parent = graph.parent_path(page_key)
@@ -391,13 +406,19 @@ class ContextAssembler:
         max_hops: int = 2,
         accumulate: bool = True,
         normalize: bool = True,
+        mention_weight: float = MENTION_WEIGHT,
     ) -> Assembled:
         """Seed, expand, then spend the budget in tiers."""
         budget = budget or Budget()
         seeds = self.score_sections(query, limit=seed_limit)
         ranked = (
             self.expand(
-                seeds, query, max_hops=max_hops, accumulate=accumulate, normalize=normalize
+                seeds,
+                query,
+                max_hops=max_hops,
+                accumulate=accumulate,
+                normalize=normalize,
+                mention_weight=mention_weight,
             )
             if seeds
             else []

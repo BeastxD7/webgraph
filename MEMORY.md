@@ -1331,3 +1331,46 @@ nothing about them being the same API.
 JSON-LD and microdata, which marketing sites publish and documentation sites do not. The
 `MENTIONS` edge and the entity bridge are therefore inert on exactly the corpus where
 cross-site linking was just demonstrated. Next.
+
+### D45 — Derived entities: a mostly negative result, kept anyway
+
+`entities: 0, mentions: 0` on every documentation site. Entities came only from JSON-LD and
+microdata, which marketing sites publish and documentation sites do not.
+
+Two derivations, both observed rather than inferred:
+
+- **A page's subject is what other pages call it.** The anchor texts pointing *at* a page
+  are the site's own names for it, agreed across many pages, written by its authors. Free.
+- **A symbol is defined where it appears as a heading and used as inline code elsewhere.**
+  Two independent pieces of evidence, which is what separates `Environment` the class from
+  `Installation` the section.
+
+It works, in the sense that it produces output: 0 -> 31/75/14 entities and 0 -> 185/115/139
+mentions across attrs, pytest and Jinja. **Neither retrieval claim survived measurement.**
+
+*Within a site*, sweeping the mention edge's weight from 0.0 to 0.7 moved mean gold-page
+recall across three sites by under a point in either direction:
+
+```
+weight   single   no-overlap   weak
+  0.00    97.5%       42.6%   74.9%
+  0.25    97.5%       42.1%   75.8%
+  0.70    97.5%       41.9%   75.8%
+```
+
+*Across sites*, on Flask + Jinja + Click: **shared entities: 0.** Subject keys are
+page-scoped by design, and the symbols the three sites define do not overlap (Flask 0,
+Jinja 6, Click 1, intersection empty).
+
+**Kept as a descriptive feature, not a retrieval one.** The entity list is a genuinely
+useful account of what a site is about, with the aliases its own authors use, and the
+machinery is what makes structured-data-rich sites bridge on `@id` as intended. The mention
+weight is set to 0.25, where it measured harmless.
+
+**Not done: name-keying subjects so they would bridge.** Half the derived names are generic
+-- "Introduction", "Getting Started", "Environment" -- and name-keying would declare every
+site's introduction to be one subject. A bridge that wrong is worse than no bridge.
+
+The working cross-site channel is the link one (D42/D43), which measured 8 real edges with
+anchors naming each relationship. That is the answer to "how do the sites connect"; entities
+are a weaker second channel that currently connects nothing.

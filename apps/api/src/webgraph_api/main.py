@@ -32,6 +32,7 @@ from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
 from webgraph.fetch.static import fetch_static
 from webgraph.graph.build import GraphBuilder
+from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.pipeline import build_document
@@ -368,6 +369,11 @@ async def site_context(request: ContextRequest) -> ContextResponse:
         raise HTTPException(
             status_code=409, detail="The crawl has not produced any content yet."
         )
+
+    # Derived on demand rather than during the crawl: it needs the whole link graph to know
+    # what other pages call a page, and it is idempotent, so asking twice costs nothing.
+    if not graph.entities:
+        derive_entities(graph)
 
     assembler = ContextAssembler(graph)
     assembled = assembler.assemble(
