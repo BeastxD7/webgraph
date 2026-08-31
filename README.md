@@ -383,6 +383,30 @@ Verified against a real browser:
 2. Cutting at *every* gap sliced a column into its constituent rows. Fixed by cutting only
    at the widest gap and anything within 5% of it.
 
+**Partial geometry is the normal case, and used to discard everything.** A browser does not
+measure what it does not display, so a collapsed `<details>`, a panel behind a disclosure or
+an offscreen tab leaves blocks with no rectangle. The original rule abandoned geometry if
+*any* block lacked one, on the reasoning that mixing measured and assumed positions gives an
+order that is neither. The reasoning was right about naive mixing and wrong about the
+consequence:
+
+| | geometry actually used |
+|---|---|
+| all-or-nothing rule | **1 of 18** real pages |
+| anchoring unmeasured blocks | **18 of 18** |
+
+Mean share of blocks measured across those pages: 89%. The headline feature was off almost
+everywhere, and no metric said so — the documents simply reported `dom-fallback`.
+
+Unmeasured blocks are now *anchored*: measured blocks are ordered geometrically, and each
+unmeasured one is placed immediately after its nearest preceding block in source order. That
+is the right answer for the case that produces them — the body of a collapsed disclosure
+belongs directly after the control that opens it, which is where the DOM already puts it.
+
+The result is labelled `geometric-anchored`, never `geometric-xy-cut`. It is a weaker claim
+and gets its own name. Below half the blocks measured, the document falls back and says so:
+anchoring a majority to a minority would be source order wearing a measurement's name.
+
 **When geometry is unavailable** — a static-only fetch, a failed render — the engine falls
 back to source order and **says so**: `reading_order_measured: false`. It never presents an
 assumption as a measurement.

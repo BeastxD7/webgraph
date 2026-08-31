@@ -1629,3 +1629,64 @@ Verified: `news.ycombinator.com` -> nginx, HSTS. `wordpress.org` still WordPress
 Standing lesson, now twice: **every new host- or path-shaped rule must be checked against a
 page that merely links to that technology**, not only against a page that uses it -- and the
 check belongs in the rule kind, not in the reviewer's memory.
+
+---
+
+## The headline feature was off on 17 of 18 real pages (2026-09-01, session 11)
+
+### D58 — All-or-nothing geometry discarded geometry almost always
+
+`order_blocks` abandoned geometric ordering if **any** block lacked a rectangle, reasoning
+that mixing measured and assumed positions gives an order that is neither. The reasoning is
+right about naive mixing. The consequence was not thought through: **a browser does not
+measure what it does not display**, so one collapsed `<details>`, one offscreen tab panel,
+one lazily-mounted section leaves gaps -- and every real page has some.
+
+Surveyed across 18 real pages:
+
+```
+                            geometry actually used
+all-or-nothing rule                    1 / 18
+anchoring unmeasured blocks           18 / 18
+mean share of blocks measured           89.1%
+```
+
+Seventeen of eighteen pages were silently reading in **DOM order** while the engine had
+measured 89% of their blocks in a browser it had paid to launch. Nothing reported it as a
+problem; the documents said `dom-fallback` and that was treated as normal.
+
+**The fix: anchoring.** Measured blocks are ordered geometrically; each unmeasured block is
+placed immediately after its nearest preceding block in source order. That is exactly right
+for the case that produces them -- a collapsed disclosure's body belongs after the control
+that opens it, which is where the DOM already has it. Runs of consecutive unmeasured blocks
+keep their own order.
+
+Labelled `geometric-anchored`, never `geometric-xy-cut`: a weaker claim gets its own name.
+Below `min_measured_share = 0.5` it still falls back, because anchoring a majority of blocks
+to a minority of measurements would be source order wearing a measurement's name.
+
+**How it was found:** by printing `reading_order_method` while investigating something else
+entirely (collapsed content). The fourth defect this session that no metric surfaced and
+looking at the output did. There is now a survey script for it.
+
+### D59 — Revealing collapsed content: real on the page, negligible for the engine
+
+`RenderConfig.reveal_collapsed` opens `<details>` and ARIA disclosure panels before
+measuring, by property and attribute changes only. Nothing is clicked: a click can navigate,
+submit a form, open a dialog that blocks the driver, or fire someone else's analytics.
+
+It genuinely reaches hidden content -- measured as visible text on the page:
+
+```
+vercel.com/docs/functions   +412%     notion.com/pricing   +128%
+MDN grid-template-areas     +308%     support.apple.com     +59%
+```
+
+**And it changes the engine's output almost not at all**, because closed `<details>` content
+is already in the HTML; only its *geometry* was missing. With anchoring in place the effect
+is +0.3 percentage points of blocks measured across 18 pages and no change in pages using
+geometry (18/18 either way).
+
+So it defaults off: a script evaluation and 250 ms of settle for 0.3%. Kept because the
+number is worth having written down, and because a page that renders collapsed content only
+on interaction would need it.

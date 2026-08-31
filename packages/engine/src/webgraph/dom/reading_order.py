@@ -75,6 +75,13 @@ class OrderingConfig:
     max_depth: int = 24
     """Recursion guard. Deeply nested cuts past this point are ordered positionally."""
 
+    min_measured_share: float = 0.5
+    """Share of blocks that must carry geometry before it is allowed to lead the ordering.
+
+    Below this, anchoring a majority of blocks to a minority of measurements would be source
+    order wearing a measurement's name, so the document falls back and says so.
+    """
+
 
 def order_blocks(
     blocks: list[Block],
@@ -84,8 +91,21 @@ def order_blocks(
 ) -> tuple[list[Block], ReadingOrderMethod]:
     """Return `blocks` in reading order, plus the method used to establish it.
 
-    Blocks without geometry force the DOM-order fallback for the whole document: mixing
-    measured and assumed positions would produce an ordering that is neither.
+    An earlier version abandoned geometry entirely if *any* block lacked a rectangle, on the
+    grounds that mixing measured and assumed positions gives an order that is neither. The
+    reasoning was right about naive mixing and wrong about the consequence: a browser does not
+    measure what it does not display, so a single collapsed `<details>` was enough to
+    downgrade a whole page. Measured across seven real documentation pages, **every one** fell
+    back -- including one where 103 of 108 blocks had been measured.
+
+    Unmeasured blocks are now *anchored* instead. The measured blocks are ordered
+    geometrically, and each unmeasured block is placed immediately after its nearest
+    preceding measured block in source order. That is the right answer for the case that
+    produces them: the body of a collapsed disclosure belongs directly after the control that
+    opens it, which is exactly where the DOM puts it.
+
+    The result is labelled `GEOMETRIC_ANCHORED`, not `GEOMETRIC_XY_CUT`. It is a weaker claim
+    and gets its own name.
     """
     config = config or OrderingConfig()
 
@@ -94,23 +114,57 @@ def order_blocks(
     if len(blocks) == 1:
         return list(blocks), ReadingOrderMethod.SINGLE_BLOCK
 
-    if any(b.rect is None for b in blocks):
-        return (
-            sorted(blocks, key=lambda b: b.dom_index),
-            ReadingOrderMethod.DOM_FALLBACK,
-        )
+    measured = [b for b in blocks if b.rect is not None]
+    if not measured:
+        return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
 
-    heights = [b.rect.height for b in blocks if b.rect is not None and b.rect.height > 0]
+    if len(measured) < len(blocks) * config.min_measured_share:
+        # Too little geometry to lead with. Anchoring a majority of blocks to a minority of
+        # measurements would dress source order up as a measurement.
+        return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
+
+    heights = [b.rect.height for b in measured if b.rect is not None and b.rect.height > 0]
     unit = median(heights) if heights else 16.0
 
-    ordered = _cut(
-        list(blocks),
-        rtl=rtl,
-        config=config,
-        unit=unit,
-        depth=0,
+    ordered = _cut(list(measured), rtl=rtl, config=config, unit=unit, depth=0)
+
+    if len(measured) == len(blocks):
+        return ordered, ReadingOrderMethod.GEOMETRIC_XY_CUT
+
+    return (
+        _anchor_unmeasured(ordered, blocks),
+        ReadingOrderMethod.GEOMETRIC_ANCHORED,
     )
-    return ordered, ReadingOrderMethod.GEOMETRIC_XY_CUT
+
+
+def _anchor_unmeasured(ordered: list[Block], every: list[Block]) -> list[Block]:
+    """Slot the unmeasured blocks back in, each after its nearest measured predecessor.
+
+    Runs of consecutive unmeasured blocks keep their source order, so a collapsed section's
+    paragraphs stay in the order they were written.
+    """
+    measured_positions = {id(block): index for index, block in enumerate(ordered)}
+    by_source = sorted(every, key=lambda b: b.dom_index)
+
+    following: dict[int, list[Block]] = {}
+    leading: list[Block] = []
+    anchor: Block | None = None
+
+    for block in by_source:
+        if id(block) in measured_positions:
+            anchor = block
+            continue
+        if anchor is None:
+            # Nothing measured precedes it; it goes at the front, before everything.
+            leading.append(block)
+        else:
+            following.setdefault(id(anchor), []).append(block)
+
+    result: list[Block] = list(leading)
+    for block in ordered:
+        result.append(block)
+        result.extend(following.get(id(block), ()))
+    return result
 
 
 def _cut(

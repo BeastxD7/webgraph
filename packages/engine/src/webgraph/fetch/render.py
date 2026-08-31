@@ -38,6 +38,51 @@ except ImportError:  # pragma: no cover
 
 MARKER_ATTRIBUTE: Final[str] = "data-wg-id"
 
+_REVEAL_SCRIPT: Final[str] = """
+() => {
+  // Open content the page collapsed, without clicking anything.
+  //
+  // Accordions, FAQ sections and `<details>` blocks hold real content that no fetch and no
+  // renderer sees, because it is `display:none` until someone interacts. Clicking is the
+  // obvious way to reach it and the wrong one: a click can navigate, submit a form, open a
+  // dialog that blocks the driver, or fire an analytics event on someone else's site.
+  //
+  // Everything here is a property or attribute change on the page's own DOM. Nothing is
+  // clicked, no handler is invoked, and the page cannot navigate as a result.
+  let opened = 0;
+
+  for (const details of document.querySelectorAll('details:not([open])')) {
+    details.open = true;
+    opened++;
+  }
+
+  // ARIA disclosure pattern: a control says what it controls, and the panel says it is
+  // hidden. Both halves are declared by the page, so honouring them is reading the page's
+  // own description of itself rather than guessing at class names.
+  for (const control of document.querySelectorAll('[aria-expanded="false"][aria-controls]')) {
+    const ids = (control.getAttribute('aria-controls') || '').split(/\\s+/);
+    let revealed = false;
+    for (const id of ids) {
+      const panel = document.getElementById(id);
+      if (!panel) continue;
+      panel.removeAttribute('hidden');
+      if (panel.getAttribute('aria-hidden') === 'true') panel.setAttribute('aria-hidden', 'false');
+      const style = window.getComputedStyle(panel);
+      if (style.display === 'none') panel.style.setProperty('display', 'block', 'important');
+      if (style.visibility === 'hidden') panel.style.setProperty('visibility', 'visible', 'important');
+      if (parseFloat(style.height) === 0 && panel.scrollHeight > 0) {
+        panel.style.setProperty('height', 'auto', 'important');
+        panel.style.setProperty('overflow', 'visible', 'important');
+      }
+      revealed = true;
+    }
+    if (revealed) { control.setAttribute('aria-expanded', 'true'); opened++; }
+  }
+
+  return opened;
+}
+"""
+
 MAX_RECORDED_REQUESTS: Final[int] = 400
 """Requests kept for fingerprinting. Only distinct hosts and paths carry information, and
 an asset-heavy page can issue thousands."""
@@ -217,6 +262,13 @@ class RenderConfig:
     hydrating within a few hundred milliseconds of `load`, and measuring before that captures
     the pre-hydration layout."""
 
+    reveal_collapsed: bool = False
+    """Open `<details>` and ARIA disclosure panels before measuring.
+
+    Reaches content the page hides until someone interacts, without clicking anything -- see
+    `_REVEAL_SCRIPT` for why clicking is the wrong tool. Off until measured; see MEMORY.md.
+    """
+
     user_agent: str | None = None
     headless: bool = True
     reuse_browser: bool = True
@@ -318,6 +370,16 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             page.goto(url, timeout=config.timeout_ms, wait_until=config.wait_until)
             if config.settle_ms:
                 page.wait_for_timeout(config.settle_ms)
+
+            if config.reveal_collapsed:
+                try:
+                    revealed = int(page.evaluate(_REVEAL_SCRIPT) or 0)
+                except Exception:
+                    revealed = 0
+                if revealed:
+                    # Let layout settle: opening a panel reflows everything below it, and
+                    # reading order is measured from geometry.
+                    page.wait_for_timeout(250)
 
             payload = dict(page.evaluate(_COLLECT_SCRIPT))
             payload["requests"] = requests

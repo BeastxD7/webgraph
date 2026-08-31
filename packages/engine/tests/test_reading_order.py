@@ -161,14 +161,81 @@ class TestFallback:
         assert texts(ordered) == ["a", "b"]
         assert method is ReadingOrderMethod.DOM_FALLBACK
 
-    def test_partial_geometry_falls_back_entirely(self) -> None:
-        """Mixing measured and assumed positions yields an order that is neither."""
+    def test_a_few_unmeasured_blocks_do_not_discard_the_geometry(self) -> None:
+        """A browser does not measure what it does not display.
+
+        One collapsed `<details>` used to downgrade a whole page: measured across seven real
+        documentation pages, every one fell back, including one where 103 of 108 blocks had
+        been measured.
+        """
         blocks = [
-            block("positioned", 0, 500, dom_index=0),
-            Block(text="unpositioned", tag="p", xpath="/p[2]", dom_index=1),
+            block("first", 0, 0, dom_index=0),
+            block("second", 0, 100, dom_index=1),
+            block("third", 0, 200, dom_index=2),
+            Block(text="collapsed", tag="p", xpath="/p[4]", dom_index=3),
+        ]
+        ordered, method = order_blocks(blocks)
+        assert method is ReadingOrderMethod.GEOMETRIC_ANCHORED
+        assert texts(ordered) == ["first", "second", "third", "collapsed"]
+
+    def test_an_unmeasured_block_follows_its_measured_predecessor(self) -> None:
+        """The body of a collapsed disclosure belongs after the control that opens it, which
+        is exactly where source order puts it."""
+        blocks = [
+            block("intro", 0, 0, dom_index=0),
+            Block(text="hidden panel", tag="p", xpath="/p[2]", dom_index=1),
+            block("outro", 0, 100, dom_index=2),
+        ]
+        ordered, method = order_blocks(blocks)
+        assert method is ReadingOrderMethod.GEOMETRIC_ANCHORED
+        assert texts(ordered) == ["intro", "hidden panel", "outro"]
+
+    def test_anchoring_respects_the_recovered_order_not_source_order(self) -> None:
+        """Measured blocks are placed by geometry; unmeasured ones follow their source-order
+        predecessor into that sequence.
+
+        Here CSS shows the second element first. The collapsed block sits after "visually
+        first" in the source, so that is where it lands -- *between* the two measured blocks
+        in the recovered order, not at the end of it. Source order decides which measured
+        block it attaches to; geometry decides where that block is.
+        """
+        blocks = [
+            block("visually second", 0, 100, dom_index=0),
+            block("visually first", 0, 0, dom_index=1),
+            Block(text="collapsed", tag="p", xpath="/p[3]", dom_index=2),
+        ]
+        ordered, method = order_blocks(blocks)
+        assert method is ReadingOrderMethod.GEOMETRIC_ANCHORED
+        assert texts(ordered) == ["visually first", "collapsed", "visually second"]
+
+    def test_an_unmeasured_block_before_anything_measured_leads(self) -> None:
+        blocks = [
+            Block(text="orphan", tag="p", xpath="/p[1]", dom_index=0),
+            block("a", 0, 0, dom_index=1),
+            block("b", 0, 100, dom_index=2),
+        ]
+        ordered, _ = order_blocks(blocks)
+        assert texts(ordered) == ["orphan", "a", "b"]
+
+    def test_mostly_unmeasured_still_falls_back(self) -> None:
+        """Anchoring a majority of blocks to a minority of measurements would be source order
+        wearing a measurement's name."""
+        blocks = [block("measured", 0, 0, dom_index=0)] + [
+            Block(text=f"u{i}", tag="p", xpath=f"/p[{i + 2}]", dom_index=i + 1)
+            for i in range(5)
         ]
         _ordered, method = order_blocks(blocks)
         assert method is ReadingOrderMethod.DOM_FALLBACK
+
+    def test_a_run_of_unmeasured_blocks_keeps_its_own_order(self) -> None:
+        blocks = [
+            block("intro", 0, 0, dom_index=0),
+            Block(text="p1", tag="p", xpath="/p[2]", dom_index=1),
+            Block(text="p2", tag="p", xpath="/p[3]", dom_index=2),
+            block("outro", 0, 100, dom_index=3),
+        ]
+        ordered, _ = order_blocks(blocks)
+        assert texts(ordered) == ["intro", "p1", "p2", "outro"]
 
 
 class TestRobustness:

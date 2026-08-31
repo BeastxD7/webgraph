@@ -46,13 +46,34 @@ from dataclasses import dataclass
 from typing import Final
 
 DEFAULT_SITES: Final[tuple[str, ...]] = (
+    # Long-form prose, the corpus the reference extractors were tuned on.
     "https://danluu.com/futurist-predictions/",
     "https://simonwillison.net/2025/Sep/6/anthropic-settlement/",
+    "https://blog.cloudflare.com/cloudflare-incident-on-october-4-2023/",
+    "https://jvns.ca/blog/2023/11/10/notes-on-git-error-messages/",
+    # Documentation: heavy on code, tables and definition lists, which is where a
+    # prose-tuned extractor and a structure-preserving one disagree most.
     "https://docs.pytest.org/en/stable/how-to/fixtures.html",
     "https://www.attrs.org/en/stable/examples.html",
     "https://jinja.palletsprojects.com/en/stable/templates/",
     "https://click.palletsprojects.com/en/stable/options/",
+    "https://docs.astro.build/en/guides/markdown-content/",
+    "https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template-areas",
+    # Reference and encyclopaedic.
+    "https://en.wikipedia.org/wiki/Recursion_(computer_science)",
+    "https://peps.python.org/pep-0008/",
+    # Marketing and product pages: short prose, heavy chrome, the opposite failure mode.
+    "https://tailwindcss.com/docs/installation/using-vite",
+    "https://vuejs.org/guide/introduction.html",
+    "https://www.djangoproject.com/start/",
 )
+"""Fifteen pages across four kinds of site.
+
+The original six were all documentation and long-form prose, which flatters a
+structure-preserving extractor on some pages and penalises it on others without saying which.
+Marketing pages carry proportionally far more chrome; encyclopaedic pages carry navigation
+that looks like content. A number over one kind of page is a number about that kind of page.
+"""
 
 SHINGLE: Final[int] = 5
 _WORD = re.compile(r"[a-z0-9]+")

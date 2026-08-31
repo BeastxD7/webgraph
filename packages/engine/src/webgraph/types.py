@@ -68,9 +68,15 @@ class ReadingOrderMethod(StrEnum):
 
     `DOM_FALLBACK` means we had no geometry and assumed source order equals visual order.
     That assumption is wrong on any page using CSS reordering (MEMORY.md D10).
+
+    `GEOMETRIC_ANCHORED` means most blocks were measured and the rest -- collapsed
+    `<details>`, panels behind a disclosure, anything with zero height -- were placed next to
+    their DOM neighbours. Distinct from `GEOMETRIC_XY_CUT` because it is a weaker claim, and
+    this engine's rule is that a weaker claim gets a different name rather than the same one.
     """
 
     GEOMETRIC_XY_CUT = "geometric-xy-cut"
+    GEOMETRIC_ANCHORED = "geometric-anchored"
     DOM_FALLBACK = "dom-fallback"
     SINGLE_BLOCK = "single-block"
 
