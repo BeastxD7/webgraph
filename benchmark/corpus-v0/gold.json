@@ -1,0 +1,138 @@
+{
+  "name": "webgraph cross-site-type extraction benchmark",
+  "version": "0",
+  "notes": [
+    "Snapshots, not live URLs: a benchmark whose answers change underneath it measures nothing.",
+    "Deliberately includes cases the zero-cost structured-data path CANNOT solve (docs_static).",
+    "Those are not padding -- they are the evidence for where a model path is actually required.",
+    "Labels are hand-written from the snapshot content."
+  ],
+  "cases": [
+    {
+      "id": "ecommerce-jsonld",
+      "site_type": "ecommerce",
+      "url": "https://example.com/aurora-desk-lamp",
+      "html": "pages/ecommerce_jsonld.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "sku": { "type": "string" },
+          "description": { "type": "string" },
+          "offers": {
+            "type": "object",
+            "properties": {
+              "price": { "type": "number" },
+              "currency": { "type": "string" }
+            }
+          }
+        }
+      },
+      "expected": {
+        "name": "Aurora Desk Lamp",
+        "sku": "AUR-114",
+        "description": "A warm dimmable desk lamp with a machined aluminium arm.",
+        "offers.price": 129.0,
+        "offers.currency": "GBP"
+      }
+    },
+    {
+      "id": "saas-pricing-microdata",
+      "site_type": "saas",
+      "url": "https://example.com/pricing",
+      "html": "pages/saas_pricing_microdata.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "offers": {
+            "type": "object",
+            "properties": {
+              "price": { "type": "number" },
+              "currency": { "type": "string" }
+            }
+          }
+        }
+      },
+      "expected": {
+        "name": "Team",
+        "description": "For growing engineering teams.",
+        "offers.price": 79.0,
+        "offers.currency": "USD"
+      }
+    },
+    {
+      "id": "news-opengraph",
+      "site_type": "news",
+      "url": "https://example.com/harbour-plan",
+      "html": "pages/news_opengraph.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      },
+      "expected": {
+        "title": "Harbour redevelopment plan approved",
+        "description": "Councillors voted seven to two in favour."
+      }
+    },
+    {
+      "id": "nextjs-hydration",
+      "site_type": "spa-ssr",
+      "url": "https://example.com/course",
+      "html": "pages/nextjs_hydration.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "price": { "type": "number" },
+          "description": { "type": "string" }
+        }
+      },
+      "expected": {
+        "title": "Systems Design Intensive",
+        "price": 349.0,
+        "description": "Eight weeks of applied distributed systems work."
+      }
+    },
+    {
+      "id": "blog-rsc-flight",
+      "site_type": "spa-rsc",
+      "url": "https://example.com/on-slow-tools",
+      "html": "pages/blog_rsc_flight.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "readingMinutes": { "type": "integer" }
+        }
+      },
+      "expected": {
+        "title": "On slow tools",
+        "author": "R. Vance",
+        "readingMinutes": 7
+      }
+    },
+    {
+      "id": "docs-static-no-structured-data",
+      "site_type": "docs",
+      "url": "https://example.com/docs/retries",
+      "html": "pages/docs_static.html",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "defaultRetries": { "type": "integer" }
+        }
+      },
+      "expected": {
+        "title": "Configuring retries",
+        "defaultRetries": 3
+      }
+    }
+  ]
+}

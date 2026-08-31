@@ -1,0 +1,149 @@
+==============================================================================
+ROUTE DISCOVERY BENCHMARK   engine vs real-browser oracle
+==============================================================================
+
+  site                                oracle  engine   recall   static
+  --------------------------------------------------------------------
+  neon.tech                               37      38      0%      0%  <-- GAP
+  solidjs.com                              9       9     22%     11%  <-- GAP
+  www.awwwards.com                       105     108     89%     84%  <-- GAP
+  readymag.com                            16      15     94%      6%  <-- GAP
+  planetscale.com                         74      70     95%     95%  <-- GAP
+  nuxt.com                                28      27     96%     96%  <-- GAP
+  www.instrument.com                      33      32     97%     58%  <-- GAP
+  notion.com                              71     142     97%     97%  <-- GAP
+  docs.pytest.org/en/stable               57      57    100%    100%
+  requests.readthedocs.io/en/latest       16      16    100%    100%
+  flask.palletsprojects.com               67     133    100%    100%
+  fastapi.tiangolo.com                   163     163    100%    100%
+  docs.docker.com                         22      22    100%    100%
+  kubernetes.io                           43      43    100%    100%
+  www.djangoproject.com                   19      19    100%    100%
+  docs.astro.build/en/getting-start      241     241    100%    100%
+  docusaurus.io                           28      28    100%    100%
+  storybook.js.org                        33      33    100%    100%
+  vitest.dev                               8       8    100%    100%
+  prettier.io                             12      12    100%    100%
+  eslint.org                              20      20    100%    100%
+  webpack.js.org                         181     181    100%      7%
+  rollupjs.org                             7       7    100%    100%
+  esbuild.github.io                        8       8    100%    100%
+  redis.io                                84      84    100%     98%
+  www.postgresql.org                      43      43    100%    100%
+  www.sqlite.org/index.html               38      38    100%    100%
+  caddyserver.com                         28      28    100%    100%
+  docs.pydantic.dev/latest                 1      98    100%    100%
+  numpy.org                               25      25    100%    100%
+  pandas.pydata.org                       29      29    100%    100%
+  scikit-learn.org/stable                 54      54    100%     89%
+  jestjs.io                               22      22    100%    100%
+  playwright.dev                          19      19    100%    100%
+  tanstack.com                            38      42    100%    100%
+  trpc.io                                 15      15    100%    100%
+  zod.dev                                 39      39    100%    100%
+  orm.drizzle.team                        96      96    100%    100%
+  nextjs.org                              22      22    100%      0%
+  astro.build                             53      53    100%    100%
+  svelte.dev                              11      11    100%    100%
+  vuejs.org                               29      30    100%     62%
+  tailwindcss.com                         11      11    100%    100%
+  www.rust-lang.org                       16      32    100%    100%
+  go.dev                                  42      42    100%     98%
+  elixir-lang.org                         10      10    100%    100%
+  gohugo.io                                3       3    100%    100%
+  jekyllrb.com                             8       8    100%    100%
+  www.11ty.dev                           126     126    100%    100%
+  bun.sh                                  55      55    100%    100%
+  deno.com                                14      14    100%    100%
+  htmx.org                                11      11    100%    100%
+  alpinejs.dev                             2       3    100%    100%
+  remix.run                                5       5    100%     40%
+  qwik.dev                                15      15    100%    100%
+  lit.dev                                 10      10    100%    100%
+  linear.app                              46      46    100%    100%
+  posthog.com                             46      46    100%    100%
+  supabase.com                            64      64    100%    100%
+  resend.com                              39      40    100%    100%
+  cal.com                                 48      54    100%     98%
+  plausible.io                            44      44    100%    100%
+  httpie.io                               15      15    100%    100%
+  persyn.ai                               12      16    100%     17%
+  vercel.com                               -       - no oracle
+  netlify.com                              -       - no oracle
+  render.com                               -       - no oracle
+  fly.io                                  32      32    100%    100%
+  clerk.com                               39      39    100%    100%
+  stripe.com                             112     113    100%    100%
+  sentry.io                               51      51    100%    100%
+  retool.com                              60      60    100%     78%
+  airtable.com                            90      96    100%    100%
+  www.behance.net                          -       - no oracle
+  dribbble.com                             -       - no oracle
+  www.pentagram.com                      153     177    100%    100%
+  www.hugeinc.com                         22      22    100%    100%
+  www.workandco.com                        -       - no oracle
+  basicagency.com                         30      60    100%    100%
+  www.ueno.co                              6       6    100%    100%
+  www.webflow.com                         90     124    100%    100%
+  www.framer.com                         104     126    100%     99%
+  www.figma.com                           92      92    100%     99%
+  www.squarespace.com                    138     138    100%     92%
+  www.cargo.site                           5      11    100%    100%
+  books.toscrape.com                      73      73    100%    100%
+  quotes.toscrape.com                     47      47    100%    100%
+  www.shopify.com                        157     157    100%    100%
+  www.etsy.com                             -       - no oracle
+  www.allbirds.com                        61      61    100%     80%
+  www.smashingmagazine.com               107     107    100%    100%
+  css-tricks.com                         128     128    100%    100%
+  overreacted.io                          59      59    100%    100%
+  simonwillison.net                      196     197    100%    100%
+  danluu.com                             118     118    100%    100%
+  traefik.io                              57      57    100%     98%
+  ghost.org                               64      64    100%    100%
+  wordpress.org                           26      26    100%    100%
+  www.ionidea.com                         16      16    100%    100%
+  nginx.org                               18      18    100%    100%
+
+  sites scored          93
+  perfect recall        85/93
+  mean recall (engine)  97.7%
+  mean recall (static)  91.4%   <- what static alone would score
+
+MISSED ROUTES
+------------------------------------------------------------------------------
+  https://nuxt.com/  (1 missed)
+     https://nuxt.com/login?redirect=%2F
+  https://solidjs.com/  (7 missed)
+     https://www.solidjs.com/blog/solid-2-0-rc-the-big-reveal
+     https://www.solidjs.com/cdn-cgi/content?id=KfL18.ObGh.N7FpiM9_ev1InVdQvBWMwTD7r9unCHzg-1788194620.209963-1.2.1.1-6z7uU4Eh1mgmv..4Uci8NVALHTjb3nSPkX0lLQu23EGVAYcSFSj.jy7iwO4UxfNA
+     https://www.solidjs.com/contributors
+     https://www.solidjs.com/ecosystem
+     https://www.solidjs.com/examples
+     https://www.solidjs.com/store
+  https://planetscale.com/  (4 missed)
+     https://planetscale.com/legal/cookies
+     https://planetscale.com/legal/patents
+     https://planetscale.com/legal/privacy
+     https://planetscale.com/legal/siteterms
+  https://neon.tech/  (37 missed)
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=about-us
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=blog
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=branching
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=case-studies
+     https://neon.tech/unify?a=cd7328fc-de37-47df-ad69-ca5e0c1277ea&n=contact-sales
+  https://notion.com/  (2 missed)
+     https://www.notion.com/login?from=marketing&pathname=%2F&tid=e93a7417f1714ee8981902a1a20c3bf8
+     https://www.notion.com/signup?from=marketing&pathname=%2F&tid=e93a7417f1714ee8981902a1a20c3bf8
+  https://www.awwwards.com/  (12 missed)
+     https://www.awwwards.com/Lumina-Design/
+     https://www.awwwards.com/Vasav96/
+     https://www.awwwards.com/about-us/
+     https://www.awwwards.com/active_theory/
+     https://www.awwwards.com/awwwards_collections/collections/horizontal-layout-websites/
+     https://www.awwwards.com/contact-us/
+  https://www.instrument.com/  (1 missed)
+     https://www.instrument.com/latest/little-black-book-instrument-s-work-for-oura-wins-over-30-awards-across-2025-26
+  https://readymag.com/  (1 missed)
+     https://readymag.com/readymag/terms-and-privacy/2/

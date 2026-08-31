@@ -1,0 +1,119 @@
+# Route-discovery benchmark corpus — 100 sites.
+#
+# Weighted toward what breaks crawlers, not what flatters them: creative/agency sites
+# (Webflow, Framer, heavy JS), client-rendered SPAs, and docs sites with generated
+# navigation. A corpus of well-behaved static sites measures nothing.
+
+# --- documentation ---
+https://docs.pytest.org/en/stable/
+https://requests.readthedocs.io/en/latest/
+https://flask.palletsprojects.com/
+https://fastapi.tiangolo.com/
+https://docs.docker.com/
+https://kubernetes.io/
+https://www.djangoproject.com/
+https://docs.astro.build/en/getting-started/
+https://docusaurus.io/
+https://storybook.js.org/
+https://vitest.dev/
+https://prettier.io/
+https://eslint.org/
+https://webpack.js.org/
+https://rollupjs.org/
+https://esbuild.github.io/
+https://redis.io/
+https://www.postgresql.org/
+https://www.sqlite.org/index.html
+https://caddyserver.com/
+https://docs.pydantic.dev/latest/
+https://numpy.org/
+https://pandas.pydata.org/
+https://scikit-learn.org/stable/
+https://jestjs.io/
+https://playwright.dev/
+https://tanstack.com/
+https://trpc.io/
+https://zod.dev/
+https://orm.drizzle.team/
+
+# --- frameworks / language sites ---
+https://nextjs.org/
+https://astro.build/
+https://svelte.dev/
+https://vuejs.org/
+https://tailwindcss.com/
+https://www.rust-lang.org/
+https://go.dev/
+https://elixir-lang.org/
+https://gohugo.io/
+https://jekyllrb.com/
+https://www.11ty.dev/
+https://bun.sh/
+https://deno.com/
+https://htmx.org/
+https://alpinejs.dev/
+https://remix.run/
+https://nuxt.com/
+https://qwik.dev/
+https://solidjs.com/
+https://lit.dev/
+
+# --- SaaS / product marketing ---
+https://linear.app/
+https://posthog.com/
+https://supabase.com/
+https://resend.com/
+https://cal.com/
+https://plausible.io/
+https://httpie.io/
+https://persyn.ai/
+https://vercel.com/
+https://netlify.com/
+https://render.com/
+https://fly.io/
+https://planetscale.com/
+https://neon.tech/
+https://clerk.com/
+https://stripe.com/
+https://sentry.io/
+https://retool.com/
+https://airtable.com/
+https://notion.com/
+
+# --- creative / agency / portfolio (Webflow, Framer, heavy JS) ---
+https://www.awwwards.com/
+https://www.behance.net/
+https://dribbble.com/
+https://www.pentagram.com/
+https://www.instrument.com/
+https://www.hugeinc.com/
+https://www.workandco.com/
+https://basicagency.com/
+https://www.ueno.co/
+https://www.webflow.com/
+https://www.framer.com/
+https://www.figma.com/
+https://readymag.com/
+https://www.squarespace.com/
+https://www.cargo.site/
+
+# --- ecommerce / retail ---
+https://books.toscrape.com/
+https://quotes.toscrape.com/
+https://www.shopify.com/
+https://www.etsy.com/
+https://www.allbirds.com/
+
+# --- content / news / blogs ---
+https://www.smashingmagazine.com/
+https://css-tricks.com/
+https://overreacted.io/
+https://simonwillison.net/
+https://danluu.com/
+
+# --- infrastructure / misc ---
+https://traefik.io/
+https://ghost.org/
+https://wordpress.org/
+https://www.ionidea.com/
+https://nginx.org/

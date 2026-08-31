@@ -1,0 +1,6 @@
+{"site": "https://dribbble.com/", "chrome_l1": 127, "chrome_deep": 538, "note": "playwright: blocked"}
+{"site": "https://render.com/", "chrome_l1": 51, "chrome_deep": 169, "note": "playwright: blocked"}
+{"site": "https://vercel.com/", "chrome_l1": 78, "chrome_deep": null, "note": "playwright: blocked"}
+{"site": "https://www.behance.net/", "chrome_l1": 154, "chrome_deep": 428, "note": "playwright: blocked"}
+{"site": "https://www.ionidea.com/", "chrome_l1": 16, "chrome_deep": 63, "note": "playwright depth-2: 61 (agrees)"}
+{"site": "https://www.netlify.com/", "chrome_l1": 51, "chrome_deep": null, "note": "playwright: blocked"}
