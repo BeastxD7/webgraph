@@ -31,6 +31,18 @@ export default function PageList({
     );
   }, [candidates, query]);
 
+  // Some sites put the project name in every `<h1>`, so a whole crawl arrives titled
+  // "attrs: Classes Without Boilerplate". A title shared by several pages identifies none of
+  // them, so those rows fall back to showing their path as well.
+  const ambiguous = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const page of pages) {
+      const title = page.title.trim();
+      if (title) counts.set(title, (counts.get(title) ?? 0) + 1);
+    }
+    return new Set([...counts].filter(([, count]) => count > 1).map(([title]) => title));
+  }, [pages]);
+
   const download = useCallback(() => {
     const body = pages
       .filter((page) => page.ok)
@@ -109,6 +121,7 @@ export default function PageList({
               page={page}
               query={query.trim()}
               contentOnly={contentOnly}
+              showPath={ambiguous.has(page.title.trim())}
             />
           ))}
         </ul>

@@ -41,3 +41,21 @@ those for any ordering or ranking logic.
   **Trade-off accepted:** `huge_tree` disables libxml2's resource guards, and crawler input
   is untrusted. Compensated with `MAX_DOCUMENT_BYTES = 32 MB` checked before parsing.
   **Status:** fixed and regression-tested at depths 300 and 800.
+
+### D54 — The landing page scrolled sideways on a phone, and no screenshot showed it
+
+Asserting `document.scrollWidth <= clientWidth` at 320, 390 and 768 pixels found a real
+failure the desktop view could never show: the landing page rendered a **467-pixel document
+inside a 390-pixel viewport**.
+
+Cause, and it recurs: a grid or flex item defaults to `min-width: auto`, so it refuses to
+shrink below its widest child. One `<pre>` of shell commands in a two-column section held the
+whole page open. `min-w-0` on the grid children fixes it.
+
+Now `make check-responsive` (`tools/check_responsive.py`), which names the offending elements
+with their class lists and skips anything a clipping ancestor already contains -- a
+decorative image scaled past its frame is not why a document scrolls.
+
+Also fixed alongside: attrs' documentation puts the project name in every `<h1>`, so a whole
+crawl arrived titled "attrs: Classes Without Boilerplate". A title shared by several pages
+identifies none of them, and those rows now show their path as well.

@@ -9,7 +9,11 @@ export default function Evidence() {
   return (
     <section id="evidence" className="mx-auto w-full max-w-6xl scroll-mt-20 px-5 py-20 sm:px-8">
       <div className="grid gap-10 md:grid-cols-[1fr_1.1fr] md:items-center md:gap-16">
-        <div>
+        {/* `min-w-0` is load-bearing. A grid item defaults to `min-width: auto`, so it
+            refuses to shrink below its widest child -- here the code block -- and pushes the
+            whole page into horizontal scroll on a phone. Measured at 390px: the document
+            scrolled to 467px wide before this. */}
+        <div className="min-w-0">
           <h2 className="font-display text-[clamp(1.9rem,4.5vw,2.9rem)] leading-tight">
             Every claim here is a number you can re-run
           </h2>
@@ -24,9 +28,9 @@ make bench-routes   # route discovery vs browser oracle`}
           </pre>
         </div>
 
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
+        <dl className="grid min-w-0 grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line">
           {NUMBERS.map((item) => (
-            <div key={item.label} className="bg-surface p-6">
+            <div key={item.label} className="min-w-0 bg-surface p-6">
               <dt className="tabular font-display text-[clamp(1.8rem,5vw,2.6rem)] leading-none">
                 {item.value}
               </dt>

@@ -24,10 +24,13 @@ export default function PageRow({
   page,
   query,
   contentOnly,
+  showPath = false,
 }: {
   page: PageEvent;
   query: string;
   contentOnly: boolean;
+  /** True when other pages share this title, so the title alone identifies nothing. */
+  showPath?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -50,7 +53,8 @@ export default function PageRow({
       .replace(/\s+/g, " ")}…`;
   }, [page.markdown, query]);
 
-  const label = page.title || page.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+  const path = page.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+  const label = page.title ? (showPath ? `${page.title} — ${path}` : page.title) : path;
 
   return (
     <li className="border-b border-line last:border-b-0">

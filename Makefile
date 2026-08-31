@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint bench bench-content clean
+.PHONY: help install api web dev test lint bench bench-content check-responsive clean
 
 help:
 	@echo "webgraph — development commands"
@@ -38,6 +38,9 @@ lint:
 
 bench:
 	cd packages/engine && uv run webgraph bench ../../benchmark/corpus-v0
+
+check-responsive:
+	uv run --package webgraph python tools/check_responsive.py
 
 bench-content:
 	cd packages/engine && uv run --group bench python ../../benchmark/content_quality/run.py
