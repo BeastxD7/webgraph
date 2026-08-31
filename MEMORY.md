@@ -1042,3 +1042,31 @@ Upgrade notes, each of which broke the build:
 
 **Dropped deliberately:** the "Limit pages" control. Unlimited is the point (D21); Stop
 covers the rest, and `?max=` is still honoured for scripted use.
+
+### D34 — Bundled frameworks have no global; read the DOM instead
+
+persyn.ai reported four technologies where Wappalyzer reported seventeen. The interesting
+misses were React and React Router, and the reason is structural: a Vite build exposes **no
+`window.React`**, and the only mention of React anywhere in the markup was inside a
+Content-Security-Policy *comment* — exactly the prose a rule must never match.
+
+React does leave private properties on the DOM nodes it owns (`__reactContainer$…`,
+`__reactFiber$…`). The browser-side collector now scans the first few dozen elements under
+`body` / `#root` / `#app` for those keys, and does the same for Preact (`__preactattr_`),
+Vue (`el.__vue_app__`), Svelte (`__svelte_meta`) and React Router
+(`__reactRouterContext`, `data-discover`). That is evidence the framework is *running*.
+
+Presence without a version needs a representation: the collector returns the sentinel
+`"present"`, and any reported value not starting with a digit is treated as no version.
+
+Markup rules added for libraries that ship as modules with no global — Lucide
+(`class="lucide lucide-*"`), Lenis, Radix (`data-radix-*`), shadcn (`data-slot`), PostHog,
+Tinybird — plus the standards Wappalyzer reports: Open Graph, PWA, Priority Hints, HTTP/3.
+
+Tailwind is the one worth explaining. A keyword match fires on any page that writes the
+word. The rule instead requires a **responsive-prefixed utility** inside a `class`
+attribute (`md:grid-cols-3`); no other framework puts `md:` in a class name.
+
+persyn.ai: 4 detected -> **15**, matching 13 of Wappalyzer's 17. The four still missed are
+Radix, shadcn, Tinybird and Cloudflare Bot Management, all of which appear only after an
+interaction or a later request rather than in the homepage's rendered DOM.

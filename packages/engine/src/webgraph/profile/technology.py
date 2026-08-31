@@ -51,6 +51,7 @@ CATEGORIES: Final[tuple[str, ...]] = (
     "Security",
     "Marketing",
     "Hosting",
+    "Performance",
     "Miscellaneous",
 )
 
@@ -132,6 +133,36 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Netlify", "Hosting", header=("server", r"Netlify")),
     _rule("GitHub Pages", "Hosting", header=("server", r"GitHub\.com")),
     _rule("Amazon S3", "Hosting", header=("server", r"AmazonS3")),
+
+    # --- Component libraries, icon sets and scroll/motion runtimes ---
+    # Anchored to the attributes these libraries actually emit. A page that merely writes
+    # about Radix or Lucide has no `data-radix-*` attribute and no `class="lucide ..."`.
+    _rule("Radix UI", "UI frameworks", html=r"data-radix-[a-z-]+"),
+    _rule("shadcn/ui", "UI frameworks", html=r"data-slot=[\"'][a-z][a-z-]*[\"']", confidence=70),
+    _rule("Lucide", "Font scripts", html=r"class=[\"'][^\"']*\blucide\s+lucide-[a-z-]+"),
+    _rule("Lenis", "JavaScript libraries", html=r"class=[\"'][^\"']*\blenis\b"),
+    # Responsive-prefixed utilities are close to unique to Tailwind; no other framework
+    # puts `md:` in a class name. Matching a single utility keyword would fire on prose.
+    _rule(
+        "Tailwind CSS",
+        "UI frameworks",
+        html=r"class=[\"'][^\"']*\b(?:sm|md|lg|xl|2xl):[a-z][a-z0-9-]*(?:-[a-z0-9./\[\]]+)?\b",
+        confidence=85,
+    ),
+
+    # --- Product analytics loaded as modules (no global to probe) ---
+    _rule("PostHog", "Analytics", html=r"posthog\.init\(|(?:src|href)=[\"'][^\"']*posthog"),
+    _rule("PostHog", "Analytics", html=r"(?:us|eu)-assets\.i\.posthog\.com", confidence=70),
+    _rule("Tinybird", "Analytics", html=r"(?:src|href)=[\"'][^\"']*tinybird|api\.tinybird\.co"),
+    _rule("Plausible", "Analytics", html=r"(?:src|href)=[\"'][^\"']*plausible\.io"),
+    _rule("Umami", "Analytics", html=r"(?:src|href)=[\"'][^\"']*umami"),
+    _rule("Vercel Analytics", "Analytics", html=r"(?:src|href)=[\"'][^\"']*/_vercel/insights"),
+
+    # --- Standards a page either implements or does not ---
+    _rule("Open Graph", "Miscellaneous", html=r"<meta[^>]+property=[\"']og:"),
+    _rule("PWA", "Miscellaneous", html=r"<link[^>]+rel=[\"']manifest[\"']"),
+    _rule("Priority Hints", "Performance", html=r"fetchpriority=[\"'](?:high|low)[\"']"),
+    _rule("HTTP/3", "Performance", header=("alt-svc", r"h3")),
 
     # --- Security ---
     _rule("HSTS", "Security", header=("strict-transport-security", r".")),
@@ -268,12 +299,25 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
 )
 
 
+_RUNTIME_CATEGORIES: Final[dict[str, str]] = {
+    "React": "JavaScript frameworks",
+    "Preact": "JavaScript frameworks",
+    "Vue.js": "JavaScript frameworks",
+    "Svelte": "JavaScript frameworks",
+    "Angular": "JavaScript frameworks",
+    "React Router": "JavaScript frameworks",
+    "Framer Motion": "JavaScript libraries",
+    "Three.js": "JavaScript libraries",
+}
+"""Categories for technologies that are only ever seen at runtime, so have no markup rule."""
+
+
 def _category_for(name: str) -> str:
     """Category for a technology known only from a runtime global."""
     for rule in TECH_RULES:
         if rule.name == name:
             return rule.category
-    return "JavaScript libraries"
+    return _RUNTIME_CATEGORIES.get(name, "JavaScript libraries")
 
 
 def _version_from(match: re.Match[str]) -> str | None:
@@ -351,11 +395,15 @@ def detect_technologies(
             evidence=evidence,
         )
 
-    # Runtime globals are authoritative for versions, and also prove a library is actually
-    # loaded rather than merely referenced in markup.
-    for name, version in (runtime_globals or {}).items():
+    # Runtime globals are authoritative, and are the *only* evidence for a bundled
+    # framework: a Vite build of React exposes no `window.React`, so detection relies on the
+    # private properties React leaves on the DOM nodes it owns.
+    for name, reported in (runtime_globals or {}).items():
         existing = found.get(name)
         category = existing.category if existing else _category_for(name)
+        # A value that does not start with a digit is the browser side's "loaded, but the
+        # library exposes no version" sentinel, not a version string.
+        version = reported if reported[:1].isdigit() else None
         found[name] = Technology(
             name=name,
             category=category,

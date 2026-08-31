@@ -192,3 +192,55 @@ class TestFalsePositives:
         """The guard must not suppress genuine usage."""
         html = '<script src="https://cdn.segment.com/analytics.js/v1/abc/analytics.min.js"></script>'
         assert "Segment" in names(detect_technologies(html))
+
+
+class TestBundledFrameworks:
+    """A bundled framework exposes no global at all.
+
+    A Vite build of React has no `window.React`; the browser side reports it from the
+    private properties React leaves on the DOM nodes it owns, and has no version to give.
+    The sentinel must not become a version string.
+    """
+
+    def test_presence_sentinel_is_not_a_version(self) -> None:
+        found = {t.name: t for t in detect_technologies("", None, {"React": "present"})}
+        assert found["React"].version is None
+
+    def test_numeric_report_is_still_a_version(self) -> None:
+        found = {t.name: t for t in detect_technologies("", None, {"React Router": "6"})}
+        assert found["React Router"].version == "6"
+
+    def test_runtime_only_names_get_a_real_category(self) -> None:
+        found = {t.name: t for t in detect_technologies("", None, {"React": "present"})}
+        assert found["React"].category == "JavaScript frameworks"
+
+
+class TestComponentLibraryRules:
+    """These fire on emitted attributes, never on prose."""
+
+    def test_tailwind_needs_a_responsive_prefix(self) -> None:
+        names = {t.name for t in detect_technologies('<div class="md:grid-cols-3 flex">x</div>')}
+        assert "Tailwind CSS" in names
+
+    def test_the_word_tailwind_alone_does_not_count(self) -> None:
+        names = {t.name for t in detect_technologies("<p>We rebuilt the site in Tailwind CSS.</p>")}
+        assert "Tailwind CSS" not in names
+
+    def test_lucide_needs_the_icon_class_not_the_word(self) -> None:
+        used = {t.name for t in detect_technologies('<svg class="lucide lucide-arrow-right">')}
+        mentioned = {t.name for t in detect_technologies("<p>We use lucide for icons.</p>")}
+        assert "Lucide" in used
+        assert "Lucide" not in mentioned
+
+    def test_radix_needs_its_data_attribute(self) -> None:
+        names = {t.name for t in detect_technologies('<div data-radix-popper-content-wrapper>')}
+        assert "Radix UI" in names
+
+    def test_open_graph_and_pwa_are_read_from_link_and_meta(self) -> None:
+        names = {
+            t.name
+            for t in detect_technologies(
+                '<meta property="og:title" content="x"><link rel="manifest" href="/m.json">'
+            )
+        }
+        assert {"Open Graph", "PWA"} <= names

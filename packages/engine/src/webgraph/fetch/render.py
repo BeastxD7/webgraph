@@ -71,6 +71,9 @@ _COLLECT_SCRIPT: Final[str] = """
   // version in its filename, but `jQuery.fn.jquery` reports it exactly. Reading these while
   // the page is live is the only reliable way to get them.
   const globals = {};
+  // Sentinel for "this is loaded but exposes no version". The Python side treats any value
+  // that does not begin with a digit as presence without a version.
+  const PRESENT = 'present';
   const probe = (name, fn) => { try { const v = fn(); if (v) globals[name] = String(v); } catch (e) {} };
 
   probe('jQuery', () => window.jQuery && window.jQuery.fn && window.jQuery.fn.jquery);
@@ -85,6 +88,51 @@ _COLLECT_SCRIPT: Final[str] = """
   probe('GSAP', () => window.gsap && window.gsap.version);
   probe('Next.js', () => window.next && window.next.version);
   probe('Swiper', () => window.Swiper && window.Swiper.version);
+  probe('PostHog', () => window.posthog && (window.posthog.version || window.posthog.config ? (window.posthog.version || PRESENT) : null));
+  probe('Lenis', () => window.Lenis && (window.Lenis.version || PRESENT));
+  probe('core-js', () => window['__core-js_shared__'] && PRESENT);
+  probe('Alpine.js', () => window.Alpine && (window.Alpine.version || PRESENT));
+  probe('Three.js', () => window.THREE && (window.THREE.REVISION || PRESENT));
+  probe('Framer Motion', () => window.__FRAMER_MOTION__ && PRESENT);
+
+  // Bundled frameworks expose no global at all -- a Vite build of React has no
+  // `window.React`. They do leave private properties on the DOM nodes they own, which is
+  // the only honest evidence that the framework is *running* rather than merely mentioned.
+  const domKeyed = (prefixes) => {
+    const roots = [document.body, document.getElementById('root'), document.getElementById('app')];
+    const seen = [];
+    for (const root of roots) {
+      if (!root) continue;
+      seen.push(root);
+      for (let i = 0; i < root.children.length && seen.length < 40; i++) seen.push(root.children[i]);
+    }
+    for (const el of seen) {
+      for (const key of Object.keys(el)) {
+        for (const prefix of prefixes) {
+          if (key.startsWith(prefix)) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  probe('React', () => {
+    if (window.React && window.React.version) return window.React.version;
+    return domKeyed(['__reactContainer$', '__reactFiber$', '__reactProps$', '__reactInternalInstance$'])
+      ? PRESENT : null;
+  });
+  probe('Preact', () => domKeyed(['__preactattr_', '_prevVNode', '__k']) && !window.React ? PRESENT : null);
+  probe('Vue.js', () => {
+    if (window.Vue && window.Vue.version) return window.Vue.version;
+    const el = document.querySelector('#app, [data-v-app]');
+    return el && el.__vue_app__ ? (el.__vue_app__.version || PRESENT) : null;
+  });
+  probe('Svelte', () => document.querySelector('[class*=svelte-]') || domKeyed(['__svelte_meta']) ? PRESENT : null);
+  probe('React Router', () => {
+    if (window.__reactRouterVersion) return String(window.__reactRouterVersion);
+    if (window.__reactRouterContext || window.__staticRouterHydrationData) return PRESENT;
+    return document.querySelector('[data-discover="true"]') ? PRESENT : null;
+  });
 
   return { rects, html: document.documentElement.outerHTML, globals };
 }
