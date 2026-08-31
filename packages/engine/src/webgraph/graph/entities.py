@@ -116,7 +116,10 @@ def derive_page_subjects(graph: SiteGraph) -> int:
         if link.target not in graph.pages:
             continue
         bucket = inbound.setdefault(link.target, Counter())
-        for anchor in link.anchors:
+        # Fragment-free anchors only. A link to `/api/#jinja2.Undefined` names that section,
+        # and once the fragment is stripped it lands on the same edge as a link to `/api/` --
+        # which produced the subject "Environment, also called Undefined".
+        for anchor in link.page_anchors:
             name = " ".join(anchor.split())
             if _usable_name(name):
                 # Counted once per source page, so a footer link repeated across a template

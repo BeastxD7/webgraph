@@ -133,6 +133,17 @@ class Link:
     source: str
     target: str
     anchors: tuple[str, ...] = ()
+    """Every anchor text used for this edge, fragment links included."""
+
+    page_anchors: tuple[str, ...] = ()
+    """Anchors from links with **no fragment**, so they name the page rather than a section.
+
+    `/api/#jinja2.Undefined` and `/api/` are the same page once the fragment is stripped, so
+    both anchors land on the same edge. That is right for expansion -- the section is on that
+    page either way -- and wrong for naming the page's subject, where it produced
+    "Environment, also called Undefined".
+    """
+
     count: int = 1
 
 
@@ -230,28 +241,49 @@ class SiteGraph:
     def add_section(self, section: Section) -> None:
         self.sections[section.id] = section
 
-    def add_link(self, source: str, target: str, anchor: str = "") -> None:
+    def add_link(
+        self, source: str, target: str, anchor: str = "", *, to_fragment: bool = False
+    ) -> None:
         """Record a hyperlink. Repeats accumulate a count and collect distinct anchors."""
         if source == target:
             return
         key = (source, target)
+        # Adjacency first, and unconditionally: an early return in the new-link branch once
+        # skipped this, and every link_specificity collapsed to the same value because
+        # nothing was ever recorded as linked-from.
+        self.links_to[source].add(target)
+        self.linked_from[target].add(source)
+
         existing = self.links.get(key)
+        clean = anchor.strip()
         if existing is None:
             self.links[key] = Link(
                 source=source,
                 target=target,
-                anchors=(anchor,) if anchor.strip() else (),
+                anchors=(anchor,) if clean else (),
+                page_anchors=(anchor,) if clean and not to_fragment else (),
                 count=1,
             )
-        else:
-            anchors = existing.anchors
-            if anchor.strip() and anchor not in anchors and len(anchors) < MAX_ANCHORS:
-                anchors = (*anchors, anchor)
-            self.links[key] = Link(
-                source=source, target=target, anchors=anchors, count=existing.count + 1
-            )
-        self.links_to[source].add(target)
-        self.linked_from[target].add(source)
+            return
+
+        anchors = existing.anchors
+        if clean and anchor not in anchors and len(anchors) < MAX_ANCHORS:
+            anchors = (*anchors, anchor)
+        page_anchors = existing.page_anchors
+        if (
+            clean
+            and not to_fragment
+            and anchor not in page_anchors
+            and len(page_anchors) < MAX_ANCHORS
+        ):
+            page_anchors = (*page_anchors, anchor)
+        self.links[key] = Link(
+            source=source,
+            target=target,
+            anchors=anchors,
+            page_anchors=page_anchors,
+            count=existing.count + 1,
+        )
 
     def add_entity(self, entity: Entity) -> None:
         existing = self.entities.get(entity.key)

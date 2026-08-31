@@ -209,7 +209,13 @@ class GraphBuilder:
                 continue
             # Canonical form on both sides: `/a` and `/a/` are one page, and an edge that
             # distinguishes them would fragment the neighbourhood of every URL.
-            self.graph.add_link(key, _canonical(target), anchor)
+            self.graph.add_link(
+                key,
+                _canonical(target),
+                anchor,
+                # A link to a fragment names the section it points at, not the page.
+                to_fragment="#" in href,
+            )
 
         # Which section each link sat in. Sections carry rich Markdown, so the links are
         # already in the text as `[label](url)` -- no second parse of the HTML is needed,

@@ -407,6 +407,92 @@ async def site_context(request: ContextRequest) -> ContextResponse:
     )
 
 
+class GraphEntity(BaseModel):
+    key: str
+    type: str
+    name: str
+    aliases: list[str]
+    pages: list[str]
+
+
+class GraphHub(BaseModel):
+    url: str
+    title: str
+    inbound: int
+    outbound: int
+    sections: int
+    specificity: float
+
+
+class GraphSummary(BaseModel):
+    root: str
+    counts: dict[str, int]
+    entities: list[GraphEntity]
+    hubs: list[GraphHub]
+    deepest: list[str]
+
+
+@app.get("/api/site/graph/summary", response_model=GraphSummary)
+async def site_graph_summary(url: str, limit: int = 24) -> GraphSummary:
+    """What the crawl learned about how the site is put together.
+
+    Hubs are ranked by inbound links, which is the site telling you what it considers
+    central. `specificity` is the inverse: a page linked from everything is navigation, and
+    showing both together is what distinguishes the two.
+    """
+    builder = _recall_graph(url)
+    if builder is None:
+        raise HTTPException(status_code=404, detail=f"No graph for {url}. Crawl it first.")
+
+    graph = builder.graph
+    if not graph.entities and graph.sections:
+        derive_entities(graph)
+
+    hubs = sorted(
+        graph.pages.values(),
+        key=lambda page: (
+            -len(graph.linked_from.get(page.key, ())),
+            -len(page.section_ids),
+        ),
+    )[:limit]
+
+    return GraphSummary(
+        root=graph.root,
+        counts=graph.describe(),
+        entities=[
+            GraphEntity(
+                key=entity.key,
+                type=entity.type,
+                name=entity.name or entity.key,
+                aliases=[str(a) for a in (entity.data.get("aliases") or [])][:4],
+                pages=[
+                    graph.pages[key].url for key in entity.pages if key in graph.pages
+                ][:4],
+            )
+            for entity in sorted(
+                graph.entities.values(), key=lambda e: (-e.page_count, e.name)
+            )[:limit]
+        ],
+        hubs=[
+            GraphHub(
+                url=page.url,
+                title=page.title,
+                inbound=len(graph.linked_from.get(page.key, ())),
+                outbound=len(graph.links_to.get(page.key, ())),
+                sections=len(page.section_ids),
+                specificity=round(graph.link_specificity(page.key), 3),
+            )
+            for page in hubs
+        ],
+        deepest=[
+            graph.pages[key].url
+            for key in sorted(
+                graph.pages, key=lambda k: -graph.pages[k].depth
+            )[:8]
+        ],
+    )
+
+
 @app.get("/api/site/graph")
 async def site_graph(url: str) -> StreamingResponse:
     """Stream the site graph as JSON Lines, for loading elsewhere.

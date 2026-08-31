@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import AskPanel from "./AskPanel";
+import GraphPanel from "./GraphPanel";
 import PageList from "./PageList";
 import ProgressRail from "./ProgressRail";
 import RunSummary from "./RunSummary";
@@ -99,6 +100,24 @@ export default function SiteRun({
         onSelect={setTab}
       />
 
+      <div className="flex flex-wrap gap-2">
+        {(["extracted", "graph"] as const).map((view) => (
+          <button
+            key={view}
+            type="button"
+            aria-pressed={tab === view}
+            onClick={() => setTab(view)}
+            className={
+              tab === view
+                ? "rounded-full bg-ink px-3.5 py-1.5 text-[12.5px] font-bold text-inverse"
+                : "rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-soft transition-colors hover:bg-haze"
+            }
+          >
+            {view === "extracted" ? "Pages" : "Site graph"}
+          </button>
+        ))}
+      </div>
+
       {run.analysis && <TechnologyPanel analysis={run.analysis} />}
 
       {run.summary && <RunSummary summary={run.summary} />}
@@ -133,6 +152,8 @@ export default function SiteRun({
               : "No page was extracted."}
           </p>
         ))}
+
+      {tab === "graph" && <GraphPanel siteUrl={url} />}
 
       {tab === "failed" &&
         (failedPages.length > 0 ? (

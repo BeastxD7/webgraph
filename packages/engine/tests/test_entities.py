@@ -133,3 +133,47 @@ class TestDeriveEntities:
         first = builder.graph.describe()
         derive_entities(builder.graph)
         assert builder.graph.describe() == first
+
+
+class TestFragmentAnchors:
+    """A link to a fragment names the section it points at, not the page.
+
+    `/api/#jinja2.Undefined` and `/api/` land on the same edge once the fragment is stripped
+    -- right for expansion, since the section is on that page either way, and wrong for
+    naming the page's subject. Live output read "Environment, also called Undefined".
+    """
+
+    def test_fragment_anchors_do_not_name_the_page(self) -> None:
+        builder = GraphBuilder(BASE)
+        for source in ("a", "b"):
+            builder.add(
+                build_document(
+                    f'<html><body><h1>{source}</h1><p>{"text " * 40}'
+                    '<a href="/api/#Undefined">Undefined</a></p></body></html>',
+                    f"{BASE}{source}",
+                ),
+                anchored_links=[("/api/#Undefined", "Undefined")],
+            )
+        builder.add(
+            build_document(
+                "<html><body><h1>API</h1><p>" + "docs " * 40 + "</p></body></html>",
+                f"{BASE}api/",
+            )
+        )
+        derive_page_subjects(builder.graph)
+        assert "Undefined" not in {e.name for e in builder.graph.entities.values()}
+
+    def test_a_fragment_link_is_still_an_edge(self) -> None:
+        """Only the naming changes; expansion still needs the link."""
+        builder = GraphBuilder(BASE)
+        builder.add(
+            build_document(
+                "<html><body><h1>Home</h1><p>" + "text " * 40
+                + '<a href="/api/#X">X</a></p></body></html>',
+                BASE,
+            ),
+            anchored_links=[("/api/#X", "X")],
+        )
+        link = next(iter(builder.graph.links.values()))
+        assert link.anchors == ("X",)
+        assert link.page_anchors == ()

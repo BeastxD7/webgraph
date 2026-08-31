@@ -1455,3 +1455,23 @@ sidebar above the content is "Navigation" — a whole site of pages with the sam
 
 Standing lesson: metrics did not catch either. Looking at the actual output did, immediately.
 Print the thing.
+
+### D50 — Fragment links name a section, not a page
+
+The Site graph panel rendered "Environment — also called Undefined" and "Integration — also
+called Babel". Both wrong, and the cause is one line: `/api/#jinja2.Undefined` and `/api/`
+become the same edge once the fragment is stripped.
+
+That merge is *right* for expansion — the section is on that page either way — and wrong for
+naming the page's subject. `Link` now carries `page_anchors` alongside `anchors`, holding
+only fragment-free anchor texts, and subject derivation reads that.
+
+Found the same way as D49: by looking at the rendered output. Third defect this session that
+no metric surfaced and one screenshot did.
+
+### Bug introduced and caught the same minute
+
+Rewriting `add_link` to carry two anchor tuples added an early `return` in the new-link
+branch, which skipped the adjacency update below it. Every `link_specificity` collapsed to
+the same value, because nothing was ever recorded as linked-from. The existing test caught
+it immediately. Adjacency now happens first and unconditionally.

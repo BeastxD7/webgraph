@@ -119,8 +119,38 @@ export interface ContextResponse {
   graph: { pages: number; sections: number; entities: number; links: number; mentions: number };
 }
 
+export interface GraphEntity {
+  key: string;
+  type: string;
+  name: string;
+  /** Other names the site's own pages use for this subject. */
+  aliases: string[];
+  pages: string[];
+}
+
+export interface GraphHub {
+  url: string;
+  title: string;
+  inbound: number;
+  outbound: number;
+  sections: number;
+  /** Low means everything links here — navigation. High means a topic. */
+  specificity: number;
+}
+
+export interface GraphSummary {
+  root: string;
+  counts: Record<string, number>;
+  entities: GraphEntity[];
+  hubs: GraphHub[];
+  deepest: string[];
+}
+
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
+
+  graphSummary: (url: string) =>
+    request<GraphSummary>(`/api/site/graph/summary?url=${encodeURIComponent(url)}`),
 
   context: (input: {
     url: string;
