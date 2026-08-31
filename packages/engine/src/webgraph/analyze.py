@@ -23,6 +23,12 @@ from webgraph.crawl.discovery import RobotsPolicy, discover_sitemap_urls, load_r
 from webgraph.crawl.frontier import normalize_url
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
 from webgraph.fetch.static import FetchConfig
+from webgraph.profile.bundle import collect_bundle_source
+from webgraph.profile.technology import (
+    Technology,
+    detect_technologies,
+    merge_technologies,
+)
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 
 __all__ = ["SiteAnalysis", "analyze_site"]
@@ -191,12 +197,50 @@ def analyze_site(
 
     document = resolved.document
 
+    # One more pass, with the site's own JavaScript in hand. Component libraries that mount
+    # their attributes only on interaction -- Radix, shadcn -- leave no trace in the DOM, the
+    # globals, the network log or the markup of a page that never opens one. They are named
+    # in the bundle. This is affordable exactly once, here, and never per page.
+    #
+    # Merged rather than recomputed: the page profile already holds everything the headers
+    # and the live page produced, and re-running the whole detector without them would trade
+    # Cloudflare and HSTS for Radix.
+    technologies = document.profile.technologies
+    if resolved.runtime.present:
+        source = collect_bundle_source(document.html, document.url, config=fetch_config)
+        if source:
+            from_page = [
+                Technology(
+                    name=str(entry["name"]),
+                    category=str(entry["category"]),
+                    version=entry["version"] if entry["version"] is None else str(entry["version"]),
+                    confidence=int(entry["confidence"]),
+                    evidence=str(entry["evidence"]),
+                )
+                for entry in technologies
+            ]
+            from_bundle = detect_technologies("", None, None, bundle_source=source)
+            merged = merge_technologies(from_page, from_bundle)
+            gained = len(merged) - len(from_page)
+            technologies = tuple(
+                {
+                    "name": tech.name,
+                    "category": tech.category,
+                    "version": tech.version,
+                    "confidence": tech.confidence,
+                    "evidence": tech.evidence,
+                }
+                for tech in merged
+            )
+            if gained > 0:
+                notes.append(f"{gained} further technologies identified from bundle source")
+
     return SiteAnalysis(
         root=normalized,
         reachable=True,
         frameworks=document.profile.frameworks,
         payload_sources=tuple(dict.fromkeys(p.source.value for p in document.structured_data)),
-        technologies=document.profile.technologies,
+        technologies=technologies,
         static_chars=resolved.static_chars,
         rendered_chars=resolved.rendered_chars,
         union_chars=resolved.union_chars,

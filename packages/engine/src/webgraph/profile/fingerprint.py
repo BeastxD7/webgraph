@@ -19,7 +19,7 @@ from typing import Final, NamedTuple
 
 from lxml.html import HtmlElement
 
-from webgraph.profile.technology import detect_technologies
+from webgraph.profile.technology import RuntimeEvidence, detect_technologies
 from webgraph.types import StackProfile
 
 __all__ = ["FRAMEWORK_RULES", "profile_page"]
@@ -90,7 +90,7 @@ def profile_page(
     *,
     text_length: int | None = None,
     headers: dict[str, str] | None = None,
-    runtime_globals: dict[str, str] | None = None,
+    runtime: RuntimeEvidence | None = None,
 ) -> StackProfile:
     """Identify the stack and decide whether a JavaScript render is required.
 
@@ -123,7 +123,16 @@ def profile_page(
     requires_render, render_signals = _needs_render(root, html, text_length)
     signals.extend(render_signals)
 
-    technologies = detect_technologies(html, headers, runtime_globals)
+    evidence = runtime or RuntimeEvidence()
+    technologies = detect_technologies(
+        html,
+        headers,
+        dict(evidence.versions),
+        custom_globals=evidence.custom_globals,
+        requests=evidence.requests,
+        cookies=evidence.cookies,
+        bundle_source=evidence.bundle_source,
+    )
     # The framework list stays the short client-side view; `technologies` is the full picture.
     for tech in technologies:
         if tech.category in {"JavaScript frameworks", "CMS", "Ecommerce", "Website builders",

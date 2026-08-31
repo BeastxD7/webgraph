@@ -11,7 +11,11 @@ from typing import ClassVar
 
 import pytest
 
-from webgraph.profile.technology import detect_technologies
+from webgraph.profile.technology import (
+    Technology,
+    detect_technologies,
+    merge_technologies,
+)
 
 
 def names(techs) -> set[str]:
@@ -244,3 +248,108 @@ class TestComponentLibraryRules:
             )
         }
         assert {"Open Graph", "PWA"} <= names
+
+
+class TestRuntimeSignals:
+    """The four signals a bare HTTP fetch cannot see.
+
+    These closed most of the gap against a browser extension. On persyn.ai the engine went
+    from 4 detections to 23 -- covering all 17 Wappalyzer reports, with matching versions
+    for Facebook Pixel, Lenis, core-js and React Router.
+    """
+
+    def test_global_name_identifies_a_service(self) -> None:
+        """`window.Tinybird` is the only trace Tinybird leaves anywhere on the page."""
+        names = {t.name for t in detect_technologies("", custom_globals=["Tinybird", "foo"])}
+        assert "Tinybird" in names
+
+    def test_network_request_identifies_a_service(self) -> None:
+        found = {
+            t.name: t
+            for t in detect_technologies(
+                "", requests=["https://us-assets.i.posthog.com/array/phc_x/config.js"]
+            )
+        }
+        assert "PostHog" in found
+        assert "request:" in found["PostHog"].evidence
+
+    def test_cookie_identifies_bot_management(self) -> None:
+        """`__cf_bm` is set by a third-party script, so it never reaches the main response."""
+        names = {t.name for t in detect_technologies("", cookies={"__cf_bm": "x"})}
+        assert "Cloudflare Bot Management" in names
+
+    def test_bundle_source_identifies_a_component_library(self) -> None:
+        """Radix mounts its attributes only when a component opens; the bundle always names it."""
+        names = {t.name for t in detect_technologies("", bundle_source='import "@radix-ui/react-dialog"')}
+        assert "Radix UI" in names
+
+    def test_absent_signals_produce_nothing(self) -> None:
+        """Every runtime rule must decline on a static-only fetch rather than guess."""
+        assert detect_technologies("<html><body><p>hello</p></body></html>") == []
+
+
+class TestImplications:
+    def test_meta_framework_implies_its_framework(self) -> None:
+        """Next.js exposes `__NEXT_DATA__`; React underneath it exposes nothing at all."""
+        found = {t.name: t for t in detect_technologies("", custom_globals=["__NEXT_DATA__"])}
+        assert "React" in found
+        assert "implied by Next.js" in found["React"].evidence
+        assert found["React"].confidence < 100
+
+    def test_shadcn_needs_more_than_radix_and_tailwind(self) -> None:
+        """Plenty of projects use both directly; shadcn is inferred only with its own packages."""
+        without = merge_technologies(
+            [
+                Technology("Radix UI", "UI frameworks"),
+                Technology("Tailwind CSS", "UI frameworks"),
+            ]
+        )
+        assert "shadcn/ui" not in {t.name for t in without}
+
+        with_registry = merge_technologies(
+            [
+                Technology("Radix UI", "UI frameworks"),
+                Technology("Tailwind CSS", "UI frameworks"),
+                Technology("Sonner", "UI frameworks"),
+            ]
+        )
+        assert "shadcn/ui" in {t.name for t in with_registry}
+
+    def test_implications_see_the_union_of_passes(self) -> None:
+        """Tailwind comes from the markup pass and Radix from the bundle pass.
+
+        Neither alone can infer shadcn, which is why implications run over the merge rather
+        than inside a single detection.
+        """
+        markup_pass = [Technology("Tailwind CSS", "UI frameworks")]
+        bundle_pass = [
+            Technology("Radix UI", "UI frameworks"),
+            Technology("class-variance-authority", "JavaScript libraries"),
+        ]
+        assert "shadcn/ui" in {t.name for t in merge_technologies(markup_pass, bundle_pass)}
+
+    def test_version_survives_the_merge(self) -> None:
+        merged = {
+            t.name: t
+            for t in merge_technologies(
+                [Technology("jQuery", "JavaScript libraries")],
+                [Technology("jQuery", "JavaScript libraries", version="3.6.0")],
+            )
+        }
+        assert merged["jQuery"].version == "3.6.0"
+
+
+class TestNoFalsePositives:
+    """Each of these fired on a real site before the rule was tightened."""
+
+    def test_data_slot_alone_is_not_shadcn(self) -> None:
+        """`data-slot` is a plain web-component attribute; Vercel's Geist uses it, and it
+        credited nextjs.org with shadcn/ui."""
+        names = {t.name for t in detect_technologies('<div data-slot="geist-logo">x</div>')}
+        assert "shadcn/ui" not in names
+
+    def test_single_letter_globals_are_not_libraries(self) -> None:
+        """`window.L` is Leaflet's global and also anybody's one-letter variable."""
+        names = {t.name for t in detect_technologies("", custom_globals=["L", "ga"])}
+        assert "Leaflet" not in names
+        assert "Google Analytics" not in names

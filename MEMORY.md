@@ -1070,3 +1070,77 @@ attribute (`md:grid-cols-3`); no other framework puts `md:` in a class name.
 persyn.ai: 4 detected -> **15**, matching 13 of Wappalyzer's 17. The four still missed are
 Radix, shadcn, Tinybird and Cloudflare Bot Management, all of which appear only after an
 interaction or a later request rather than in the homepage's rendered DOM.
+
+---
+
+## Technology detection rebuilt around runtime evidence (2026-09-01, session 11)
+
+### D35 — The gap with a browser extension was signal sources, not rules
+
+persyn.ai: engine 4 detections, Wappalyzer 17. Adding markup rules moved it to 13 and then
+stalled, because the remainder were **not in the markup at all**. Wappalyzer is an extension
+— it sees the network log, the cookie jar, the live heap and the loaded script text.
+
+An exploration script dumped everything persyn.ai actually exposes. The answer was that all
+of it was reachable and none of it was being read:
+
+```
+window keys   fbq, Tinybird, lenisVersion, __reactRouterVersion,
+              __PosthogExtensions__, __core-js_shared__
+cookies       __cf_bm (Cloudflare bot management), _fbp, ph_phc_… (PostHog)
+requests      us-assets.i.posthog.com, connect.facebook.net/…/fbevents.js,
+              /_vercel/insights/script.js, *.r2.dev
+versions      fbq.version = 2.9.390, __core-js_shared__.versions[0] = 3.32.2
+```
+
+Four new signal sources, each a new `TechRule` field:
+
+| field | matched against | closes |
+|---|---|---|
+| `js` | the **name** of a global the page added | Tinybird, React Router, core-js, Lenis |
+| `request` | any URL requested while loading | PostHog, Vercel Analytics, Cloudflare R2 |
+| `cookie` | cookie names **from the jar**, not `Set-Cookie` | Cloudflare Bot Management |
+| `source` | the page's own JS bundle text | Radix, Sonner, Zod |
+
+**The global list is discovered, not enumerated.** A blank same-origin iframe provides a
+pristine `window`; the diff against the real one yields every global the page added. Probes
+only find what someone thought to name — the diff found `Tinybird` and `lenisVersion` with
+nobody naming them first.
+
+**Bundle fetching is once per site, never per page.** Bundles are megabytes; `analyze_site`
+reads at most 4 same-origin scripts up to 3 MB total. Third-party scripts are skipped —
+they are already identified by their request URL.
+
+### D36 — Some technologies have no fingerprint and must be inferred
+
+**shadcn/ui is not a dependency.** Its components are copied into the project's own source,
+so there is no package name, no global, no request and no attribute that says "shadcn".
+What there reliably is: the packages its registry installs.
+
+Hence `IMPLICATIONS`: `requires` (all must be present) plus optional `any_of` (at least one),
+producing a technology at **reduced confidence** with an evidence string naming what it was
+inferred from. Also covers Next.js → React, Nuxt → Vue, Starlight → Astro, WooCommerce →
+WordPress.
+
+Implications must run over the **union of passes**, not inside one: shadcn needs Tailwind
+from the markup pass and Radix from the bundle pass. Hence `merge_technologies()`.
+
+### Result
+
+| site | before | after | vs Wappalyzer |
+|---|---|---|---|
+| persyn.ai | 4 | **23** | **17/17**, versions matching exactly |
+
+The 6 extra are real and Wappalyzer missed them: Cloudflare R2, Vercel Analytics, Vercel
+Speed Insights, Sonner, Zod, HSTS — each verifiable in the network log or the bundle.
+
+### Two false positives this created, and the fix
+
+- **`data-slot` is not shadcn.** It is a plain web-component attribute; Vercel's Geist uses
+  it, so nextjs.org was credited with shadcn/ui. The markup rule is gone; the attribute now
+  counts only inside the bundle, next to shadcn's own packages.
+- **`window.L` is Leaflet's global and also anybody's one-letter variable.** Likewise bare
+  `ga`. Both replaced with request/source rules.
+
+Standing lesson: a new signal source multiplies both true and false positives. Sweep a set
+of sites with known stacks after every rule addition, and check the two-letter globals first.

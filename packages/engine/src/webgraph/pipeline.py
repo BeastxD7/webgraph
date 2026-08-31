@@ -21,6 +21,7 @@ from webgraph.dom.blocks import parse_html
 from webgraph.dom.reading_order import OrderingConfig, order_blocks
 from webgraph.dom.rich import extract_rich_blocks
 from webgraph.profile.fingerprint import profile_page
+from webgraph.profile.technology import RuntimeEvidence
 from webgraph.structured.payloads import extract_payloads
 from webgraph.types import Block, Document, Rect
 
@@ -46,7 +47,7 @@ def build_document(
     ordering: OrderingConfig | None = None,
     min_block_chars: int = 1,
     headers: dict[str, str] | None = None,
-    runtime_globals: dict[str, str] | None = None,
+    runtime: RuntimeEvidence | None = None,
 ) -> Document:
     """Parse `html` into a `Document` with blocks in reading order.
 
@@ -71,7 +72,7 @@ def build_document(
         html,
         text_length=len(text),
         headers=headers,
-        runtime_globals=runtime_globals,
+        runtime=runtime,
     )
 
     return Document(

@@ -112,7 +112,9 @@ class TestExtract:
         ).json()
 
         assert body["facts"]["title"]["value"] == "Systems Design Intensive"
-        assert body["page"]["frameworks"] == ["next.js"]
+        # React is implied by Next.js rather than detected: a Next.js build exposes
+        # `__NEXT_DATA__` and nothing that names React directly.
+        assert body["page"]["frameworks"] == ["next.js", "React"]
 
     def test_page_without_structured_data_returns_no_facts(
         self, client: TestClient, server: str

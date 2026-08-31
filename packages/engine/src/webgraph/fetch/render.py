@@ -38,6 +38,10 @@ except ImportError:  # pragma: no cover
 
 MARKER_ATTRIBUTE: Final[str] = "data-wg-id"
 
+MAX_RECORDED_REQUESTS: Final[int] = 400
+"""Requests kept for fingerprinting. Only distinct hosts and paths carry information, and
+an asset-heavy page can issue thousands."""
+
 _COLLECT_SCRIPT: Final[str] = """
 () => {
   const MARKER = 'data-wg-id';
@@ -75,6 +79,28 @@ _COLLECT_SCRIPT: Final[str] = """
   // that does not begin with a digit as presence without a version.
   const PRESENT = 'present';
   const probe = (name, fn) => { try { const v = fn(); if (v) globals[name] = String(v); } catch (e) {} };
+
+  // Every global the page added, found by diffing against a pristine window.
+  //
+  // This is the signal that closes most of the gap with a browser extension. Hand-written
+  // probes only find what someone thought to ask for; the diff finds `window.Tinybird`,
+  // `window.__reactRouterVersion` and `window.lenisVersion` without anyone naming them
+  // first, and the rules then map names to technologies.
+  //
+  // The baseline comes from a blank same-origin iframe rather than a hard-coded list,
+  // because the set of standard globals differs by browser and by version.
+  let customGlobals = [];
+  try {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.cssText = 'display:none;width:0;height:0';
+    document.body.appendChild(frame);
+    const baseline = new Set(Object.keys(frame.contentWindow));
+    frame.remove();
+    // Cap the list: a page that assigns hundreds of globals is doing something unusual, and
+    // the interesting names are always near the front of the enumeration order anyway.
+    customGlobals = Object.keys(window).filter((k) => !baseline.has(k)).slice(0, 400);
+  } catch (e) { /* CSP can forbid the iframe; the explicit probes still apply. */ }
 
   probe('jQuery', () => window.jQuery && window.jQuery.fn && window.jQuery.fn.jquery);
   probe('React', () => window.React && window.React.version);
@@ -134,7 +160,35 @@ _COLLECT_SCRIPT: Final[str] = """
     return document.querySelector('[data-discover="true"]') ? PRESENT : null;
   });
 
-  return { rects, html: document.documentElement.outerHTML, globals };
+  // Versions, where the library exposes one somewhere other than a bare `.version`.
+  probe('Facebook Pixel', () => window.fbq && window.fbq.version);
+  probe('core-js', () => {
+    const shared = window['__core-js_shared__'];
+    if (!shared) return null;
+    const versions = shared.versions;
+    if (Array.isArray(versions) && versions.length && versions[0].version) return versions[0].version;
+    return PRESENT;
+  });
+  probe('Lenis', () => window.lenisVersion || (window.lenis || document.documentElement.classList.contains('lenis') ? PRESENT : null));
+  probe('PostHog', () => {
+    const ph = window.posthog;
+    if (ph) return ph.version || (ph.LIB_VERSION) || PRESENT;
+    return window.__PosthogExtensions__ || window._POSTHOG_REMOTE_CONFIG ? PRESENT : null;
+  });
+  probe('Tinybird', () => window.Tinybird && PRESENT);
+
+  const scripts = Array.from(document.scripts).map((s) => s.src).filter(Boolean).slice(0, 60);
+  const links = Array.from(document.querySelectorAll('link[rel][href]'))
+    .map((l) => l.rel + ' ' + l.href).slice(0, 60);
+
+  return {
+    rects,
+    html: document.documentElement.outerHTML,
+    globals,
+    customGlobals,
+    scripts,
+    links,
+  };
 }
 """
 
@@ -191,6 +245,30 @@ class RenderResult:
     """Library versions read from live JavaScript globals -- the only place most of them
     appear. `jquery.min.js` has no version in its filename; `jQuery.fn.jquery` has it exactly."""
 
+    custom_globals: tuple[str, ...] = ()
+    """Every global the page added, diffed against a pristine window.
+
+    Hand-written probes only find what someone thought to name. This finds the rest --
+    `Tinybird`, `__reactRouterVersion`, `lenisVersion` -- and is what closes most of the gap
+    with a browser extension that can read the live heap."""
+
+    requests: tuple[str, ...] = ()
+    """Every URL the page requested while loading.
+
+    A third-party service is frequently invisible in the markup and unmistakable in the
+    network log: PostHog arrives as `us-assets.i.posthog.com/array/.../config.js`, and
+    Cloudflare's bot management as a `/cdn-cgi/challenge-platform/` script."""
+
+    cookies: dict[str, str] = field(default_factory=dict)
+    """Cookies present after load, from the browser jar rather than the document's own
+    `Set-Cookie`. Cookies set by a third-party script never appear in the main response."""
+
+    scripts: tuple[str, ...] = ()
+    """`src` of every script element after hydration, including ones injected at runtime."""
+
+    links: tuple[str, ...] = ()
+    """`rel href` of every link element, for manifest, preconnect and stylesheet signals."""
+
 
 def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult:
     """Load `url` in a headless browser and measure every visible element."""
@@ -214,6 +292,18 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
         try:
             page = context.new_page()
 
+            # The network log is a first-class fingerprinting signal, not diagnostics: a
+            # third-party service is often invisible in the markup and unmistakable here.
+            # Capped, because an image-heavy page can issue hundreds of requests and only
+            # the distinct hosts and paths carry information.
+            requests: list[str] = []
+
+            def _record(request: Any) -> None:
+                if len(requests) < MAX_RECORDED_REQUESTS:
+                    requests.append(str(request.url))
+
+            page.on("request", _record)
+
             if config.block_resources:
                 blocked = set(config.block_resources)
                 page.route(
@@ -229,7 +319,15 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             if config.settle_ms:
                 page.wait_for_timeout(config.settle_ms)
 
-            return dict(page.evaluate(_COLLECT_SCRIPT))
+            payload = dict(page.evaluate(_COLLECT_SCRIPT))
+            payload["requests"] = requests
+            # From the jar, not from the document's own `Set-Cookie`: a cookie written by a
+            # third-party script never appears in the main response headers.
+            payload["cookies"] = {
+                str(cookie.get("name", "")): str(cookie.get("value", ""))
+                for cookie in context.cookies()
+            }
+            return payload
         finally:
             context.close()
 
@@ -263,6 +361,11 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             rects=rects,
             ok=True,
             globals={str(k): str(v) for k, v in raw_globals.items()},
+            custom_globals=tuple(str(name) for name in payload.get("customGlobals") or ()),
+            requests=tuple(str(item) for item in payload.get("requests") or ()),
+            cookies={str(k): str(v) for k, v in (payload.get("cookies") or {}).items()},
+            scripts=tuple(str(item) for item in payload.get("scripts") or ()),
+            links=tuple(str(item) for item in payload.get("links") or ()),
         )
 
     except Exception as exc:

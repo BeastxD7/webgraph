@@ -27,13 +27,20 @@ budget matters more than the last few percent.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Final
 
-from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig, geometry_by_xpath, render_page
+from webgraph.fetch.render import (
+    PLAYWRIGHT_AVAILABLE,
+    RenderConfig,
+    RenderResult,
+    geometry_by_xpath,
+    render_page,
+)
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.pipeline import build_document
+from webgraph.profile.technology import RuntimeEvidence
 from webgraph.types import Block, Document
 
 __all__ = [
@@ -94,6 +101,12 @@ class ResolvedPage:
     blocks_only_in_static: int
     blocks_only_in_rendered: int
     render_error: str | None = None
+
+    runtime: RuntimeEvidence = field(default_factory=RuntimeEvidence)
+    """What the browser observed, kept so a caller can add to it.
+
+    Site analysis augments this with the page's bundle source, which is too expensive to
+    fetch per page but worth fetching once per site."""
 
     @property
     def static_coverage(self) -> float:
@@ -188,6 +201,16 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     return document, len(only_static), len(only_rendered)
 
 
+def runtime_evidence(rendered: RenderResult) -> RuntimeEvidence:
+    """Repackage what the browser observed into the shape the fingerprinter consumes."""
+    return RuntimeEvidence(
+        versions=dict(rendered.globals),
+        custom_globals=rendered.custom_globals,
+        requests=rendered.requests,
+        cookies=dict(rendered.cookies),
+    )
+
+
 def resolve_page(
     url: str,
     *,
@@ -274,12 +297,13 @@ def resolve_page(
         )
 
     geometry = geometry_by_xpath(rendered.html, rendered.rects)
+    observed = runtime_evidence(rendered)
     rendered_doc = build_document(
         rendered.html,
         rendered.url or url,
         geometry=geometry,
         headers=static_result.headers,
-        runtime_globals=rendered.globals,
+        runtime=observed,
     )
 
     if static_doc is None:
@@ -293,6 +317,7 @@ def resolve_page(
             union_chars=chars,
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
+            runtime=observed,
         )
 
     merged, only_static, only_rendered = union_documents(static_doc, rendered_doc)
@@ -306,4 +331,5 @@ def resolve_page(
         union_chars=len(merged.text),
         blocks_only_in_static=only_static,
         blocks_only_in_rendered=only_rendered,
+        runtime=observed,
     )
