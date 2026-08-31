@@ -34,6 +34,14 @@ keeps their order.
 _MARKDOWN_LINK: Final[re.Pattern[str]] = re.compile(r"\]\(([^)\s]+)")
 """Link targets inside a section's rich Markdown."""
 
+_HEADING_ANCHOR: Final[re.Pattern[str]] = re.compile(r"[\s]*[¶#§]+[\s]*$")
+"""Documentation generators append a permalink glyph to every heading.
+
+Sphinx uses a pilcrow, others use `#` or a link emoji. It is a control, not part of the
+heading, and leaving it in puts `Testimonials¶` in front of the reader and a junk token in
+the index.
+"""
+
 MIN_SECTION_CHARS: Final[int] = 40
 """Below this a section is a stray label, not content."""
 
@@ -92,7 +100,7 @@ def sections_from_document(document: Document, *, page_key: str = "") -> list[Se
     for block in document.blocks:
         if block.kind is BlockKind.HEADING:
             flush()
-            heading = block.text.strip()
+            heading = _HEADING_ANCHOR.sub("", block.text.strip()).strip()
             level = block.level or 1
             continue
         rendered = block.rich_text or block.text

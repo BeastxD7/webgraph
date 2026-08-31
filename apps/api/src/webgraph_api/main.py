@@ -18,6 +18,7 @@ import asyncio
 import json
 import threading
 import time
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -30,6 +31,9 @@ from pydantic import BaseModel, Field
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
 from webgraph.fetch.static import fetch_static
+from webgraph.graph.build import GraphBuilder
+from webgraph.graph.export import to_jsonl
+from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
@@ -56,7 +60,35 @@ A `page` event carries the whole document. A client that cannot keep up must not
 to turn the buffer into an unbounded memory leak.
 """
 
+MAX_CACHED_GRAPHS = 4
+"""Site graphs kept in memory, evicted oldest-first.
+
+A graph is the by-product of a crawl and is what makes the context endpoint answerable
+without re-crawling. Four is a compromise: a 2,000-page site is roughly 20,000 sections and
+tens of megabytes, and this is a single-process service on someone's laptop. Persist to
+JSONL (`GET /api/graph/export`) for anything that should outlive the process.
+"""
+
 _render_slots = asyncio.Semaphore(MAX_CONCURRENT_RENDERS)
+
+_graphs: OrderedDict[str, GraphBuilder] = OrderedDict()
+_graphs_lock = threading.Lock()
+
+
+def _remember_graph(root: str, builder: GraphBuilder) -> None:
+    with _graphs_lock:
+        _graphs[root] = builder
+        _graphs.move_to_end(root)
+        while len(_graphs) > MAX_CACHED_GRAPHS:
+            _graphs.popitem(last=False)
+
+
+def _recall_graph(root: str) -> GraphBuilder | None:
+    with _graphs_lock:
+        builder = _graphs.get(root)
+        if builder is not None:
+            _graphs.move_to_end(root)
+        return builder
 _crawl_slots = asyncio.Semaphore(MAX_CONCURRENT_CRAWLS)
 _crawl_pool = ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_CRAWLS, thread_name_prefix="webgraph-crawl"
@@ -286,6 +318,114 @@ def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
+class ContextRequest(BaseModel):
+    url: str = Field(description="Root of a site that has already been crawled")
+    query: str = Field(description="What the context should be about")
+    max_chars: int = Field(
+        default=120_000,
+        ge=1_000,
+        le=4_000_000,
+        description="Size of the assembled context. Roughly four characters per token.",
+    )
+    max_hops: int = Field(default=2, ge=0, le=3)
+
+
+class ContextSource(BaseModel):
+    heading: str
+    page_url: str
+    page_title: str
+    hops: int
+    score: float
+    reason: str
+    chars: int
+    tier: Literal["full", "opening"]
+
+
+class ContextResponse(BaseModel):
+    text: str
+    sources: list[ContextSource]
+    pages_mapped: list[str]
+    stats: dict[str, float]
+    graph: dict[str, int]
+
+
+@app.post("/api/site/context", response_model=ContextResponse)
+async def site_context(request: ContextRequest) -> ContextResponse:
+    """Assemble a bounded context about `query` from a crawled site.
+
+    The crawl is the expensive part and has already happened; this is a query over its
+    graph. Answers arrive in milliseconds, so it runs on the event loop rather than a thread.
+    """
+    builder = _recall_graph(request.url)
+    if builder is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No graph for {request.url}. Crawl it first.",
+        )
+
+    graph = builder.graph
+    if not graph.sections:
+        raise HTTPException(
+            status_code=409, detail="The crawl has not produced any content yet."
+        )
+
+    assembler = ContextAssembler(graph)
+    assembled = assembler.assemble(
+        request.query,
+        budget=Budget(max_chars=request.max_chars),
+        max_hops=request.max_hops,
+    )
+
+    def source(item: Any, tier: str) -> ContextSource:
+        page = graph.pages.get(item.section.page_key)
+        return ContextSource(
+            heading=item.section.heading or "(opening)",
+            page_url=page.url if page else item.section.page_key,
+            page_title=page.title if page else item.section.page_key,
+            hops=item.hops,
+            score=round(item.score, 4),
+            reason=item.reason,
+            chars=item.section.chars,
+            tier=tier,  # type: ignore[arg-type]
+        )
+
+    return ContextResponse(
+        text=assembled.text,
+        sources=[source(item, "full") for item in assembled.sections_full]
+        + [source(item, "opening") for item in assembled.sections_opening],
+        pages_mapped=[
+            graph.pages[key].url for key in assembled.pages_mapped if key in graph.pages
+        ],
+        stats={k: round(v, 4) for k, v in assembled.stats.items()},
+        graph=graph.describe(),
+    )
+
+
+@app.get("/api/site/graph")
+async def site_graph(url: str) -> StreamingResponse:
+    """Stream the site graph as JSON Lines, for loading elsewhere.
+
+    Streamed rather than assembled: a large graph is tens of megabytes, and buffering it to
+    build a response body would double the peak memory of the process that owns it.
+    """
+    builder = _recall_graph(url)
+    if builder is None:
+        raise HTTPException(status_code=404, detail=f"No graph for {url}. Crawl it first.")
+
+    graph = builder.graph
+
+    async def lines() -> AsyncIterator[str]:
+        for line in to_jsonl(graph):
+            yield line + "\n"
+
+    host = url.replace("https://", "").replace("http://", "").strip("/").replace("/", "_")
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": f'attachment; filename="{host}.graph.jsonl"'},
+    )
+
+
 @app.post("/api/site/stream")
 async def site_stream(request: SiteRequest) -> StreamingResponse:
     """Run the whole-site pipeline, streaming each stage as it completes.
@@ -324,10 +464,18 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
             # running until the process exits.
             stop = threading.Event()
 
+            # The graph is filled in as pages arrive and kept after the stream ends, so the
+            # context endpoint can answer questions about this site without re-crawling it.
+            builder = GraphBuilder(request.url)
+            _remember_graph(request.url, builder)
+
             def produce() -> None:
                 try:
                     for event in stream_site(
-                        request.url, config=config, should_stop=stop.is_set
+                        request.url,
+                        config=config,
+                        should_stop=stop.is_set,
+                        builder=builder,
                     ):
                         if stop.is_set():
                             return

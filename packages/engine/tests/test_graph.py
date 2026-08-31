@@ -175,10 +175,42 @@ class TestAssembly:
         full = {s.section.page_key for s in out.sections_full}
         assert not any("careers" in key for key in full)
 
-    def test_context_stays_within_budget(self) -> None:
+    def test_context_never_exceeds_the_budget(self) -> None:
+        """A caller who asks for N characters must not be handed more.
+
+        The per-section accounting cannot cover the preamble and tier headings, so the map
+        tier gives way at the end until the whole thing fits.
+        """
         assembler = self.build()
-        out = assembler.assemble("widget fastener", budget=Budget(max_chars=2_000))
-        assert len(out.text) <= 2_000 * 1.5  # the map tier is capped by entries, not chars
+        for limit in (800, 2_000, 20_000):
+            out = assembler.assemble("widget fastener", budget=Budget(max_chars=limit))
+            assert len(out.text) <= limit, f"{len(out.text)} > {limit}"
+
+    def test_near_duplicate_sections_are_included_once(self) -> None:
+        """Version archives and print views give a site several copies of one section.
+
+        Unchecked they took three of fourteen slots for a single piece of content on
+        attrs.org, whose crawl reaches `/en/19.2.0/` alongside `/en/stable/`.
+        """
+        body = "The widget is a fastener used in assembly. " * 12
+        builder = GraphBuilder(BASE)
+        for path, version in (("", "1.0"), ("v2/", "2.0"), ("v3/", "3.0")):
+            builder.add(
+                document(
+                    f"<h1>Widgets</h1><p>{body} Version {version}.</p>",
+                    url=f"{BASE}{path}",
+                )
+            )
+        assembler = ContextAssembler(builder.graph)
+        out = assembler.assemble("widget fastener assembly")
+        assert len(out.sections_full) == 1
+
+    def test_heading_permalink_glyphs_are_stripped(self) -> None:
+        """Sphinx appends a pilcrow to every heading; it is a control, not the title."""
+        sections = sections_from_document(
+            document("<h1>Testimonials\u00b6</h1><p>" + "praise " * 30 + "</p>")
+        )
+        assert sections[0].heading == "Testimonials"
 
     def test_omitted_pages_are_still_named(self) -> None:
         """A truncated context must not lie by omission: whatever was cut is still listed

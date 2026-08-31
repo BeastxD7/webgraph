@@ -67,6 +67,9 @@ tokenising precisely would tie the engine to one model's vocabulary."""
 
 K1: Final[float] = 1.5
 B: Final[float] = 0.75
+DEDUP_PREFIX_CHARS: Final[int] = 300
+"""Characters of a section's opening used to recognise a near-duplicate."""
+
 HEADING_WEIGHT: Final[int] = 3
 """A heading term is worth three body terms. Headings are the author's own summary of the
 section, and a query matching one is a much stronger signal than a passing mention."""
@@ -416,14 +419,40 @@ class ContextAssembler:
         per_page: Counter[str] = Counter()
         leftover: list[ScoredSection] = []
 
+        # Version archives, print views and pagination give a site several near-identical
+        # copies of the same section. Unchecked they take three slots out of fourteen for
+        # one piece of content -- observed on attrs.org, whose crawl reaches `/en/19.2.0/`
+        # alongside `/en/stable/`. Identity is the normalised text, so a copy that differs
+        # only in whitespace still counts as the same thing.
+        seen_text: set[tuple[int, int]] = set()
+
+        def duplicate(item: ScoredSection) -> bool:
+            # An exact hash is not enough. Copies of a page under different version paths
+            # differ in a version number, a date or a link target, so they hash apart while
+            # being the same content to a reader. Fingerprinting the *opening* plus a coarse
+            # length bucket catches them, and two genuinely different sections would have to
+            # share three hundred identical characters and a similar length to collide.
+            normalized = " ".join(item.section.text.split()).casefold()
+            fingerprint = (hash(normalized[:DEDUP_PREFIX_CHARS]), len(normalized) // 200)
+            if fingerprint in seen_text:
+                return True
+            seen_text.add(fingerprint)
+            return False
+
         def cost_of(item: ScoredSection) -> int:
-            return len(item.section.text) + len(item.section.heading) + 80
+            # Measured, not estimated. Each section is rendered with a provenance header
+            # naming its page, URL, reason and hop count, which runs well past any constant
+            # and pushed the assembled context 7% past a limit the caller had set precisely
+            # so that it would fit somewhere.
+            return len(item.section.text) + len(self._header(item)) + 2
 
         # Pass one: each purse spends only its own reservation. Spilling here is what made
         # an earlier version's reservation inert -- seeds exhausted the shared budget before
         # a single neighbour was considered, and the sweep over `neighbour_share` came out
         # flat because the parameter had no effect at all.
         for item in sorted(ranked, key=lambda s: (-s.score, s.section.id)):
+            if duplicate(item):
+                continue
             purse = 0 if item.hops == 0 else 1
             # Diversity cap: without it one long page takes every slot in its tier, and a
             # context assembled from one page cannot answer a question that spans two.
@@ -449,14 +478,36 @@ class ContextAssembler:
                 full.append(item)
             elif used_opening_holder[0] + budget.opening_chars <= opening_cap:
                 opening.append(item)
-                used_opening_holder[0] += budget.opening_chars
+                used_opening_holder[0] += budget.opening_chars + len(self._header(item))
 
         full.sort(key=lambda s: (-s.score, s.section.id))
 
         covered = {s.section.page_key for s in full} | {s.section.page_key for s in opening}
-        mapped = [key for key in self.graph.pages if key not in covered][: budget.map_entries]
+        candidates = [key for key in self.graph.pages if key not in covered]
+
+        # The map is the last claim on the budget, not an addition to it. Left uncapped it
+        # took the assembled context 7% past a limit the caller set precisely so it would
+        # fit somewhere.
+        map_budget = max(0, budget.max_chars - used[0] - used[1] - used_opening_holder[0])
+        mapped: list[str] = []
+        map_used = 0
+        for key in candidates[: budget.map_entries]:
+            line = self._map_line(key)
+            if map_used + len(line) > map_budget:
+                break
+            map_used += len(line)
+            mapped.append(key)
 
         text = self._render(query, full, opening, mapped, budget)
+
+        # Final guard. The preamble and tier headings are not attributable to any one
+        # section, so the per-item accounting can still land a little over. The map is the
+        # cheapest thing in the context, so it is what gives way -- a caller who asked for
+        # 18,000 characters must not be handed 18,500.
+        while len(text) > budget.max_chars and mapped:
+            mapped.pop()
+            text = self._render(query, full, opening, mapped, budget)
+
         return Assembled(
             text=text,
             sections_full=full,
@@ -512,15 +563,17 @@ class ContextAssembler:
             # cut is still named, with its address, so it can be asked for.
             parts.append("## Other pages on this site (not included above)\n")
             for key in mapped:
-                page = self.graph.pages[key]
-                headings = [
-                    s.heading for s in self.graph.sections_of(key)[:6] if s.heading
-                ]
-                trail = f" — {'; '.join(headings)}" if headings else ""
-                parts.append(f"- {page.title} <{page.url}>{trail}")
+                parts.append(self._map_line(key).rstrip("\n"))
             parts.append("")
 
         return "\n".join(parts)
+
+    def _map_line(self, page_key: str) -> str:
+        """One page in the map tier: what it is, where it is, what it covers."""
+        page = self.graph.pages[page_key]
+        headings = [s.heading for s in self.graph.sections_of(page_key)[:6] if s.heading]
+        trail = f" — {'; '.join(headings)}" if headings else ""
+        return f"- {page.title} <{page.url}>{trail}\n"
 
     def _header(self, item: ScoredSection) -> str:
         page = self.graph.pages.get(item.section.page_key)

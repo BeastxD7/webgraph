@@ -36,6 +36,7 @@ from webgraph.crawl.frontier import CrawlScope, Frontier, normalize_url, reconci
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
+from webgraph.graph.build import GraphBuilder
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
@@ -551,6 +552,7 @@ def stream_site(
     schema: dict[str, Any] | None = None,
     config: SiteConfig | None = None,
     should_stop: Callable[[], bool] | None = None,
+    builder: GraphBuilder | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Crawl and extract continuously, yielding an event per page as it completes.
 
@@ -564,6 +566,10 @@ def stream_site(
     Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
 
     Events carry a `type`: `stage`, `analysis`, `frontier`, `page`, `done`, `error`.
+
+    `builder`, when supplied, is filled in as pages arrive. It belongs to the caller rather
+    than being returned, because a generator has no way to hand back an object mid-stream and
+    the graph is most useful *during* a long crawl -- and remains useful after a stopped one.
 
     `should_stop` is polled between batches. A generator cannot be interrupted from another
     thread -- closing it only raises at the next `yield`, which never arrives while a batch
@@ -655,18 +661,24 @@ def stream_site(
     totals = {"chars": 0, "markdown": 0, "images": 0, "tables": 0}
     all_pages: list[PageExtraction] = []
 
-    def work(item: tuple[str, int]) -> tuple[PageExtraction, int, list[str], str | None]:
+    def work(
+        item: tuple[str, int],
+    ) -> tuple[PageExtraction, int, list[str], str | None, list[tuple[str, str]]]:
         url, depth = item
         if delay > 0:
             time.sleep(delay)
         page = _extract_one(url, schema, strategy, config)
         links: list[str] = []
+        anchored: list[tuple[str, str]] = []
         canonical: str | None = None
         if page.document is not None:
             found = extract_links(page.document.html, page.url)
             links = [reconcile_scheme(link, normalized_root) for link in found.links]
+            anchored = [
+                (reconcile_scheme(href, normalized_root), text) for href, text in found.anchored
+            ]
             canonical = found.canonical
-        return page, depth, links, canonical
+        return page, depth, links, canonical, anchored
 
     stopped = False
 
@@ -690,7 +702,7 @@ def stream_site(
             if not batch:
                 break
 
-            for page, depth, links, canonical in pool.map(work, batch):
+            for page, depth, links, canonical, anchored in pool.map(work, batch):
                 if page.ok:
                     extracted += 1
                     totals["chars"] += page.text_chars
@@ -700,6 +712,17 @@ def stream_site(
                 else:
                     failed += 1
                 all_pages.append(page)
+
+                # The graph is built as the crawl runs, not afterwards. A crawl streams for
+                # minutes; a graph that only exists once it finishes is unavailable during
+                # the only period anyone is watching, and is lost entirely if it is stopped.
+                if builder is not None and page.document is not None:
+                    builder.add(
+                        page.document,
+                        depth=depth,
+                        title=page.title,
+                        anchored_links=anchored,
+                    )
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
                 discovered_here = frontier.extend(
@@ -750,6 +773,7 @@ def stream_site(
                     "new_urls": discovered_here,
                     "pages_per_minute": round(60 * (extracted + failed) / elapsed, 1),
                     "totals": dict(totals),
+                    "graph": builder.graph.describe() if builder is not None else None,
                 }
 
     entities = _aggregate_entities(all_pages)
@@ -783,5 +807,6 @@ def stream_site(
         ],
         "site_facts": {k: [str(v) for v in vs] for k, vs in site_facts.items()},
         "fact_sources": {k: list(dict.fromkeys(v)) for k, v in fact_sources.items()},
+        "graph": builder.graph.describe() if builder is not None else None,
         "duration_seconds": round(time.monotonic() - started, 1),
     }
