@@ -1577,3 +1577,30 @@ inserted section as changed, turning a one-paragraph addition into "the whole pa
 `--fail-on-change` exits non-zero so a scheduled job can drive on it without parsing output.
 Verified end to end by doctoring a stored baseline and re-crawling: the removed page and the
 edited section were both reported, with before and after text.
+
+### D56 — A link to somebody else's stack is not evidence about this one
+
+A sweep across 16 diverse sites turned up one clear false positive: **Hacker News reported as
+running WordPress**. Cause: its front page linked to a PDF at
+`ajmp.uwr.edu.pl/wp-content/uploads/...`, and the rule matched `/wp-content/` anywhere in the
+markup.
+
+This is the same failure as matching prose (D24: `docs.astro.build` "running" Strapi) wearing
+a different hat. A page that *references* a technology is not a page that *uses* it, and a
+hyperlink is a reference.
+
+Anchored to three things only the site itself can emit:
+
+- a **root-relative** asset path, `(?:src|href)="/wp-content/…"`;
+- the REST API discovery link WordPress emits by default, `rel="https://api.w.org/"`, which
+  also catches installs that use absolute URLs for their own assets;
+- its own bundled scripts, `wp-emoji-release`, `wp-embed`.
+
+Drupal's `/sites/default/files/` and Joomla's `/media/jui/` had the identical weakness and
+got the identical fix. `drupal-settings-json` needs no anchoring -- it is an attribute the
+page emits, not a URL anyone can link to.
+
+After: `news.ycombinator.com` -> `['HSTS', 'nginx']`; `wordpress.org` still detects WordPress.
+
+Standing lesson, now twice: **every new host- or path-shaped rule must be checked against a
+page that merely links to that technology**, not only against a page that uses it.

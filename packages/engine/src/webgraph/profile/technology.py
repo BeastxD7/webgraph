@@ -407,11 +407,34 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Font Awesome CDN", "Font scripts", html=r'(?:src|href)=["\'][^"\']*(?:cdnjs\.cloudflare\.com/ajax/libs/font-awesome)'),
 
     # --- CMS ---
-    _rule("WordPress", "CMS", html=r"/wp-content/|/wp-includes/|/wp-json/"),
+    # A bare `/wp-content/` match fires on a *link to somebody else's* WordPress. Hacker
+    # News was reported as WordPress because its front page linked to a PDF hosted on one.
+    # These three are all same-site by construction: a root-relative asset path, the REST
+    # API discovery link WordPress emits by default, and its own bundled scripts.
+    _rule(
+        "WordPress",
+        "CMS",
+        html=r"(?:src|href)=[\"']/(?:wp-content|wp-includes)/",
+    ),
+    _rule("WordPress", "CMS", html=r'rel=["\']https://api\.w\.org/["\']'),
+    _rule("WordPress", "CMS", html=r"wp-(?:emoji-release|embed|includes/js/wp-)"),
     _rule("WordPress", "CMS", html=r'name="generator"\s+content="WordPress (?P<version>[\d.]+)"'),
     _rule("Drupal", "CMS", html=r'name="generator"\s+content="Drupal (?P<version>[\d.]+)'),
-    _rule("Drupal", "CMS", html=r"drupal-settings-json|/sites/default/files/", confidence=85),
-    _rule("Joomla", "CMS", html=r'/media/jui/|/media/system/js/|name=\"generator\"\\s+content=\"Joomla'),
+    # Same anchoring as WordPress, for the same reason: a link to another site's Drupal is
+    # not evidence about this one. `drupal-settings-json` is an attribute the page itself
+    # emits and needs no anchoring.
+    _rule(
+        "Drupal",
+        "CMS",
+        html=r"drupal-settings-json|(?:src|href)=[\"']/sites/default/files/",
+        confidence=85,
+    ),
+    _rule(
+        "Joomla",
+        "CMS",
+        html=r"(?:src|href)=[\"']/media/(?:jui|system/js)/"
+        r'|name="generator"\s+content="Joomla',
+    ),
     _rule("Ghost", "CMS", html=r'content="Ghost (?P<version>[\d.]+)"|/ghost/api/'),
     _rule("Contentful", "CMS", html=r"cdn\.contentful\.com|images\.ctfassets\.net"),
     _rule("Sanity", "CMS", html=r"cdn\.sanity\.io"),

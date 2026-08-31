@@ -353,3 +353,41 @@ class TestNoFalsePositives:
         names = {t.name for t in detect_technologies("", custom_globals=["L", "ga"])}
         assert "Leaflet" not in names
         assert "Google Analytics" not in names
+
+
+class TestOutboundLinksAreNotEvidence:
+    """A link to somebody else's stack says nothing about this site's.
+
+    Hacker News was reported as running WordPress because its front page linked to a PDF
+    hosted on one. This is the same failure as matching prose -- a page that *references* a
+    technology being mistaken for one that *uses* it -- and it needs the same fix: anchor to
+    something only the site itself can emit.
+    """
+
+    def test_a_link_to_another_sites_wordpress_is_not_wordpress(self) -> None:
+        html = '<a href="https://elsewhere.example/wp-content/uploads/paper.pdf">paper</a>'
+        assert "WordPress" not in names(detect_technologies(html))
+
+    def test_a_root_relative_wordpress_asset_is_wordpress(self) -> None:
+        html = '<link href="/wp-content/themes/x/style.css" rel="stylesheet">'
+        assert "WordPress" in names(detect_technologies(html))
+
+    def test_the_rest_api_discovery_link_is_wordpress(self) -> None:
+        """WordPress emits this by default, so absolute-URL installs are still caught."""
+        html = '<link rel="https://api.w.org/" href="https://site.example/wp-json/">'
+        assert "WordPress" in names(detect_technologies(html))
+
+    def test_the_generator_meta_still_carries_a_version(self) -> None:
+        found = {
+            t.name: t
+            for t in detect_technologies('<meta name="generator" content="WordPress 6.4.2">')
+        }
+        assert found["WordPress"].version == "6.4.2"
+
+    def test_a_link_to_another_sites_drupal_is_not_drupal(self) -> None:
+        html = '<a href="https://elsewhere.example/sites/default/files/report.pdf">report</a>'
+        assert "Drupal" not in names(detect_technologies(html))
+
+    def test_drupals_own_settings_attribute_needs_no_anchoring(self) -> None:
+        assert "Drupal" in names(detect_technologies('<script type="application/json" '
+                                                     'data-drupal-settings-json>{}</script>'))
