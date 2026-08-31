@@ -1475,3 +1475,27 @@ Rewriting `add_link` to carry two anchor tuples added an early `return` in the n
 branch, which skipped the adjacency update below it. Every `link_specificity` collapsed to
 the same value, because nothing was ever recorded as linked-from. The existing test caught
 it immediately. Adjacency now happens first and unconditionally.
+
+### D51 — Graphs are persisted, because a crawl is expensive and a file is not
+
+Holding graphs only in memory meant a service restart threw away minutes of network and
+browser time, and every question afterwards re-crawled the site.
+
+`GraphStore` writes one JSONL file per site under `~/.cache/webgraph/graphs`
+(`WEBGRAPH_GRAPH_DIR` overrides). Deliberately not a database:
+
+- the format **is** the export format, so a stored graph is also a file you can hand to
+  `webgraph ask --graph` or load elsewhere;
+- there is no migration to write -- an unreadable file is treated as absent and the site is
+  re-crawled, which is the right cost for a stale cache entry;
+- writes go through a temp file and a rename, so an interrupted crawl cannot leave a
+  truncated graph that looks valid;
+- `prune()` keeps the newest 32, because a cache that only grows is a disk leak with a
+  friendly name.
+
+Persistence failures are logged and never raised: it is a convenience on top of a crawl that
+already succeeded, and a read-only cache directory must not turn a completed crawl into an
+error.
+
+Verified end to end: crawl attrs.org, kill the API, restart, ask a question -- answered from
+the revived graph with no re-crawl.

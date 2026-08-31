@@ -35,6 +35,7 @@ from webgraph.graph.build import GraphBuilder
 from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
+from webgraph.graph.store import GraphStore
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
@@ -66,14 +67,21 @@ MAX_CACHED_GRAPHS = 4
 
 A graph is the by-product of a crawl and is what makes the context endpoint answerable
 without re-crawling. Four is a compromise: a 2,000-page site is roughly 20,000 sections and
-tens of megabytes, and this is a single-process service on someone's laptop. Persist to
-JSONL (`GET /api/graph/export`) for anything that should outlive the process.
+tens of megabytes, and this is a single-process service on someone's laptop. Graphs evicted
+from here are not lost: they are written to disk and read back on demand.
 """
 
 _render_slots = asyncio.Semaphore(MAX_CONCURRENT_RENDERS)
 
 _graphs: OrderedDict[str, GraphBuilder] = OrderedDict()
 _graphs_lock = threading.Lock()
+
+_store = GraphStore()
+"""Graphs on disk, so a restart does not throw away minutes of crawling.
+
+Set `WEBGRAPH_GRAPH_DIR` to move it. The format is the export format, so a stored graph is
+also a file that `webgraph ask --graph` reads directly.
+"""
 
 
 def _remember_graph(root: str, builder: GraphBuilder) -> None:
@@ -89,7 +97,31 @@ def _recall_graph(root: str) -> GraphBuilder | None:
         builder = _graphs.get(root)
         if builder is not None:
             _graphs.move_to_end(root)
-        return builder
+            return builder
+
+    # Not in memory. A crawl costs minutes; reading a file costs milliseconds.
+    stored = _store.load(root)
+    if stored is None:
+        return None
+    revived = GraphBuilder(root)
+    revived.graph = stored
+    _remember_graph(root, revived)
+    return revived
+
+
+def _persist_graph(root: str, builder: GraphBuilder) -> None:
+    """Write a finished graph out. Failures are logged, never raised.
+
+    Persistence is a convenience on top of a crawl that has already succeeded; letting a
+    read-only cache directory turn a completed crawl into an error would be the wrong trade.
+    """
+    if not builder.graph.sections:
+        return
+    try:
+        _store.save(builder.graph, root)
+        _store.prune()
+    except Exception as exc:
+        print(f"could not persist graph for {root}: {type(exc).__name__}: {exc}")
 _crawl_slots = asyncio.Semaphore(MAX_CONCURRENT_CRAWLS)
 _crawl_pool = ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_CRAWLS, thread_name_prefix="webgraph-crawl"
@@ -592,6 +624,7 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                     yield _sse(event)
             finally:
                 stop.set()
+                await asyncio.to_thread(_persist_graph, request.url, builder)
 
     return StreamingResponse(
         generate(),

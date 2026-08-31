@@ -686,8 +686,10 @@ Stated plainly, because a limitations section that reads like marketing is worse
 - **Derived entities are descriptive, not useful for retrieval.** They exist for sites that
   publish no structured data, and they measured neutral within a site and produced no
   cross-site bridges. The working cross-site channel is links.
-- **Graphs live in memory.** Four sites are cached per process and lost on restart. Export to
-  JSONL for anything that should outlive it.
+- **Graph storage is a cache, not a database.** Graphs are written to
+  `~/.cache/webgraph/graphs` (override with `WEBGRAPH_GRAPH_DIR`) and pruned to the newest
+  32; there is no index, no query language and no concurrent-writer story. Export to a real
+  graph database for that.
 
 ---
 
