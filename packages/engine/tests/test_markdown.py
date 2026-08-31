@@ -207,3 +207,30 @@ class TestInlineLinks:
         )
         assert doc.blocks[0].text == "See docs"
         assert "](" not in doc.text
+
+
+class TestPermalinkAnchors:
+    """Documentation generators attach a permalink anchor to every heading.
+
+    Left in place it reaches the reader as `Testimonials¶`, the index as a junk token, and
+    the Markdown as a stray glyph on every heading of a documentation site. It is matched on
+    the class rather than the character, because stripping a trailing `¶` or `#` from every
+    heading would also mutilate the ones that legitimately end in one.
+    """
+
+    def test_sphinx_pilcrow_removed(self) -> None:
+        out = md('<h1>Testimonials<a class="headerlink" href="#t">¶</a></h1>')
+        assert "# Testimonials" in out
+        assert "¶" not in out
+
+    def test_docusaurus_hash_link_removed(self) -> None:
+        out = md('<h2>Install<a class="hash-link" aria-hidden="true" href="#i">#</a></h2>')
+        assert out.strip().startswith("## Install")
+        assert "Install#" not in out
+
+    def test_a_heading_that_really_ends_in_a_hash_survives(self) -> None:
+        assert "# The C# language" in md("<h1>The C# language</h1>")
+
+    def test_ordinary_links_in_headings_are_untouched(self) -> None:
+        out = md('<h2><a href="/a">Section</a></h2>')
+        assert "[Section](https://example.com/a)" in out

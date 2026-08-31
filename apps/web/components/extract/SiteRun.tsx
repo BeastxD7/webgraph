@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import AskPanel from "./AskPanel";
 import PageList from "./PageList";
 import ProgressRail from "./ProgressRail";
 import RunSummary from "./RunSummary";
@@ -101,6 +102,10 @@ export default function SiteRun({
       {run.analysis && <TechnologyPanel analysis={run.analysis} />}
 
       {run.summary && <RunSummary summary={run.summary} />}
+
+      {/* Available as soon as enough pages exist to be worth asking about, not only once the
+          crawl finishes -- an unbounded crawl may never finish. */}
+      {run.pages.length >= 3 && <AskPanel siteUrl={url} />}
 
       {tab === "discovered" && (
         <UrlList

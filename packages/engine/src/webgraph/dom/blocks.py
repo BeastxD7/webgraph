@@ -18,7 +18,15 @@ from lxml.html import HtmlElement
 
 from webgraph.types import Block
 
-__all__ = ["BLOCK_TAGS", "SKIP_TAGS", "extract_blocks", "normalize_text", "parse_html"]
+__all__ = [
+    "BLOCK_TAGS",
+    "PERMALINK_CLASSES",
+    "SKIP_TAGS",
+    "extract_blocks",
+    "normalize_text",
+    "parse_html",
+    "strip_permalinks",
+]
 
 BLOCK_TAGS: Final[frozenset[str]] = frozenset({
     "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
@@ -78,6 +86,46 @@ def parse_html(html: str, *, max_bytes: int = MAX_DOCUMENT_BYTES) -> HtmlElement
     return lxml_html.document_fromstring(html, parser=parser)
 
 
+PERMALINK_CLASSES: Final[tuple[str, ...]] = (
+    "headerlink",
+    "hash-link",
+    "anchor-link",
+    "header-anchor",
+    "heading-link",
+    "permalink",
+)
+"""Class names documentation generators use for the anchor beside a heading.
+
+Sphinx emits `<a class="headerlink">¶</a>`, MkDocs Material the same, Docusaurus
+`<a class="hash-link" aria-hidden="true">#</a>`. It is a control, not part of the heading,
+and left in place it reaches the reader as `Testimonials¶`, the index as a junk token, and
+the Markdown as a stray glyph on every heading of a documentation site.
+
+Matched on the class, not on the character. Stripping a trailing `¶` or `#` from every
+heading would also mutilate the ones that legitimately end in one.
+"""
+
+
+def strip_permalinks(root: HtmlElement) -> None:
+    """Drop the permalink anchors documentation generators attach to headings."""
+    permalinks = set(PERMALINK_CLASSES)
+    for anchor in root.xpath(".//a[@class]"):
+        if not set((anchor.get("class") or "").lower().split()) & permalinks:
+            continue
+        parent = anchor.getparent()
+        if parent is None:
+            continue
+        # Keep the tail: a permalink is often followed by whitespace separating the heading
+        # from what comes after it.
+        if anchor.tail:
+            previous = anchor.getprevious()
+            if previous is not None:
+                previous.tail = (previous.tail or "") + anchor.tail
+            else:
+                parent.text = (parent.text or "") + anchor.tail
+        parent.remove(anchor)
+
+
 def _strip_noise(root: HtmlElement) -> None:
     """Remove non-content elements, keeping their tail text.
 
@@ -87,6 +135,7 @@ def _strip_noise(root: HtmlElement) -> None:
     """
     etree.strip_elements(root, *SKIP_TAGS, with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
+    strip_permalinks(root)
 
 
 def _text_maps(

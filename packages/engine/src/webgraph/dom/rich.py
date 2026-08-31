@@ -19,7 +19,7 @@ from urllib.parse import urljoin
 from lxml import etree
 from lxml.html import HtmlElement
 
-from webgraph.dom.blocks import SKIP_TAGS, normalize_text
+from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
 from webgraph.types import Block, BlockKind
 
 __all__ = ["extract_rich_blocks"]
@@ -210,6 +210,7 @@ def extract_rich_blocks(
     """Extract blocks with their structure intact, in document order."""
     etree.strip_elements(root, *SKIP_TAGS, with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
+    strip_permalinks(root)
 
     tree = root.getroottree()
     blocks: list[Block] = []

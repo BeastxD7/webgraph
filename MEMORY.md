@@ -1246,3 +1246,24 @@ which is what an agent needs in order to ask for it.
 No model, no API key, no index build, deterministic -- so retrieval can be benchmarked the
 same way extraction is. Seeding is isolated behind one function so a vector seeder can be
 dropped in and *measured against* this one rather than assumed better.
+
+### D41 — Permalink anchors are structure, not characters
+
+Documentation generators attach a permalink to every heading: Sphinx `<a class="headerlink">¶</a>`,
+Docusaurus `<a class="hash-link" aria-hidden="true">#</a>`. It reached the reader as
+`Testimonials¶`, the index as a junk token, and the Markdown as a glyph on every heading of
+every docs site.
+
+Matched on the **class**, not on the character. A regex stripping a trailing `¶`/`#` from
+headings would mutilate `The C# language`. Extraction benchmark unchanged after the fix
+(83.3% page success, 0% wrong), so it removes only what it should.
+
+### Live-run defects the graph work surfaced
+
+- **Near-duplicate sections.** attrs.org's crawl reaches `/en/19.2.0/` beside `/en/stable/`,
+  so three copies of one section took three of fourteen slots. An exact hash misses them —
+  the copies differ in a version number — so dedup fingerprints the opening 300 characters
+  plus a length bucket.
+- **Budget overrun of 7%.** The per-section cost estimate ignored the provenance header each
+  section is rendered with. Cost is now measured, and the map tier gives way until the whole
+  thing fits: a caller who asks for 18,000 characters must not be handed 18,500.

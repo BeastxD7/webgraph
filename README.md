@@ -32,6 +32,7 @@ Then open <http://localhost:3000>, type a domain, and watch the crawl stream.
 - [Serving it: streaming, cancellation, concurrency](#serving-it-streaming-cancellation-concurrency)
 - [The front end](#the-front-end)
 - [How it is measured](#how-it-is-measured)
+- [The graph layer](#the-graph-layer)
 - [Where it stands against other tools](#where-it-stands-against-other-tools)
 - [Known limitations](#known-limitations)
 - [Design principles](#design-principles)
@@ -636,8 +637,13 @@ Stated plainly, because a limitations section that reads like marketing is worse
   solved.
 - **Overlapping absolute layouts** degrade XY-cut, since there is no clean gutter to cut on.
 - **No LLM extraction path yet.** Designed, not built.
-- **No retrieval or question-answering layer yet.** The graph-linked, cross-document
-  question-answering layer is the intended next stage and does not exist.
+- **Retrieval is lexical.** BM25 seeding cannot match a paraphrase that shares no
+  vocabulary with the text. The seam for a vector seeder exists; nothing is plugged into it.
+- **Multi-hop retrieval with no lexical signal at all is near the floor** (17–30%). An
+  average page links to a dozen others and a tight budget fits about fifteen sections, so a
+  page reachable only by link is close to a coin toss.
+- **No answer generation.** The engine assembles the context; producing an answer from it is
+  the caller's job, and deliberately so — there is no model in this codebase.
 
 ---
 

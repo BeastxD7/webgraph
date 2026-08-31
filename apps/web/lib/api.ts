@@ -98,8 +98,36 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+export interface ContextSource {
+  heading: string;
+  page_url: string;
+  page_title: string;
+  hops: number;
+  score: number;
+  /** Why this section is here, in words: "matched query", "linked from this section as …". */
+  reason: string;
+  chars: number;
+  tier: "full" | "opening";
+}
+
+export interface ContextResponse {
+  text: string;
+  sources: ContextSource[];
+  /** Pages named in the map tier but not included in full. */
+  pages_mapped: string[];
+  stats: Record<string, number>;
+  graph: { pages: number; sections: number; entities: number; links: number; mentions: number };
+}
+
 export const api = {
   health: () => request<HealthResponse>("/api/health"),
+
+  context: (input: {
+    url: string;
+    query: string;
+    max_chars: number;
+    max_hops: number;
+  }) => request<ContextResponse>("/api/site/context", input),
 
   extract: (input: {
     url: string;
@@ -248,6 +276,16 @@ export interface PageEvent {
   new_urls: string[];
   pages_per_minute: number;
   totals: { chars: number; markdown: number; images: number; tables: number };
+  /** Null when graph building is disabled. */
+  graph: GraphStats | null;
+}
+
+export interface GraphStats {
+  pages: number;
+  sections: number;
+  entities: number;
+  links: number;
+  mentions: number;
 }
 
 export interface DoneEvent {
@@ -269,6 +307,7 @@ export interface DoneEvent {
   /** Template slots that never vary across pages. */
   chrome_slots: number;
   entities: { type: string; pages: number; keys: string[] }[];
+  graph: GraphStats | null;
   duration_seconds: number;
 }
 
