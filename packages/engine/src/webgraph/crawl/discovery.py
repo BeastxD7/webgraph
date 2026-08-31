@@ -147,10 +147,23 @@ def discover_sitemap_urls(
     return found[:limit]
 
 
+MAX_ANCHOR_CHARS: Final[int] = 160
+"""Anchor text longer than this is a card or a whole paragraph wrapped in a link, not a
+label."""
+
+
 @dataclass
 class LinkSet:
     links: list[str] = field(default_factory=list)
     canonical: str | None = None
+
+    anchored: list[tuple[str, str]] = field(default_factory=list)
+    """(href, anchor text) pairs, in document order.
+
+    The anchor is what the site's own author chose to call the target page. Graph-based
+    retrieval systems normally pay a language model to invent a label for an edge; here the
+    label was written by a human and comes free with the link.
+    """
 
 
 def extract_links(html: str, base_url: str) -> LinkSet:
@@ -175,6 +188,7 @@ def extract_links(html: str, base_url: str) -> LinkSet:
             break
 
     hrefs: list[str] = []
+    anchored: list[tuple[str, str]] = []
     for anchor in root.xpath("//a[@href]"):
         href = (anchor.get("href") or "").strip()
         if not href:
@@ -183,8 +197,11 @@ def extract_links(html: str, base_url: str) -> LinkSet:
         if "nofollow" in rel:
             continue
         hrefs.append(href)
+        label = " ".join((anchor.text_content() or "").split())[:MAX_ANCHOR_CHARS]
+        if label:
+            anchored.append((href, label))
 
-    return LinkSet(links=hrefs, canonical=canonical)
+    return LinkSet(links=hrefs, canonical=canonical, anchored=anchored)
 
 
 def discover_by_crawling(

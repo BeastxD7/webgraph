@@ -1144,3 +1144,105 @@ Speed Insights, Sonner, Zod, HSTS — each verifiable in the network log or the 
 
 Standing lesson: a new signal source multiplies both true and false positives. Sweep a set
 of sites with known stacks after every rule addition, and check the two-letter globals first.
+
+---
+
+## The graph layer (2026-09-01, session 11)
+
+The question this answers: a 200-page crawl is millions of tokens. What goes in the context?
+
+### D37 — A website already is a graph; do not pay a model to invent one
+
+GraphRAG, LightRAG and their descendants spend an LLM pass to *infer* entities and relations
+from flat text. A crawl does not need to, because the edges are already published:
+
+| edge | observed from | what an inferred graph pays for it |
+|---|---|---|
+| page links to page | `<a href>` | an LLM pass over both pages |
+| what the link *means* | the anchor text, written by a human | an LLM-written relation label |
+| section belongs to page | heading structure, in recovered reading order | a chunker's guess |
+| page describes entity | JSON-LD / microdata, typed and often `@id`-keyed | entity extraction |
+| page is a child of page | the URL path | usually lost entirely |
+
+Every edge is observed, deterministic, free and carries provenance. Same commitment as the
+extraction engine, one layer up.
+
+**Sections, not pages, are the retrieval unit.** A heading owns the text under it until the
+next heading of equal or higher level -- the author's own idea of where a topic starts. This
+is only correct because reading order was recovered first: on a multi-column page, source
+order does not say which paragraphs sit under which heading.
+
+### D38 — The experiment, and three wrong turns it caught
+
+Harness: crawl a site, build the graph, generate three question types. **Single-hop** is a
+control (query from page B's own rare vocabulary). **Multi-hop, no overlap** takes the query
+from page A and requires the answer on a linked page B whose rare vocabulary the query does
+not contain. **Multi-hop, weak overlap** allows 1-3 shared terms -- the realistic case.
+
+Metric: gold-page recall at a fixed budget (3-4% of the site).
+
+**Wrong turn 1 — the first result said the graph made things worse.** It did not; the
+harness was wrong twice. The "multi-hop" queries included the link's anchor text, which is
+usually the target's own title, so they were not multi-hop at all (BM25 scored 77.5%). And
+the baselines had different content budgets. Fixed both; BM25 then scored **0.0%** on
+no-overlap, which is what a correct harness must show.
+
+**Wrong turn 2 — reserving budget for neighbours did nothing.** Sweeping the reservation
+from 0 to 0.8 produced a flat line. Diagnosis, rather than more guessing, showed why: the
+gold page was **reached in 100% of failures** and merely ranked too low -- median rank 86 of
+~160 when the budget fits ~15. The reservation also had a genuine bug (seeds spilled into
+the neighbour purse before neighbours were considered), so the parameter was inert.
+Budget allocation was never the problem; ranking was.
+
+**Wrong turn 3 — summing evidence helped one case and hurt the other.**
+
+| site | combine | single | no-overlap | weak-overlap |
+|---|---|---|---|---|
+| attrs | max | 100.0% | 26.0% | 75.0% |
+| attrs | sum | 100.0% | 27.5% | 52.8% |
+| attrs | **sum + mass-conserving** | 100.0% | **27.5%** | **97.2%** |
+| pytest | max | 97.5% | 17.4% | 50.0% |
+| pytest | sum | 95.0% | 18.0% | 42.5% |
+| pytest | **sum + mass-conserving** | **97.5%** | **18.6%** | **55.0%** |
+
+Plain summing rewards hubs: a page linked from everywhere collects a little from every seed
+and outranks the page that answers the question. Normalising each seed's outgoing
+contribution so it spreads a fixed mass fixes it, and wins every bucket.
+
+### D39 — Final measurement
+
+Budget = 30,000 chars, 3-4% of the site.
+
+**attrs.org** — 39 pages, 796k chars:
+
+| bucket | naive | BM25 | graph |
+|---|---|---|---|
+| single-hop | 7.7% | 100% | 100% |
+| multi-hop, no overlap | 8.6% | **0.0%** | **30.1%** |
+| multi-hop, weak overlap | 16.7% | 58.3% | **100%** |
+
+**docs.pytest.org** — 45 pages, 947k chars:
+
+| bucket | naive | BM25 | graph |
+|---|---|---|---|
+| single-hop | 5.0% | 97.5% | 97.5% |
+| multi-hop, no overlap | 10.6% | **0.0%** | **17.4%** |
+| multi-hop, weak overlap | 12.5% | 30.0% | **60.0%** |
+
+The no-overlap bucket is near the information-theoretic floor -- an average page links to
+~14 others and the budget fits ~15 sections, so a page reachable only by link is close to a
+coin toss. The honest claim is the weak-overlap row, which is what real questions look like:
+recall roughly doubles.
+
+### D40 — Three tiers, so a truncated context does not lie by omission
+
+Budget is spent as: full sections, then section openings, then a **map** -- title, URL and
+headings for every page that did not fit. The map is cheap and changes the failure mode:
+instead of silently omitting the pricing page, the context says it exists and where it is,
+which is what an agent needs in order to ask for it.
+
+### Why BM25 and not embeddings
+
+No model, no API key, no index build, deterministic -- so retrieval can be benchmarked the
+same way extraction is. Seeding is isolated behind one function so a vector seeder can be
+dropped in and *measured against* this one rather than assumed better.
