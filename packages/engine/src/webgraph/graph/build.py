@@ -271,7 +271,17 @@ def _canonical(url: str) -> str:
 
 
 def _page_title(document: Document) -> str:
-    for block in document.blocks:
-        if block.kind is BlockKind.HEADING and block.text.strip():
+    """The page's own title, preferring `<h1>`.
+
+    Taking simply the first heading titles a page by whatever the template puts at the top,
+    which on documentation sites is the sidebar: a whole site of pages called "Navigation".
+    `<h1>` is the page title by convention, so it wins when there is one.
+    """
+    headings = [
+        block for block in document.blocks
+        if block.kind is BlockKind.HEADING and block.text.strip()
+    ]
+    for block in headings:
+        if block.level == 1:
             return block.text.strip()[:200]
-    return document.url
+    return headings[0].text.strip()[:200] if headings else document.url

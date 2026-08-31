@@ -110,3 +110,50 @@ class TestArgumentHandling:
     def test_unknown_file_is_treated_as_url_and_fails_cleanly(self) -> None:
         with pytest.raises(SystemExit):
             main(["-q", "text", "http://127.0.0.1:9/nope"])
+
+
+class TestGraphCommands:
+    """`graph` and `ask` give the graph layer the same standing as extraction.
+
+    The engine has to be usable without the HTTP service; a capability that only exists
+    behind an API is a service feature, not an engine one.
+    """
+
+    def test_graph_and_ask_are_registered(self) -> None:
+        from webgraph.cli import build_parser
+
+        parser = build_parser()
+        actions = [
+            action
+            for action in parser._subparsers._group_actions
+            if hasattr(action, "choices")
+        ]
+        names = set()
+        for action in actions:
+            names |= set(action.choices or {})
+        assert {"graph", "ask"} <= names
+
+    def test_ask_accepts_a_saved_graph_instead_of_a_crawl(self) -> None:
+        """Re-crawling to answer a second question would make the graph pointless."""
+        from webgraph.cli import build_parser
+
+        args = build_parser().parse_args(["ask", "what is this", "--graph", "site.jsonl"])
+        assert args.graph == "site.jsonl"
+        assert args.urls == []
+
+    def test_graph_defaults_to_jsonl(self) -> None:
+        from webgraph.cli import build_parser
+
+        args = build_parser().parse_args(["graph", "https://example.com/"])
+        assert args.format == "jsonl"
+        assert args.urls == ["https://example.com/"]
+
+    def test_graph_accepts_several_roots(self) -> None:
+        """Several sites merge into one graph; that is the cross-site feature's entry point."""
+        from webgraph.cli import build_parser
+
+        args = build_parser().parse_args(
+            ["graph", "https://a.test/", "https://b.test/", "--format", "cypher"]
+        )
+        assert args.urls == ["https://a.test/", "https://b.test/"]
+        assert args.format == "cypher"

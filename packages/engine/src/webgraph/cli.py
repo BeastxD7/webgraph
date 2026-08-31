@@ -10,7 +10,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from webgraph.analyze import analyze_site
 from webgraph.eval.harness import format_report, load_corpus, run_corpus
@@ -19,8 +19,11 @@ from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, rende
 from webgraph.fetch.static import fetch_static
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.site import SiteConfig, extract_site
+from webgraph.site import SiteConfig, extract_site, stream_site
 from webgraph.types import Document
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from webgraph.graph.model import SiteGraph
 
 __all__ = ["main"]
 
@@ -153,6 +156,114 @@ def _cmd_site(args: argparse.Namespace) -> int:
     return 0
 
 
+def _crawl_graph(
+    urls: list[str], *, max_pages: int, concurrency: int, complete: bool
+) -> SiteGraph:
+    """Crawl one or more sites and return one graph over all of them.
+
+    Several roots produce a corpus, merged into a single graph. Off-site links between the
+    crawled sites become ordinary edges, so a question can cross from one site to another
+    without the retriever knowing a boundary existed.
+    """
+    from webgraph.graph.build import GraphBuilder
+    from webgraph.graph.corpus import Corpus
+    from webgraph.graph.entities import derive_entities
+    from webgraph.resolve import Strategy
+
+    corpus = Corpus()
+    for url in urls:
+        builder = GraphBuilder(url)
+        config = SiteConfig(
+            max_pages=max_pages,
+            concurrency=concurrency,
+            strategy=Strategy.UNION if complete else Strategy.STATIC_ONLY,
+        )
+        for event in stream_site(url, config=config, builder=builder):
+            if event["type"] == "page":
+                print(
+                    f"  [{event['extracted']:>4}] {event['url'][:96]}",
+                    file=sys.stderr,
+                )
+            elif event["type"] == "error":
+                print(f"  error: {event['message']}", file=sys.stderr)
+        derive_entities(builder.graph)
+        corpus.add(builder.graph)
+
+    if len(corpus.sites) > 1:
+        resolved = corpus.resolve_external()
+        print(f"  resolved {resolved} cross-site redirects", file=sys.stderr)
+        print(f"  {len(corpus.cross_links())} cross-site links", file=sys.stderr)
+    return corpus.merged()
+
+
+def _cmd_graph(args: argparse.Namespace) -> int:
+    """Crawl and write the site graph out."""
+    from webgraph.graph.export import to_cypher, to_jsonl
+
+    graph = _crawl_graph(
+        args.urls,
+        max_pages=args.max_pages,
+        concurrency=args.concurrency,
+        complete=args.complete,
+    )
+    print(f"\n{graph.describe()}", file=sys.stderr)
+
+    lines = (
+        to_cypher(graph, include_text=args.include_text)
+        if args.format == "cypher"
+        else to_jsonl(graph)
+    )
+    if args.out:
+        with Path(args.out).open("w", encoding="utf-8") as handle:
+            for line in lines:
+                handle.write(line + "\n")
+        print(f"wrote {args.out}", file=sys.stderr)
+    else:
+        for line in lines:
+            print(line)
+    return 0
+
+
+def _cmd_ask(args: argparse.Namespace) -> int:
+    """Assemble a bounded context about a question, from a crawl or a saved graph."""
+    from webgraph.graph.export import load_jsonl
+    from webgraph.graph.retrieve import Budget, ContextAssembler
+
+    if args.graph:
+        graph = load_jsonl(args.graph)
+    else:
+        graph = _crawl_graph(
+            args.urls,
+            max_pages=args.max_pages,
+            concurrency=args.concurrency,
+            complete=args.complete,
+        )
+
+    if not graph.sections:
+        print("no content in the graph", file=sys.stderr)
+        return 1
+
+    assembled = ContextAssembler(graph).assemble(
+        args.query, budget=Budget(max_chars=args.max_chars)
+    )
+
+    # The context goes to stdout so it can be piped straight into a model; the account of how
+    # it was chosen goes to stderr so it does not contaminate that.
+    for item in assembled.sections_full:
+        print(
+            f"  [{item.hops} hop] {item.section.heading[:44]:46s} {item.reason[:48]}",
+            file=sys.stderr,
+        )
+    print(
+        f"\n  {assembled.stats['approx_tokens']:.0f} tokens from "
+        f"{len(assembled.sections_full)} sections and "
+        f"{len(assembled.pages_mapped)} pages listed but not included",
+        file=sys.stderr,
+    )
+    print(assembled.text)
+    return 0
+
+
 def _cmd_bench(args: argparse.Namespace) -> int:
     cases = load_corpus(Path(args.corpus))
     score = run_corpus(cases)
@@ -220,6 +331,38 @@ def build_parser() -> argparse.ArgumentParser:
     site.add_argument("--max-pages", type=int, default=40)
     site.add_argument("--concurrency", type=int, default=4)
     site.set_defaults(func=_cmd_site)
+
+    graph = subparsers.add_parser(
+        "graph", help="crawl one or more sites and export the graph"
+    )
+    graph.add_argument("urls", nargs="+", help="site roots; several are merged into one graph")
+    graph.add_argument("--max-pages", type=int, default=40, help="0 for unlimited")
+    graph.add_argument("--concurrency", type=int, default=6)
+    graph.add_argument(
+        "--complete",
+        action="store_true",
+        help="merge static and rendered fetches; slower and loses nothing",
+    )
+    graph.add_argument("--format", choices=("jsonl", "cypher"), default="jsonl")
+    graph.add_argument(
+        "--include-text",
+        action="store_true",
+        help="cypher only: embed section bodies rather than leaving them in the JSONL",
+    )
+    graph.add_argument("--out", help="write here instead of stdout")
+    graph.set_defaults(func=_cmd_graph)
+
+    ask = subparsers.add_parser(
+        "ask", help="assemble a bounded context about a question"
+    )
+    ask.add_argument("query", help="what the context should be about")
+    ask.add_argument("urls", nargs="*", help="site roots to crawl first")
+    ask.add_argument("--graph", help="use a graph written by `webgraph graph` instead")
+    ask.add_argument("--max-chars", type=int, default=120_000, help="~4 characters per token")
+    ask.add_argument("--max-pages", type=int, default=40)
+    ask.add_argument("--concurrency", type=int, default=6)
+    ask.add_argument("--complete", action="store_true")
+    ask.set_defaults(func=_cmd_ask)
 
     bench = subparsers.add_parser("bench", help="score the engine against a labelled corpus")
     bench.add_argument("corpus", help="corpus directory containing gold.json")

@@ -225,6 +225,38 @@ class TestAssembly:
         for item in out.sections_full:
             assert item.section.page_key in out.text or item.reason in out.text
 
+    def test_a_page_is_titled_by_its_h1_not_by_the_sidebar(self) -> None:
+        """Taking the first heading titles a whole documentation site "Navigation"."""
+        builder = GraphBuilder(BASE)
+        builder.add(
+            document(
+                "<h2>Navigation</h2><p>" + "menu " * 30 + "</p>"
+                "<h1>Deploying</h1><p>" + "deploy " * 30 + "</p>"
+            )
+        )
+        assert next(iter(builder.graph.pages.values())).title == "Deploying"
+
+    def test_the_map_names_what_distinguishes_a_page(self) -> None:
+        """Not what every page shares.
+
+        The first six sections of a Sphinx page are all sidebar, so every map entry read
+        "Navigation; Quick search; Contents" -- a description of the template, not of any
+        page in it.
+        """
+        builder = GraphBuilder(BASE)
+        for index in range(6):
+            builder.add(
+                document(
+                    "<h2>Navigation</h2><p>" + "menu " * 30 + "</p>"
+                    f"<h1>Topic {index}</h1><p>" + f"unique{index} " * 30 + "</p>",
+                    url=f"{BASE}p{index}",
+                )
+            )
+        assembler = ContextAssembler(builder.graph)
+        line = assembler._map_line("example.com/p3")
+        assert "Topic 3" in line
+        assert "Navigation" not in line
+
     def test_empty_query_returns_a_map_not_a_crash(self) -> None:
         assembler = self.build()
         out = assembler.assemble("")

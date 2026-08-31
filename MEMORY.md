@@ -1437,3 +1437,21 @@ Chrome detection was also checked on the same page and is working: it removed "N
 "Quick search", "Contents", the breadcrumb and the copyright line. It only reaches 0.1% of
 that page because 111k characters of template documentation dwarf its chrome, not because it
 failed.
+
+### D49 — Two defects the CLI exposed by showing the output plainly
+
+Running `webgraph ask` against Jinja printed the map tier, and two things were obviously
+wrong the moment a human looked at them. Neither had shown up in any metric.
+
+**Every map entry read "Navigation; Quick search; Contents".** The map lists a page by its
+first six section headings, and on a Sphinx page those are all sidebar. Fixed by skipping
+headings that appear on half the pages or more — the same cross-page frequency idea as
+chrome detection, applied to the map. Entries now read "Sandbox; Security Considerations;
+API; Operator Intercepting", which is what an agent needs in order to decide what to fetch.
+
+**A page's title was whatever heading came first**, which on a template that puts the
+sidebar above the content is "Navigation" — a whole site of pages with the same name.
+`<h1>` is the page title by convention and now wins when there is one.
+
+Standing lesson: metrics did not catch either. Looking at the actual output did, immediately.
+Print the thing.

@@ -67,6 +67,9 @@ tokenising precisely would tie the engine to one model's vocabulary."""
 
 K1: Final[float] = 1.5
 B: Final[float] = 0.75
+HEADING_UBIQUITY: Final[float] = 0.5
+"""Share of pages a heading must appear on before it is useless for identifying one."""
+
 DEDUP_PREFIX_CHARS: Final[int] = 300
 """Characters of a section's opening used to recognise a near-duplicate."""
 
@@ -177,6 +180,15 @@ class ContextAssembler:
             self._doc_len[section.id] = sum(terms.values())
             for term in terms:
                 self._df[term] += 1
+
+        # How many pages carry each heading. The map tier lists a page by its headings, and
+        # the first six sections of a Sphinx page are all sidebar: every entry read
+        # "Navigation; Quick search; Contents", which describes the template rather than the
+        # page. A heading on most pages says nothing about any of them.
+        self._heading_pages: Counter[str] = Counter()
+        for page_key in graph.pages:
+            for heading in {s.heading for s in graph.sections_of(page_key) if s.heading}:
+                self._heading_pages[heading] += 1
 
         self._n = max(len(self._doc_tokens), 1)
         self._avg_len = (sum(self._doc_len.values()) / self._n) if self._doc_len else 1.0
@@ -590,9 +602,18 @@ class ContextAssembler:
         return "\n".join(parts)
 
     def _map_line(self, page_key: str) -> str:
-        """One page in the map tier: what it is, where it is, what it covers."""
+        """One page in the map tier: what it is, where it is, and what only it covers."""
         page = self.graph.pages[page_key]
-        headings = [s.heading for s in self.graph.sections_of(page_key)[:6] if s.heading]
+        cutoff = max(2, int(len(self.graph.pages) * HEADING_UBIQUITY))
+        headings: list[str] = []
+        for section in self.graph.sections_of(page_key):
+            if not section.heading or section.heading in headings:
+                continue
+            if self._heading_pages[section.heading] >= cutoff:
+                continue
+            headings.append(section.heading)
+            if len(headings) == 6:
+                break
         trail = f" — {'; '.join(headings)}" if headings else ""
         return f"- {page.title} <{page.url}>{trail}\n"
 
