@@ -71,6 +71,21 @@ class Score:
     precision: float
     recall: float
     chars: int
+    lenient: float = 0.0
+    """Precision against the *union* of the reference extractors rather than the vote.
+
+    The strict figure penalises text that only one of three tools kept, and on documentation
+    pages that turned out to be most of the disagreement: of the engine's non-consensus
+    shingles on Jinja's template page, **58.6% had been kept by exactly one reference**.
+    Those are cases where the vote threshold excluded something a real extractor wanted, not
+    cases where this engine invented noise.
+
+    Reporting both keeps the strict number honest and makes the threshold's cost visible
+    instead of arguable.
+
+    **Meaningful only for the engine rows.** A reference extractor scores 1.000 here by
+    construction, since it is part of the union; that is arithmetic, not evidence.
+    """
 
     @property
     def f1(self) -> float:
@@ -78,16 +93,23 @@ class Score:
         return 2 * self.precision * self.recall / total if total else 0.0
 
 
-def score(candidate: str, reference: set[tuple[str, ...]], name: str) -> Score:
+def score(
+    candidate: str,
+    reference: set[tuple[str, ...]],
+    name: str,
+    union: set[tuple[str, ...]] | None = None,
+) -> Score:
     produced = shingles(candidate)
     if not produced or not reference:
         return Score(name=name, precision=0.0, recall=0.0, chars=len(candidate))
     overlap = len(produced & reference)
+    lenient = len(produced & union) / len(produced) if union else 0.0
     return Score(
         name=name,
         precision=overlap / len(produced),
         recall=overlap / len(reference),
         chars=len(candidate),
+        lenient=lenient,
     )
 
 
@@ -245,28 +267,38 @@ def run(urls: Iterable[str], *, diff: bool = False) -> None:
         if diff:
             report_excess(url, vote)
 
+        union: set[tuple[str, ...]] = set()
+        for text in references.values():
+            union |= shingles(text)
+
         candidates = {**references, **engine_texts(url)}
-        print(f"  {'extractor':26s} {'P':>7} {'R':>7} {'F':>7} {'chars':>8}")
+        print(f"  {'extractor':26s} {'P':>7} {'R':>7} {'F':>7} {'P(any)':>8} {'chars':>8}")
         for name, text in candidates.items():
-            entry = score(text, vote, name)
+            entry = score(text, vote, name, union)
             totals.setdefault(name, []).append(entry)
             print(
                 f"  {name:26s} {entry.precision:>7.3f} {entry.recall:>7.3f} "
-                f"{entry.f1:>7.3f} {entry.chars:>8,}"
+                f"{entry.f1:>7.3f} {entry.lenient:>8.3f} {entry.chars:>8,}"
             )
 
     if not totals:
         return
-    print(f"\n{'=' * 64}\nMEAN OVER {len(next(iter(totals.values())))} PAGES")
-    print(f"  {'extractor':26s} {'P':>7} {'R':>7} {'F':>7}")
+    print(f"\n{'=' * 72}\nMEAN OVER {len(next(iter(totals.values())))} PAGES")
+    print(f"  {'extractor':26s} {'P':>7} {'R':>7} {'F':>7} {'P(any)':>8}")
     for name, scores in sorted(totals.items(), key=lambda kv: -_mean(s.f1 for s in kv[1])):
         print(
             f"  {name:26s} {_mean(s.precision for s in scores):>7.3f} "
-            f"{_mean(s.recall for s in scores):>7.3f} {_mean(s.f1 for s in scores):>7.3f}"
+            f"{_mean(s.recall for s in scores):>7.3f} {_mean(s.f1 for s in scores):>7.3f} "
+            f"{_mean(s.lenient for s in scores):>8.3f}"
         )
     print(
         "\nA reference extractor scoring below 1.0 against the vote is expected: the vote is"
         "\nwhat two of the three agreed on, not what any one of them produced."
+        "\n\nP(any) scores against the union instead of the vote, and is meaningful ONLY for"
+        "\nthe engine rows: a reference extractor scores 1.000 there by construction, because"
+        "\nit is part of the union. For the engine it reads as the share of its output that at"
+        "\nleast one established extractor also kept, so 1 - P(any) is the text no reference"
+        "\nwanted -- the honest noise figure."
     )
 
 

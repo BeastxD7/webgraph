@@ -1417,5 +1417,23 @@ captions removed: precision does **not** improve (0.835 -> 0.833) and recall col
 (0.989 -> 0.805). So the references do keep code and tables, structure preservation is not
 the cause of the gap, and dropping it would cost ten points of F.
 
-The excess is real but small -- 8,186 characters of 113,756 on that page -- and its cause is
-still unisolated. Recorded as open rather than guessed at.
+### D48 — Most of the precision gap is the vote threshold, not noise
+
+Chased properly rather than left open. Of the engine's non-consensus shingles on Jinja's
+template page, **58.6% had been kept by exactly one reference extractor** -- the vote needs
+two, so the engine is penalised for text a real extractor wanted. The remaining 41.4% is a
+mix of API-reference tables the references drop and a little genuine sidebar leakage.
+
+The benchmark now reports `P(any)`, precision against the *union* rather than the vote.
+Engine: **0.937**. So **6.3% of the engine's output is text no established extractor kept**,
+and the rest of the distance from 0.937 to 0.852 is the threshold.
+
+`P(any)` is tautologically 1.000 for the references, since they are the union. Reported
+anyway, with that stated, because the alternative -- quietly omitting the row that makes the
+comparison look worse for the engine -- is the kind of selective reporting this project's
+whole method is against.
+
+Chrome detection was also checked on the same page and is working: it removed "Navigation",
+"Quick search", "Contents", the breadcrumb and the copyright line. It only reaches 0.1% of
+that page because 111k characters of template documentation dwarf its chrome, not because it
+failed.

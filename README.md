@@ -592,19 +592,28 @@ they were split into the same sentences*: an early version of this measurement r
 F=0.611 where shingles put the same output at 0.796.
 
 ```
-                                   P       R       F
-  trafilatura                  0.907   0.994   0.946
-  readability                  0.908   0.993   0.945
-  engine (chrome removed)      0.852   0.989   0.914
-  engine (raw)                 0.835   0.989   0.904
-  engine (prose only)          0.833   0.805   0.810
-  justext                      0.778   0.398   0.522
+                                   P       R       F   P(any)
+  trafilatura                  0.907   0.994   0.946    1.000
+  readability                  0.908   0.993   0.945    1.000
+  engine (chrome removed)      0.852   0.989   0.914    0.937
+  engine (raw)                 0.835   0.989   0.904    0.919
+  engine (prose only)          0.833   0.805   0.810    0.871
+  justext                      0.778   0.398   0.522    0.833
 ```
 
-The `prose only` row is the engine with code blocks and tables removed. Recall collapses,
-which settles a question worth settling: the reference extractors *do* keep code and tables,
-so preserving them is not the source of the precision gap — dropping them costs ten points
-of F.
+Two rows exist to answer questions rather than to flatter.
+
+`prose only` is the engine with code blocks and tables removed. Recall collapses, which
+settles a question worth settling: the reference extractors *do* keep code and tables, so
+preserving them is not the source of the precision gap — dropping it costs ten points of F.
+
+`P(any)` scores against the **union** of the references rather than the vote, and is
+meaningful only for the engine rows: a reference scores 1.000 there by construction, which
+is arithmetic and not evidence. For the engine it reads as the share of its output that at
+least one established extractor also kept — so **6.3% of what the engine produces is text no
+reference wanted**, and the rest of the gap to 0.852 is the two-of-three threshold. On
+Jinja's template page, 58.6% of the engine's non-consensus shingles had been kept by exactly
+one reference.
 
 ### Headline numbers
 
