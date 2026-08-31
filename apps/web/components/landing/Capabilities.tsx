@@ -14,8 +14,8 @@ const CAPABILITIES: ReadonlyArray<{ title: string; body: string; detail: string 
       "A sitemap is neither complete nor current. One site advertised 4 URLs and had 75 live " +
       "pages; discovery unions the sitemap with a two-level link crawl and verifies each one.",
     detail:
-      "97.7% mean route recall across 93 sites, scored against a real-browser oracle. Static " +
-      "link-following alone scores 26.5% once the oracle looks two levels deep.",
+      "98.1% mean route recall across 96 sites, scored against a real-browser oracle. Static " +
+      "link-following alone scores 31.0% against the same oracle.",
   },
   {
     title: "Site chrome removed by comparison",

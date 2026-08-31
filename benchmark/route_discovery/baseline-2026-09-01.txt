@@ -1,0 +1,321 @@
+Collecting depth-2 browser oracle for 100 sites (homepage + up to 14 sub-pages each)...
+  https://docs.pytest.org/en/stable/: 65 routes (+0 by interaction, depth-2 +8 from 14 sub-pages)
+  https://requests.readthedocs.io/en/latest/: 24 routes (+0 by interaction, depth-2 +8 from 14 sub-pages)
+  https://flask.palletsprojects.com/: 76 routes (+0 by interaction, depth-2 +9 from 14 sub-pages)
+  https://fastapi.tiangolo.com/: 163 routes (+0 by interaction, depth-2 +0 from 14 sub-pages)
+  https://docs.docker.com/: 1630 routes (+0 by interaction, depth-2 +1608 from 14 sub-pages)
+  https://kubernetes.io/: 1839 routes (+0 by interaction, depth-2 +1796 from 14 sub-pages)
+  https://www.djangoproject.com/: 55 routes (+0 by interaction, depth-2 +36 from 6 sub-pages)
+  https://docs.astro.build/en/getting-started/: 241 routes (+0 by interaction, depth-2 +0 from 14 sub-pages)
+  https://docusaurus.io/: 323 routes (+0 by interaction, depth-2 +295 from 14 sub-pages)
+  https://storybook.js.org/: 188 routes (+0 by interaction, depth-2 +155 from 14 sub-pages)
+  https://vitest.dev/: 193 routes (+0 by interaction, depth-2 +185 from 7 sub-pages)
+  https://prettier.io/: 65 routes (+0 by interaction, depth-2 +53 from 11 sub-pages)
+  https://eslint.org/: 134 routes (+0 by interaction, depth-2 +114 from 13 sub-pages)
+  https://webpack.js.org/: 204 routes (+0 by interaction, depth-2 +23 from 14 sub-pages)
+  https://rollupjs.org/: 17 routes (+0 by interaction, depth-2 +10 from 6 sub-pages)
+  https://esbuild.github.io/: 9 routes (+0 by interaction, depth-2 +1 from 7 sub-pages)
+  https://redis.io/: 178 routes (+0 by interaction, depth-2 +94 from 13 sub-pages)
+  https://www.postgresql.org/: 464 routes (+0 by interaction, depth-2 +421 from 14 sub-pages)
+  https://www.sqlite.org/index.html: 942 routes (+0 by interaction, depth-2 +904 from 12 sub-pages)
+  https://caddyserver.com/: 80 routes (+0 by interaction, depth-2 +52 from 14 sub-pages)
+  https://docs.pydantic.dev/latest/: 730 routes (+0 by interaction, depth-2 +633 from 14 sub-pages)
+  https://numpy.org/: 103 routes (+0 by interaction, depth-2 +78 from 14 sub-pages)
+  https://pandas.pydata.org/: 64 routes (+0 by interaction, depth-2 +35 from 14 sub-pages)
+  https://scikit-learn.org/stable/: 1374 routes (+0 by interaction, depth-2 +1320 from 14 sub-pages)
+  https://jestjs.io/: 227 routes (+0 by interaction, depth-2 +205 from 14 sub-pages)
+  https://playwright.dev/: 251 routes (+0 by interaction, depth-2 +232 from 14 sub-pages)
+  https://tanstack.com/: 315 routes (+4 by interaction, depth-2 +273 from 13 sub-pages)
+  https://trpc.io/: 109 routes (+0 by interaction, depth-2 +94 from 12 sub-pages)
+  https://zod.dev/: 139 routes (+0 by interaction, depth-2 +100 from 14 sub-pages)
+  https://orm.drizzle.team/: 97 routes (+0 by interaction, depth-2 +1 from 14 sub-pages)
+  https://nextjs.org/: 402 routes (+0 by interaction, depth-2 +380 from 14 sub-pages)
+  https://astro.build/: 97 routes (+0 by interaction, depth-2 +44 from 12 sub-pages)
+  https://svelte.dev/: 536 routes (+0 by interaction, depth-2 +525 from 9 sub-pages)
+  https://vuejs.org/: 65 routes (+0 by interaction, depth-2 +36 from 14 sub-pages)
+  https://tailwindcss.com/: 429 routes (+0 by interaction, depth-2 +418 from 12 sub-pages)
+  https://www.rust-lang.org/: 69 routes (+0 by interaction, depth-2 +53 from 14 sub-pages)
+  https://go.dev/: 1122 routes (+0 by interaction, depth-2 +1080 from 11 sub-pages)
+  https://elixir-lang.org/: 89 routes (+0 by interaction, depth-2 +79 from 9 sub-pages)
+  https://gohugo.io/: 21 routes (+0 by interaction, depth-2 +18 from 2 sub-pages)
+  https://jekyllrb.com/: 141 routes (+0 by interaction, depth-2 +133 from 7 sub-pages)
+  https://www.11ty.dev/: 1005 routes (+63 by interaction, depth-2 +816 from 14 sub-pages)
+  https://bun.sh/: 329 routes (+0 by interaction, depth-2 +274 from 11 sub-pages)
+  https://deno.com/: 286 routes (+0 by interaction, depth-2 +272 from 12 sub-pages)
+  https://htmx.org/: 179 routes (+0 by interaction, depth-2 +168 from 10 sub-pages)
+  https://alpinejs.dev/: 77 routes (+0 by interaction, depth-2 +75 from 2 sub-pages)
+  https://remix.run/: 83 routes (+0 by interaction, depth-2 +78 from 3 sub-pages)
+  https://nuxt.com/: 189 routes (+0 by interaction, depth-2 +161 from 14 sub-pages)
+  https://qwik.dev/: 186 routes (+0 by interaction, depth-2 +171 from 13 sub-pages)
+  https://solidjs.com/: 16 routes (+0 by interaction, depth-2 +7 from 8 sub-pages)
+  https://lit.dev/: 93 routes (+0 by interaction, depth-2 +83 from 6 sub-pages)
+  https://linear.app/: 128 routes (+0 by interaction, depth-2 +82 from 14 sub-pages)
+  https://posthog.com/: 1043 routes (+0 by interaction, depth-2 +996 from 14 sub-pages)
+  https://supabase.com/: 381 routes (+0 by interaction, depth-2 +317 from 14 sub-pages)
+  https://resend.com/: 430 routes (+13 by interaction, depth-2 +378 from 14 sub-pages)
+  https://cal.com/: 94 routes (+0 by interaction, depth-2 +46 from 11 sub-pages)
+  https://plausible.io/: 244 routes (+0 by interaction, depth-2 +200 from 14 sub-pages)
+  https://httpie.io/: 73 routes (+0 by interaction, depth-2 +58 from 13 sub-pages)
+  https://persyn.ai/: 17 routes (+0 by interaction, depth-2 +5 from 11 sub-pages)
+  https://vercel.com/: 288 routes (+0 by interaction, depth-2 +210 from 14 sub-pages)
+  https://netlify.com/: 367 routes (+0 by interaction, depth-2 +315 from 13 sub-pages)
+  https://render.com/: 624 routes (+0 by interaction, depth-2 +573 from 14 sub-pages)
+  https://fly.io/: 422 routes (+0 by interaction, depth-2 +390 from 14 sub-pages)
+  https://planetscale.com/: 166 routes (+0 by interaction, depth-2 +92 from 14 sub-pages)
+  https://neon.tech/: 1 routes (+0 by interaction, depth-2 +0 from 0 sub-pages)
+  https://clerk.com/: 144 routes (+0 by interaction, depth-2 +105 from 13 sub-pages)
+  https://stripe.com/: 981 routes (+1 by interaction, depth-2 +868 from 14 sub-pages)
+  https://sentry.io/: 284 routes (+0 by interaction, depth-2 +234 from 14 sub-pages)
+  https://retool.com/: 78 routes (+0 by interaction, depth-2 +18 from 14 sub-pages)
+  https://airtable.com/: 92 routes (+0 by interaction, depth-2 +0 from 0 sub-pages)
+  https://notion.com/: 198 routes (+0 by interaction, depth-2 +127 from 13 sub-pages)
+  https://www.awwwards.com/: 399 routes (+0 by interaction, depth-2 +294 from 14 sub-pages)
+  https://www.behance.net/: 0 routes (+0 by interaction, depth-2 +0 from 0 sub-pages)
+  oracle failed for https://dribbble.com/: Error
+  https://www.pentagram.com/: 406 routes (+0 by interaction, depth-2 +253 from 14 sub-pages)
+  https://www.instrument.com/: 107 routes (+1 by interaction, depth-2 +74 from 13 sub-pages)
+  https://www.hugeinc.com/: 31 routes (+0 by interaction, depth-2 +9 from 14 sub-pages)
+  oracle failed for https://www.workandco.com/: Error
+  https://basicagency.com/: 129 routes (+0 by interaction, depth-2 +99 from 14 sub-pages)
+  https://www.ueno.co/: 7 routes (+0 by interaction, depth-2 +1 from 5 sub-pages)
+  https://www.webflow.com/: 232 routes (+0 by interaction, depth-2 +142 from 13 sub-pages)
+  https://www.framer.com/: 199 routes (+0 by interaction, depth-2 +95 from 10 sub-pages)
+  https://www.figma.com/: 511 routes (+0 by interaction, depth-2 +419 from 10 sub-pages)
+  https://readymag.com/: 92 routes (+0 by interaction, depth-2 +52 from 11 sub-pages)
+  https://www.squarespace.com/: 177 routes (+0 by interaction, depth-2 +39 from 13 sub-pages)
+  https://www.cargo.site/: 17 routes (+0 by interaction, depth-2 +12 from 5 sub-pages)
+  https://books.toscrape.com/: 182 routes (+0 by interaction, depth-2 +109 from 14 sub-pages)
+  https://quotes.toscrape.com/: 80 routes (+0 by interaction, depth-2 +33 from 6 sub-pages)
+  https://www.shopify.com/: 818 routes (+0 by interaction, depth-2 +661 from 14 sub-pages)
+  https://www.etsy.com/: 0 routes (+0 by interaction, depth-2 +0 from 0 sub-pages)
+  https://www.allbirds.com/: 110 routes (+0 by interaction, depth-2 +49 from 14 sub-pages)
+  https://www.smashingmagazine.com/: 167 routes (+0 by interaction, depth-2 +60 from 14 sub-pages)
+  https://css-tricks.com/: 883 routes (+0 by interaction, depth-2 +755 from 14 sub-pages)
+  https://overreacted.io/: 118 routes (+0 by interaction, depth-2 +59 from 14 sub-pages)
+  https://simonwillison.net/: 2961 routes (+0 by interaction, depth-2 +2764 from 14 sub-pages)
+  https://danluu.com/: 124 routes (+0 by interaction, depth-2 +6 from 14 sub-pages)
+  https://traefik.io/: 102 routes (+0 by interaction, depth-2 +45 from 14 sub-pages)
+  https://ghost.org/: 226 routes (+0 by interaction, depth-2 +162 from 13 sub-pages)
+  https://wordpress.org/: 148 routes (+0 by interaction, depth-2 +122 from 14 sub-pages)
+  https://www.ionidea.com/: 62 routes (+0 by interaction, depth-2 +46 from 14 sub-pages)
+  https://nginx.org/: 167 routes (+0 by interaction, depth-2 +149 from 14 sub-pages)
+Running engine discovery...
+  engine level-1 failed for https://www.workandco.com/: ValueError
+==============================================================================
+ROUTE DISCOVERY BENCHMARK   engine vs real-browser oracle
+==============================================================================
+
+  site                                oracle  engine   recall   static
+  --------------------------------------------------------------------
+  solidjs.com                             16       8     50%      6%  <-- GAP
+  www.awwwards.com                       399     392     69%     23%  <-- GAP
+  retool.com                              78     142     82%     60%  <-- GAP
+  netlify.com                            367     317     86%     14%  <-- GAP
+  www.instrument.com                     107      98     88%     18%  <-- GAP
+  posthog.com                           1043     937     90%      4%  <-- GAP
+  pandas.pydata.org                       64      99     91%     45%  <-- GAP
+  wordpress.org                          148     136     92%     18%  <-- GAP
+  resend.com                             430     518     94%      9%  <-- GAP
+  storybook.js.org                       188     180     96%     17%  <-- GAP
+  airtable.com                            92     440     97%     97%  <-- GAP
+  www.allbirds.com                       110     107     97%     45%  <-- GAP
+  planetscale.com                        166     162     98%     42%  <-- GAP
+  nextjs.org                             402     400     98%      0%  <-- GAP
+  cal.com                                 94     305     98%     56%  <-- GAP
+  www.djangoproject.com                   55     114     98%     35%  <-- GAP
+  www.smashingmagazine.com               167     169     99%     64%  <-- GAP
+  nuxt.com                               189     187     99%     14%  <-- GAP
+  notion.com                             198     200     99%     36%  <-- GAP
+  docs.pydantic.dev/latest               730     734     99%     13%
+  basicagency.com                        129     129     99%     23%
+  zod.dev                                139     138     99%     28%
+  redis.io                               178     180     99%     47%
+  webpack.js.org                         204     203     99%      6%
+  www.framer.com                         199     198     99%     62%
+  sentry.io                              284     283    100%     18%
+  scikit-learn.org/stable               1374    1372    100%      3%
+  svelte.dev                             536     535    100%      2%
+  simonwillison.net                     2961    2960    100%      7%
+  docs.pytest.org/en/stable               65      65    100%     88%
+  requests.readthedocs.io/en/latest       24      24    100%     67%
+  flask.palletsprojects.com               76      76    100%     88%
+  fastapi.tiangolo.com                   163     163    100%    100%
+  docs.docker.com                       1630    1630    100%      1%
+  kubernetes.io                         1839    1839    100%      2%
+  docs.astro.build/en/getting-start      241     241    100%    100%
+  docusaurus.io                          323     323    100%      9%
+  vitest.dev                             193     193    100%      4%
+  prettier.io                             65      65    100%     17%
+  eslint.org                             134     133    100%     14%
+  rollupjs.org                            17      17    100%     41%
+  esbuild.github.io                        9       9    100%     89%
+  www.postgresql.org                     464     464    100%      9%
+  www.sqlite.org/index.html              942     962    100%      4%
+  caddyserver.com                         80      80    100%     36%
+  numpy.org                              103     102    100%     29%
+  jestjs.io                              227     227    100%     10%
+  playwright.dev                         251     251    100%      8%
+  tanstack.com                           315     342    100%     13%
+  trpc.io                                109     110    100%     13%
+  orm.drizzle.team                        97      97    100%     99%
+  astro.build                             97      97    100%     54%
+  vuejs.org                               65      65    100%     29%
+  tailwindcss.com                        429     429    100%      3%
+  www.rust-lang.org                       69      69    100%     24%
+  go.dev                                1122    1124    100%      3%
+  elixir-lang.org                         89      89    100%     11%
+  gohugo.io                               21      21    100%     14%
+  jekyllrb.com                           141     141    100%      6%
+  www.11ty.dev                          1005    1060    100%     13%
+  bun.sh                                 329     329    100%     17%
+  deno.com                               286     286    100%      5%
+  htmx.org                               179     179    100%      6%
+  alpinejs.dev                            77      77    100%      4%
+  remix.run                               83      83    100%      2%
+  qwik.dev                               186     186    100%      7%
+  lit.dev                                 93      93    100%     11%
+  linear.app                             128     128    100%     36%
+  supabase.com                           381     381    100%     17%
+  plausible.io                           244     244    100%     18%
+  httpie.io                               73      73    100%     21%
+  persyn.ai                               17      17    100%     35%
+  vercel.com                             288     288    100%     27%
+  render.com                             624     624    100%      8%
+  fly.io                                 422     422    100%      7%
+  neon.tech                                1     452    100%    100%
+  clerk.com                              144     144    100%     27%
+  stripe.com                             981     982    100%     12%
+  www.behance.net                          -       - no oracle
+  dribbble.com                             -       - no oracle
+  www.pentagram.com                      406     430    100%     38%
+  www.hugeinc.com                         31      31    100%     71%
+  www.workandco.com                        -       - no oracle
+  www.ueno.co                              7       7    100%     86%
+  www.webflow.com                        232     232    100%     40%
+  www.figma.com                          511     511    100%     18%
+  readymag.com                            92      92    100%      1%
+  www.squarespace.com                    177     177    100%     72%
+  www.cargo.site                          17      17    100%     35%
+  books.toscrape.com                     182     182    100%     40%
+  quotes.toscrape.com                     80      82    100%     59%
+  www.shopify.com                        818     818    100%     19%
+  www.etsy.com                             -       - no oracle
+  css-tricks.com                         883     883    100%     14%
+  overreacted.io                         118     118    100%     98%
+  danluu.com                             124     124    100%     95%
+  traefik.io                             102     102    100%     54%
+  ghost.org                              226     226    100%     28%
+  www.ionidea.com                         62      61    100%     27%
+  nginx.org                              167     230    100%     11%
+
+  sites scored          96
+  perfect recall        77/96
+  mean recall (engine)  98.1%
+  mean recall (static)  31.0%   <- what static alone would score
+
+MISSED ROUTES
+------------------------------------------------------------------------------
+  https://www.djangoproject.com/  (1 missed)
+     https://www.djangoproject.com/foundation/individual-members/faq/
+  https://storybook.js.org/  (8 missed)
+     https://storybook.js.org/addons/tag/appearance
+     https://storybook.js.org/addons/tag/code
+     https://storybook.js.org/addons/tag/data-state
+     https://storybook.js.org/addons/tag/design
+     https://storybook.js.org/addons/tag/essentials
+     https://storybook.js.org/addons/tag/organize
+  https://pandas.pydata.org/  (6 missed)
+     https://pandas.pydata.org//community/blog/2019-user-survey.html
+     https://pandas.pydata.org//community/blog/asv-pandas-grant.html
+     https://pandas.pydata.org//community/blog/extension-arrays.html
+     https://pandas.pydata.org//community/blog/pandas-1.0.html
+     https://pandas.pydata.org//community/blog/pandas-3.0-release-candidate.html
+     https://pandas.pydata.org//community/blog/pandas-3.0.html
+  https://nextjs.org/  (9 missed)
+     https://nextjs.org/conf/Main%20Stage/session/are-we-turbo-yet
+     https://nextjs.org/conf/Main%20Stage/session/closing-keynote-nextjsconf
+     https://nextjs.org/conf/Main%20Stage/session/modern-nextjs-development-composition-caching-and-architecture
+     https://nextjs.org/conf/Main%20Stage/session/nextjs-bun
+     https://nextjs.org/conf/Main%20Stage/session/reactive-state-for-the-backend
+     https://nextjs.org/conf/Main%20stage/session/shipping-at-warp-speed-building-with-nextjs-ai-as-your-dev-team
+  https://nuxt.com/  (2 missed)
+     https://nuxt.com/api/auth/github?redirect=%2F
+     https://nuxt.com/login?redirect=%2F
+  https://solidjs.com/  (8 missed)
+     https://www.solidjs.com/cdn-cgi/content?id=1qiIIWyMl9_5fRNEgaBYpz5fMI8.1pJp7JoYGFYCXuc-1788214049.8724017-1.2.1.1-pdMsUS7kgllwyR1hescMRY_5zY5RS8at5718vhHJdptwKatTSYZYJEAkC7PFBh62
+     https://www.solidjs.com/cdn-cgi/content?id=5Lk6AODKD9SEFg8J7Ft3.Quhj6W.1GizhT56pVTWaM4-1788214056.0205588-1.2.1.1-2ToBQEj1PRY5ZQCkQt9DeecIyXThQJ3trFht1XBhTTt8VgmJjSCRkyj1iptLXJT4
+     https://www.solidjs.com/cdn-cgi/content?id=9W7cU5NatUueCuH670B8bvWV7i_5e0eo2NFCT6ePYyo-1788214056.0201561-1.2.1.1-aUR0_To2LtENLGjwgeqIOm5R9AKesjsQtwHazAJ3.wJFRD7xaKwO9ok2QlZwCcYW
+     https://www.solidjs.com/cdn-cgi/content?id=HWxOktRRA2MefvEwDxVUk9iFb9Ihyni9Q5DlaovTdSo-1788214056.018512-1.2.1.1-PkaoyjFTdn.fLzwOS9zDUFS_Rmy_0DI5tPV6dR3GkE6PnKTqpzm3VtNNRZCfBp0M
+     https://www.solidjs.com/cdn-cgi/content?id=MYq3mLtlFRFp_X_rAY2tiU47fUfF5eHUFCOyGeVVvNo-1788214056.0194607-1.2.1.1-5XxFpKDAqL_74LnUetqnH__7CFt0W2NEI8rAbQy7zzwelZyG4Vd9s_gJS._uvRv5
+     https://www.solidjs.com/cdn-cgi/content?id=SPzrwnjZ7XptJJAjBbsqnW3Lk5TgHMAJOLfoTABpuEM-1788214056.0211744-1.2.1.1-Tl8q0WcghaKP3xP7Z_j7vnxB2mn6eDZOBP1Iigy2j3QkDO6n8GSHGWZZnzGBlAAP
+  https://posthog.com/  (106 missed)
+     https://posthog.com/blog/workflows-beta
+     https://posthog.com/customers/lovable
+     https://posthog.com/data-stack/managed-warehouse
+     https://posthog.com/docs/advanced/proxy
+     https://posthog.com/docs/ai-engineering/ai-wizard
+     https://posthog.com/docs/ai-evals
+  https://resend.com/  (26 missed)
+     https://resend.com/agent-skills
+     https://resend.com/agents
+     https://resend.com/antigravity
+     https://resend.com/anything
+     https://resend.com/base44
+     https://resend.com/bolt
+  https://cal.com/  (2 missed)
+     https://cal.com/docs/platform/atoms/booker
+     https://cal.com/help/embedding/prefill-booking-form-embed
+  https://netlify.com/  (49 missed)
+     https://www.netlify.com/blog/2017/03/16/smashing-magazine-just-got-10x-faster/
+     https://www.netlify.com/blog/2019/05/16/wayfx-deploys-lightning-fast-headless-wordpress-to-netlify/
+     https://www.netlify.com/blog/2019/06/12/jamstack_conf-nyc-session-recap-citrix-delivers-better-ux-with-less-overhead-using-jamstack-and-netlify/
+     https://www.netlify.com/blog/2019/07/02/cornerstone-ondemand-delivers-web-projects-30-faster-with-netlify/
+     https://www.netlify.com/blog/2020/06/04/how-cncf-enables-community-sourced-ecosystem-map-with-netlify-deploy-previews/
+     https://www.netlify.com/blog/2020/06/11/how-tunnelbear-streamlines-devops-and-speeds-up-deploys-by-10x-with-netlify/
+  https://planetscale.com/  (4 missed)
+     https://planetscale.com/legal/cookies
+     https://planetscale.com/legal/patents
+     https://planetscale.com/legal/privacy
+     https://planetscale.com/legal/siteterms
+  https://retool.com/  (14 missed)
+     https://retool.com/integrations/bigquery
+     https://retool.com/integrations/claude-code
+     https://retool.com/integrations/datadog
+     https://retool.com/integrations/github
+     https://retool.com/integrations/google-analytics
+     https://retool.com/integrations/google-maps
+  https://airtable.com/  (3 missed)
+     https://airtable.com/addBaseFromShare/app9ZcqCjELTmVIr0/shrvN8pC8KCLsold8?shouldDuplicateWorkflows=true
+     https://airtable.com/addBaseFromShare/apposDuQxOOgdqbJK/shr6j0zshKld2FNRX?shouldDuplicateWorkflows=true
+     https://airtable.com/addBaseFromShare/apposQ6BBZarzmuk3/shrhjTt2vH7PWuipW?shouldDuplicateWorkflows=true
+  https://notion.com/  (2 missed)
+     https://www.notion.com/login?from=marketing&pathname=%2F&tid=471bf2ecc42a4f55ac11261338faa834
+     https://www.notion.com/signup?from=marketing&pathname=%2F&tid=471bf2ecc42a4f55ac11261338faa834
+  https://www.awwwards.com/  (124 missed)
+     https://www.awwwards.com/28K/
+     https://www.awwwards.com/Beaucoup/
+     https://www.awwwards.com/Buzzworthy/
+     https://www.awwwards.com/KP-Design/
+     https://www.awwwards.com/KP-Design/awards
+     https://www.awwwards.com/KP-Design/collections/
+  https://www.instrument.com/  (13 missed)
+     https://www.instrument.com/careers/freelance-product-and-brand-designers-%E2%80%93-join-our-network--3f68f48d-8a24-4a7d-9825-2a6091d814f5
+     https://www.instrument.com/latest/little-black-book-instrument-s-work-for-oura-wins-over-30-awards-across-2025-26
+     https://www.instrument.com/work/alphasense
+     https://www.instrument.com/work/brand
+     https://www.instrument.com/work/deadstock-coffee
+     https://www.instrument.com/work/feeld-app
+  https://www.allbirds.com/  (3 missed)
+     https://www.allbirds.com/blogs/news/tagged/styling/
+     https://www.allbirds.com/blogs/the-perch/tagged/seasonal/
+     https://www.allbirds.com/blogs/the-perch/tagged/trending/
+  https://www.smashingmagazine.com/  (2 missed)
+     https://www.smashingmagazine.com/2021/03/css-generators/%22https://files.smashing.media/css-generators-temani.png%22
+     https://www.smashingmagazine.com/2021/03/css-generators/%22https://files.smashing.media/oklch-color-generator.png%22
+  https://wordpress.org/  (12 missed)
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=bluesky
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=facebook
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=linkedin
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=mastodon
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=threads
+     https://wordpress.org/news/2026/08/mary-lou/?nb=1&share=x

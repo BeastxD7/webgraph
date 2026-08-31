@@ -1,8 +1,8 @@
 const NUMBERS: ReadonlyArray<{ value: string; label: string; source: string }> = [
-  { value: "97.7%", label: "mean route recall", source: "93 sites vs a real-browser oracle" },
-  { value: "26.5%", label: "static-only recall", source: "the same oracle, two levels deep" },
+  { value: "98.1%", label: "mean route recall", source: "96 sites vs a real-browser oracle" },
+  { value: "31.0%", label: "static-only recall", source: "the same two-level oracle" },
   { value: "0/7", label: "render prediction", source: "why both fetches are merged instead" },
-  { value: "132", label: "fingerprint rules", source: "across 18 technology categories" },
+  { value: "237", label: "fingerprint rules", source: "157 technologies, 7 signal sources" },
 ];
 
 export default function Evidence() {

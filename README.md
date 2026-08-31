@@ -69,7 +69,7 @@ while the server only answered on `https://`, so a naive reader would have retri
 pages. Sitemaps also list dead URLs: pages that 404 today are still advertised.
 
 Following links from the homepage is not enough either. Once the oracle looks two levels
-deep, homepage-only link following finds **26.5%** of what is actually reachable.
+deep, static link following finds **31.0%** of what is actually reachable.
 
 ### 2. You do not know how much of the page you are getting
 
@@ -269,16 +269,20 @@ server expects.
 | approach | pros | cons | verdict |
 |---|---|---|---|
 | Sitemap only | cheap, fast, polite | incomplete and stale — 4 advertised vs 75 live on one site | insufficient alone |
-| Homepage links only | no sitemap dependency | **26.5%** recall against a two-level oracle | insufficient alone |
+| Homepage links only | no sitemap dependency | **31.0%** recall against a two-level oracle | insufficient alone |
 | Sitemap ∪ link crawl, verified | highest recall; dead URLs filtered | more requests; needs politeness controls | **chosen** |
 | Depth-first crawl | simple | with any budget it disappears into one blog archive and never reaches `/pricing` | rejected — frontier is breadth-first |
 
 </details>
 
-**Measured.** Against a real-browser oracle across 93 sites: **97.7% mean route recall**,
-perfect on 85 of them. Static-only discovery scores 91.4% against a shallow oracle and
-**26.5%** once the oracle explores two levels — the shallow benchmark had been flattering
-static discovery enormously.
+**Measured.** Against a real-browser oracle across 96 sites: **98.1% mean route recall**,
+perfect on 77 of them. Static-only discovery scores **31.0%** against the same two-level
+oracle — an earlier shallow oracle put it at 91.4%, which had been flattering static
+discovery enormously.
+
+Perfect recall is the harder number and it moves with the oracle, not only with the engine:
+a deeper oracle finds more routes on the large sites, so "perfect on every one" gets harder
+while the mean stays high. Both are reported for that reason.
 
 > Four of that benchmark's own bugs were found by running it: a self-link counted as a miss,
 > seeding from the pre-redirect URL, raw-string comparison instead of canonical keys, and
@@ -718,17 +722,18 @@ page, 58.6% of the engine's non-consensus shingles had been kept by exactly one 
 
 | measurement | value | context |
 |---|---|---|
-| Mean route recall | **97.7%** | 93 sites; perfect on 85 |
-| Static-only route recall | 26.5% | same oracle, two levels deep |
+| Mean route recall | **98.1%** | 96 sites; perfect on 77 |
+| Static-only route recall | 31.0% | the same oracle |
 | Render-need prediction | 0/7 | why both fetches are merged |
 | Extraction F (chrome removed) | **0.820** | 15 pages, vs a majority vote of three tools |
 | Recall against that vote | 0.989 | second only to trafilatura's 0.993 |
 | Wrong-value rate | 0% | enforced by test |
 | Technology fingerprints | 237 rules | 157 technologies, 19 categories |
 
-Seven of the 100 sites block headless browsers entirely (Vercel, Netlify, Render, Behance,
-Dribbble, Work & Co, Etsy) and have no oracle. That is reported rather than excluded
-quietly.
+Four of the 100 sites block headless browsers entirely (Behance, Dribbble, Work & Co, Etsy)
+and have no oracle, so they are scored on nothing rather than excluded quietly. The saved run
+is committed at `benchmark/route_discovery/baseline-2026-09-01.txt`, including every missed
+route, so a regression is a diff rather than a memory.
 
 ---
 
