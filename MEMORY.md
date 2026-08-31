@@ -1267,3 +1267,67 @@ headings would mutilate `The C# language`. Extraction benchmark unchanged after 
 - **Budget overrun of 7%.** The per-section cost estimate ignored the provenance header each
   section is rendered with. Cost is now measured, and the map tier gives way until the whole
   thing fits: a caller who asks for 18,000 characters must not be handed 18,500.
+
+---
+
+## Cross-site: several websites, one graph (2026-09-01, session 11)
+
+### D42 — Off-site links are out of scope for crawling, not for the graph
+
+Every crawl sees hrefs pointing off-site and threw them away. They are the natural join
+between two crawled sites: add the second site and an edge that pointed nowhere becomes an
+edge between two crawled pages, labelled with the anchor text a human wrote.
+
+`Corpus.merged()` returns an ordinary `SiteGraph`, so `ContextAssembler` and the exporters
+work over several sites with no changes at all.
+
+Measured on the Pallets documentation — Flask, Jinja and Click, 55 pages, 943 sections:
+
+```
+query                                   sections drawn from
+render a template with autoescaping     jinja 21, flask 6, click 1
+define a custom command line option     click 27, flask 3
+escape untrusted html in output         jinja 18, flask 3, click 2
+blueprint url prefix                    flask 25
+```
+
+One index over three sites, and lexical seeding routes each question to the right one.
+
+### D43 — Two bugs the corpus work exposed
+
+**`parent_path` had never fired.** `canonical_key` keeps the scheme, so partitioning a key
+on its first slash produced a host of `https:` and a candidate that could never match a
+page. One of the five expansion signals had been dead since it was written. Graph keys now
+drop the scheme -- which is also correct on its own terms, since `http://x/a` and
+`https://x/a` are one page and an edge between them should join rather than fork.
+
+**Cross-site links resolved 1 out of 419.** Sites link to the address they *publish*
+(`jinja.palletsprojects.com/templates`); the crawl files the page under the address it was
+*served* (`/en/stable/templates`) after a redirect it never had cause to request.
+
+Two fixes. `SiteGraph.aliases` records the requested URL and the `rel=canonical` for every
+page, which covers redirects the crawl itself followed. `Corpus.resolve_external()` handles
+the rest with one bounded request per unresolved target — only for hosts already in the
+corpus, deduplicated, capped at 60. **4 lookups turned 1 cross-site link into 8**, with
+anchors reading "Jinja", "Click", "Jinja Template Documentation", "BaseLoader",
+"Jinja for loops", "Flask".
+
+It is an explicit call, not part of `merged()`: a merge should not silently touch the
+network.
+
+### D44 — No fuzzy entity resolution
+
+"Acme Inc." and "Acme Corporation" stay two entities. Identity comes from an `@id` both
+sites published, or from the same type and the same name — never from a similarity
+threshold. A wrongly merged entity silently fuses two subjects, which is the same failure
+mode as a wrongly removed block of chrome, and gets the same answer: fail open.
+
+Names shorter than four characters are ignored entirely. "API" appearing on two sites says
+nothing about them being the same API.
+
+### Open: the entity layer is empty on documentation sites
+
+`entities: 0, mentions: 0` on attrs, pytest, Flask, Jinja and Click. Entities come only from
+JSON-LD and microdata, which marketing sites publish and documentation sites do not. The
+`MENTIONS` edge and the entity bridge are therefore inert on exactly the corpus where
+cross-site linking was just demonstrated. Next.

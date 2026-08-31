@@ -193,6 +193,27 @@ class SiteGraph:
     mentioned_in: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     """entity key -> section ids."""
 
+    external_links: dict[str, dict[str, tuple[str, ...]]] = field(
+        default_factory=lambda: defaultdict(dict)
+    )
+    """page key -> {external URL: anchor texts}.
+
+    Off-site links were previously discarded as out of scope, which they are *for crawling*.
+    They are not out of scope for the graph: when a second site is added to the corpus, an
+    edge that pointed nowhere becomes an edge between two crawled pages, and the two sites
+    are joined by a link a human actually wrote. Keeping them costs a dictionary and is the
+    difference between a corpus of separate graphs and a connected one.
+    """
+
+    aliases: dict[str, str] = field(default_factory=dict)
+    """Other keys the same page answers to -> its canonical key.
+
+    A site links to `jinja.palletsprojects.com/templates/`; the crawl followed a redirect and
+    filed the page under `/en/stable/templates`. Without aliases the edge points at nothing,
+    and two sites that reference each other constantly look unconnected. Populated from the
+    URL that was requested and from the page's own `rel=canonical`.
+    """
+
     section_links: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
     """section id -> page keys linked *from inside that section*.
 
@@ -246,6 +267,23 @@ class SiteGraph:
             pages=merged_pages,
         )
 
+    def add_alias(self, alias: str, page_key: str) -> None:
+        if alias and alias != page_key:
+            self.aliases.setdefault(alias, page_key)
+
+    def resolve_key(self, key: str) -> str | None:
+        """The crawled page a key refers to, following aliases. `None` if not crawled."""
+        if key in self.pages:
+            return key
+        target = self.aliases.get(key)
+        return target if target in self.pages else None
+
+    def add_external_link(self, page_key: str, url: str, anchor: str = "") -> None:
+        anchors = self.external_links[page_key].get(url, ())
+        if anchor.strip() and anchor not in anchors and len(anchors) < MAX_ANCHORS:
+            anchors = (*anchors, anchor)
+        self.external_links[page_key][url] = anchors
+
     def add_section_link(self, section_id_: str, target_key: str) -> None:
         self.section_links[section_id_].add(target_key)
 
@@ -286,8 +324,9 @@ class SiteGraph:
         publishes in its URLs and that a link graph alone does not capture -- plenty of deep
         pages are linked only from a sibling, never from their own parent.
 
-        Keys are canonical, so the comparison is on host and path with no scheme, `www.` or
-        trailing slash to reconcile.
+        Keys carry no scheme, so the comparison is a plain host-and-path one. An earlier
+        version partitioned a key that still had `https://` on the front, which made every
+        candidate `https:/…` and meant this edge never once fired.
         """
         host, _, path = page_key.partition("/")
         segments = [part for part in path.split("/") if part]

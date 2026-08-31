@@ -168,9 +168,19 @@ class GraphBuilder:
         depth: int = 0,
         title: str = "",
         anchored_links: list[tuple[str, str]] | None = None,
+        requested_url: str | None = None,
+        canonical_url: str | None = None,
     ) -> list[Section]:
-        """Add one extracted page. Returns the sections it produced."""
+        """Add one extracted page. Returns the sections it produced.
+
+        `requested_url` and `canonical_url` become aliases. Other sites link to the address
+        they know, which is frequently the one that redirects here rather than the one the
+        server finally served.
+        """
         key = _canonical(document.url)
+        for alias in (requested_url, canonical_url):
+            if alias:
+                self.graph.add_alias(_canonical(alias), key)
         sections = sections_from_document(document, page_key=key)
         for section in sections:
             self.graph.add_section(section)
@@ -189,7 +199,13 @@ class GraphBuilder:
 
         for href, anchor in anchored_links or []:
             target = normalize_url(urljoin(document.url, href))
-            if target is None or not same_site(target, self.root):
+            if target is None:
+                continue
+            if not same_site(target, self.root):
+                # Kept, not dropped. Off-site is out of scope for *crawling*; it is not out
+                # of scope for the graph. Add a second site to the corpus and this edge
+                # becomes a link between two crawled pages.
+                self.graph.add_external_link(key, _canonical(target), anchor)
                 continue
             # Canonical form on both sides: `/a` and `/a/` are one page, and an edge that
             # distinguishes them would fragment the neighbourhood of every URL.
@@ -241,11 +257,17 @@ class GraphBuilder:
 
 
 def _canonical(url: str) -> str:
-    """Canonical key, falling back to the URL itself if it cannot be normalised."""
+    """Identity for a page in the graph: host and path, no scheme.
+
+    `canonical_key` keeps the scheme, which is right for a crawl frontier -- the request has
+    to go somewhere -- and wrong for a graph, where `http://x/a` and `https://x/a` are one
+    page and an edge between them should join, not fork.
+    """
     try:
-        return canonical_key(url) or url
+        key = canonical_key(url) or url
     except Exception:
-        return url
+        key = url
+    return key.split("://", 1)[-1]
 
 
 def _page_title(document: Document) -> str:

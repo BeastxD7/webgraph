@@ -663,7 +663,7 @@ def stream_site(
 
     def work(
         item: tuple[str, int],
-    ) -> tuple[PageExtraction, int, list[str], str | None, list[tuple[str, str]]]:
+    ) -> tuple[PageExtraction, int, list[str], str | None, list[tuple[str, str]], str]:
         url, depth = item
         if delay > 0:
             time.sleep(delay)
@@ -678,7 +678,7 @@ def stream_site(
                 (reconcile_scheme(href, normalized_root), text) for href, text in found.anchored
             ]
             canonical = found.canonical
-        return page, depth, links, canonical, anchored
+        return page, depth, links, canonical, anchored, url
 
     stopped = False
 
@@ -702,7 +702,9 @@ def stream_site(
             if not batch:
                 break
 
-            for page, depth, links, canonical, anchored in pool.map(work, batch):
+            for page, depth, links, canonical, anchored, requested in pool.map(
+                work, batch
+            ):
                 if page.ok:
                     extracted += 1
                     totals["chars"] += page.text_chars
@@ -722,6 +724,10 @@ def stream_site(
                         depth=depth,
                         title=page.title,
                         anchored_links=anchored,
+                        # Other sites link to the address they know, which is often the one
+                        # that redirected here rather than the URL finally served.
+                        requested_url=requested,
+                        canonical_url=canonical,
                     )
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
