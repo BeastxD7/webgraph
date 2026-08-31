@@ -1556,3 +1556,24 @@ is at a local optimum for this benchmark and further parameter work would be fit
 Stopping. The next real gain needs a different *kind* of change -- a vector seeder measured
 against BM25, or a larger budget regime where the allocation is not zero-sum -- not another
 weight.
+
+### D55 — Change detection was already built; it just had to be assembled
+
+`webgraph diff` reports what changed on a site since the last crawl. Nothing new was needed:
+the content hash exists for deduplication, the graph store for surviving restarts, and
+heading-scoped sections for retrieval. Putting the three together is the whole feature.
+
+Two decisions decide whether the output is worth reading.
+
+**Hash the extracted text, not the HTML.** Markup changes on every request -- build ids,
+cache-busted asset URLs, CSRF tokens, timestamps in comments. Hashing markup marks every page
+as changed on every crawl, which conveys exactly as much as marking none. Hashing the text in
+recovered reading order means the hash moves when what the page *says* moves, and chrome
+removal keeps a footer edit from marking all 2,000 pages.
+
+**Match sections by heading, not by position.** Index matching reports everything below an
+inserted section as changed, turning a one-paragraph addition into "the whole page changed".
+
+`--fail-on-change` exits non-zero so a scheduled job can drive on it without parsing output.
+Verified end to end by doctoring a stored baseline and re-crawling: the removed page and the
+edited section were both reported, with before and after text.

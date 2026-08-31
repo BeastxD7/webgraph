@@ -264,6 +264,58 @@ def _cmd_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_diff(args: argparse.Namespace) -> int:
+    """Crawl a site and report what changed since the last crawl of it."""
+    from webgraph.graph.diff import diff_graphs
+    from webgraph.graph.store import GraphStore
+
+    store = GraphStore(args.store)
+    previous = store.load(args.url)
+    if previous is None and not args.save_only:
+        print(
+            f"No stored crawl of {args.url}. Crawling now and saving it as the baseline.",
+            file=sys.stderr,
+        )
+
+    current = _crawl_graph(
+        [args.url],
+        max_pages=args.max_pages,
+        concurrency=args.concurrency,
+        complete=args.complete,
+    )
+
+    if previous is None:
+        store.save(current, args.url)
+        print(f"baseline saved: {current.describe()}")
+        return 0
+
+    result = diff_graphs(previous, current)
+    print(f"\n{result.summary()}")
+
+    for page in result.added:
+        print(f"  + {page.url}")
+    for page in result.removed:
+        print(f"  - {page.url}")
+    for change in result.changed:
+        sign = "+" if change.delta_chars >= 0 else ""
+        print(f"  ~ {change.url}  ({sign}{change.delta_chars} chars)")
+        for section in change.sections[: args.detail]:
+            heading = section.heading or "(opening)"
+            if section.kind == "edited":
+                print(f"      edited   {heading}")
+                if args.show_text:
+                    print(f"        was: {' '.join(section.before.split())[:160]}")
+                    print(f"        now: {' '.join(section.after.split())[:160]}")
+            else:
+                print(f"      {section.kind:<8} {heading}")
+
+    if not args.dry_run:
+        store.save(current, args.url)
+
+    # Non-zero on change, so this can drive a scheduled job without parsing the output.
+    return 1 if (result.any_change and args.fail_on_change) else 0
+
+
 def _cmd_bench(args: argparse.Namespace) -> int:
     cases = load_corpus(Path(args.corpus))
     score = run_corpus(cases)
@@ -363,6 +415,29 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--concurrency", type=int, default=6)
     ask.add_argument("--complete", action="store_true")
     ask.set_defaults(func=_cmd_ask)
+
+    diff = subparsers.add_parser(
+        "diff", help="report what changed since the last crawl of a site"
+    )
+    diff.add_argument("url", help="site root URL")
+    diff.add_argument("--store", help="graph directory (default: the shared cache)")
+    diff.add_argument("--max-pages", type=int, default=40, help="0 for unlimited")
+    diff.add_argument("--concurrency", type=int, default=6)
+    diff.add_argument("--complete", action="store_true")
+    diff.add_argument("--detail", type=int, default=8, help="sections listed per page")
+    diff.add_argument("--show-text", action="store_true", help="print before and after")
+    diff.add_argument(
+        "--dry-run", action="store_true", help="do not update the stored baseline"
+    )
+    diff.add_argument(
+        "--save-only", action="store_true", help="record a baseline without comparing"
+    )
+    diff.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help="exit non-zero when anything changed, for a scheduled job",
+    )
+    diff.set_defaults(func=_cmd_diff)
 
     bench = subparsers.add_parser("bench", help="score the engine against a labelled corpus")
     bench.add_argument("corpus", help="corpus directory containing gold.json")

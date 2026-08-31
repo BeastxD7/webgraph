@@ -562,6 +562,41 @@ in the footer as that licence requires and recorded in
 
 ---
 
+## What changed since last time
+
+Every piece this needs was built for something else. Pages carry a content hash over their
+extracted text; graphs are stored between runs; sections are heading-scoped. Change detection
+is the three of them put together:
+
+```bash
+webgraph diff https://example.com/ --show-text
+```
+
+```
+2 new, 1 gone, 3 changed; 41 unchanged.
+  + https://example.com/blog/whats-new
+  - https://example.com/legacy/api-v1
+  ~ https://example.com/pricing  (+412 chars)
+      edited   Team plan
+        was: Team is $99 per month, billed annually…
+        now: Team is $149 per month, billed annually…
+```
+
+Two decisions make the output worth reading.
+
+**The hash is over extracted text, not HTML.** Markup changes constantly and means nothing —
+a build id, a cache-busting asset URL, a timestamp in a comment. Hashing it reports every
+page as changed on every crawl, which is the same as reporting nothing. Combined with chrome
+removal, a footer edit does not mark all 2,000 pages as changed either.
+
+**Sections are matched by heading, not by position.** Matching on index reports every section
+below an inserted one as changed, which turns a one-paragraph addition into "the whole page
+changed".
+
+`--fail-on-change` exits non-zero, so a scheduled job can drive on it without parsing output.
+
+---
+
 ## How it is measured
 
 Two benchmarks, because the engine makes two separable claims.
