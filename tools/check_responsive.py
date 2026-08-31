@@ -70,7 +70,7 @@ def main() -> int:
                 page = context.new_page()
                 try:
                     page.goto(url, wait_until="load", timeout=60_000)
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     print(f"{label:12s} {name:8s} could not load: {exc}", file=sys.stderr)
                     failures += 1
                     context.close()
