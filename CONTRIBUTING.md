@@ -13,12 +13,23 @@ Run `make api` and `make web` in two terminals for the full stack.
 ## Before every commit
 
 ```bash
-make lint        # ruff + mypy --strict (engine and API) + eslint + tsc
-make test        # engine and API test suites
+make check       # lint + types + every test suite
 ```
 
-Both must be clean. `mypy` runs in strict mode and the web app builds with
+`mypy` runs in strict mode and the web app builds with
 `typescript.ignoreBuildErrors: false`, so a type error is a build failure, not a warning.
+
+### If you touched dependencies, also run this
+
+```bash
+make check-clean   # clone to a temp directory and install from cold
+```
+
+A warm `node_modules` hides install failures completely. One did, through **26 consecutive
+red CI runs**: pnpm refuses to install until every dependency with a build script is
+explicitly allowed, and the approval already sat in the local tree from an earlier
+interactive install. Every local check passed the whole time. `make check-clean` reproduces
+what CI actually does.
 
 ## Commit conventions
 

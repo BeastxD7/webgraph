@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint bench bench-content check-responsive clean
+.PHONY: help install api web dev test lint check check-clean bench bench-content check-responsive clean
 
 help:
 	@echo "webgraph — development commands"
@@ -7,6 +7,8 @@ help:
 	@echo "  make api       Run the API on :8000"
 	@echo "  make web       Run the frontend on :3000"
 	@echo "  make test      Run every test suite"
+	@echo "  make check     Lint, type-check and test everything"
+	@echo "  make check-clean   Verify a cold install the way CI does"
 	@echo "  make lint      Lint and type-check everything"
 	@echo "  make bench     Score schema extraction against the benchmark corpus"
 	@echo "  make bench-content Score main-content extraction against three other tools"
@@ -38,6 +40,22 @@ lint:
 
 bench:
 	cd packages/engine && uv run webgraph bench ../../benchmark/corpus-v0
+
+check: lint test
+	@echo ""
+	@echo "Lint, types and tests pass. Two things this does NOT cover:"
+	@echo "  make check-responsive   needs the web app running on :3000"
+	@echo "  make bench-content      hits the network and needs the 'bench' group"
+
+check-clean:
+	@# CI installs from a cold tree; a warm node_modules once hid a broken install
+	@# through 26 consecutive red runs. This reproduces what CI actually does.
+	@set -e; \
+	dir=$$(mktemp -d); \
+	echo "cloning to $$dir"; \
+	git clone -q . $$dir; \
+	cd $$dir && pnpm install --frozen-lockfile && pnpm web:typecheck && pnpm web:lint && pnpm web:build; \
+	echo "clean install OK"; rm -rf $$dir
 
 check-responsive:
 	uv run --package webgraph python tools/check_responsive.py
