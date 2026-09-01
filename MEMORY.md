@@ -1775,3 +1775,25 @@ Standing lesson: **for anything that touches dependencies, verify in a clean clo
 local check on a warm tree says nothing about a fresh one, and it said nothing here 26 times
 in a row. Second lesson, smaller and sharper: `git add -A` committed a file that a tool wrote
 and that contained an instruction addressed to me. Read what gets staged.
+
+### D63 — A release version is not a tag
+
+Bumping the CI actions off the deprecated Node 20 runtime broke every job at "Set up job" in
+two seconds:
+
+```
+Unable to resolve action `astral-sh/setup-uv@v10`, unable to find version `v10`
+```
+
+I read the version from `repos/astral-sh/setup-uv/releases/latest`, which reports **v10.0.1**,
+and assumed a matching `v10` moving tag. astral-sh does not publish one; its major tags stop
+at **v7**. `actions/checkout` and `actions/setup-node` do publish theirs, which is why three
+of the four guesses happened to work and made the fourth look like bad luck rather than a bad
+method.
+
+`git ls-remote --refs --tags` lists what actually exists, and every tag in the workflow is now
+checked with it before pushing. Also worth knowing: `gh api repos/OWNER/REPO/git/ref/tags/vN`
+returns nothing for these moving tags even when they exist, so it is not a usable check.
+
+Same shape of error as D62 an hour earlier: **a fact was inferred from something adjacent to
+it rather than read from the thing itself.**
