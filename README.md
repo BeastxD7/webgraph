@@ -694,9 +694,9 @@ that kind of page.
                                    P       R       F   P(any)
   readability                  0.864   0.955   0.904    1.000
   trafilatura                  0.814   0.993   0.868    1.000
-  engine (chrome removed)      0.742   0.989   0.820    0.881
-  engine (raw)                 0.658   0.990   0.740    0.752
-  engine (prose only)          0.664   0.840   0.690    0.725
+  engine (chrome removed)      0.740   0.994   0.820    0.880
+  engine (raw)                 0.657   0.994   0.741    0.752
+  engine (prose only)          0.663   0.840   0.689    0.724
   justext                      0.785   0.465   0.571    0.846
 ```
 
@@ -726,7 +726,7 @@ page, 58.6% of the engine's non-consensus shingles had been kept by exactly one 
 | Static-only route recall | 31.0% | the same oracle |
 | Render-need prediction | 0/7 | why both fetches are merged |
 | Extraction F (chrome removed) | **0.820** | 15 pages, vs a majority vote of three tools |
-| Recall against that vote | 0.989 | second only to trafilatura's 0.993 |
+| Recall against that vote | 0.994 | the highest measured, though the margin over trafilatura's 0.993 is not meaningful |
 | Wrong-value rate | 0% | enforced by test |
 | Technology fingerprints | 237 rules | 157 technologies, 19 categories |
 

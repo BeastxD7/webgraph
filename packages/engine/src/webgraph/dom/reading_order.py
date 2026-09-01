@@ -75,12 +75,34 @@ class OrderingConfig:
     max_depth: int = 24
     """Recursion guard. Deeply nested cuts past this point are ordered positionally."""
 
-    min_measured_share: float = 0.5
+    min_measured_share: float = 0.3
     """Share of blocks that must carry geometry before it is allowed to lead the ordering.
 
-    Below this, anchoring a majority of blocks to a minority of measurements would be source
-    order wearing a measurement's name, so the document falls back and says so.
+    Set by measurement, having first been guessed at 0.5. Method: take pages the browser
+    measured almost completely, treat their full-geometry order as ground truth, blind a
+    share of blocks, and score the anchored result by how often a pair of blocks keeps its
+    correct relative order.
+
+    Blinding in **clustered runs**, because that is the shape of the real thing -- a
+    collapsed section, or the blocks that exist only in the static half of a union fetch.
+    Random blinding is a materially easier problem and overstates how well this works.
+
+    ```
+    share measured   90%   75%   60%   50%   40%   30%   20%   10%
+    clustered       1.00  0.97  0.97  0.98  0.92  0.92  0.88  0.91
+    random          0.99  0.99  0.98  0.98  0.97  0.96  0.96  0.94
+    source order    0.89  <- what falling back produces
+    ```
+
+    Anchoring beats the fallback down to about 30% and loses below roughly 25%. The crossover
+    is noisy over six pages, so the threshold sits on the conservative side of it.
+
+    The guessed 0.5 was costing real accuracy: a union document merges static-only blocks,
+    which by construction carry no rectangle, so its measured share is always lower than the
+    rendered document's. Four sites in a robustness sweep -- lemonde.fr, shopify.com,
+    ar.wikipedia and aljazeera -- sat between 0.34 and 0.47 and read in source order.
     """
+
 
 
 def order_blocks(
@@ -118,23 +140,21 @@ def order_blocks(
     if not measured:
         return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
 
-    if len(measured) < len(blocks) * config.min_measured_share:
-        # Too little geometry to lead with. Anchoring a majority of blocks to a minority of
-        # measurements would dress source order up as a measurement.
-        return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
-
     heights = [b.rect.height for b in measured if b.rect is not None and b.rect.height > 0]
     unit = median(heights) if heights else 16.0
 
-    ordered = _cut(list(measured), rtl=rtl, config=config, unit=unit, depth=0)
-
     if len(measured) == len(blocks):
+        # Nothing to anchor, so neither guard applies: complete geometry is always used.
+        ordered = _cut(list(blocks), rtl=rtl, config=config, unit=unit, depth=0)
         return ordered, ReadingOrderMethod.GEOMETRIC_XY_CUT
 
-    return (
-        _anchor_unmeasured(ordered, blocks),
-        ReadingOrderMethod.GEOMETRIC_ANCHORED,
-    )
+    if len(measured) < len(blocks) * config.min_measured_share:
+        # Too little geometry to lead with. Anchoring most of a document to a handful of
+        # measurements would dress source order up as a measurement.
+        return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
+
+    ordered = _cut(list(measured), rtl=rtl, config=config, unit=unit, depth=0)
+    return _anchor_unmeasured(ordered, blocks), ReadingOrderMethod.GEOMETRIC_ANCHORED
 
 
 def _anchor_unmeasured(ordered: list[Block], every: list[Block]) -> list[Block]:

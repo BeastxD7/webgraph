@@ -77,6 +77,48 @@ class TestUnionOrdering:
         assert texts[:2] == ["First", "Second"]
         assert texts[-1] == "Static extra"
 
+    def test_a_static_only_block_lands_beside_its_neighbour(self) -> None:
+        """Not at the end.
+
+        Appending them all was measurably wrong: on lemonde.fr the static document
+        contributes over two thousand blocks the rendered one lacks, and every one landed
+        after the article instead of inside it. The anchor is a block both documents contain,
+        which makes the placement observed rather than guessed.
+        """
+        static = doc("<p>Intro</p><p>Only in static</p><p>Outro</p>")
+        rendered = doc("<p>Intro</p><p>Outro</p>")
+        merged, _, _ = union_documents(static, rendered)
+        texts = [b.text for b in merged.blocks]
+        assert texts == ["Intro", "Only in static", "Outro"]
+
+    def test_a_leading_static_only_block_leads(self) -> None:
+        static = doc("<p>Before everything</p><p>Shared</p>")
+        rendered = doc("<p>Shared</p>")
+        merged, _, _ = union_documents(static, rendered)
+        assert [b.text for b in merged.blocks] == ["Before everything", "Shared"]
+
+    def test_with_nothing_shared_the_rendered_page_stays_on_top(self) -> None:
+        """No common block means no observed adjacency, so the front is as arbitrary as the
+        end -- and the rendered document is the authoritative one."""
+        static = doc("<p>Static extra</p>")
+        rendered = doc("<p>Rendered only</p>")
+        merged, _, _ = union_documents(static, rendered)
+        assert [b.text for b in merged.blocks] == ["Rendered only", "Static extra"]
+
+    def test_the_merged_label_does_not_overclaim(self) -> None:
+        """Copying the rendered document's method claimed geometry for a merge that was
+        partly source order: lemonde.fr reported `geometric-anchored` with 7% measured."""
+        from webgraph.types import ReadingOrderMethod
+
+        static = doc("<p>Shared</p><p>Only in static</p>")
+        rendered = doc("<p>Shared</p>")
+        merged, only_static, _ = union_documents(static, rendered)
+        assert only_static == 1
+        assert merged.reading_order_method in {
+            ReadingOrderMethod.GEOMETRIC_ANCHORED,
+            ReadingOrderMethod.DOM_FALLBACK,
+        }
+
     def test_appended_blocks_carry_no_geometry(self) -> None:
         """Static-only blocks have no measured position; inventing one would corrupt order."""
         static = doc("<p>Static extra</p>")

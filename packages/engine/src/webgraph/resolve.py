@@ -41,7 +41,7 @@ from webgraph.fetch.render import (
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.pipeline import build_document
 from webgraph.profile.technology import RuntimeEvidence
-from webgraph.types import Block, Document
+from webgraph.types import Block, Document, ReadingOrderMethod
 
 __all__ = [
     "MISSING_STATUSES",
@@ -158,10 +158,24 @@ def _key(block: Block) -> str:
 def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Document, int, int]:
     """Merge two representations of one page, losing nothing.
 
-    The rendered document leads because its reading order is measured rather than assumed.
-    Blocks that exist only in the static document are appended afterwards, in their own
-    order. They are appended rather than interleaved because there is no geometry for them --
-    guessing a position would corrupt the very ordering the render was performed to get right.
+    The rendered document leads, because its reading order is measured rather than assumed.
+    The question is what to do with blocks that exist only in the static one -- they carry no
+    geometry, since the browser never laid them out.
+
+    An earlier version appended them all at the end, reasoning that guessing a position would
+    corrupt the ordering the render was performed to get right. That is true of guessing, and
+    the ordering it produced was still wrong: on `lemonde.fr` the static document contributes
+    over two thousand blocks that the rendered one lacks, and every one of them landed after
+    the article instead of inside it.
+
+    They are now placed by **observed adjacency**, not by guesswork. A static-only block is
+    inserted after the nearest preceding block that appears in *both* documents. That is the
+    same principle as anchoring unmeasured blocks within one document, and it is sound across
+    two different DOM trees because the anchor is a block both trees actually contain.
+
+    The merged document is relabelled to match. Copying the rendered document's
+    `reading_order_method` claimed geometry for a merge that was partly source order --
+    `lemonde.fr` reported `geometric-anchored` with 7% of its blocks measured.
 
     Returns (merged document, blocks only in static, blocks only in rendered).
     """
@@ -171,17 +185,44 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     only_static = static_keys - rendered_keys
     only_rendered = rendered_keys - static_keys
 
-    merged: list[Block] = list(rendered_doc.blocks)
-    seen = set(rendered_keys)
-
-    next_index = max((b.dom_index for b in rendered_doc.blocks), default=-1) + 1
+    # Static-only blocks, grouped by the shared block they follow. `None` means they precede
+    # every shared block and belong at the front.
+    following: dict[str | None, list[Block]] = {}
+    anchor: str | None = None
+    emitted: set[str] = set()
     for block in static_doc.blocks:
         key = _key(block)
-        if not key or key in seen:
+        if not key:
             continue
-        seen.add(key)
-        merged.append(block.model_copy(update={"dom_index": next_index, "rect": None}))
+        if key in rendered_keys:
+            anchor = key
+            continue
+        if key in emitted:
+            continue
+        emitted.add(key)
+        following.setdefault(anchor, []).append(block)
+
+    next_index = max((b.dom_index for b in rendered_doc.blocks), default=-1) + 1
+
+    def adopt(block: Block) -> Block:
+        nonlocal next_index
+        adopted = block.model_copy(update={"dom_index": next_index, "rect": None})
         next_index += 1
+        return adopted
+
+    # Blocks before the first shared one lead, but only when something *is* shared. With no
+    # common block there is no observed adjacency anywhere, and the front is as arbitrary a
+    # choice as the end -- so they go to the end, which at least keeps the rendered page,
+    # the authoritative one, at the top.
+    anchored_to_front = bool(rendered_keys & static_keys)
+    leading = following.pop(None, []) if anchored_to_front else []
+
+    merged: list[Block] = [adopt(b) for b in leading]
+    for block in rendered_doc.blocks:
+        merged.append(block)
+        merged.extend(adopt(extra) for extra in following.get(_key(block), ()))
+    if not anchored_to_front:
+        merged.extend(adopt(b) for b in following.get(None, ()))
 
     # Structured payloads are unioned too: a hydration payload can be present in one
     # representation and absent from the other.
@@ -192,10 +233,17 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
             payloads.append(payload)
             known.add(repr(payload.data))
 
+    method = rendered_doc.reading_order_method
+    if only_static and method is not ReadingOrderMethod.DOM_FALLBACK:
+        # Part of this document was positioned by adjacency rather than measured. That is a
+        # weaker claim than the rendered document alone could make, and it gets the weaker name.
+        method = ReadingOrderMethod.GEOMETRIC_ANCHORED
+
     document = rendered_doc.model_copy(
         update={
             "blocks": tuple(merged),
             "structured_data": tuple(payloads),
+            "reading_order_method": method,
         }
     )
     return document, len(only_static), len(only_rendered)

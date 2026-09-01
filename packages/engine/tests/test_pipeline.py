@@ -76,14 +76,17 @@ class TestReadingOrderIntegration:
         assert doc.dom_order_differs is True
 
     def test_sparse_geometry_still_falls_back(self) -> None:
-        """Fewer than half the blocks measured is not enough to lead an ordering: anchoring a
-        majority to a minority would be source order wearing a measurement's name."""
+        """Below `min_measured_share` the document falls back and says so.
+
+        Two measured blocks out of ten is 20%, and measurement put the crossover against
+        source order at roughly 25-30% -- see `OrderingConfig.min_measured_share`.
+        """
         body = "".join(f"<p>paragraph number {index} with some words</p>" for index in range(10))
         html = f"<html><body>{body}</body></html>"
         plain = build_document(html, "https://example.com/")
         partial = {
             block.xpath: Rect(x=0, y=float(index * 40), width=600, height=30)
-            for index, block in enumerate(plain.blocks[:3])
+            for index, block in enumerate(plain.blocks[:2])
         }
         doc = build_document(html, "https://example.com/", geometry=partial)
         assert doc.reading_order_method is ReadingOrderMethod.DOM_FALLBACK

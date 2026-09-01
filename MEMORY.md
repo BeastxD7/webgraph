@@ -1848,3 +1848,54 @@ The sweep also flagged `low yield` on Linear, Vercel and Shopify. That was the p
 not the engine's: stripping tags leaves inline `<script>` *contents* in the denominator, so a
 page that ships a large JSON payload looks like it lost everything. Worth recording because
 the number was alarming and meant nothing.
+
+### D66 — `min_measured_share` was a guess; measuring it moved it from 0.5 to 0.3
+
+The threshold below which a partly-measured document falls back to source order was set by
+intuition. Measured properly: take pages the browser measured almost completely, treat their
+full-geometry order as ground truth, blind a share of blocks, and score the anchored result
+by how often a pair of blocks keeps its correct relative order.
+
+**Blinded in clustered runs, not at random.** Real unmeasured blocks come in runs -- a
+collapsed section, the blocks that exist only in the static half of a union. Random blinding
+is a materially easier problem and would have overstated the result by several points.
+
+```
+share measured   90%   75%   60%   50%   40%   30%   20%   10%
+clustered       1.00  0.97  0.97  0.98  0.92  0.92  0.88  0.91
+random          0.99  0.99  0.98  0.98  0.97  0.96  0.96  0.94
+source order    0.89   <- what falling back produces
+```
+
+Anchoring beats the fallback down to about 30% and loses below roughly 25%. Threshold set to
+**0.3**, on the conservative side of a crossover that is noisy over six pages.
+
+The `min_measured_blocks` floor added alongside it was removed the same hour: it fired on
+small documents where geometry was nearly complete (3 of 4 blocks measured), and the share
+test already covers what it was meant to guard.
+
+### D67 — The union appended 2,533 blocks to the end of a page and called it geometry
+
+Two faults in `union_documents`, both found by asking why `lemonde.fr` reported
+`geometric-anchored` with **7%** of its blocks measured.
+
+**Placement.** Blocks present only in the static document were appended after everything
+else, on the reasoning that guessing a position would corrupt the measured ordering. The
+reasoning is right about guessing; the result was still wrong. lemonde.fr's static document
+contributes 2,533 blocks the rendered one lacks, and every one landed after the article.
+
+They are now placed by **observed adjacency**: a static-only block is inserted after the
+nearest preceding block that appears in *both* documents. Sound across two different DOM
+trees precisely because the anchor is a block both trees contain. Their positions on
+lemonde.fr now run from 0 to 2,696 with a median of 1,293, rather than all sitting at the end.
+
+Where the two documents share *nothing*, there is no observed adjacency anywhere, so they go
+to the end as before -- the front would be an equally arbitrary choice and the rendered page
+is the authoritative one.
+
+**Labelling.** The merged document copied the rendered document's `reading_order_method`
+unchanged, claiming geometry for an ordering that was partly source order. A union containing
+static-only blocks is now labelled `geometric-anchored` at best, which is what it is.
+
+Recall against the reference vote rose 0.989 -> **0.994** across the same 13 pages, from the
+table-text fix in D64, with precision unchanged.
