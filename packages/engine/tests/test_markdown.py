@@ -234,3 +234,94 @@ class TestPermalinkAnchors:
     def test_ordinary_links_in_headings_are_untouched(self) -> None:
         out = md('<h2><a href="/a">Section</a></h2>')
         assert "[Section](https://example.com/a)" in out
+
+
+class TestTableText:
+    """`Block.text` is not a display field.
+
+    The content hash, deduplication, the search index and reading order all key on it. An
+    earlier version put only the first three rows there, and a caption *instead of* the rows
+    when a table had one -- so a specification table contributed almost nothing to any of
+    them while rendering perfectly in the Markdown.
+
+    Measured on Wikipedia's table-heavy pages, that was **45-47% of the page** absent from
+    the text while present in the Markdown.
+    """
+
+    WIDE = (
+        "<table>"
+        "<tr><th>City</th><th>Population</th></tr>"
+        "<tr><td>Sheffield</td><td>556000</td></tr>"
+        "<tr><td>Leeds</td><td>793000</td></tr>"
+        "<tr><td>Bristol</td><td>472000</td></tr>"
+        "<tr><td>Cardiff</td><td>362000</td></tr>"
+        "</table>"
+    )
+
+    def test_every_row_reaches_the_text(self) -> None:
+        found = [b for b in blocks(self.WIDE) if b.kind is BlockKind.TABLE]
+        assert "Cardiff" in found[0].text
+        assert "362000" in found[0].text
+
+    def test_a_caption_adds_to_the_rows_rather_than_replacing_them(self) -> None:
+        html = self.WIDE.replace("<table>", "<table><caption>UK cities</caption>")
+        found = [b for b in blocks(html) if b.kind is BlockKind.TABLE]
+        assert "UK cities" in found[0].text
+        assert "Cardiff" in found[0].text
+
+    def test_rows_are_still_kept_structurally(self) -> None:
+        """The flattened text is in addition to the rows, not instead of them."""
+        found = [b for b in blocks(self.WIDE) if b.kind is BlockKind.TABLE]
+        assert found[0].rows[0] == ("City", "Population")
+        assert len(found[0].rows) == 5
+
+
+class TestLayoutTables:
+    """Legacy sites build whole pages out of nested tables.
+
+    Treating those as data collapsed the page into one block: Hacker News extracted as a
+    single block of 3,720 characters with no headings, no links and no reading order -- the
+    worst possible output, produced silently.
+    """
+
+    def test_a_table_containing_a_table_is_layout(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html("<html><body><table><tr><td><table><tr><td>x</td></tr>"
+                          "</table></td></tr></table></body></html>")
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_a_table_with_headers_is_data_even_when_its_cells_are_busy(self) -> None:
+        """Flattening a real data table loses the mapping from a value to its column, which
+        is the whole reason to keep tables."""
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html(
+            "<html><body><table><tr><th>Plan</th></tr>"
+            "<tr><td><div><p>Pro</p></div></td></tr></table></body></html>"
+        )
+        assert not is_layout_table(root.xpath("//table")[0])
+
+    def test_a_plain_data_table_is_not_layout(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html(
+            "<html><body><table><tr><td>Sheffield</td><td>556000</td></tr>"
+            "<tr><td>Leeds</td><td>793000</td></tr></table></body></html>"
+        )
+        assert not is_layout_table(root.xpath("//table")[0])
+
+    def test_a_page_laid_out_in_tables_is_extracted_as_content(self) -> None:
+        html = (
+            "<table><tr><td>"
+            "<h1>Widgets</h1><p>" + "The widget is a fastener. " * 8 + "</p>"
+            "<table><tr><td><a href='/a'>Alpha</a></td></tr></table>"
+            "</td></tr></table>"
+        )
+        found = blocks(html)
+        kinds = {b.kind for b in found}
+        assert BlockKind.HEADING in kinds
+        assert any("fastener" in b.text for b in found)

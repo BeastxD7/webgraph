@@ -126,6 +126,45 @@ def _image_block(element: HtmlElement, base: str, index: int, tree: object) -> B
     )
 
 
+_LAYOUT_TABLE_TAGS: Final[frozenset[str]] = frozenset(
+    {"table", "div", "p", "form", "ul", "ol", "section", "article", "h1", "h2", "h3"}
+)
+"""Block-level content inside a cell. A data table holds values; a layout table holds a page."""
+
+
+def is_layout_table(element: HtmlElement) -> bool:
+    """Whether a `<table>` is being used to lay out a page rather than to hold data.
+
+    Legacy sites still build whole pages out of nested tables. Treating those as data
+    collapses the entire page into one block: Hacker News extracted as **one** block of 3,720
+    characters with no headings, no links and no reading order -- the worst possible output,
+    produced silently.
+
+    Two signals, both structural:
+
+    - a cell containing block-level content, above all another `<table>`. A pricing table
+      holds numbers; a layout table holds a page.
+    - the absence of every marker a data table normally carries -- `<th>`, `<thead>`,
+      `<caption>` -- combined with enough rows that its author would have used one.
+
+    Deliberately conservative in the ambiguous direction: a table with headers is treated as
+    data even if its cells are busy, because flattening a real data table loses the mapping
+    from a value to its column, which is the whole reason to keep tables at all.
+    """
+    if element.xpath("./thead|./caption|.//th"):
+        return False
+
+    if element.xpath(".//table"):
+        return True
+
+    cells = element.xpath(".//td")
+    if not cells:
+        return False
+
+    busy = sum(1 for cell in cells if any(c.tag in _LAYOUT_TABLE_TAGS for c in cell))
+    return busy * 2 >= len(cells)
+
+
 def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None:
     """Build a table block preserving its rows.
 
@@ -146,10 +185,19 @@ def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None
 
     caption = element.xpath("./caption")
     summary = normalize_text(caption[0].text_content()) if caption else ""
-    flattened = " | ".join(" ".join(r) for r in rows[:3])
+
+    # Every row, not a preview, and the caption in addition to them rather than instead.
+    #
+    # `text` is not a display field: it is what the content hash, deduplication, the search
+    # index and reading order all key on. An earlier version put the first three rows here,
+    # and a caption alone when there was one, so a specification table contributed almost
+    # nothing to any of them while rendering perfectly in the Markdown. The Markdown was
+    # right and the text was quietly missing most of the page.
+    flattened = "\n".join(" | ".join(row) for row in rows)
+    text = f"{summary}\n{flattened}" if summary else flattened
 
     return Block(
-        text=summary or flattened,
+        text=text,
         tag="table",
         xpath=tree.getpath(element),  # type: ignore[attr-defined]
         dom_index=index,
@@ -228,6 +276,10 @@ def extract_rich_blocks(
             block = _image_block(element, base_url, index, tree)
 
         elif tag == "table":
+            if is_layout_table(element):
+                # Not a table of data but a page built out of one. Fall through and treat it
+                # as an ordinary container so its real content is extracted.
+                continue
             block = _table_block(element, index, tree)
             consumed.update(element.iterdescendants())
 

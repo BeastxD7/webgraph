@@ -1797,3 +1797,54 @@ returns nothing for these moving tags even when they exist, so it is not a usabl
 
 Same shape of error as D62 an hour earlier: **a fact was inferred from something adjacent to
 it rather than read from the thing itself.**
+
+---
+
+## A robustness sweep, and the two defects it found (2026-09-01)
+
+Twenty-one deliberately awkward sites -- client-rendered apps, RFCs, Project Gutenberg, RTL
+pages, a table-laid-out page, `motherfuckingwebsite.com` -- flagged for anything that looked
+like a *failure* rather than a result: no blocks, no text, DOM fallback, or a yield far below
+what the raw HTML held.
+
+### D64 — Half of a table-heavy page was missing from `document.text`
+
+`Block.text` for a table held **only the first three rows**, and when a table had a
+`<caption>`, only the caption -- the rows were dropped entirely.
+
+`text` is not a display field. The content hash, deduplication, the search index behind the
+graph, `text_chars` and reading order all key on it. The Markdown rendered every row
+correctly the whole time, so the output *looked* right and everything computed from the text
+was quietly missing most of the page:
+
+| page | table text before | after |
+|---|---|---|
+| Comparison of text editors | 1,749 | **28,433** (+47% of the page) |
+| List of countries by GDP | 1,089 | **14,177** (+45% of the page) |
+
+For an engine whose stated purpose is not to lose 0.1% of a site, this was losing nearly half
+of some pages, invisibly, since the day tables were added.
+
+### D65 — Hacker News extracted as one block
+
+`<table>` was treated as atomic and never descended into. On a page built out of nested
+layout tables that collapses everything into a single block: HN was **1 block, 3,720
+characters**, no headings, no links, no reading order.
+
+`is_layout_table` distinguishes the two, structurally rather than by heuristic guessing:
+
+- a cell containing block-level content -- above all another `<table>` -- means a page, not
+  data;
+- but `<th>`, `<thead>` or `<caption>` means data regardless, because flattening a real data
+  table loses the mapping from a value to its column, which is the entire reason to keep
+  tables at all.
+
+Conservative in the ambiguous direction on purpose. HN now extracts with its structure and
+**3,988 characters**, more than the original blob.
+
+### Not defects, on inspection
+
+The sweep also flagged `low yield` on Linear, Vercel and Shopify. That was the probe's fault,
+not the engine's: stripping tags leaves inline `<script>` *contents* in the denominator, so a
+page that ships a large JSON payload looks like it lost everything. Worth recording because
+the number was alarming and meant nothing.
