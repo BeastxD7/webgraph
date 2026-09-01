@@ -1,10 +1,12 @@
 packages:
   - "apps/web"
 
+# unrs-resolver is the native module resolver behind eslint-import-resolver-typescript,
+# which eslint-config-next pulls in. pnpm refuses to install until every dependency with a
+# build script is explicitly allowed or denied; left undecided it fails with
+# ERR_PNPM_IGNORED_BUILDS, which is what broke CI on every commit of this repository.
+#
+# Approved by name rather than by a blanket setting, so a *new* dependency that wants to run
+# a script still stops the install and gets looked at.
 allowBuilds:
-  unrs-resolver: set this to true or false
-
-# unrs-resolver ships a native binary used by eslint's module resolver. Approved
-# explicitly rather than globally so any *new* build script still requires review.
-onlyBuiltDependencies:
-  - unrs-resolver
+  unrs-resolver: true
