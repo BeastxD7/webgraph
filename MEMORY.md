@@ -1739,3 +1739,39 @@ from 11.5 points to 4.8.
 
 Also: `/api/text` now returns `content_markdown` for a single page, which was impossible
 before -- cross-page detection needs a crawl, a landmark needs one page.
+
+---
+
+## CI had never passed, and local checks could not have caught it (2026-09-01)
+
+### D62 — A warm `node_modules` hid a broken install from every check
+
+All 26 CI runs failed, from the very first commit, at `pnpm install --frozen-lockfile`:
+
+```
+[ERR_PNPM_IGNORED_BUILDS] Ignored build scripts: unrs-resolver@1.12.2
+```
+
+pnpm 11 refuses to install until every dependency with a build script is explicitly allowed
+or denied. `unrs-resolver` is the native module resolver behind
+`eslint-import-resolver-typescript`, pulled in by `eslint-config-next`. pnpm had written a
+**placeholder** into `pnpm-workspace.yaml` -- literally `unrs-resolver: set this to true or
+false` -- and I committed it with `git add -A` without reading it. An `onlyBuiltDependencies`
+list, the pnpm 10 spelling, does not satisfy pnpm 11 either. The working form is:
+
+```yaml
+allowBuilds:
+  unrs-resolver: true
+```
+
+**Why nothing local caught it.** Every `pnpm lint`, `pnpm typecheck` and `pnpm build` I ran
+went against a `node_modules` populated by an earlier interactive install where the build had
+already been approved. The failure only exists on a cold tree, which is the only kind CI has.
+
+Reproduced by `git clone` to a temporary directory and running exactly what CI runs. The fix
+was verified the same way -- clean clone, `--frozen-lockfile`, then lint, typecheck and build.
+
+Standing lesson: **for anything that touches dependencies, verify in a clean clone.** A green
+local check on a warm tree says nothing about a fresh one, and it said nothing here 26 times
+in a row. Second lesson, smaller and sharper: `git add -A` committed a file that a tool wrote
+and that contained an instruction addressed to me. Read what gets staged.
