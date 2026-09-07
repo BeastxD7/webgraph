@@ -1,0 +1,29 @@
+# Everything the API image does not need. The frontend is deployed separately, and
+# node_modules alone is larger than Chromium.
+.git
+.github
+.venv
+**/.venv
+node_modules
+**/node_modules
+apps/web
+benchmark
+docs
+tools
+.logs
+
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+.env
+.env.*
+.DS_Store
+Dockerfile
+.dockerignore

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 import time
 from collections import OrderedDict
@@ -30,6 +31,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from webgraph.boilerplate import strip_landmarks
 from webgraph.extract.schema import extract_facts, merge_facts
+from webgraph.fetch import guard
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
 from webgraph.fetch.static import fetch_static
 from webgraph.graph.build import GraphBuilder
@@ -43,11 +45,43 @@ from webgraph.resolve import Strategy
 from webgraph.site import SiteConfig, stream_site
 from webgraph.types import BlockKind, Document, Rect
 
-MAX_CONCURRENT_RENDERS = 2
+
+def _origins_from_env() -> list[str]:
+    """Browser origins allowed to call this API.
+
+    Comma-separated in `WEBGRAPH_ALLOWED_ORIGINS`; the dev frontend when unset. Never `*`:
+    this service fetches arbitrary URLs on the caller's behalf, so an open CORS policy would
+    hand every page on the internet a proxy that runs inside our network.
+    """
+    raw = os.environ.get("WEBGRAPH_ALLOWED_ORIGINS", "")
+    origins = [item.strip() for item in raw.split(",") if item.strip()]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
+ALLOWED_ORIGINS = _origins_from_env()
+
+PAGE_CAP = int(os.environ.get("WEBGRAPH_MAX_PAGES", "0"))
+"""Hard ceiling on pages per crawl, applied after the request is parsed. 0 disables it.
+
+`SiteRequest.max_pages` defaults to 0, meaning "crawl until the frontier is exhausted",
+which is the right default for someone running this on their own laptop and an unacceptable
+one for a shared deployment: a single caller can otherwise hold a crawl slot for hours. The
+cap lives in the environment rather than the model because the right number is a property of
+the host, not of the API.
+"""
+
+CONCURRENCY_CAP = int(os.environ.get("WEBGRAPH_MAX_CONCURRENCY", "0"))
+"""Ceiling on per-crawl worker concurrency. 0 disables it.
+
+The request model already allows up to 12, which is right for a laptop with headroom and
+wrong for a two-core container: twelve workers there means twelve browsers competing for
+two cores and a fixed memory budget."""
+
+MAX_CONCURRENT_RENDERS = int(os.environ.get("WEBGRAPH_MAX_CONCURRENT_RENDERS", "2"))
 """Browser launches are the memory bottleneck. Two at a time is what a 16 GB laptop
 tolerates alongside a dev server; raise it only with measurements."""
 
-MAX_CONCURRENT_CRAWLS = 3
+MAX_CONCURRENT_CRAWLS = int(os.environ.get("WEBGRAPH_MAX_CONCURRENT_CRAWLS", "3"))
 """Whole-site crawls in flight at once, across all callers.
 
 Each crawl runs its own worker pool of browsers, so this multiplies: three crawls at
@@ -225,10 +259,24 @@ class HealthResponse(BaseModel):
     status: Literal["ok"]
     render_available: bool
     max_concurrent_renders: int
+    private_hosts_blocked: bool
+    """Whether this instance refuses to fetch loopback and link-local addresses.
+
+    Exposed because it is the one setting whose misconfiguration is invisible until it
+    is exploited: a deployment with this False looks perfectly healthy."""
+    max_pages: int
+    """The server-side page cap. 0 means crawls run until the frontier is exhausted."""
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # On by default here, unlike in the engine. This is the process that takes URLs
+    # from strangers, and an unguarded one will fetch its own host's credentials on
+    # request. `WEBGRAPH_ALLOW_PRIVATE_HOSTS=1` opts out for local work on localhost.
+    blocked = guard.configure_from_env(default=True)
+    print(f"host policy: private addresses {'blocked' if blocked else 'ALLOWED'}")
+    print(f"allowed origins: {', '.join(ALLOWED_ORIGINS)}")
+    print(f"page cap: {PAGE_CAP or 'none'}, concurrency cap: {CONCURRENCY_CAP or 'none'}")
     yield
 
 
@@ -241,8 +289,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # The dev frontend only. A permissive default would ship to production unnoticed.
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -305,6 +352,8 @@ async def health() -> HealthResponse:
         status="ok",
         render_available=PLAYWRIGHT_AVAILABLE,
         max_concurrent_renders=MAX_CONCURRENT_RENDERS,
+        private_hosts_blocked=guard.private_hosts_blocked(),
+        max_pages=PAGE_CAP,
     )
 
 
@@ -572,6 +621,23 @@ async def site_graph(url: str) -> StreamingResponse:
     )
 
 
+def _effective_max_pages(requested: int) -> int:
+    """Apply the host's page cap to what the client asked for.
+
+    A request of 0 means "until the frontier is exhausted", so on a capped host it is the
+    largest possible ask, not the smallest -- it has to clamp down to the cap rather than
+    through it.
+    """
+    if not PAGE_CAP:
+        return requested
+    return PAGE_CAP if requested == 0 else min(requested, PAGE_CAP)
+
+
+def _effective_concurrency(requested: int) -> int:
+    """Apply the host's concurrency cap. Unlike pages, 0 is not a meaningful request here."""
+    return min(requested, CONCURRENCY_CAP) if CONCURRENCY_CAP else requested
+
+
 @app.post("/api/site/stream")
 async def site_stream(request: SiteRequest) -> StreamingResponse:
     """Run the whole-site pipeline, streaming each stage as it completes.
@@ -584,8 +650,8 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
         raise HTTPException(status_code=422, detail="url must be http or https")
 
     config = SiteConfig(
-        max_pages=request.max_pages,
-        concurrency=request.concurrency,
+        max_pages=_effective_max_pages(request.max_pages),
+        concurrency=_effective_concurrency(request.concurrency),
         strategy=Strategy.UNION if request.complete else Strategy.STATIC_ONLY,
     )
 

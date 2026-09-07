@@ -31,6 +31,7 @@ Then open <http://localhost:3000>, type a domain, and watch the crawl stream.
 - [Schema mapping and the refusal to guess](#schema-mapping-and-the-refusal-to-guess)
 - [Serving it: streaming, cancellation, concurrency](#serving-it-streaming-cancellation-concurrency)
 - [The front end](#the-front-end)
+- [Deploying it](#deploying-it)
 - [How it is measured](#how-it-is-measured)
 - [The graph layer](#the-graph-layer)
 - [Where it stands against other tools](#where-it-stands-against-other-tools)
@@ -618,6 +619,65 @@ so only one crawl is ever in flight. Aborting in cleanup is what keeps that true
 The hero photograph is *The Palouse from Steptoe Butte* by Caleb Riston, CC BY 4.0, credited
 in the footer as that licence requires and recorded in
 [`apps/web/public/ASSETS.md`](apps/web/public/ASSETS.md).
+
+---
+
+## Deploying it
+
+Full instructions are in [`docs/DEPLOY.md`](docs/DEPLOY.md). What follows is why the split
+looks the way it does, because it is the part that surprises people.
+
+The frontend is a browser client that talks to the API directly. It goes anywhere that
+serves static assets; Vercel's free tier is fine. The backend is the awkward half, and three
+properties decide where it can live:
+
+1. **`/api/site/stream` holds one response open for minutes.** That is not a limitation to
+   be worked around -- it is the shape of the work, one SSE frame per page as the crawl
+   walks the site. Every function platform either caps response duration or buffers it, and
+   a buffered stream is not a stream.
+2. **Chromium runs in the same process.** Reading-order recovery is measured from a rendered
+   layout, so a browser and its shared libraries ship inside the image -- about 400 MB, and
+   a gigabyte of memory before Python is counted.
+3. **Exactly one instance.** The graph cache, the crawl slots and the crawl thread pool are
+   in-process state. A second instance answers `/api/site/context` from a process that never
+   ran the crawl, intermittently.
+
+Together those rule out serverless entirely and rule out the 512 MB free tiers on resource
+grounds. What is left is a container host with a real core: Cloud Run's always-free quota
+covers roughly 25 hours of crawling a month at 2 vCPU / 4 GiB, and costs nothing at rest
+because CPU is only allocated while a request is in flight.
+
+### The service will fetch anything, which is the problem
+
+An extractor that takes a URL from a stranger and returns the body is a server-side request
+forgery engine unless it is told otherwise. Every major cloud serves instance credentials
+over plain HTTP from `169.254.169.254`, so on an unguarded deployment "paste a URL" reads
+the host's own service account.
+
+[`webgraph/fetch/guard.py`](packages/engine/src/webgraph/fetch/guard.py) is the answer. Three
+decisions in it are worth stating:
+
+- **The policy is process-wide, not a `FetchConfig` field.** A crawl reaches `fetch_static`
+  from a dozen call sites inside `site.py`, and a flag that has to be threaded through every
+  one of them is a flag that will eventually be missed at exactly one of them.
+- **It is enforced as an httpx request event hook**, which fires once per redirect hop.
+  Checking only the URL the caller passed walks straight into a public host answering
+  `302 Location: http://169.254.169.254/`.
+- **It is off in the library and on in the API.** The CLI, the benchmarks and most of the
+  test suite legitimately fetch from `127.0.0.1`, and a security control that breaks
+  `make test` gets disabled rather than fixed. The API is the process that takes URLs from
+  strangers, so that is where it defaults on.
+
+`/api/health` reports whether the guard is live, because a deployment with it off looks
+perfectly healthy from the outside. Alongside it, `WEBGRAPH_MAX_PAGES` exists because
+`max_pages: 0` means "crawl until the frontier is exhausted" -- the right default on a
+laptop, and one caller occupying a crawl slot for hours on a shared host.
+
+What is *not* closed: DNS rebinding. The guard resolves the hostname and httpx resolves it
+again, and a name that answers differently between the two lookups slips through. Fixing it
+means pinning the connection to the checked address via a custom transport. It is recorded
+in the module rather than fixed, because it is a far narrower hole than the unguarded
+default and a demo is not a target.
 
 ---
 

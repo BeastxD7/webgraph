@@ -1,0 +1,30 @@
+# What `gcloud run deploy --source .` uploads to Cloud Build.
+#
+# Separate from .dockerignore on purpose: .dockerignore filters the build context *after*
+# the upload, so without this file gcloud falls back to .gitignore and happily uploads
+# node_modules and the benchmark corpus before Docker throws them away.
+.git
+.github
+.venv
+**/.venv
+node_modules
+**/node_modules
+apps/web
+benchmark
+docs
+tools
+.logs
+
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+.env
+.env.*
+.DS_Store

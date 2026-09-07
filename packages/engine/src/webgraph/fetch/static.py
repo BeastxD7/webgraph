@@ -12,6 +12,8 @@ from typing import Final
 
 import httpx
 
+from webgraph.fetch import guard
+
 __all__ = ["DEFAULT_USER_AGENT", "FetchConfig", "FetchResult", "fetch_static"]
 
 DEFAULT_USER_AGENT: Final[str] = (
@@ -77,11 +79,16 @@ def fetch_static(url: str, *, config: FetchConfig | None = None) -> FetchResult:
     config = config or FetchConfig()
 
     try:
+        # The host policy runs as an event hook rather than a check on `url`, because
+        # httpx calls the hook once per redirect hop. A public host answering
+        # `302 Location: http://169.254.169.254/` is the whole attack, and checking only
+        # the URL the caller passed would walk straight into it.
         with httpx.Client(
             follow_redirects=True,
             max_redirects=config.max_redirects,
             timeout=config.timeout_seconds,
             headers=_headers(config),
+            event_hooks={"request": [guard.hook]},
         ) as client:
             response = client.get(url)
             body = response.content[: config.max_bytes]

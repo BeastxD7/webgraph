@@ -9,6 +9,44 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
+/**
+ * Why the API cannot be reached, in the caller's terms.
+ *
+ * `NEXT_PUBLIC_API_BASE` is inlined at *build* time, not read at runtime. A deployment
+ * built without it keeps the localhost default and then asks each visitor's own machine
+ * for the API -- which fails with a generic network error that points at the wrong thing
+ * entirely. That misconfiguration is worth naming explicitly, because the symptom looks
+ * identical to a backend that is merely down.
+ */
+function unreachableMessage(): string {
+  const local = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|$|\/)/.test(API_BASE);
+  const servedRemotely =
+    typeof window !== "undefined" &&
+    !/^(127\.0\.0\.1|localhost|\[::1\])$/.test(window.location.hostname);
+
+  if (local && servedRemotely) {
+    return (
+      `This build points at ${API_BASE}, which is your own machine, not the server. ` +
+      "Set NEXT_PUBLIC_API_BASE to the deployed API URL and redeploy -- it is baked in " +
+      "at build time, so changing the variable alone is not enough."
+    );
+  }
+
+  // A CORS rejection reaches JavaScript as an indistinguishable network failure: the
+  // browser refuses to say more, on purpose. Naming it is the only help available, and it
+  // is the expected state of a fresh deployment whose API has not been told this origin
+  // exists yet -- exactly when a misleading "is it running?" costs the most time.
+  if (!local && typeof window !== "undefined") {
+    return (
+      `Could not reach ${API_BASE} from ${window.location.origin}. If the API is up, the ` +
+      "likely cause is CORS: it only answers origins listed in WEBGRAPH_ALLOWED_ORIGINS, " +
+      "and this one may not be among them."
+    );
+  }
+
+  return `Cannot reach the API at ${API_BASE}. Is it running? Try: make api`;
+}
+
 export type ReadingOrderMethod =
   | "geometric-xy-cut"
   /** Most blocks measured; the rest placed beside their source-order neighbours. */
@@ -59,6 +97,10 @@ export interface HealthResponse {
   status: "ok";
   render_available: boolean;
   max_concurrent_renders: number;
+  /** False means this instance will fetch loopback and link-local addresses. */
+  private_hosts_blocked: boolean;
+  /** Server-side page ceiling per crawl. 0 means the frontier is crawled to exhaustion. */
+  max_pages: number;
 }
 
 export class ApiError extends Error {
@@ -80,12 +122,10 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    // A network-level failure here almost always means the API process is not running,
-    // which is worth saying plainly rather than surfacing "Failed to fetch".
-    throw new ApiError(
-      `Cannot reach the API at ${API_BASE}. Is it running? Try: make api`,
-      0,
-    );
+    // A network-level failure here almost always means the API process is not running or
+    // the build points somewhere wrong, either of which is worth saying plainly rather
+    // than surfacing "Failed to fetch".
+    throw new ApiError(unreachableMessage(), 0);
   }
 
   if (!response.ok) {
@@ -371,12 +411,20 @@ export async function streamSite(
   onEvent: (event: SiteEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(`${API_BASE}/api/site/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/site/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+      signal,
+    });
+  } catch (error) {
+    // An aborted stream is the user closing the page, not a failure -- rethrow it as-is so
+    // callers can tell the two apart.
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError(unreachableMessage(), 0);
+  }
 
   if (!response.ok || !response.body) {
     throw new ApiError(
