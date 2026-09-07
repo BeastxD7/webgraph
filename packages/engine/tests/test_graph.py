@@ -62,7 +62,9 @@ class TestSections:
         assert by_heading["D"].parent_id == by_heading["A"].id
 
     def test_oversized_section_splits_on_paragraphs(self) -> None:
-        big = "".join(f"<p>{'word ' * 200}</p>" for _ in range(12))
+        # Distinct paragraphs, because `build_document` deduplicates repeated block text --
+        # twelve byte-identical paragraphs collapse to one and are not a real page anyway.
+        big = "".join(f"<p>{f'word{i} ' * 200}</p>" for i in range(12))
         sections = sections_from_document(document(f"<h1>Long</h1>{big}"))
         assert len(sections) > 1
         assert all(s.heading == "Long" for s in sections)
