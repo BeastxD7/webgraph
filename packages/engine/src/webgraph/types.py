@@ -129,6 +129,19 @@ class BlockKind(StrEnum):
     QUOTE = "quote"
     FIGURE_CAPTION = "figure-caption"
 
+    MEDIA = "media"
+    """A video, audio player or embed that is present on the page but not transcribed.
+
+    Carries no content of its own -- the point is that something *was* there. `SKIP_TAGS`
+    strips `<video>`, `<audio>` and `<iframe>` before extraction, so a YouTube embed used to
+    vanish without trace and a reader of the output could not tell whether a page had one.
+    A downstream consumer building notes or a knowledge graph needs to know the difference
+    between "this page has no video" and "this page has a video nobody transcribed", and
+    only the second one is worth coming back to.
+
+    `href` is the media source, `alt` its title where the markup gives one, and `text` a
+    sentence saying plainly that it was not transcribed."""
+
 
 class Block(BaseModel):
     """A contiguous run of text with its position in the document.

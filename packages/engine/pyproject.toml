@@ -32,6 +32,18 @@ bench = [
     "trafilatura>=2.0",
     "readability-lxml>=0.8.1",
     "justext>=3.0",
+    # WebMainBench (benchmark/webmainbench) imports the corpus's own MetricCalculator rather
+    # than reimplementing edit distance or TEDS, so it inherits that code's dependencies.
+    # All permissive: apted MIT, rapidfuzz MIT, beautifulsoup4 MIT, jieba MIT. Deliberately
+    # NOT IBM's PubTabNet `TEDS.py` (licence NOASSERTION) and NOT `table-recognition-metric`
+    # (pulls GPL-2.0 `Levenshtein`). resiliparse is a calibration baseline, not a dependency
+    # of the engine -- it is scored alongside webgraph to prove the harness reproduces the
+    # published leaderboard rows.
+    "apted>=1.0.3",
+    "rapidfuzz>=3.9",
+    "beautifulsoup4>=4.12",
+    "jieba>=0.42",
+    "resiliparse>=0.14.5",
 ]
 
 [build-system]

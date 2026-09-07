@@ -1899,3 +1899,503 @@ static-only blocks is now labelled `geometric-anchored` at best, which is what i
 
 Recall against the reference vote rose 0.989 -> **0.994** across the same 13 pages, from the
 table-text fix in D64, with precision unchanged.
+
+---
+
+## Making it shareable: hosting, and the hole that opened when it left the laptop (2026-09-01, session 12)
+
+The ask was "how do I host this free so friends can try it". The hosting question turned out
+to be the easy half.
+
+### D68 — Free hosting: the constraint is the open response, not the memory
+
+Ranked the hosts by the wrong thing at first. RAM looks like the binding constraint because
+Chromium is the obvious cost, but the property that eliminates the most options is that
+`/api/site/stream` holds one HTTP response open for minutes. That rules out every function
+platform before memory is even considered.
+
+Checked rather than remembered, and three of four recollections were stale:
+
+| Host | Believed | Actual, September 2026 |
+|---|---|---|
+| Hugging Face Spaces | free Docker, 16 GB | **Docker Spaces are PRO-only**; only static Spaces are free |
+| Render free | 512 MB, usable | 512 MB **and 0.1 vCPU** -- Chromium will not run usefully |
+| Fly.io | small free allowance | **no free tier** since 2024; 2 VM-hours of trial |
+| Cloud Run | free tier, streams | correct: 180k vCPU-s + 360k GiB-s/month, native SSE, 60-min ceiling |
+
+Cloud Run at 2 vCPU / 4 GiB works out to ~25 hours of crawling a month free, because both
+compute lines exhaust at the same point. `--execution-environment gen2` is required: gen1
+runs under gVisor and intercepts syscalls Chromium needs.
+
+The general lesson is the D63 one again in a different costume -- a remembered fact about
+someone else's product is worth about as much as a version number read off a release page.
+Free tiers move faster than anything else in this space.
+
+### D69 — The engine would have fetched its own host's credentials on request
+
+The service takes a URL from a caller, fetches it, and returns the body. There was no host
+policy anywhere in the codebase -- grepped for `is_private`, `169.254`, `ipaddress`, and
+found nothing. On any cloud host that means `http://169.254.169.254/latest/meta-data/` as
+the input returns the instance's service-account credentials as the output. On a laptop this
+was harmless; it became a live hole the moment the answer to "where do I host it" stopped
+being "nowhere".
+
+Three design choices in `fetch/guard.py`, each of which had a plausible alternative:
+
+**Process-wide state, not a `FetchConfig` field.** The config-field version is cleaner and
+was the first instinct. It is also wrong here: `fetch_static` is called from about a dozen
+places inside `site.py`, and the threading-it-through version fails whenever a new call site
+forgets. One process, one answer.
+
+**An httpx request event hook, not a check on the input URL.** Verified experimentally
+before relying on it -- httpx fires request hooks once per redirect hop, so the hook sees
+every address, while a check on the caller's URL sees only the first. The attack that
+defeats the naive version is a public host answering `302 Location: http://169.254.169.254/`.
+`BlockedHostError` subclasses `httpx.HTTPError` so `fetch_static`'s existing handler turns a
+blocked host into `ok=False` rather than an exception that aborts a crawl of thousands.
+
+**Off in the library, on in the API.** Turning it on globally broke 7 API tests immediately,
+because the suite serves its fixtures from `127.0.0.1` -- as do the CLI end-to-end test and
+the benchmarks. A control that breaks `make test` gets switched off rather than fixed, so
+the default is permissive in the engine and blocking in `webgraph_api.main`, which is the
+only process that takes URLs from strangers.
+
+One case needed a name-based rule rather than an address-based one. `metadata.google.internal`
+does not resolve outside GCP, and "does not resolve" falls through to allowed -- so the
+address-only guard had a hole that opened precisely on the host where it mattered. Blocked by
+name, along with `.internal`, `.local` and `.localhost`.
+
+Not fixed: DNS rebinding. The guard resolves, then httpx resolves again. Closing it needs the
+connection pinned to the checked address through a custom transport. Documented in the module
+rather than built.
+
+### D70 — `max_pages: 0` is the largest possible request, not the smallest
+
+The clamp is one line and it is the line that is easy to get backwards:
+
+```python
+return PAGE_CAP if requested == 0 else min(requested, PAGE_CAP)
+```
+
+`0` means "crawl until the frontier is exhausted", so `min(0, cap)` -- the obvious spelling --
+leaves an unbounded crawl unbounded. The default is right for the person running this on
+their own machine and unacceptable on a host shared with anyone, where one caller holds a
+crawl slot for hours. Extracted to `_effective_max_pages` purely so the case could be
+asserted without a network call.
+
+The same reasoning produced `WEBGRAPH_MAX_CONCURRENCY`, `WEBGRAPH_MAX_BROWSERS` and
+`WEBGRAPH_CHROMIUM_ARGS`: every number tuned for a 16 GB laptop is wrong for a 4 GiB
+container, and `MAX_BROWSERS = 6` at ~150 MB each is a kernel OOM kill that no exception
+handler can catch.
+
+### D71 — `NEXT_PUBLIC_*` is inlined at build time, and the failure is misleading
+
+Not a new fact, but a new failure mode worth naming. A Vercel build that runs before
+`NEXT_PUBLIC_API_BASE` is set keeps the `http://127.0.0.1:8000` default and then asks each
+*visitor's own machine* for the API. The resulting error is indistinguishable from a backend
+that is merely down, which is a long detour. `lib/api.ts` now detects the specific
+combination -- a localhost API base on a page served from a remote origin -- and says which
+mistake it is.
+
+---
+
+## Extraction quality: five defects, and the first number for the headline claim (2026-09-07, session 13)
+
+Session goal, in the user's words: *"I wanna build world's top crawler... no regrets should happen
+that I didn't do this earlier."* So the work was ordered by **how silently a defect fails**, not by
+how hard it was to fix. Every item below was found by measuring, and four of the five were invisible
+to the existing test suite.
+
+### D72 — The union merged one block into a page many times over
+
+`union_documents` emitted each static-only block once **per occurrence of its anchor key**. Identity
+is normalised text, so a phrase appearing twice in the rendered document (a nav link "Sport" and a
+section heading "Sport") is one key at two positions, and the loop fired at both.
+
+Measured across 39 cached pages: **14 of them carried 3,113 excess blocks.** corriere.it merged to
+3,831 blocks against 1,626 expected — **+136%**, with one static-only block copied **201 times**.
+theguardian +208, bbc +43.7%, lemonde +15.7%.
+
+It corrupts more than output length: `content_hash` is computed over the extracted text, and that
+hash is the gate deciding whether a page needs re-extracting and what `graph/diff.py` reports as
+changed. A duplicated block silently changes both.
+
+Fixed by emitting the run once, at the **last** occurrence of the key — the one nearest the content,
+rather than a nav link near the top. Both halves were wrong and neither had ever been measured.
+
+### D73 — D67's placement rule was right; its implementation was hiding that
+
+D67 adopted observed-adjacency placement on descriptive evidence only ("positions now run 0 to 2,696
+with a median of 1,293, rather than all sitting at the end"). That shows the mechanism *fires*, not
+that it is *correct*, and the recall figure quoted beside it was confounded with a table fix made the
+same session.
+
+`benchmark/union_adjacency/` now measures it, by the D66 method: blind a contiguous run of blocks
+present in both documents, make the merge put them back, score pairwise order accuracy against the
+rendered document's measured order. Baselines are append-at-end (the pre-D67 behaviour) and random.
+
+**The metric had to be decomposed before it meant anything.** Scoring all pairs touching a blinded
+block showed append-end *beating* adjacency at high blinding — an artifact, because a contiguous run
+has far more internal pairs than external ones, so append-end was being credited for preserving an
+order it never had to decide. Restricting to **cross pairs** (exactly one member blinded) isolates
+placement. Before and after the D72 fix, cross-pair accuracy:
+
+```
+blinded    adjacency          append-end   random
+  10%      0.833 -> 0.940       0.633      0.707
+  40%      0.748 -> 0.941       0.618      0.723
+  80%      0.700 -> 0.892       0.625      0.723
+overall    0.757 -> 0.925       0.627      0.716
+```
+
+Everything alarming in the first run was the duplication bug. "Adjacency barely beats random" and
+"decays as anchors thin" were both artifacts; it now holds above 0.89 even at 80% blinding.
+
+### D74 — Every RTL page had been read left-to-right, in production, since the beginning
+
+`order_blocks` has always reversed column order for `rtl`, and `build_document` has always accepted
+the flag. **Nothing in between ever set it.** `resolve.py` — the path the API, the crawler and every
+benchmark use — called `build_document` without it, so it defaulted to `False`. Only `cli.py` passed
+it, from a manual `--rtl` flag.
+
+A multi-column Arabic or Hebrew page did not come out slightly worse. It came out with the columns
+in the wrong order, labelled `geometric-xy-cut` as though measured.
+
+`is_rtl_document` now reads the page's own declaration: `dir` on `<html>`/`<body>` first (it wins
+outright, including `ltr` on a Hebrew-language page — a real authorial choice), then `lang` against
+RTL language and script subtags. **`lang` is not optional**: `ynet.co.il` carries no `dir` anywhere
+and is RTL only through CSS; `lang="he"` is the sole signal in the markup.
+
+Detection over the 41-page corpus: 5 RTL, 36 LTR, no misfires — including `aljazeera.com` (English)
+staying LTR while `aljazeera.net` (Arabic) flips. Impact: ynet moves **3,813 of 3,924 blocks**.
+
+Deliberately **not** a character-frequency heuristic. An English page quoting Arabic — a dictionary,
+a news article, this suite's own fixtures — would have its whole order reversed. Only a declaration
+counts.
+
+Trap worth remembering: the CLI's `--rtl` is `store_true`, so it passes `False` when absent. Left
+alone that would have silently disabled auto-detection for every CLI user. `rtl` is now `bool | None`
+with `None` meaning detect.
+
+### D75 — `rowspan`/`colspan` were ignored, which misaligns every value in a table
+
+Zero occurrences of either attribute in the whole repo. A header of `<th rowspan=2>Region</th>
+<th colspan=2>2025</th>` over `<th>Q1</th><th>Q2</th>` produced `('Region','2025')`, `('Q1','Q2')`,
+`('EU','10','20')` — so the renderer took `Region | 2025` as the header, demoted the real column
+labels to a body row, and put every number under the wrong heading. `rich.py`'s own docstring says
+tables are kept because flattening "loses the mapping from a value to its column"; the code lost it
+anyway on any table with a merged header.
+
+Now expanded into a rectangular grid using pandas' algorithm from `io/html.py` — carry each spanning
+cell forward with its column index and remaining row count. **Adopted, not depended on:** pandas is
+15 MB and coerces `'10'` to an int, and the content hash and search index need the string.
+
+Two adjacent defects fixed with it:
+- **Nested tables were hoisted and duplicated.** `is_layout_table` short-circuited on `.//th`, which
+  matches a nested table's header, so the `.//table` check below was unreachable for exactly the
+  nesting it was written to catch. And `_table_block` read rows with `.//tr` (descendant) while
+  reading cells with `./th|./td` (child), lifting inner rows into the outer table *and* leaving them
+  in the cell text as `Inner HInner V`. The inner table is now its own block.
+- **`<tfoot>` written before `<tbody>`** — legal and common — landed in the middle of the table,
+  because lxml returns an XPath *union* in document order. The four row containers are now queried
+  separately and concatenated in rendering order.
+
+### D76 — `"|".join(sections) + "/th"` does not mean what it looks like
+
+Fixing `is_layout_table` I wrote `_OWN_ROWS_XPATH + "/th"`. XPath `|` binds looser than `/`, so
+`./thead/tr|./tr|./tbody/tr|./tfoot/tr/th` means "any direct row, or a tfoot header cell" — it
+matched every ordinary table and broke layout-table detection outright. Two existing tests caught it
+immediately. Build such expressions per-alternative.
+
+### D77 — table-stitcher: evaluated hands-on, rejected
+
+Asked to try `pip install table-stitcher` (PebbleRoad) for the table bugs. Installed in a throwaway
+venv and pushed both bugs through it. **It cannot accept HTML at all** — three independent walls: its
+only shipped adapter hard-imports `docling-core`; `TableMeta` requires a pandas DataFrame *plus a
+page number*; and there is no HTML code anywhere in the package. Its README states `TableMeta` is
+*"intentionally lossy — it reduces a rich table (with rowspan, colspan, multi-row headers…) into a
+pandas DataFrame"* — precisely the information we need preserved.
+
+It solves a real problem webgraph cannot have: table fragments split across **PDF page breaks**. MIT,
+maintained, well-tested — and orthogonal. The transferable asset was pandas' span expansion, taken
+without the dependency.
+
+### D78 — There is no benchmark for HTML reading order, because the metrics cannot express it
+
+Surveyed the field. Zyte's `article-extraction-benchmark` uses 4-gram shingle bags, WCXB word bags,
+WebMainBench ROUGE-N, the SIGIR'25 multilingual eval ROUGE-L. **A bag of words is order-destroying by
+construction** — it cannot tell a correctly-read two-column page from one read straight across,
+because both contain the same words. So this engine's central claim is invisible to every number the
+field reports. (Also: Zyte's benchmark was archived in 2026, and Firecrawl's `scrape-evals` was
+withdrawn — repo 404, blog post unpublished. The field is fragmenting, not consolidating.)
+
+The PDF world does measure it — olmOCR-Bench uses binary span-order unit tests, ParseBench pairwise
+precedence assertions — and neither needs page coordinates in the *output*, so both port to a
+linearised DOM. `benchmark/reading_order/` is that port.
+
+**Avoiding circularity is the whole design.** Scoring a DOM walk against XY-cut's output measures
+nothing. Assertions are generated from geometric *axioms* instead — A above B in the same column band;
+A left of B in the same row band, reversed for RTL — neither of which consults `dom_index` or `_cut`.
+Pairs geometry does not settle generate no assertion.
+
+First result, 39 pages, 592,666 assertions:
+
+```
+overall                          geo 0.9945   dom 0.9732
+discriminating   14,510 (2.4%)   geo 0.9354   dom 0.0646
+  stacked       572,905          geo 1.0000   dom 0.9886
+  side-by-side   19,761          geo 0.8353   dom 0.5262
+RTL pages (5)                    geo 0.9782   dom 0.9210
+ynet.co.il                       geo 0.762    dom 0.034
+```
+
+**When the two orderings disagree, geometry is right 93.5% of the time.** That is the number the
+README's boldest claim was missing.
+
+### D79 — The benchmark caught its own axiom before it caught the engine
+
+First run showed geometry *losing* on side-by-side assertions (0.60 vs 0.87) with `elpais.com` at
+0.000. The axiom was wrong, not the engine: `MIN_SHARED_FRACTION` measured overlap against the
+**narrower** block, so a 29.7px line of body text counted as a side-by-side peer of a 1,062px
+right-hand sidebar on docs.pytest.org. It then asserted an order between one line and an entire
+column — something geometry does not settle — and the failure made a correct XY-cut look wrong.
+
+Side-by-side now requires the overlap to be substantial against **both** blocks. Discriminating
+accuracy went 0.885 → 0.962.
+
+Second lesson, same benchmark: on an 8-page sample side-by-side still looked like a loss (geo 0.718
+vs dom 0.923). On all 39 pages it reverses to **0.835 vs 0.526**. Eight pages was not a corpus.
+
+### Still open
+
+- **`supabase.com` 0.297, and the RTL Wikipedias at ~0.5** on discriminating pairs. Small counts,
+  but unexplained.
+- **Videos are not extracted at all.** `SKIP_TAGS` strips `iframe`, `object`, `embed`, `audio`,
+  `video`, `source`, `track`. A YouTube embed vanishes; a `<video>`'s `<track>` subtitles go with it.
+  `Modality.VIDEO_TRANSCRIPT` and `VIDEO_FRAME` exist and are never produced. (Images *are* handled:
+  `srcset`/lazy-src fallbacks, sub-32px filtering, alt/title.)
+- **CJK vertical writing** (`writing-mode: vertical-rl`) is untested. XY-cut assumes horizontal rows.
+- **Multi-row headers still render as one joined label** (`2025 Q1`). Correct and lossless, but
+  `Block` has no header/body distinction, so a consumer cannot recover the two levels.
+
+### D80 — Sub-pixel `y` scrambled every horizontal nav bar
+
+`_positional` ordered an atomic region by `(y, x, dom_index)` on the raw float. supabase.com
+renders its top nav with `Pricing` at y=70.4 and `Product` at y=71.0 — **six tenths of a
+pixel apart, on the same visual row** — so the tuple sort read the bar as `Pricing, Docs,
+Blog, Product, Developers`. Hebrew Wikipedia's menu row failed identically. Any nav or row of
+cards with fractional offsets was affected, and nothing had ever looked.
+
+Blocks are now banded into visual rows by vertical overlap, then read along each row (right
+to left when `rtl`). The banding criterion was chosen by measurement, not reasoning — across
+592,520 assertions on 39 pages:
+
+```
+                     overall   discriminating   stacked   side-by-side
+sort by (y, x)        0.9945       0.9343        1.0000       0.8346
+band vs min height    0.9981       0.9403        0.9981       0.9969
+band vs max height    0.9974       0.9921        1.0000       0.9219   <- adopted
+```
+
+The min variant is 0.0007 higher overall — noise — and buys its side-by-side gain by breaking
+stacked pairs that were perfect. The max variant introduces **no regression** and is right on
+99.2% of the pairs where geometric and source order disagree, against 94.0%. Two further
+details, both found by getting them wrong first: the band must be measured against the
+**taller** block (against the shorter, a tall block anchors a band that swallows short blocks
+above and below it), and it must **not grow** as blocks join (a growing band creeps downward
+and absorbs the rows beneath).
+
+### D81 — Shadow DOM: fixed, correct, and it recovered nothing. Kept anyway.
+
+A `TreeWalker` stops at a shadow boundary and `outerHTML` does not serialise across one, so
+content inside an open shadow root was invisible **twice over** — absent from the HTML lxml
+parses *and* absent from the geometry map, with nothing reporting it. Verified on a fixture:
+the engine extracted `['LIGHT DOM PARAGRAPH']` and dropped the entire shadow subtree.
+
+Fixed in two halves. `_COLLECT_SCRIPT` now recurses `el.shadowRoot` while stamping markers
+and measuring — `getBoundingClientRect()` inside a shadow root already returns page
+coordinates, so no transform is needed — and serialises via
+`getHTML({serializableShadowRoots: true})`, which emits `<template shadowrootmode="open">`.
+`flatten_shadow_roots` then unwraps those in `parse_html`, which is **required** rather than
+tidy: `template` is in `SKIP_TAGS`, so a serialised shadow root would otherwise be discarded
+one step later along with the inert templates it is syntactically identical to. Only
+templates carrying `shadowrootmode` are unwrapped — flattening inert ones would invent
+content the page never rendered.
+
+On the fixture the shadow blocks now come out **with rectangles**, so they take part in
+reading order rather than merely appearing.
+
+**Then the measurement said it does nothing.** Across 20 corpus sites, 5 carry open shadow
+roots — vercel 1, clerk 2, supabase 1, nextjs 1, **figma 11** — a 25% prevalence, far above
+the Web Almanac's 2.51% for mobile pages generally, because this corpus skews to modern
+component sites. Probing what those roots actually contain:
+
+```
+site           roots  templates  text chars inside
+vercel.com         1          1        0
+clerk.com          2          2        0
+supabase.com       1          1        0
+figma.com         11         11        0
+nextjs.org         1          1        0
+```
+
+**Zero.** Every one is style or behaviour encapsulation — players, icons, third-party
+widgets — not content. The +1.01% character delta in the first sweep was entirely news sites
+with *no* shadow roots re-rendering with different stories; attributing it to this change
+would have been wrong, and nearly was.
+
+Kept regardless, on the same asymmetry that biases `_needs_render` toward rendering: the
+cost is one extra JS branch on pages with no roots, and the failure it prevents is *total*
+content loss on a page that does put content in one. Prevalence rose 6x in two years, and
+Readability, trafilatura and Resiliparse handle none of it. But the honest status is
+**unproven on real content** — it needs a site that uses shadow DOM for text, and this corpus
+has none.
+
+Closed shadow roots remain unreachable; that needs CDP `DOM.getDocument(pierce: true)`.
+`getHTML()` is Chromium 125+ and falls back to today's behaviour when absent.
+
+### D82 — Container text belonged to nobody, and recovering it costs precision
+
+The innermost-block rule skips any container holding a block descendant, so a wrapper `<div>`
+cannot swallow the column beneath it. What it missed is that such a container can *also* hold
+text of its own — and that text was emitted by nobody at all:
+
+```html
+<div>Opening sentence.<br><br>
+  <div><img><span>Caption</span></div>
+<br><br>Closing sentence.</div>
+```
+
+extracted **12 characters of 118**. Both sentences are the article. This is ordinary
+`<br>`-separated article markup, not an exotic case: on Zyte's benchmark **8 of 181 pages
+lose more than 10% of their body and 4 lose essentially all of it** — MacRumors,
+AppleInsider, IGN, jaraguadosul.
+
+`_orphan_text` now takes the element's own text plus the tails of children that will
+themselves become blocks, while inline children (`<a>`, `<em>`, `<span>`) contribute their
+text because nothing else will. That split is what makes it additive rather than duplicating;
+`rich.py`'s existing `_own_text` is a different function for a different job (a list item's
+label, excluding only nested lists and tables).
+
+**Then the benchmark said it costs F1.** On Zyte, isolated cleanly by stubbing the function:
+
+```
+orphan OFF   F1=0.7016  P=0.5516  R=0.9637
+orphan ON    F1=0.6471  P=0.4816  R=0.9856
+             improved: 4 pages   hurt: 164   flat: 13
+```
+
+A minimum-length gate does not rescue it — swept 20/40/60/80/120/200/400 chars, and even at
+400 F1 reaches only 0.6810, still below off.
+
+**Kept anyway, and the diagnostic is why.** Inspecting what is actually added:
+
+```
+appleinsider (rescued)  11 blocks, 22,948 chars — the article body is ONLY here
+hosted.ap.org (hurt)     6 blocks,  5,961 chars — article lede recovered, plus AP topic tags
+blog.comwrap (hurt)      2 blocks, 17,517 chars — article lede recovered, plus PWA marketing
+```
+
+On every page examined, including the ones whose F1 fell, orphan recovery pulls in **real
+article text that nothing else was extracting**. What it also pulls in is nav strips and tag
+lists sitting in plain `<div>`s — which `strip_landmarks` cannot see because they are not
+`<nav>` or `<footer>`.
+
+So this is not a recall-versus-noise trade. It is the session's systemic finding again:
+recall is best-in-class (0.9856 here, against rs-trafilatura's 0.990 and above thirteen
+systems that beat webgraph on F1), and **every remaining point is precision, which is a
+selection problem rather than an extraction one**. The Zyte agent quantified the headroom:
+picking the best contiguous run of the engine's *own* blocks scores **F1 0.945**. The article
+body is already present, contiguous and correctly ordered, on essentially every page.
+
+Losing an entire article body is the worst failure this engine can have. A precision cost on
+an article-only metric is not a reason to keep doing it.
+
+**The follow-up this makes unavoidable:** a text-density / link-density main-content selector
+over the existing block list, shipped as an opt-in mode rather than a default -- it means
+discarding content on purpose, which is the opposite of what the engine currently promises,
+and that is a product decision rather than a tuning one.
+
+### D83 — The selector was built, and it is swept on one page type only
+
+`main_content.py` is that follow-up. The oracle framing turned out to be the whole design:
+because the article body is already contiguous and correctly ordered, selection is a
+**maximum-subarray** problem over per-block values, and Kadane solves it in one pass. Link
+density is the primary signal, following Kohlschutter et al. (WSDM 2010) -- read from
+`rich_text`, since `text` has already flattened `[label](url)` away.
+
+Measured on Zyte, `strip_landmarks` first: raw 0.5738 -> landmarks 0.6471 ->
+**landmarks + selector 0.8695** (P 0.8516, R 0.8882), against an oracle ceiling of 0.945.
+
+**It is swept on Zyte's 181 article pages only, and that is the load-bearing caveat.** An
+article is the page type where one contiguous run is most obviously right. Product, forum and
+listing pages may want a different `block_cost` entirely, and a single constant may not serve
+all seven WCXB types. Validating that is the first thing to do next -- see
+`docs/SESSION-13-HANDOFF.md`, which carries the resume checklist, the full sweep tables, the
+six benchmark agents that died on the session rate limit, and the VIPS licence finding (every
+faithful implementation is LGPL; the 2003 algorithm is free to implement from the paper).
+
+The selector is deliberately **not** wired into `build_document`. `Document.blocks` stays
+complete; a caller that wants an article asks for one.
+
+### D84 — Creative sites: the engine extracts twice what the browser shows
+
+Built `benchmark/creative/` -- 23 award-winning and agency sites (WebGL portfolios, Framer and
+Webflow builds, scroll-driven editorial). There is no ground-truth main content on an agency
+portfolio, so the metric is **recovery**: engine characters over the browser's own
+`document.body.innerText` on the same rendered page, both sides seeing the same DOM at the
+same moment.
+
+The result inverted the expectation. Mean recovery **2.155**, median **1.791** -- only one
+site of twenty under-extracts. The engine is not missing content on these pages, it is
+emitting roughly twice as much text as a reader sees:
+
+```
+basicagency.com   7.40x   10,993 vs  1,486      obys.agency    0.48   <- the only shortfall
+webflow.com       4.74x   22,675 vs  4,785      activetheory   1.00   (29 chars total, all WebGL)
+pudding.cool      3.73x   12,955 vs  3,470
+apple.com/airpods 3.39x   86,389 vs 25,510
+```
+
+**Three distinct causes, separated by measurement rather than guessed at.**
+
+**1. Invisible blocks.** `_COLLECT_SCRIPT` skips elements that are `display:none`,
+`visibility:hidden`, `opacity:0` or zero-sized, so on a rendered page *a block with no
+rectangle is a block the browser did not paint*. Those are currently anchored back in.
+Dropping them: basicagency 7.14 -> 2.09, webflow 4.50 -> 1.73. Real and large -- but **not a
+default change**, because the anchoring exists for collapsed `<details>`, which is also
+rectangle-less and is content we want. This belongs behind the `main_content` path, which is
+already the mode that discards on purpose.
+
+**2. Missing separators between inline siblings.** Apple's nav arrives as
+`'AppleStoreShopShop the LatestMaciPadiPhoneApple Watch...'`. `text_content()` concatenates
+adjacent `<a>` elements with nothing between them, so "Mac iPad iPhone" becomes
+"MaciPadiPhone". This is **text corruption, not noise** -- the words are destroyed, not
+merely unwanted. A browser inserts the boundary because the links are laid out as separate
+boxes, which is information we have in the rects and do not use. Unfixed; needs geometry to
+decide where a boundary belongs.
+
+**3. Cross-kind duplication -- my own bug, now fixed.** `_deduplicate` keyed on
+`(kind, text, href)`, so one sentence survived twice under two labels: pudding.cool emits
+"Some of my favorite projects..." as both a `list-item` and a `paragraph`. Narrowed to
+`(text, href)` -- `href` still protects a gallery of images that share alt text, while
+identical prose collapses regardless of which tag it wears. **Zyte F1 0.8638 -> 0.8723**,
+precision 0.7816 -> 0.7979, recall essentially unchanged.
+
+**The honest limit of the corpus:** `activetheory.net` has 29 characters of text on the whole
+page and recovery of exactly 1.00, which is a perfect score and means nothing. The site is
+WebGL. Six of twenty sites carry a canvas covering most of the viewport. No DOM extractor
+recovers that without OCR, and the right response is to report "this page has no extractable
+text" rather than return 29 characters as though they were the content.
+
+### D85 — A benchmark harness failed silently and reported success
+
+The first creative run printed "5 rendered, 0 usable" with no error. Cause: the harness
+opened a second `sync_playwright()` on a thread where the engine had already started its
+thread-local browser, which Playwright refuses -- *"It looks like you are using Playwright
+Sync API inside the asyncio loop"*. The exception was swallowed by a diagnostic `except`, so
+every page reported `ok=True` with zero measurements.
+
+Fixed by reusing `shared_browser()`. Worth remembering as a shape: a benchmark that catches
+broadly to survive bad pages will also swallow its own bugs, and "N succeeded, 0 usable" is
+the signature.

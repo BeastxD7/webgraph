@@ -1,0 +1,63 @@
+# Union-by-adjacency benchmark corpus.
+#
+# Selected for one property: the static and rendered representations of the page must
+# actually DISAGREE. A site whose two representations are near-identical scores ~1.0 on
+# this benchmark by construction and measures nothing (see the module docstring).
+#
+# The first block is the known-hard core -- every one of these is named in an engine
+# docstring or in MEMORY.md, with the number that put it there.
+
+# --- named in the source, with measurements ---
+https://www.lemonde.fr/                          # 2,533 static-only blocks (D67)
+https://www.bbc.co.uk/news                       # 19,908 static vs 9,279 rendered: consent wall
+https://ar.wikipedia.org/wiki/حاسوب               # RTL, 0.34-0.47 measured share
+https://www.aljazeera.com/                       # 0.34-0.47 measured share
+https://www.shopify.com/                         # 0.34-0.47 measured share, networkidle timeout
+https://angular.dev/                             # 68% static coverage
+https://www.notion.com/                          # 82% static coverage
+https://nextjs.org/                              # blocks non-browser agents: static returns nothing
+https://news.ycombinator.com/                    # nested layout tables
+https://www.squarespace.com/                     # networkidle timeout
+https://stripe.com/                              # mega-menus populate on hover
+https://www.python.org/                          # networkidle timeout
+https://www.figma.com/                           # networkidle timeout
+https://linear.app/                              # client-rendered
+https://vercel.com/                              # client-rendered
+https://www.solidjs.com/                         # www redirect, canonical mismatch
+
+# --- multi-column news: the layout case reading order exists for ---
+https://www.theguardian.com/international
+https://www.reuters.com/
+https://www.lefigaro.fr/
+https://www.spiegel.de/
+https://www.asahi.com/                           # CJK
+https://www.corriere.it/
+https://elpais.com/
+https://www.nu.nl/
+
+# --- RTL, where column order reverses ---
+https://www.aljazeera.net/
+https://he.wikipedia.org/wiki/מחשב
+https://www.ynet.co.il/
+https://fa.wikipedia.org/wiki/رایانه
+
+# --- hydration-heavy SPAs: static and rendered trees differ most ---
+https://react.dev/
+https://vuejs.org/
+https://svelte.dev/
+https://www.sanity.io/
+https://supabase.com/
+https://clerk.com/
+
+# --- docs with generated sidebars: large static-only nav blocks ---
+https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template-areas
+https://docs.pytest.org/en/stable/how-to/fixtures.html
+https://jinja.palletsprojects.com/en/stable/templates/
+https://docs.astro.build/en/guides/markdown-content/
+
+# --- long-form prose: the low-disagreement control group ---
+# Expected to score near 1.0 and to sit in the lowest disagreement bucket. Present so the
+# bucketing has a floor to anchor against, not because they are hard.
+https://danluu.com/futurist-predictions/
+https://simonwillison.net/2025/Sep/6/anthropic-settlement/
+https://jvns.ca/blog/2023/11/10/notes-on-git-error-messages/

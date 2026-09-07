@@ -1,0 +1,582 @@
+{
+  "scored": 37,
+  "overall_cross": {
+    "adjacency": 0.9254,
+    "append-end": 0.6269,
+    "random": 0.7162
+  },
+  "overall_any": {
+    "adjacency": 0.9077,
+    "append-end": 0.7098,
+    "random": 0.6571
+  },
+  "by_bucket": {
+    "low    <0.02": {
+      "pages": 11,
+      "adjacency": 0.9077,
+      "append-end": 0.7343,
+      "random": 0.6502
+    },
+    "medium <0.10": {
+      "pages": 18,
+      "adjacency": 0.9157,
+      "append-end": 0.7164,
+      "random": 0.6593
+    },
+    "high   <0.25": {
+      "pages": 8,
+      "adjacency": 0.8898,
+      "append-end": 0.6611,
+      "random": 0.6617
+    }
+  },
+  "by_share": {
+    "0.10": {
+      "cross": {
+        "adjacency": 0.9397,
+        "append-end": 0.6335,
+        "random": 0.7066
+      },
+      "any": {
+        "adjacency": 0.935,
+        "append-end": 0.645,
+        "random": 0.6973
+      }
+    },
+    "0.25": {
+      "cross": {
+        "adjacency": 0.9299,
+        "append-end": 0.63,
+        "random": 0.7078
+      },
+      "any": {
+        "adjacency": 0.9163,
+        "append-end": 0.6656,
+        "random": 0.6818
+      }
+    },
+    "0.40": {
+      "cross": {
+        "adjacency": 0.9412,
+        "append-end": 0.6181,
+        "random": 0.7234
+      },
+      "any": {
+        "adjacency": 0.9215,
+        "append-end": 0.6886,
+        "random": 0.6748
+      }
+    },
+    "0.60": {
+      "cross": {
+        "adjacency": 0.9241,
+        "append-end": 0.6276,
+        "random": 0.7205
+      },
+      "any": {
+        "adjacency": 0.9,
+        "append-end": 0.7439,
+        "random": 0.6374
+      }
+    },
+    "0.80": {
+      "cross": {
+        "adjacency": 0.8922,
+        "append-end": 0.6253,
+        "random": 0.7225
+      },
+      "any": {
+        "adjacency": 0.8657,
+        "append-end": 0.8056,
+        "random": 0.594
+      }
+    }
+  },
+  "no_shared_blocks": [
+    "https://news.ycombinator.com/",
+    "https://www.solidjs.com/"
+  ],
+  "pages": [
+    {
+      "url": "https://angular.dev/",
+      "disagreement": 0.0126,
+      "shared": 66,
+      "static_only": 1,
+      "anchor_density": 0.02,
+      "adjacency": 0.8696,
+      "append-end": 0.6792,
+      "random": 0.6525,
+      "adjacency_any": 0.9036,
+      "append-end_any": 0.7441,
+      "random_any": 0.6195
+    },
+    {
+      "url": "https://ar.wikipedia.org/wiki/\u062d\u0627\u0633\u0648\u0628",
+      "disagreement": 0.0473,
+      "shared": 919,
+      "static_only": 11,
+      "anchor_density": 0.01,
+      "adjacency": 0.9767,
+      "append-end": 0.5957,
+      "random": 0.7196,
+      "adjacency_any": 0.9796,
+      "append-end_any": 0.6984,
+      "random_any": 0.6529
+    },
+    {
+      "url": "https://clerk.com/",
+      "disagreement": 0.091,
+      "shared": 396,
+      "static_only": 1,
+      "anchor_density": 0.0,
+      "adjacency": 0.9529,
+      "append-end": 0.6688,
+      "random": 0.7303,
+      "adjacency_any": 0.9168,
+      "append-end_any": 0.7387,
+      "random_any": 0.6581
+    },
+    {
+      "url": "https://danluu.com/futurist-predictions/",
+      "disagreement": 0.0,
+      "shared": 711,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9795,
+      "append-end": 0.6862,
+      "random": 0.6728,
+      "adjacency_any": 0.9744,
+      "append-end_any": 0.7668,
+      "random_any": 0.6265
+    },
+    {
+      "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/grid-template-areas",
+      "disagreement": 0.1088,
+      "shared": 1536,
+      "static_only": 8,
+      "anchor_density": 0.01,
+      "adjacency": 0.9681,
+      "append-end": 0.6924,
+      "random": 0.686,
+      "adjacency_any": 0.9045,
+      "append-end_any": 0.745,
+      "random_any": 0.6292
+    },
+    {
+      "url": "https://docs.astro.build/en/guides/markdown-content/",
+      "disagreement": 0.0743,
+      "shared": 459,
+      "static_only": 1,
+      "anchor_density": 0.0,
+      "adjacency": 0.9347,
+      "append-end": 0.6031,
+      "random": 0.6998,
+      "adjacency_any": 0.9084,
+      "append-end_any": 0.6791,
+      "random_any": 0.6391
+    },
+    {
+      "url": "https://docs.pytest.org/en/stable/how-to/fixtures.html",
+      "disagreement": 0.1208,
+      "shared": 284,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9622,
+      "append-end": 0.5624,
+      "random": 0.7361,
+      "adjacency_any": 0.9405,
+      "append-end_any": 0.6791,
+      "random_any": 0.661
+    },
+    {
+      "url": "https://elpais.com/",
+      "disagreement": 0.0121,
+      "shared": 489,
+      "static_only": 1,
+      "anchor_density": 0.0,
+      "adjacency": 0.9358,
+      "append-end": 0.6215,
+      "random": 0.7564,
+      "adjacency_any": 0.9153,
+      "append-end_any": 0.7302,
+      "random_any": 0.6706
+    },
+    {
+      "url": "https://fa.wikipedia.org/wiki/\u0631\u0627\u06cc\u0627\u0646\u0647",
+      "disagreement": 0.095,
+      "shared": 682,
+      "static_only": 15,
+      "anchor_density": 0.02,
+      "adjacency": 0.9756,
+      "append-end": 0.5712,
+      "random": 0.694,
+      "adjacency_any": 0.9705,
+      "append-end_any": 0.6761,
+      "random_any": 0.6352
+    },
+    {
+      "url": "https://he.wikipedia.org/wiki/\u05de\u05d7\u05e9\u05d1",
+      "disagreement": 0.0695,
+      "shared": 584,
+      "static_only": 1,
+      "anchor_density": 0.0,
+      "adjacency": 0.972,
+      "append-end": 0.5353,
+      "random": 0.7272,
+      "adjacency_any": 0.9763,
+      "append-end_any": 0.6415,
+      "random_any": 0.6607
+    },
+    {
+      "url": "https://jinja.palletsprojects.com/en/stable/templates/",
+      "disagreement": 0.134,
+      "shared": 945,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9314,
+      "append-end": 0.645,
+      "random": 0.7521,
+      "adjacency_any": 0.9185,
+      "append-end_any": 0.7436,
+      "random_any": 0.6698
+    },
+    {
+      "url": "https://linear.app/",
+      "disagreement": 0.0137,
+      "shared": 279,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9695,
+      "append-end": 0.5489,
+      "random": 0.7298,
+      "adjacency_any": 0.9461,
+      "append-end_any": 0.678,
+      "random_any": 0.6598
+    },
+    {
+      "url": "https://nextjs.org/",
+      "disagreement": 0.1498,
+      "shared": 96,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.952,
+      "append-end": 0.6741,
+      "random": 0.7027,
+      "adjacency_any": 0.9464,
+      "append-end_any": 0.7382,
+      "random_any": 0.6393
+    },
+    {
+      "url": "https://react.dev/",
+      "disagreement": 0.0203,
+      "shared": 152,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9893,
+      "append-end": 0.5433,
+      "random": 0.7828,
+      "adjacency_any": 0.9665,
+      "append-end_any": 0.6616,
+      "random_any": 0.6934
+    },
+    {
+      "url": "https://simonwillison.net/2025/Sep/6/anthropic-settlement/",
+      "disagreement": 0.0,
+      "shared": 55,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 1.0,
+      "append-end": 0.6058,
+      "random": 0.6617,
+      "adjacency_any": 1.0,
+      "append-end_any": 0.722,
+      "random_any": 0.6105
+    },
+    {
+      "url": "https://stripe.com/",
+      "disagreement": 0.0314,
+      "shared": 190,
+      "static_only": 5,
+      "anchor_density": 0.03,
+      "adjacency": 0.9386,
+      "append-end": 0.835,
+      "random": 0.6088,
+      "adjacency_any": 0.9353,
+      "append-end_any": 0.85,
+      "random_any": 0.5901
+    },
+    {
+      "url": "https://supabase.com/",
+      "disagreement": 0.0531,
+      "shared": 193,
+      "static_only": 1,
+      "anchor_density": 0.01,
+      "adjacency": 0.9937,
+      "append-end": 0.6973,
+      "random": 0.7052,
+      "adjacency_any": 0.9688,
+      "append-end_any": 0.7559,
+      "random_any": 0.644
+    },
+    {
+      "url": "https://svelte.dev/",
+      "disagreement": 0.0053,
+      "shared": 20,
+      "static_only": 4,
+      "anchor_density": 0.2,
+      "adjacency": 0.9147,
+      "append-end": 0.7372,
+      "random": 0.6611,
+      "adjacency_any": 0.9535,
+      "append-end_any": 0.795,
+      "random_any": 0.6323
+    },
+    {
+      "url": "https://vercel.com/",
+      "disagreement": 0.0312,
+      "shared": 158,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9755,
+      "append-end": 0.606,
+      "random": 0.7602,
+      "adjacency_any": 0.925,
+      "append-end_any": 0.7208,
+      "random_any": 0.6687
+    },
+    {
+      "url": "https://vuejs.org/",
+      "disagreement": 0.093,
+      "shared": 82,
+      "static_only": 1,
+      "anchor_density": 0.01,
+      "adjacency": 0.9933,
+      "append-end": 0.6264,
+      "random": 0.7086,
+      "adjacency_any": 0.981,
+      "append-end_any": 0.6955,
+      "random_any": 0.6507
+    },
+    {
+      "url": "https://www.aljazeera.com/",
+      "disagreement": 0.0426,
+      "shared": 169,
+      "static_only": 9,
+      "anchor_density": 0.05,
+      "adjacency": 0.9315,
+      "append-end": 0.5909,
+      "random": 0.7058,
+      "adjacency_any": 0.9313,
+      "append-end_any": 0.6875,
+      "random_any": 0.6551
+    },
+    {
+      "url": "https://www.aljazeera.net/",
+      "disagreement": 0.116,
+      "shared": 279,
+      "static_only": 2,
+      "anchor_density": 0.01,
+      "adjacency": 0.9234,
+      "append-end": 0.5489,
+      "random": 0.7358,
+      "adjacency_any": 0.8936,
+      "append-end_any": 0.6318,
+      "random_any": 0.6713
+    },
+    {
+      "url": "https://www.asahi.com/",
+      "disagreement": 0.0159,
+      "shared": 661,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9071,
+      "append-end": 0.598,
+      "random": 0.7013,
+      "adjacency_any": 0.8524,
+      "append-end_any": 0.7054,
+      "random_any": 0.6475
+    },
+    {
+      "url": "https://www.bbc.co.uk/news",
+      "disagreement": 0.192,
+      "shared": 64,
+      "static_only": 304,
+      "anchor_density": 4.75,
+      "adjacency": 0.7698,
+      "append-end": 0.3351,
+      "random": 0.7115,
+      "adjacency_any": 0.752,
+      "append-end_any": 0.3585,
+      "random_any": 0.7004
+    },
+    {
+      "url": "https://www.corriere.it/",
+      "disagreement": 0.0296,
+      "shared": 886,
+      "static_only": 12,
+      "anchor_density": 0.01,
+      "adjacency": 0.7981,
+      "append-end": 0.6001,
+      "random": 0.732,
+      "adjacency_any": 0.7765,
+      "append-end_any": 0.6959,
+      "random_any": 0.6718
+    },
+    {
+      "url": "https://www.figma.com/",
+      "disagreement": 0.0054,
+      "shared": 210,
+      "static_only": 1,
+      "anchor_density": 0.0,
+      "adjacency": 0.9664,
+      "append-end": 0.6215,
+      "random": 0.7034,
+      "adjacency_any": 0.967,
+      "append-end_any": 0.7261,
+      "random_any": 0.647
+    },
+    {
+      "url": "https://www.lefigaro.fr/",
+      "disagreement": 0.0303,
+      "shared": 702,
+      "static_only": 5,
+      "anchor_density": 0.01,
+      "adjacency": 0.9462,
+      "append-end": 0.7004,
+      "random": 0.6971,
+      "adjacency_any": 0.8908,
+      "append-end_any": 0.7615,
+      "random_any": 0.6401
+    },
+    {
+      "url": "https://www.lemonde.fr/",
+      "disagreement": 0.0322,
+      "shared": 30,
+      "static_only": 1889,
+      "anchor_density": 62.97,
+      "adjacency": 0.6669,
+      "append-end": 0.6724,
+      "random": 0.6507,
+      "adjacency_any": 0.6723,
+      "append-end_any": 0.6792,
+      "random_any": 0.6479
+    },
+    {
+      "url": "https://www.notion.com/",
+      "disagreement": 0.0265,
+      "shared": 108,
+      "static_only": 1,
+      "anchor_density": 0.01,
+      "adjacency": 0.9798,
+      "append-end": 0.621,
+      "random": 0.7507,
+      "adjacency_any": 0.9582,
+      "append-end_any": 0.7066,
+      "random_any": 0.6712
+    },
+    {
+      "url": "https://www.nu.nl/",
+      "disagreement": 0.1257,
+      "shared": 320,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.8911,
+      "append-end": 0.6091,
+      "random": 0.724,
+      "adjacency_any": 0.8994,
+      "append-end_any": 0.6859,
+      "random_any": 0.6503
+    },
+    {
+      "url": "https://www.python.org/",
+      "disagreement": 0.001,
+      "shared": 145,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.8124,
+      "append-end": 0.6126,
+      "random": 0.7183,
+      "adjacency_any": 0.7902,
+      "append-end_any": 0.7028,
+      "random_any": 0.6689
+    },
+    {
+      "url": "https://www.sanity.io/",
+      "disagreement": 0.0323,
+      "shared": 288,
+      "static_only": 10,
+      "anchor_density": 0.03,
+      "adjacency": 0.9398,
+      "append-end": 0.5981,
+      "random": 0.7612,
+      "adjacency_any": 0.8924,
+      "append-end_any": 0.6977,
+      "random_any": 0.6831
+    },
+    {
+      "url": "https://www.shopify.com/",
+      "disagreement": 0.0482,
+      "shared": 342,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.895,
+      "append-end": 0.6013,
+      "random": 0.6952,
+      "adjacency_any": 0.9038,
+      "append-end_any": 0.7287,
+      "random_any": 0.6311
+    },
+    {
+      "url": "https://www.spiegel.de/",
+      "disagreement": 0.0039,
+      "shared": 495,
+      "static_only": 0,
+      "anchor_density": 0.0,
+      "adjacency": 0.9293,
+      "append-end": 0.681,
+      "random": 0.7664,
+      "adjacency_any": 0.8832,
+      "append-end_any": 0.7607,
+      "random_any": 0.6922
+    },
+    {
+      "url": "https://www.squarespace.com/",
+      "disagreement": 0.1731,
+      "shared": 418,
+      "static_only": 5,
+      "anchor_density": 0.01,
+      "adjacency": 0.8835,
+      "append-end": 0.6199,
+      "random": 0.7408,
+      "adjacency_any": 0.8634,
+      "append-end_any": 0.7068,
+      "random_any": 0.6723
+    },
+    {
+      "url": "https://www.theguardian.com/international",
+      "disagreement": 0.0032,
+      "shared": 478,
+      "static_only": 108,
+      "anchor_density": 0.23,
+      "adjacency": 0.8764,
+      "append-end": 0.6395,
+      "random": 0.7559,
+      "adjacency_any": 0.7992,
+      "append-end_any": 0.7466,
+      "random_any": 0.677
+    },
+    {
+      "url": "https://www.ynet.co.il/",
+      "disagreement": 0.06,
+      "shared": 409,
+      "static_only": 109,
+      "anchor_density": 0.27,
+      "adjacency": 0.9386,
+      "append-end": 0.8115,
+      "random": 0.8004,
+      "adjacency_any": 0.9286,
+      "append-end_any": 0.8203,
+      "random_any": 0.7733
+    }
+  ]
+}

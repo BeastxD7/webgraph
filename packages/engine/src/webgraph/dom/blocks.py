@@ -21,8 +21,13 @@ from webgraph.types import Block
 __all__ = [
     "BLOCK_TAGS",
     "PERMALINK_CLASSES",
+    "RTL_LANGUAGES",
+    "RTL_SCRIPTS",
+    "SHADOW_TEMPLATE_ATTRIBUTE",
     "SKIP_TAGS",
     "extract_blocks",
+    "flatten_shadow_roots",
+    "is_rtl_document",
     "normalize_text",
     "parse_html",
     "strip_permalinks",
@@ -83,7 +88,65 @@ def parse_html(html: str, *, max_bytes: int = MAX_DOCUMENT_BYTES) -> HtmlElement
         raise ValueError(f"document is {size} bytes, exceeding the {max_bytes} byte limit")
 
     parser = lxml_html.HTMLParser(huge_tree=True, recover=True)
-    return lxml_html.document_fromstring(html, parser=parser)
+    root = lxml_html.document_fromstring(html, parser=parser)
+    # Shadow content arrives as `<template shadowrootmode>` and must be unwrapped before
+    # anything strips `<template>`. Every consumer of a parsed page wants this, so it
+    # happens here rather than at each call site.
+    flatten_shadow_roots(root)
+    return root
+
+
+SHADOW_TEMPLATE_ATTRIBUTE: Final[str] = "shadowrootmode"
+"""Marks a `<template>` that is a serialised shadow root, not an inert template.
+
+`Element.getHTML({serializableShadowRoots: true})` emits open shadow roots as
+`<template shadowrootmode="open">`. That is the standard declarative-shadow-DOM form, and
+it is how the browser hands us content that `outerHTML` silently omits.
+"""
+
+
+def flatten_shadow_roots(root: HtmlElement) -> int:
+    """Unwrap serialised shadow roots so their content is ordinary markup. Returns the count.
+
+    Necessary because `template` is in `SKIP_TAGS`: a serialised shadow root would otherwise
+    be stripped along with the inert templates it is syntactically identical to, and the
+    content would be lost exactly as it was before the browser was asked for it.
+
+    Only templates carrying `shadowrootmode` are unwrapped. A genuine inert `<template>` is
+    markup the page has *not* rendered, and it stays stripped -- flattening those would
+    invent content, which is the opposite failure but a failure all the same.
+    """
+    flattened = 0
+    # Deepest first, so a shadow root nested inside another is unwrapped before its parent
+    # moves. Materialised because the tree is mutated during the walk.
+    templates = list(root.iter("template"))
+    for template in reversed(templates):
+        if template.get(SHADOW_TEMPLATE_ATTRIBUTE) is None:
+            continue
+        parent = template.getparent()
+        if parent is None:
+            continue
+        index = parent.index(template)
+        # The host's own light-DOM children stay where they are; the shadow content is
+        # spliced in ahead of them, which is where the browser paints it.
+        for offset, child in enumerate(list(template)):
+            parent.insert(index + offset, child)
+        text = (template.text or "").strip()
+        if text:
+            previous = template.getprevious()
+            if previous is not None:
+                previous.tail = (previous.tail or "") + " " + text
+            else:
+                parent.text = (parent.text or "") + " " + text
+        if template.tail:
+            previous = template.getprevious()
+            if previous is not None:
+                previous.tail = (previous.tail or "") + template.tail
+            else:
+                parent.text = (parent.text or "") + template.tail
+        parent.remove(template)
+        flattened += 1
+    return flattened
 
 
 PERMALINK_CLASSES: Final[tuple[str, ...]] = (
@@ -124,6 +187,73 @@ def strip_permalinks(root: HtmlElement) -> None:
             else:
                 parent.text = (parent.text or "") + anchor.tail
         parent.remove(anchor)
+
+
+RTL_LANGUAGES: Final[frozenset[str]] = frozenset({
+    "ar",    # Arabic
+    "arc",   # Aramaic
+    "ckb",   # Sorani Kurdish
+    "dv",    # Divehi
+    "fa",    # Persian
+    "he",    # Hebrew
+    "iw",    # Hebrew, deprecated code still emitted by older systems
+    "ji",    # Yiddish, deprecated code
+    "ks",    # Kashmiri
+    "ku",    # Kurdish
+    "nqo",   # N'Ko
+    "prs",   # Dari
+    "ps",    # Pashto
+    "sd",    # Sindhi
+    "syr",   # Syriac
+    "ug",    # Uyghur
+    "ur",    # Urdu
+    "yi",    # Yiddish
+})
+"""Primary language subtags written right-to-left."""
+
+RTL_SCRIPTS: Final[frozenset[str]] = frozenset({
+    "arab", "hebr", "thaa", "syrc", "nkoo", "adlm", "rohg", "yezi", "mand", "samr",
+})
+"""Script subtags written right-to-left, for tags like `az-Arab` or `pa-Arab`, where the
+language is written in more than one script and only the script settles the direction."""
+
+
+def is_rtl_document(root: HtmlElement) -> bool:
+    """Whether this document reads right to left.
+
+    Reading order needs this. `order_blocks` reverses column order when `rtl` is set, so on
+    a multi-column Arabic or Hebrew page getting it wrong does not degrade the output -- it
+    reads the columns backwards, and reports `geometric-xy-cut` while doing so. Confidently
+    wrong is the worst failure this engine has.
+
+    Two sources, in order of authority:
+
+    1. **`dir` on `<html>` or `<body>`.** The page's own declaration, and it wins outright --
+       including when it says `ltr` on a page whose language is usually RTL, which is a
+       deliberate choice by its author (a Hebrew-language site presenting code or tabular
+       data left-to-right).
+    2. **`lang` on `<html>`.** Needed because the attribute is frequently absent:
+       `ynet.co.il` carries **no `dir` anywhere** in either representation, and is RTL only
+       via CSS. Its `lang="he"` is the sole signal in the markup.
+
+    Deliberately *not* a character-frequency heuristic. A page that merely quotes Arabic --
+    a dictionary entry, a news article about the region, this engine's own test fixtures --
+    would flip the reading order of the whole document. The cost of a false positive is a
+    silently reversed page, so only a declaration counts.
+    """
+    for element in (root, *root.xpath("//body")):
+        declared = (element.get("dir") or "").strip().lower()
+        if declared in ("rtl", "ltr"):
+            return declared == "rtl"
+
+    tag = (root.get("lang") or root.get("xml:lang") or "").strip().lower()
+    if not tag:
+        return False
+
+    parts = tag.replace("_", "-").split("-")
+    if parts[0] in RTL_LANGUAGES:
+        return True
+    return any(part in RTL_SCRIPTS for part in parts[1:])
 
 
 def _strip_noise(root: HtmlElement) -> None:

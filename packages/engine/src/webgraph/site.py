@@ -21,7 +21,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from webgraph.analyze import SiteAnalysis, analyze_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
@@ -46,7 +46,23 @@ from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
 
+IDENTICAL_CONTENT_WARNING: Final[int] = 3
+"""Distinct URLs yielding byte-identical extracted text before a warning is raised.
+
+A gate that blocks the page from mounting -- a persona or region picker, an age gate, an
+onboarding wizard -- serves the same interstitial on every route. Every other signal stays
+green while this happens: the fetch succeeds, the render succeeds, geometry binds, the
+profiler reports "static content looks complete". Measured on zerotoonepmtoolkit.app, whose
+21 routes returned byte-identical 1,130-character output and whose crawl then reported itself
+`exhausted` after one page.
+
+The engine now opens such gates (see `RenderConfig.dismiss_gates`), so this is the net that
+catches the ones it cannot open. Three is enough: two identical pages happen (a redirect
+pair, a duplicated route), three is a pattern.
+"""
+
 __all__ = [
+    "IDENTICAL_CONTENT_WARNING",
     "PageExtraction",
     "PageInventory",
     "SiteConfig",
@@ -663,6 +679,10 @@ def stream_site(
     chrome: SiteChrome | None = None
     extracted = 0
     failed = 0
+    # Content hash -> the URLs that produced it. A crawl where many distinct URLs yield the
+    # same text is not extracting a site; it is extracting one gate, repeatedly.
+    by_content: dict[str, list[str]] = defaultdict(list)
+    identical_warned: set[str] = set()
     totals = {"chars": 0, "markdown": 0, "images": 0, "tables": 0}
     all_pages: list[PageExtraction] = []
 
@@ -766,6 +786,28 @@ def stream_site(
                             options=MarkdownOptions(),
                         )
 
+                if page.ok and page.document is not None and page.text_chars:
+                    group = by_content[page.document.content_hash]
+                    if page.url not in group:
+                        group.append(page.url)
+                    if (
+                        len(group) >= IDENTICAL_CONTENT_WARNING
+                        and page.document.content_hash not in identical_warned
+                    ):
+                        identical_warned.add(page.document.content_hash)
+                        yield {
+                            "type": "warning",
+                            "code": "identical-content",
+                            "message": (
+                                f"{len(group)} URLs returned byte-identical content "
+                                f"({page.text_chars} chars). The site is probably serving an "
+                                "interstitial the engine could not open -- a login, a consent "
+                                "wall, or a gate that blocks the page from mounting."
+                            ),
+                            "urls": list(group),
+                            "chars": page.text_chars,
+                        }
+
                 elapsed = max(time.monotonic() - started, 0.001)
                 yield {
                     "type": "page",
@@ -815,6 +857,13 @@ def stream_site(
         "total_markdown_chars": totals["markdown"],
         "total_images": totals["images"],
         "total_tables": totals["tables"],
+        # The largest set of distinct URLs that produced identical text. 1 is healthy.
+        "largest_identical_group": max((len(v) for v in by_content.values()), default=0),
+        "identical_content_groups": [
+            {"chars": len(k), "urls": v}
+            for k, v in by_content.items()
+            if len(v) >= IDENTICAL_CONTENT_WARNING
+        ],
         "chrome_blocks": len(chrome.text.keys) if chrome else 0,
         "chrome_slots": len(chrome.slots) if chrome else 0,
         "entities": [

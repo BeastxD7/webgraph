@@ -105,9 +105,21 @@ whose stated job is not to lose content -- plenty of sites put real material in 
 On MDN alone: precision 0.066 -> 0.584, recall unchanged at 1.000.
 """
 
-MIN_LANDMARK_REMAINDER: Final[float] = 0.05
-"""Refuse to leave less than this share of a page. A sitemap or index page is legitimately
-almost all navigation, and returning nothing for it helps nobody."""
+MIN_LANDMARK_CHARS: Final[int] = 200
+"""Refuse to leave less than this much text. A sitemap or index page is legitimately almost
+all navigation, and returning nothing for it helps nobody.
+
+An **absolute** floor, having first been a 5% ratio -- and the ratio was the wrong instrument,
+because it lets the size of a page's footer decide whether its body is trustworthy. Measured
+on WCXB, `allbirds.com` carries its entire Terms of Service and Privacy Policy in accordions
+inside `<footer>`: 120,021 characters of chrome against 1,020 characters of product page.
+`strip_landmarks` identified all of it correctly, the remainder came to 0.85% of the page,
+the ratio guard fired, and the function returned **everything** -- precision 0.008 on that
+page. The guard meant to prevent returning nothing instead forced returning 118x too much.
+
+A thousand characters of real content is a good extraction whatever proportion of the
+document it happens to be. The failure the guard exists for is a remainder near zero, and an
+absolute floor names that directly. Fires on 7 of 1,497 WCXB dev pages, 4 of them product."""
 
 
 def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
@@ -120,9 +132,7 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
     if not kept:
         return list(blocks)
 
-    original = sum(len(b.text) for b in blocks)
-    remaining = sum(len(b.text) for b in kept)
-    if original and remaining / original < MIN_LANDMARK_REMAINDER:
+    if sum(len(b.text) for b in kept) < MIN_LANDMARK_CHARS:
         return list(blocks)
     return kept
 

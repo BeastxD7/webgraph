@@ -51,6 +51,29 @@ _EPSILON = 1e-6
 _TIE_TOLERANCE = 0.95
 """Gaps within this fraction of the widest are treated as equivalent and cut together."""
 
+_ROW_BAND_OVERLAP = 0.5
+"""Share of the *taller* block's height that must overlap before it joins the current row.
+
+Scale-free on purpose: a pixel tolerance would have to be tuned per font size, while overlap
+works on a 12px sidebar and a 72px hero without a constant.
+
+Taller rather than shorter, and the difference was measured rather than reasoned. Across
+592,520 precedence assertions on 39 pages (`benchmark/reading_order`):
+
+```
+                     overall   discriminating   stacked   side-by-side
+sort by (y, x)        0.9945       0.9343        1.0000       0.8346
+band vs min height    0.9981       0.9403        0.9981       0.9969
+band vs max height    0.9974       0.9921        1.0000       0.9219
+```
+
+The min variant scores 0.0007 higher overall -- noise -- by fixing more side-by-side pairs at
+the cost of breaking stacked ones that were previously perfect. The max variant introduces
+**no regression at all** and is right on 99.2% of the pairs where geometric order and source
+order actually disagree, against 94.0%. Taking the conservative one is the same trade this
+engine makes everywhere else: do not make a correct answer wrong in order to fix more of a
+wrong one."""
+
 
 @dataclass(frozen=True, slots=True)
 class OrderingConfig:
@@ -197,7 +220,7 @@ def _cut(
 ) -> list[Block]:
     """Recursively partition `blocks` into reading order."""
     if len(blocks) <= 1 or depth >= config.max_depth:
-        return _positional(blocks)
+        return _positional(blocks, rtl=rtl)
 
     row_threshold = max(config.min_absolute_gap, unit * config.min_row_gap_ratio)
     col_threshold = max(config.min_absolute_gap, unit * config.min_col_gap_ratio)
@@ -229,7 +252,7 @@ def _cut(
             out.extend(_cut(band, rtl=rtl, config=config, unit=unit, depth=depth + 1))
         return out
 
-    return _positional(blocks)
+    return _positional(blocks, rtl=rtl)
 
 
 def _extents(blocks: list[Block], axis: str) -> list[tuple[float, float, Block]]:
@@ -309,19 +332,68 @@ def _partition(
     return [g for g in groups if g]
 
 
-def _positional(blocks: list[Block]) -> list[Block]:
-    """Order an atomic region: top to bottom, then left to right, DOM order as tiebreak.
+def _positional(blocks: list[Block], *, rtl: bool = False) -> list[Block]:
+    """Order an atomic region: group into visual rows, then read along each row.
 
-    The DOM-index tiebreak matters for blocks that share a position exactly -- without it
-    the sort is unstable across runs and output becomes non-deterministic.
+    Sorting by `(y, x)` looks equivalent and is not, because `y` is a float measured from a
+    real layout. Measured on supabase.com, the top navigation renders `Pricing` at y=70.4 and
+    `Product` at y=71.0 -- **six tenths of a pixel apart, on the same visual row** -- and a
+    tuple sort on exact `y` therefore read the bar as `Pricing, Docs, Blog, Product,
+    Developers`. Any horizontal nav or row of cards whose items differ by sub-pixel amounts
+    came out scrambled, and the same failure appeared on Hebrew Wikipedia's menu row.
+
+    So blocks are first banded into rows by vertical overlap -- the way a reader sees a line
+    of items as one line -- and only then ordered along the row. Right to left when `rtl`,
+    for the same reason columns reverse.
+
+    Banding is by *overlap*, not by a `y` tolerance in pixels: a tolerance has to be tuned to
+    a font size, while overlap is scale-free and works on a dense sidebar and an airy hero
+    alike. The band is the row's first block and does not grow -- see the comment below.
     """
 
-    def key(b: Block) -> tuple[float, float, int]:
+    def top(b: Block) -> tuple[float, float, int]:
         if b.rect is None:
             return (0.0, 0.0, b.dom_index)
         return (b.rect.y, b.rect.x, b.dom_index)
 
-    return sorted(blocks, key=key)
+    ordered = sorted(blocks, key=top)
+
+    rows: list[list[Block]] = []
+    band: tuple[float, float] | None = None
+    for block in ordered:
+        if block.rect is None:
+            # No geometry: it cannot join a band, and starting one would capture the blocks
+            # after it. Its own row, in the position source order put it.
+            rows.append([block])
+            band = None
+            continue
+
+        height = block.rect.height
+        if band is not None and height > 0:
+            overlap = min(band[1], block.rect.bottom) - max(band[0], block.rect.y)
+            # Measured against the TALLER of the two, so only genuine peers band together.
+            # Against the shorter one, a tall block anchors a band that swallows short blocks
+            # both above and below it, which then get ordered by x and lose their vertical
+            # relationship outright.
+            reference = max(height, band[1] - band[0])
+            # The band is the row's FIRST block and never grows. Letting it expand to cover
+            # each joiner was measured as a net loss: a tall item dragged the band downward,
+            # absorbed the blocks genuinely below it, and ordered them by x. A fixed anchor
+            # band cannot creep.
+            if reference > 0 and overlap >= reference * _ROW_BAND_OVERLAP:
+                rows[-1].append(block)
+                continue
+
+        rows.append([block])
+        band = (block.rect.y, block.rect.bottom)
+
+    def along(b: Block) -> tuple[float, int]:
+        if b.rect is None:
+            return (0.0, b.dom_index)
+        # DOM order breaks an exact tie, so the sort stays deterministic across runs.
+        return (-b.rect.x if rtl else b.rect.x, b.dom_index)
+
+    return [block for row in rows for block in sorted(row, key=along)]
 
 
 def detect_columns(
