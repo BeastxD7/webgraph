@@ -23,11 +23,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal
+from urllib.parse import urlsplit
 
+from webgraph.fetch import browser as browser_module
+from webgraph.fetch import guard
 from webgraph.fetch.browser import shared_browser
 from webgraph.types import Rect
 
-__all__ = ["PLAYWRIGHT_AVAILABLE", "RenderConfig", "RenderResult", "geometry_by_xpath", "render_page"]
+__all__ = [
+    "PLAYWRIGHT_AVAILABLE",
+    "RenderConfig",
+    "RenderResult",
+    "geometry_by_xpath",
+    "render_page",
+]
 
 try:  # pragma: no cover - import guard depends on optional extra
     from playwright.sync_api import sync_playwright
@@ -37,6 +46,10 @@ except ImportError:  # pragma: no cover
     PLAYWRIGHT_AVAILABLE = False
 
 MARKER_ATTRIBUTE: Final[str] = "data-wg-id"
+GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
+BREAK_ATTRIBUTE: Final[str] = "data-wg-brk"
+"""Stamped on elements the browser lays out as their own box, so the parser can tell a line
+boundary from inline flow. See `_COLLECT_SCRIPT`."""
 
 _REVEAL_SCRIPT: Final[str] = """
 () => {
@@ -83,6 +96,124 @@ _REVEAL_SCRIPT: Final[str] = """
 }
 """
 
+_GATE_PROBE: Final[str] = r"""
+() => {
+  // Assess whether the mounted page is a gate rather than the site, and mark the controls
+  // that would open it.
+  //
+  // The case this exists for: a client-rendered app whose entire mounted DOM is a first-run
+  // interstitial -- a persona or role picker, a region or currency selector, an age gate, an
+  // onboarding wizard. The real content is *unmounted*, not hidden, so `_REVEAL_SCRIPT`
+  // cannot reach it: there is no collapsed panel to open, and nothing in the DOM to reveal.
+  // Measured on zerotoonepmtoolkit.app, whose 21 routes all render the same persona modal:
+  // 1,137 characters of text and ZERO internal links, against ~32,900 characters behind it.
+  //
+  // Two signals, both structural rather than textual, so this does not depend on guessing at
+  // wording in any particular language:
+  //
+  //   1. Almost no internal links. A real page of a real site carries navigation. A gate
+  //      screen carries none, because the nav lives in the subtree that has not mounted.
+  //   2. Little text.
+  //
+  // Requiring both matters. A long article legitimately has few outbound links, and a link
+  // hub legitimately has little prose; only the conjunction says "nothing has mounted yet".
+  const MARK = 'data-wg-gate';
+  for (const el of document.querySelectorAll('[' + MARK + ']')) el.removeAttribute(MARK);
+
+  const text = ((document.body && document.body.innerText) || '').trim();
+  const origin = location.origin;
+  const internal = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    const raw = a.getAttribute('href') || '';
+    if (!raw || raw.startsWith('#') || raw.startsWith('javascript:')) continue;
+    let resolved;
+    try { resolved = new URL(raw, location.href); } catch (e) { continue; }
+    if (resolved.origin !== origin) continue;
+    const path = resolved.pathname.replace(/\/$/, '');
+    if (path && path !== location.pathname.replace(/\/$/, '')) internal.add(path);
+  }
+
+  // Candidate controls, ordered by how likely they are to be the thing that opens the gate.
+  //
+  // Deliberately excluded, because clicking them does something to somebody's site rather
+  // than to the page:
+  //   - anything inside a <form>, which may submit;
+  //   - anchors carrying a real href, which navigate -- an ordinary link is not a gate;
+  //   - controls whose accessible name reads as a transaction, a refusal or a sign-out.
+  // The exclusions are on what the element *is*, not on what it says, except for the last,
+  // which is a narrow deny-list rather than an attempt to understand the label.
+  const DENY = /(buy|purchase|checkout|subscribe|pay|donate|delete|remove|sign\s*out|log\s*out|unsubscribe|reject|decline|deny|refuse|exit|cancel)/i;
+
+  const viewport = window.innerWidth * window.innerHeight;
+  const scored = [];
+  const controls = document.querySelectorAll(
+    'button, [role="button"], [role="radio"], [role="option"], [tabindex]:not([tabindex="-1"]), a:not([href])'
+  );
+
+  for (const el of controls) {
+    if (el.closest('form')) continue;
+    if (el.tagName === 'A' && el.getAttribute('href')) continue;
+    if (el.disabled) continue;
+
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+    const box = el.getBoundingClientRect();
+    if (box.width < 24 || box.height < 16) continue;
+
+    const label = (el.innerText || el.getAttribute('aria-label') || '').trim();
+    if (DENY.test(label)) continue;
+
+    // A control sitting inside a fixed or absolutely-positioned layer that covers much of
+    // the viewport is the classic modal shape, and is tried first.
+    let overlay = 0;
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      const s = window.getComputedStyle(node);
+      if (s.position === 'fixed' || s.position === 'absolute') {
+        const b = node.getBoundingClientRect();
+        if (b.width * b.height > viewport * 0.5) { overlay = 1; break; }
+      }
+    }
+    scored.push({ el: el, overlay: overlay, area: box.width * box.height });
+  }
+
+  scored.sort((a, b) => (b.overlay - a.overlay) || (b.area - a.area));
+
+  const marks = [];
+  for (let i = 0; i < scored.length && marks.length < 8; i++) {
+    scored[i].el.setAttribute(MARK, String(marks.length));
+    marks.push(String(marks.length));
+  }
+
+  return { textLength: text.length, internalLinks: internal.size, candidates: marks };
+}
+"""
+
+GATE_MAX_TEXT: Final[int] = 4000
+"""Below this much text, together with almost no internal links, a page may be a gate.
+
+Generous on purpose. The check is a *trigger for looking*, not a verdict: nothing is kept
+unless a click measurably improves the page, so a false trigger costs one guarded click and
+changes no output."""
+
+GATE_MAX_LINKS: Final[int] = 1
+"""Internal links above which the page is treated as real navigation, not a gate.
+
+One, not two, and the difference is not cosmetic. At two, a small site's ordinary page --
+2,161 characters and two nav links, in `test_gates.py`'s ungated fixture -- was reported as
+looking gated. Nothing was clicked, because the accept test still refused it, but the engine
+was describing a perfectly normal page as suspicious.
+
+The measured gate has **zero** internal links, because its navigation lives in the subtree
+that never mounted. Allowing one covers a gate that still renders a logo linking home."""
+
+GATE_MIN_GAIN: Final[float] = 1.5
+"""How much better the page must get before a click is kept.
+
+A gate that opens reveals the whole site, so the real signal is large -- 1,137 characters to
+2,344 with 0 links becoming 21 on the measured case. Requiring a decisive improvement keeps
+this from accepting a click that merely opened a tooltip."""
+
+
 MAX_RECORDED_REQUESTS: Final[int] = 400
 """Requests kept for fingerprinting. Only distinct hosts and paths carry information, and
 an asset-heavy page can issue thousands."""
@@ -90,17 +221,57 @@ an asset-heavy page can issue thousands."""
 _COLLECT_SCRIPT: Final[str] = """
 () => {
   const MARKER = 'data-wg-id';
+  const BREAK = 'data-wg-brk';
   const rects = {};
   let counter = 0;
-  const walker = document.createTreeWalker(document.documentElement, NodeFilter.SHOW_ELEMENT);
+
+  // Walk into open shadow roots as well as the light DOM.
+  //
+  // A TreeWalker stops at a shadow boundary and `outerHTML` does not serialise across one,
+  // so a component that renders its content inside a shadow root was previously invisible
+  // *twice over*: absent from the HTML lxml parses, and absent from the geometry map. The
+  // loss is total rather than partial, and nothing reported it. Web Almanac 2024 puts shadow
+  // DOM on 2.51% of mobile pages, up 6x in two years, and custom elements on 7.9%.
+  //
+  // getBoundingClientRect() inside a shadow root already returns page coordinates, so the
+  // rectangles need no transform.
+  const shadowRoots = [];
   const nodes = [document.documentElement];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const descend = (root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    while (walker.nextNode()) {
+      const el = walker.currentNode;
+      nodes.push(el);
+      if (el.shadowRoot) { shadowRoots.push(el.shadowRoot); descend(el.shadowRoot); }
+    }
+  };
+  descend(document.documentElement);
 
   for (const el of nodes) {
     const id = String(counter++);
     el.setAttribute(MARKER, id);
 
     const style = window.getComputedStyle(el);
+
+    // Mark elements the browser lays out as their own box.
+    //
+    // lxml's `text_content()` concatenates descendants with nothing between them, so a
+    // navigation of `<a>Mac</a><a>iPad</a><a>iPhone</a>` arrives as `MaciPadiPhone` -- the
+    // words destroyed, not merely unwanted. Measured on apple.com/airpods-pro, whose whole
+    // nav came out as `AppleStoreShopShop the LatestMaciPadiPhoneApple Watch...`.
+    //
+    // A separator cannot be inserted between every pair of elements, because inline siblings
+    // genuinely do run together: `<b>bold</b><i>italic</i>` renders as `bolditalic` and
+    // splitting it would be the same corruption in the other direction. What decides is the
+    // computed `display`: a block-level box starts a new line, an inline one does not. That
+    // is the rule `innerText` itself follows, and it is a measurement of this page rather
+    // than an assumption about markup.
+    const display = style.display;
+    if (display && display !== 'inline' && display !== 'inline-block' &&
+        display !== 'contents' && display !== 'none') {
+      el.setAttribute(BREAK, '1');
+    }
+
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
       continue;
     }
@@ -226,9 +397,22 @@ _COLLECT_SCRIPT: Final[str] = """
   const links = Array.from(document.querySelectorAll('link[rel][href]'))
     .map((l) => l.rel + ' ' + l.href).slice(0, 60);
 
+  // Serialise shadow roots as `<template shadowrootmode>`, which the Python side unwraps.
+  // `getHTML` is Chromium 125+; without it we fall back to the light DOM only rather than
+  // failing, and the shadow content is lost as it always was.
+  let serialized;
+  try {
+    serialized = (shadowRoots.length && typeof document.documentElement.getHTML === 'function')
+      ? document.documentElement.getHTML({ serializableShadowRoots: true, shadowRoots })
+      : document.documentElement.outerHTML;
+  } catch (e) {
+    serialized = document.documentElement.outerHTML;
+  }
+
   return {
     rects,
-    html: document.documentElement.outerHTML,
+    shadowRoots: shadowRoots.length,
+    html: serialized,
     globals,
     customGlobals,
     scripts,
@@ -261,6 +445,22 @@ class RenderConfig:
     Carries the weight that `networkidle` used to: most client-side frameworks finish
     hydrating within a few hundred milliseconds of `load`, and measuring before that captures
     the pre-hydration layout."""
+
+    dismiss_gates: bool = True
+    """Open a first-run interstitial that is blocking the page from mounting.
+
+    On by default, on the same asymmetric-cost reasoning that biases `_needs_render` toward
+    rendering: a gate left closed loses essentially the whole site -- 97% of the text and
+    *every* internal link on the measured case -- while a wrongly-suspected gate costs one
+    guarded click and is discarded unless it measurably improves the page.
+
+    This is the one place the engine clicks anything, and `_REVEAL_SCRIPT`'s reasons for
+    refusing to click still stand, so the click is fenced in four ways: it only happens on a
+    page that has almost no text *and* almost no internal links; candidates inside a `<form>`
+    or carrying a real `href` are never chosen; labels reading as a transaction, refusal or
+    sign-out are excluded; and the result is thrown away unless the page gets decisively
+    better. A click that navigates off-origin is reverted.
+    """
 
     reveal_collapsed: bool = False
     """Open `<details>` and ARIA disclosure panels before measuring.
@@ -321,6 +521,91 @@ class RenderResult:
     links: tuple[str, ...] = ()
     """`rel href` of every link element, for manifest, preconnect and stylesheet signals."""
 
+    shadow_roots: int = 0
+    """Open shadow roots pierced while measuring. Recorded because their content is invisible
+    to every DOM-based extractor that does not go looking for it, so a caller comparing
+    against another tool should know when this page had any."""
+
+    gate_dismissed: bool = False
+    """True when an interstitial was opened to reach the page. Recorded rather than silent:
+    the caller is entitled to know the measured page required a click to exist."""
+
+    gate_note: str | None = None
+    """What was observed, when a gate was suspected -- whether or not it opened."""
+
+
+def _open_gate(page: Any) -> tuple[bool, str | None]:
+    """Try to open a first-run interstitial that is stopping the page from mounting.
+
+    Returns (whether the page was opened, what was observed). Never raises: a page that
+    cannot be probed is simply not a page with a gate we can open, and a failed click must
+    not cost the caller the render it already has.
+
+    The accept test is the whole safety argument. A click is kept only when the page gets
+    decisively better on *both* axes the probe measures -- text and internal links -- so a
+    click that opened a tooltip, dismissed a cookie bar or did nothing at all leaves the
+    result unchanged rather than being reported as a success.
+    """
+    try:
+        before = page.evaluate(_GATE_PROBE)
+    except Exception:
+        return False, None
+
+    text_before = int(before.get("textLength") or 0)
+    links_before = int(before.get("internalLinks") or 0)
+    candidates = list(before.get("candidates") or ())
+
+    if text_before > GATE_MAX_TEXT or links_before > GATE_MAX_LINKS:
+        return False, None
+    if not candidates:
+        return False, (
+            f"page looks gated ({text_before} chars, {links_before} internal links) "
+            "but no control was found to open it"
+        )
+
+    origin_before = urlsplit(page.url)
+
+    for marker in candidates:
+        try:
+            page.click(f"[{GATE_ATTRIBUTE}='{marker}']", timeout=2_000, no_wait_after=True)
+        except Exception:
+            continue
+
+        try:
+            page.wait_for_timeout(600)
+            after = page.evaluate(_GATE_PROBE)
+        except Exception:
+            continue
+
+        # A click that left the origin followed a link rather than opening a gate. Go back
+        # and treat it as a failed candidate; the guard would refuse the new address anyway.
+        landed = urlsplit(page.url)
+        if landed.netloc != origin_before.netloc:
+            try:
+                page.go_back(timeout=5_000)
+                page.wait_for_timeout(400)
+            except Exception:
+                pass
+            continue
+
+        text_after = int(after.get("textLength") or 0)
+        links_after = int(after.get("internalLinks") or 0)
+
+        opened = (
+            text_after >= max(text_before * GATE_MIN_GAIN, text_before + 200)
+            and links_after > links_before
+        )
+        if opened:
+            return True, (
+                f"opened an interstitial: {text_before} -> {text_after} chars, "
+                f"{links_before} -> {links_after} internal links"
+            )
+
+    return False, (
+        f"page looks gated ({text_before} chars, {links_before} internal links); "
+        f"{len(candidates)} control(s) tried, none opened it"
+    )
+
 
 def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult:
     """Load `url` in a headless browser and measure every visible element."""
@@ -332,6 +617,11 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             ok=False,
             error="playwright is not installed; install the 'render' extra",
         )
+
+    try:
+        guard.check_url(url)
+    except guard.BlockedHostError as exc:
+        return RenderResult(url=url, html="", rects={}, ok=False, error=str(exc))
 
     config = config or RenderConfig()
 
@@ -367,7 +657,12 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                     ),
                 )
 
-            page.goto(url, timeout=config.timeout_ms, wait_until=config.wait_until)
+            response = page.goto(url, timeout=config.timeout_ms, wait_until=config.wait_until)
+            # The browser follows redirects itself, so the address that was checked above
+            # is not necessarily the one that answered. Raising here is caught by the
+            # handler at the bottom and reported as a failed render.
+            if response is not None:
+                guard.check_url(str(response.url))
             if config.settle_ms:
                 page.wait_for_timeout(config.settle_ms)
 
@@ -381,7 +676,18 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                     # reading order is measured from geometry.
                     page.wait_for_timeout(250)
 
+            gate_dismissed = False
+            gate_note: str | None = None
+            if config.dismiss_gates:
+                gate_dismissed, gate_note = _open_gate(page)
+                if gate_dismissed:
+                    # Mounting the real page reflows everything, and reading order is
+                    # measured from geometry.
+                    page.wait_for_timeout(config.settle_ms or 500)
+
             payload = dict(page.evaluate(_COLLECT_SCRIPT))
+            payload["gate_dismissed"] = gate_dismissed
+            payload["gate_note"] = gate_note
             payload["requests"] = requests
             # From the jar, not from the document's own `Set-Cookie`: a cookie written by a
             # third-party script never appears in the main response headers.
@@ -401,7 +707,9 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             # No slot free, reuse disabled, or the shared launch failed: fall back to a
             # private browser so a render never depends on the pool being available.
             with sync_playwright() as driver:
-                browser = driver.chromium.launch(headless=config.headless)
+                browser = driver.chromium.launch(
+                    headless=config.headless, args=list(browser_module.LAUNCH_ARGS)
+                )
                 try:
                     payload = _measure(browser)
                 finally:
@@ -428,6 +736,9 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             cookies={str(k): str(v) for k, v in (payload.get("cookies") or {}).items()},
             scripts=tuple(str(item) for item in payload.get("scripts") or ()),
             links=tuple(str(item) for item in payload.get("links") or ()),
+            shadow_roots=int(payload.get("shadowRoots") or 0),
+            gate_dismissed=bool(payload.get("gate_dismissed")),
+            gate_note=payload.get("gate_note") or None,
         )
 
     except Exception as exc:

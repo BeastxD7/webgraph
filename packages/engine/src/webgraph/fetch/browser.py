@@ -22,16 +22,34 @@ depends on the cap.
 from __future__ import annotations
 
 import atexit
+import os
+import shlex
 import threading
 from typing import TYPE_CHECKING, Any, Final
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from playwright.sync_api import Browser, Playwright
 
-__all__ = ["MAX_BROWSERS", "close_thread_browser", "shared_browser"]
+__all__ = ["LAUNCH_ARGS", "MAX_BROWSERS", "close_thread_browser", "shared_browser"]
 
-MAX_BROWSERS: Final[int] = 6
-"""Live browsers across the whole process. Roughly 150 MB resident each."""
+MAX_BROWSERS: Final[int] = int(os.environ.get("WEBGRAPH_MAX_BROWSERS", "6"))
+"""Live browsers across the whole process. Roughly 150 MB resident each.
+
+Six suits a laptop with 16 GB. A container with 2 GB cannot hold six, and the failure
+mode is the kernel killing the process rather than anything this code can catch, so the
+cap is read from `WEBGRAPH_MAX_BROWSERS` where the memory budget is known."""
+
+LAUNCH_ARGS: Final[tuple[str, ...]] = tuple(
+    shlex.split(os.environ.get("WEBGRAPH_CHROMIUM_ARGS", ""))
+)
+"""Extra Chromium flags, from `WEBGRAPH_CHROMIUM_ARGS`.
+
+Empty by default: on a developer machine Chromium's sandbox works and disabling it
+would be a gratuitous downgrade. Containers are the exception. Chromium's sandbox needs
+kernel capabilities that a container is not granted, so it needs `--no-sandbox` there,
+and the default 64 MB `/dev/shm` is small enough that a heavy page crashes the renderer,
+which is what `--disable-dev-shm-usage` avoids. Both are set in the Dockerfile, where the
+sandbox is already provided by the container boundary rather than by Chromium."""
 
 _local = threading.local()
 _slots = threading.Semaphore(MAX_BROWSERS)
@@ -60,7 +78,7 @@ def shared_browser(*, headless: bool = True) -> Browser | None:
         from playwright.sync_api import sync_playwright
 
         driver: Playwright = sync_playwright().start()
-        browser = driver.chromium.launch(headless=headless)
+        browser = driver.chromium.launch(headless=headless, args=list(LAUNCH_ARGS))
     except Exception:
         _slots.release()
         return None

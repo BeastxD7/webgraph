@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from webgraph.dom.blocks import extract_blocks, normalize_text, parse_html
+from webgraph.dom.rich import flowed_text
 
 
 def blocks_of(html: str) -> list[str]:
@@ -148,3 +149,56 @@ class TestParserLimits:
         html = "<html><body><p>" + ("x" * 2000) + "</p></body></html>"
         with pytest.raises(ValueError, match="exceeding"):
             parse_html(html, max_bytes=1000)
+
+
+class TestFlowedText:
+    """Line boundaries the browser laid out, honoured when flattening an element to text.
+
+    lxml's `text_content()` concatenates descendants with nothing between them. A navigation
+    of `<a>Mac</a><a>iPad</a><a>iPhone</a>` therefore arrived as `MaciPadiPhone` -- the words
+    destroyed, not merely unwanted. Measured on apple.com/airpods-pro, whose entire nav came
+    out as `AppleStoreShopShop the LatestMaciPadiPhoneApple Watch...`.
+
+    A separator cannot go between every pair of elements: inline siblings genuinely do run
+    together, and splitting `<b>bold</b><i>italic</i>` into `bold italic` would be the same
+    corruption in the other direction. Only the computed `display` separates the two cases,
+    so the renderer stamps `data-wg-brk` on block-level boxes and this reads the stamp.
+    """
+
+    def test_block_level_siblings_are_separated(self) -> None:
+        html = (
+            '<html><body><nav data-wg-brk="1">'
+            '<a data-wg-brk="1">Mac</a><a data-wg-brk="1">iPad</a>'
+            '<a data-wg-brk="1">iPhone</a></nav></body></html>'
+        )
+        nav = parse_html(html).xpath("//nav")[0]
+        assert normalize_text(flowed_text(nav)) == "Mac iPad iPhone"
+
+    def test_inline_siblings_are_not_separated(self) -> None:
+        """`<b>bold</b><i>italic</i>` really does render as `bolditalic`."""
+        html = "<html><body><p><b>bold</b><i>italic</i></p></body></html>"
+        para = parse_html(html).xpath("//p")[0]
+        assert normalize_text(flowed_text(para)) == "bolditalic"
+
+    def test_a_static_page_is_unchanged(self) -> None:
+        """No renderer, no marks, no layout claims -- identical to `text_content()`.
+
+        This is what keeps the change confined to rendered fetches: a page nobody laid out
+        gets no assertions about where its lines break.
+        """
+        html = "<html><body><div><span>one</span><span>two</span> three</div></body></html>"
+        div = parse_html(html).xpath("//div")[0]
+        assert normalize_text(flowed_text(div)) == normalize_text(div.text_content())
+
+    def test_tail_text_survives(self) -> None:
+        html = '<html><body><p>before <b data-wg-brk="1">middle</b> after</p></body></html>'
+        para = parse_html(html).xpath("//p")[0]
+        assert normalize_text(flowed_text(para)) == "before middle after"
+
+    def test_nested_marks_are_honoured(self) -> None:
+        html = (
+            '<html><body><div><section data-wg-brk="1"><span>a</span>'
+            '<span data-wg-brk="1">b</span></section></div></body></html>'
+        )
+        div = parse_html(html).xpath("//div")[0]
+        assert normalize_text(flowed_text(div)) == "a b"
