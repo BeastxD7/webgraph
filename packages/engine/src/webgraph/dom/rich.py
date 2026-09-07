@@ -56,11 +56,11 @@ def _inline_markdown(element: HtmlElement, base: str) -> str:
 
     for child in element:
         tag = child.tag if isinstance(child.tag, str) else ""
-        inner = _inline_markdown(child, base) if len(child) else normalize_text(child.text_content())
+        inner = _inline_markdown(child, base) if len(child) else normalize_text(flowed_text(child))
 
         if tag == "a":
             href = _absolute(child.get("href"), base)
-            label = inner or normalize_text(child.text_content())
+            label = inner or normalize_text(flowed_text(child))
             # A link with no text contributes nothing a reader can use.
             parts.append(f"[{label}]({href})" if href and label else label)
         elif tag in _INLINE_EMPHASIS and inner:
@@ -77,6 +77,40 @@ def _inline_markdown(element: HtmlElement, base: str) -> str:
         parts.append(child.tail or "")
 
     return normalize_text("".join(parts))
+
+
+BREAK_ATTRIBUTE: Final[str] = "data-wg-brk"
+"""Stamped by the renderer on elements the browser lays out as their own box.
+
+Mirrors `fetch.render.BREAK_ATTRIBUTE`. Absent on a static fetch, where `flowed_text` then
+behaves exactly as `text_content()` did -- a page nobody rendered gets no layout claims.
+"""
+
+
+def flowed_text(element: HtmlElement) -> str:
+    """`text_content()`, but honouring the line boxes the browser actually laid out.
+
+    lxml concatenates descendant text with nothing between it, so a navigation of
+    `<a>Mac</a><a>iPad</a><a>iPhone</a>` becomes `MaciPadiPhone`. Measured on
+    apple.com/airpods-pro, the entire nav arrived as
+    `AppleStoreShopShop the LatestMaciPadiPhoneApple Watch...`. That is text corruption rather
+    than noise: the words are destroyed, and no downstream consumer can recover them.
+
+    Inserting a separator between every pair of elements is the obvious fix and is wrong in
+    the other direction -- inline siblings genuinely do run together, and `<b>bold</b>`
+    followed by `<i>italic</i>` really does render as `bolditalic`. What separates the two
+    cases is the computed `display`, which only a browser knows, so the browser marks it and
+    this function reads the mark. Same principle as reading order: measure the page, do not
+    reason about the markup.
+    """
+    parts: list[str] = [element.text or ""]
+    for child in element:
+        if isinstance(child.tag, str) and child.get(BREAK_ATTRIBUTE) is not None:
+            parts.append(" ")
+        parts.append(flowed_text(child))
+        parts.append(child.tail or "")
+    return "".join(parts)
+
 
 
 def _absolute(url: str | None, base: str) -> str | None:
@@ -126,6 +160,104 @@ def _image_block(element: HtmlElement, base: str, index: int, tree: object) -> B
     )
 
 
+MEDIA_TAGS: Final[frozenset[str]] = frozenset({"video", "audio", "iframe", "embed", "object"})
+"""Embedded media, kept as a placeholder rather than stripped in silence.
+
+These are all in `SKIP_TAGS`, which is right for their *text* -- an `<iframe>`'s content is a
+separate document and a `<video>`'s children are `<source>` elements, so nothing readable is
+lost by removing them. What was lost is the fact that they existed. A YouTube embed vanished
+without trace, and nothing downstream could tell "this page has no video" from "this page has
+a video nobody transcribed". Only the second is worth returning to.
+"""
+
+_MEDIA_CHILDREN: Final[frozenset[str]] = frozenset({"source", "track"})
+"""Children of a media element that carry the information the placeholder needs.
+
+Also in `SKIP_TAGS`, and stripping them before `_media_block` runs is why a `<video>` with a
+perfectly good `<track kind="captions">` first reported no subtitles at all. They are kept
+through the strip and then consumed as descendants of their parent, so they never become
+blocks of their own."""
+
+_MEDIA_LABEL: Final[dict[str, str]] = {
+    "video": "video",
+    "audio": "audio",
+    "iframe": "embedded frame",
+    "embed": "embedded object",
+    "object": "embedded object",
+}
+
+_MIN_EMBED_DIMENSION: Final[int] = 32
+"""Iframes smaller than this are tracking and analytics beacons, not media."""
+
+
+def _media_block(
+    element: HtmlElement, base: str, index: int, tree: object
+) -> Block | None:
+    """Describe an embed that is present on the page but not transcribed.
+
+    The text is written to be read by whatever comes next -- a person skimming the Markdown,
+    or a model building notes and entities. It says what the thing is, names it if the markup
+    does, and states plainly that its content was not extracted, so an absence is never
+    mistaken for a page that simply had no video.
+
+    Subtitle tracks are called out specifically. A `<track kind="captions">` is a transcript
+    already sitting in the markup, at a URL anyone can fetch. This engine does not fetch it
+    today, and recording where it is costs nothing and makes that a later decision rather
+    than a lost one.
+    """
+    tag = element.tag
+    if not isinstance(tag, str):
+        return None
+
+    src = _absolute(element.get("src"), base) or _absolute(element.get("data"), base)
+    if not src:
+        # Descendant axis, not `find("source")`. libxml2 does not know `<source>` is a void
+        # element, so it nests whatever follows *inside* it -- a `<video>` with a `<source>`
+        # and two `<track>`s parses as source(track, track), and a child-axis query finds
+        # exactly one of the three.
+        sources = element.xpath(".//source[@src]")
+        if sources:
+            src = _absolute(sources[0].get("src"), base)
+
+    # A 1x1 iframe is a beacon. Judge only when the markup declares a size; an undeclared
+    # one is sized by CSS and could be anything.
+    for dimension in ("width", "height"):
+        raw = (element.get(dimension) or "").strip()
+        if raw.isdigit() and int(raw) < _MIN_EMBED_DIMENSION:
+            return None
+
+    label = _MEDIA_LABEL.get(tag, "embedded media")
+    title = (
+        normalize_text(element.get("title"))
+        or normalize_text(element.get("aria-label"))
+        or normalize_text(element.get("alt"))
+    )
+
+    tracks = [
+        _absolute(track.get("src"), base) for track in element.xpath(".//track[@src]")
+    ]
+    captions = [t for t in tracks if t]
+
+    described = f'{label} "{title}"' if title else label
+    where = f" at {src}" if src else ""
+    sentence = f"[{described}{where}. Media not transcribed.]"
+    if captions:
+        sentence = (
+            f"[{described}{where}. Media not transcribed; "
+            f"{len(captions)} subtitle track(s) available: {', '.join(captions[:3])}]"
+        )
+
+    return Block(
+        text=sentence,
+        tag=tag,
+        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        dom_index=index,
+        kind=BlockKind.MEDIA,
+        href=src,
+        alt=title or None,
+    )
+
+
 _LAYOUT_TABLE_TAGS: Final[frozenset[str]] = frozenset(
     {"table", "div", "p", "form", "ul", "ol", "section", "article", "h1", "h2", "h3"}
 )
@@ -151,7 +283,11 @@ def is_layout_table(element: HtmlElement) -> bool:
     data even if its cells are busy, because flattening a real data table loses the mapping
     from a value to its column, which is the whole reason to keep tables at all.
     """
-    if element.xpath("./thead|./caption|.//th"):
+    # This table's OWN header cells, never a nested table's. `.//th` descends, so a layout
+    # table whose cell happens to contain a real data table matched here and short-circuited
+    # to "this is data" -- leaving the `.//table` check below unreachable for exactly the
+    # nesting it was written to catch.
+    if element.xpath("./caption|./thead") or element.xpath(_OWN_HEADER_CELLS_XPATH):
         return False
 
     if element.xpath(".//table"):
@@ -165,26 +301,181 @@ def is_layout_table(element: HtmlElement) -> bool:
     return busy * 2 >= len(cells)
 
 
+_OWN_ROW_SECTIONS: Final[tuple[str, ...]] = ("./thead/tr", "./tr", "./tbody/tr", "./tfoot/tr")
+"""Row containers of *this* table, in rendering order, queried one at a time.
+
+Not a single `./thead/tr|./tr|./tbody/tr|./tfoot/tr` union. lxml returns a union in
+**document** order, and `<tfoot>` is legal -- and common -- before `<tbody>`, so the union
+puts the footer rows in the middle of the table. Concatenating the four results in order
+is what a browser does.
+
+Child axes throughout, so a nested table's rows are never lifted into this one. The previous
+`.//tr` descended, which is half of why a nested table came out duplicated.
+"""
+
+_OWN_ROWS_XPATH: Final[str] = "|".join(_OWN_ROW_SECTIONS)
+
+_OWN_HEADER_CELLS_XPATH: Final[str] = "|".join(f"{section}/th" for section in _OWN_ROW_SECTIONS)
+"""This table's own `<th>` cells.
+
+Built per-alternative on purpose. `_OWN_ROWS_XPATH + "/th"` looks equivalent and is not:
+`|` has lower precedence than `/`, so the suffix binds only to the final alternative and the
+expression degenerates to "any direct row, or a tfoot header cell" -- which matched every
+ordinary table and broke layout-table detection outright.
+"""
+
+_MAX_SPAN: Final[int] = 1000
+"""Ceiling on a single `colspan`/`rowspan`. Untrusted input: `colspan="99999999"` is a
+memory-exhaustion primitive otherwise."""
+
+
+def _span(cell: HtmlElement, attribute: str) -> int:
+    raw = (cell.get(attribute) or "").strip()
+    if not raw.isdigit():
+        return 1
+    return max(1, min(int(raw), _MAX_SPAN))
+
+
+def _cell_text(cell: HtmlElement) -> str:
+    """A cell's own text, excluding any table nested inside it.
+
+    `text_content()` swallows the nested table, producing `Inner HInner V` -- both duplicated
+    into the outer table and run together without a separator. The nested table is emitted as
+    its own block instead, so its content is not lost by being left out here.
+    """
+    parts: list[str] = [cell.text or ""]
+    for child in cell:
+        if isinstance(child.tag, str) and child.tag == "table":
+            parts.append(child.tail or "")
+            continue
+        parts.append(flowed_text(child))
+        parts.append(child.tail or "")
+    return normalize_text("".join(parts))
+
+
+def _expanded_rows(element: HtmlElement) -> list[list[str]]:
+    """The table as a rectangular grid, with `rowspan` and `colspan` resolved.
+
+    Ignoring spans does not merely lose formatting, it **misaligns every value**. A header
+    of `<th rowspan=2>Region</th><th colspan=2>2025</th>` over `<th>Q1</th><th>Q2</th>`
+    produced rows `('Region','2025')`, `('Q1','Q2')`, `('EU','10','20')` -- so the renderer
+    took `Region | 2025` as the header, demoted the real column labels to a body row, and put
+    every number under the wrong heading. A spec or pricing table is the main reason to keep
+    tables at all, and that output is confidently wrong rather than incomplete.
+
+    The algorithm is the one pandas uses in `io/html.py`: carry each spanning cell forward
+    with its column index and remaining row count, emitting it before the next cell that
+    would occupy that column. Adopted rather than depended on -- pandas is 15 MB and coerces
+    `'10'` to an int, and this engine needs the string for hashing and the search index.
+    """
+    source_rows: list[HtmlElement] = []
+    for section in _OWN_ROW_SECTIONS:
+        source_rows.extend(element.xpath(section))
+
+    grid: list[list[str]] = []
+    carried: list[tuple[int, str, int]] = []
+
+    for row in source_rows:
+        line: list[str] = []
+        next_carried: list[tuple[int, str, int]] = []
+        column = 0
+
+        for cell in row.xpath("./th|./td"):
+            # Anything held over from an earlier row occupies its column first.
+            while carried and carried[0][0] <= column:
+                held_column, held_text, held_rows = carried.pop(0)
+                line.append(held_text)
+                if held_rows > 1:
+                    next_carried.append((held_column, held_text, held_rows - 1))
+                column += 1
+
+            text = _cell_text(cell)
+            rows_spanned = _span(cell, "rowspan")
+            for _ in range(_span(cell, "colspan")):
+                line.append(text)
+                if rows_spanned > 1:
+                    next_carried.append((column, text, rows_spanned - 1))
+                column += 1
+
+        for held_column, held_text, held_rows in carried:
+            line.append(held_text)
+            if held_rows > 1:
+                next_carried.append((held_column, held_text, held_rows - 1))
+
+        grid.append(line)
+        carried = sorted(next_carried)
+
+    # A rowspan may reach past the last written row; those cells are still content.
+    while carried:
+        line = []
+        next_carried = []
+        for held_column, held_text, held_rows in carried:
+            line.append(held_text)
+            if held_rows > 1:
+                next_carried.append((held_column, held_text, held_rows - 1))
+        grid.append(line)
+        carried = sorted(next_carried)
+
+    return grid
+
+
+def _header_depth(element: HtmlElement) -> int:
+    """How many leading rows are header rows.
+
+    `<thead>` when the table declares one, otherwise the run of leading rows made entirely of
+    `<th>`. Needed because span expansion turns a two-level header into two grid rows, and
+    `render_markdown` treats row 0 as the header -- so without collapsing them the real
+    column labels would still render as a body row.
+    """
+    head = element.xpath("./thead/tr")
+    if head:
+        return len(head)
+
+    depth = 0
+    for section in _OWN_ROW_SECTIONS[1:]:
+        for row in element.xpath(section):
+            cells = row.xpath("./th|./td")
+            if not cells or any(c.tag != "th" for c in cells):
+                return depth
+            depth += 1
+    return depth
+
+
+def _collapse_header(grid: list[list[str]], depth: int) -> list[tuple[str, ...]]:
+    """Join a multi-row header into one label per column.
+
+    `Region / Region` and `2025 / Q1` become `Region` and `2025 Q1`. Repeats are dropped
+    rather than doubled, which is what a `rowspan` header produces once expanded.
+    """
+    if depth < 2 or depth > len(grid):
+        return [tuple(row) for row in grid]
+
+    width = max(len(row) for row in grid[:depth])
+    joined: list[str] = []
+    for column in range(width):
+        seen: list[str] = []
+        for row in grid[:depth]:
+            value = row[column] if column < len(row) else ""
+            if value and value not in seen:
+                seen.append(value)
+        joined.append(" ".join(seen))
+    return [tuple(joined), *(tuple(row) for row in grid[depth:])]
+
+
 def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None:
     """Build a table block preserving its rows.
 
     A table flattened into text loses the association between a value and its column, which
     is exactly the information a pricing or spec table exists to convey.
     """
-    rows: list[tuple[str, ...]] = []
-    for row in element.xpath(".//tr"):
-        cells = [
-            normalize_text(cell.text_content())
-            for cell in row.xpath("./th|./td")
-        ]
-        if any(cells):
-            rows.append(tuple(cells))
+    grid = [row for row in _expanded_rows(element) if any(cell for cell in row)]
+    rows = _collapse_header(grid, _header_depth(element)) if grid else []
 
     if not rows:
         return None
 
     caption = element.xpath("./caption")
-    summary = normalize_text(caption[0].text_content()) if caption else ""
+    summary = normalize_text(flowed_text(caption[0])) if caption else ""
 
     # Every row, not a preview, and the caption in addition to them rather than instead.
     #
@@ -232,8 +523,46 @@ def _own_text(element: HtmlElement) -> str:
         if isinstance(tag, str) and tag in _NESTED_CONTAINERS:
             parts.append(child.tail or "")
             continue
-        parts.append(child.text_content())
+        parts.append(flowed_text(child))
         parts.append(child.tail or "")
+    return normalize_text("".join(parts))
+
+
+def _orphan_text(element: HtmlElement) -> str:
+    """Text belonging to this element that no other block will carry.
+
+    The innermost-block rule skips any container holding a block descendant, on the sound
+    reasoning that a wrapper `<div>` must not swallow the column beneath it. What it missed
+    is that such a container can *also* hold text of its own -- and that text was then
+    emitted by nobody.
+
+    The markup that does this is ordinary, not exotic:
+
+        <div>Opening sentence.<br><br>
+          <div><img><span>Caption</span></div>
+        <br><br>Closing sentence.</div>
+
+    Both sentences are the article. Measured on Zyte's article-extraction benchmark, **8 of
+    181 pages lose more than 10% of their body this way and 4 lose essentially all of it** --
+    MacRumors, AppleInsider, IGN and jaraguadosul, all `<br>`-separated 2019 article markup.
+
+    Distinct from `_own_text`, which keeps a list item's label by excluding only nested
+    *lists and tables*. Here every child that will itself become a block contributes only its
+    tail, while inline children (`<a>`, `<em>`, `<span>`) contribute their text, because
+    nothing else will. That split is what makes this additive rather than duplicating.
+    """
+    parts: list[str] = [element.text or ""]
+    for child in element:
+        tag = child.tag
+        if not isinstance(tag, str):
+            parts.append(child.tail or "")
+            continue
+        if tag in _TEXT_CONTAINERS or tag in _HEADINGS or tag in _ATOMIC:
+            # It gets its own block; only the text after it is orphaned.
+            parts.append(child.tail or "")
+        else:
+            parts.append(flowed_text(child))
+            parts.append(child.tail or "")
     return normalize_text("".join(parts))
 
 
@@ -256,7 +585,10 @@ def extract_rich_blocks(
     root: HtmlElement, base_url: str, *, min_chars: int = 1
 ) -> list[Block]:
     """Extract blocks with their structure intact, in document order."""
-    etree.strip_elements(root, *SKIP_TAGS, with_tail=False)
+    # Media survives this strip so it can become a placeholder; see `MEDIA_TAGS`. Its own
+    # children (`<source>`, `<track>`) are read by `_media_block` and never emitted.
+    keep = MEDIA_TAGS | _MEDIA_CHILDREN
+    etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
     strip_permalinks(root)
 
@@ -272,7 +604,11 @@ def extract_rich_blocks(
 
         block: Block | None = None
 
-        if tag == "img":
+        if tag in MEDIA_TAGS:
+            block = _media_block(element, base_url, index, tree)
+            consumed.update(element.iterdescendants())
+
+        elif tag == "img":
             block = _image_block(element, base_url, index, tree)
 
         elif tag == "table":
@@ -281,9 +617,21 @@ def extract_rich_blocks(
                 # as an ordinary container so its real content is extracted.
                 continue
             block = _table_block(element, index, tree)
-            consumed.update(element.iterdescendants())
+            # Consume this table's own descendants, but leave any nested table -- and
+            # everything under it -- for its own turn in this loop. A nested data table is a
+            # table, and emitting it separately is how its rows survive; `_cell_text` has
+            # already kept its text out of the containing cell, so nothing is duplicated and
+            # nothing is lost.
+            nested: set[HtmlElement] = set()
+            for inner in element.xpath(".//table"):
+                nested.add(inner)
+                nested.update(inner.iterdescendants())
+            consumed.update(d for d in element.iterdescendants() if d not in nested)
 
         elif tag == "pre":
+            # Verbatim, deliberately: `flowed_text` would insert separators at the block
+            # boundaries a syntax highlighter creates, and a code block's whitespace is its
+            # meaning. This is the one place `text_content()` is still the right call.
             text = element.text_content().strip("\n")
             if text.strip():
                 block = Block(
@@ -297,7 +645,7 @@ def extract_rich_blocks(
             consumed.update(element.iterdescendants())
 
         elif tag == "blockquote":
-            text = normalize_text(element.text_content())
+            text = normalize_text(flowed_text(element))
             if text:
                 block = Block(
                     text=text,
@@ -309,7 +657,7 @@ def extract_rich_blocks(
             consumed.update(element.iterdescendants())
 
         elif tag in _HEADINGS:
-            text = normalize_text(element.text_content())
+            text = normalize_text(flowed_text(element))
             if text:
                 rich = _inline_markdown(element, base_url)
                 block = Block(
@@ -323,7 +671,7 @@ def extract_rich_blocks(
                 )
 
         elif tag == "figcaption":
-            text = normalize_text(element.text_content())
+            text = normalize_text(flowed_text(element))
             if text:
                 block = Block(
                     text=text,
@@ -339,15 +687,20 @@ def extract_rich_blocks(
             has_block_descendant = any(
                 isinstance(d.tag, str)
                 and (d.tag in _TEXT_CONTAINERS or d.tag in _HEADINGS or d.tag in _ATOMIC)
-                and normalize_text(d.text_content())
+                and normalize_text(flowed_text(d))
                 for d in element.iterdescendants()
             )
-            # A list item wrapping a sub-list still owns its label; take that rather than
-            # skipping the element and losing the text.
-            text = _own_text(element) if has_block_descendant else normalize_text(
-                element.text_content()
-            )
-            if text and (not has_block_descendant or tag in {"li", "dd", "dt"}):
+            # A container holding a block descendant is skipped so a wrapper does not swallow
+            # the column beneath it -- but its own text is still content, and used to be lost
+            # outright. A list item keeps its label via `_own_text`; every other container
+            # keeps whatever text no child block will carry, via `_orphan_text`.
+            if not has_block_descendant:
+                text = normalize_text(flowed_text(element))
+            elif tag in {"li", "dd", "dt"}:
+                text = _own_text(element)
+            else:
+                text = _orphan_text(element)
+            if text:
                 ordered, level = _list_context(element) if tag == "li" else (False, 0)
                 rich = _inline_markdown(element, base_url)
                 block = Block(
@@ -363,7 +716,7 @@ def extract_rich_blocks(
 
         if block is None:
             continue
-        if block.kind is not BlockKind.IMAGE and len(block.text) < min_chars:
+        if block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA) and len(block.text) < min_chars:
             continue
 
         blocks.append(block)

@@ -97,6 +97,12 @@ def _render_block(block: Block, options: MarkdownOptions) -> str | None:
         alt = _text(block.alt or "", options)
         return f"![{alt}]({block.href})"
 
+    if kind is BlockKind.MEDIA:
+        # Rendered as an italic aside rather than a link or an image: it is a note *about*
+        # the document, not content in it, and a reader -- or a model building notes -- should
+        # not mistake the placeholder for something that was transcribed.
+        return f"*{block.text}*"
+
     if kind is BlockKind.TABLE:
         if not options.include_tables:
             return None
