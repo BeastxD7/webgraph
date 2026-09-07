@@ -267,3 +267,66 @@ class TestRobustness:
                   for i in range(count)]
         ordered, _ = order_blocks(blocks)
         assert sorted(b.dom_index for b in ordered) == sorted(b.dom_index for b in blocks)
+
+
+class TestRowBanding:
+    """Sub-pixel `y` differences must not override left-to-right order.
+
+    Found by `benchmark/reading_order`. supabase.com renders its top navigation with
+    `Pricing` at y=70.4 and `Product` at y=71.0 -- six tenths of a pixel apart, on the same
+    visual row -- and a plain `(y, x)` sort therefore read the bar as
+    `Pricing, Docs, Blog, Product, Developers`. Hebrew Wikipedia's menu row failed the same
+    way. Any horizontal nav or row of cards with fractional offsets was affected.
+    """
+
+    @staticmethod
+    def _row(texts_and_x: list[tuple[str, float, float]]) -> list[Block]:
+        """Blocks on one visual row, each with its own slightly different `y`."""
+        return [
+            Block(
+                text=text,
+                tag="a",
+                xpath=f"/html/body/nav/a[{i + 1}]",
+                dom_index=i,
+                rect=Rect(x=x, y=y, width=60.0, height=34.0),
+            )
+            for i, (text, x, y) in enumerate(texts_and_x)
+        ]
+
+    def test_a_nav_bar_reads_left_to_right_despite_subpixel_offsets(self) -> None:
+        blocks = self._row(
+            [("Product", 332.0, 71.0), ("Developers", 421.7, 71.0),
+             ("Pricing", 635.2, 70.4), ("Docs", 701.0, 70.4)]
+        )
+        ordered, _ = order_blocks(list(reversed(blocks)))
+        assert [b.text for b in ordered] == ["Product", "Developers", "Pricing", "Docs"]
+
+    def test_the_same_bar_reads_right_to_left_when_rtl(self) -> None:
+        blocks = self._row(
+            [("first", 600.0, 20.0), ("second", 400.0, 20.4), ("third", 200.0, 20.0)]
+        )
+        ordered, _ = order_blocks(list(blocks), rtl=True)
+        assert [b.text for b in ordered] == ["first", "second", "third"]
+
+    def test_a_tall_block_does_not_swallow_the_rows_beside_it(self) -> None:
+        """The regression that decided the banding criterion.
+
+        A 400px sidebar must not band with short blocks that merely fall inside its extent,
+        or they get ordered by x and lose their vertical relationship. Overlap is therefore
+        measured against the taller block, not the shorter.
+        """
+        sidebar = Block(
+            text="sidebar", tag="nav", xpath="/html/body/nav", dom_index=0,
+            rect=Rect(x=900.0, y=0.0, width=200.0, height=400.0),
+        )
+        upper = Block(
+            text="upper", tag="p", xpath="/html/body/p[1]", dom_index=1,
+            rect=Rect(x=100.0, y=50.0, width=500.0, height=30.0),
+        )
+        lower = Block(
+            text="lower", tag="p", xpath="/html/body/p[2]", dom_index=2,
+            rect=Rect(x=100.0, y=300.0, width=500.0, height=30.0),
+        )
+        ordered, _ = order_blocks([sidebar, lower, upper])
+        text = [b.text for b in ordered]
+        assert text.index("upper") < text.index("lower")
