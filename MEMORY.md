@@ -2399,3 +2399,47 @@ every page reported `ok=True` with zero measurements.
 Fixed by reusing `shared_browser()`. Worth remembering as a shape: a benchmark that catches
 broadly to survive bad pages will also swallow its own bugs, and "N succeeded, 0 usable" is
 the signature.
+
+### D86 — CleanEval and Webis WCEB: the independent benchmarks, and a false validation caught
+
+Every other benchmark in this space is authored by a party with a system in the comparison --
+Firecrawl's own, WCXB's author wrote the rs-trafilatura that tops it, trafilatura's author
+runs trafilatura's eval. CleanEval (LREC 2008) and the Webis WCEB (SIGIR 2023) are not, which
+is the entire reason to run them.
+
+**CleanEval-1, 681 pages, complete**, scored with Evert's 2008 scorer over cached HTML:
+
+```
+variant       F1      P       R
+raw         76.34   72.26   87.87
+landmarks   76.34   72.26   87.87
+prose       68.33   76.29   74.61
+main        78.52   79.02   83.88   <- select_main_content
+```
+
+The selector wins here too, and `prose` is the *worst* variant -- CleanEval's gold standards
+keep list and table text that the prose filter discards.
+
+**WCEB, partial** (2 of 8 datasets before the agent stalled), against a published field of 22
+systems where ensemble_weighted is 0.889, trafilatura 0.867, readability 0.855, resiliparse
+0.819:
+
+```
+cleaneval         738 pages   raw 0.787   main 0.807
+cleanportaleval    71 pages   raw 0.440   main 0.762   <- +0.32 from the selector
+```
+
+**The finding worth keeping is methodological.** A previous agent reported that its WCEB
+scorer "gives exactly the TO/TM/Ave numbers the paper publishes, and identity = 100%". That
+claim was false and unverifiable: the script it came from could not run at all -- it reads a
+directory that had since been deleted, and imports modules not installed here. The
+replacement validation was produced fresh and *is* exact: the restated scorer matches
+upstream's own function to `0.000e+00` over 250 pages in the same process.
+
+The residual against upstream's *published CSV* is 1.4e-03 on 7 pages of 250 -- upstream's
+2023 numbers meeting a 2026 `rouge-score`/NLTK install, not a difference in the restatement.
+
+Two lessons. An agent's claim of validation is not validation; the artifact has to be re-run.
+And a benchmark harness pinned to a code snapshot is the only way to get a comparable number
+while the engine is being edited -- the first WCEB run was discarded because `main_content.py`
+changed underneath it.
