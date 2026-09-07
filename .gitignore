@@ -32,4 +32,9 @@ out/
 # Engine artifacts
 /artifacts/
 /benchmark/cache/
+# Scratch logs from benchmark runs.
+/.logs/
+# Cached page pairs for the union benchmark: 72 MB of raw HTML, refetchable with
+# `make bench-union-fetch`. The scores in results-*.json are the durable artifact.
+/benchmark/union_adjacency/cache/
 *.warc

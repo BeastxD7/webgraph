@@ -1,0 +1,44 @@
+# Creative and award-winning sites -- the adversarial corpus.
+#
+# Chosen because they break the assumptions every extractor makes. These are not sites with
+# articles on them; they are sites built to be experienced, where the text is frequently in a
+# canvas, split into per-character spans for animation, mounted on scroll, or absent from the
+# DOM until a WebGL scene finishes loading.
+#
+# The measurement that matters here is not F1 against a ground truth -- there is none. It is
+# **recovery**: engine-extracted characters over the browser's own `document.body.innerText`.
+# A recovery near 1.0 means the engine saw what a reader sees. A low one means content is
+# somewhere the DOM cannot reach.
+
+# --- WebGL / canvas-first, the hardest class ---
+https://bruno-simon.com/
+https://lusion.co/
+https://www.activetheory.net/
+https://igloo.inc/
+https://exoape.com/
+
+# --- award-winning agency sites: heavy scroll, split-text animation ---
+https://www.locomotive.ca/
+https://obys.agency/
+https://cuberto.com/
+https://www.ochi.design/
+https://14islands.com/
+https://basicagency.com/
+https://studiofreight.com/
+
+# --- Framer / Webflow / no-code builders, very different DOM shape ---
+https://www.framer.com/
+https://webflow.com/
+https://www.spline.design/
+
+# --- design-led product sites: real content, unusual layout ---
+https://rauno.me/
+https://linear.app/method
+https://stripe.com/sessions
+https://www.apple.com/airpods-pro/
+https://vercel.com/design
+
+# --- editorial with heavy art direction ---
+https://pudding.cool/
+https://www.nytimes.com/interactive/2024/upshot/
+https://every.to/

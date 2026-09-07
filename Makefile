@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint check check-clean bench bench-content check-responsive clean
+.PHONY: help install api web dev test lint check check-clean bench bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
 
 help:
 	@echo "webgraph — development commands"
@@ -13,6 +13,13 @@ help:
 	@echo "  make bench     Score schema extraction against the benchmark corpus"
 	@echo "  make bench-content Score main-content extraction against three other tools"
 	@echo "  make bench-routes  Score route discovery against a real-browser oracle"
+	@echo "  make bench-union   Score union block placement (needs bench-union-fetch once)"
+	@echo "  make bench-reading-order  Score reading order vs a DOM walk"
+	@echo ""
+	@echo "  make docker-build  Build the API container"
+	@echo "  make docker-run    Run it on :8080"
+	@echo "  make deploy-api    Deploy the API to Cloud Run (see docs/DEPLOY.md)"
+	@echo "  make deploy-web    Deploy the frontend to Vercel"
 	@echo ""
 	@echo "Run 'make api' and 'make web' in two terminals for the full stack."
 
@@ -71,6 +78,51 @@ bench-routes:
 
 bench-routes-quick:
 	cd packages/engine && uv run python ../../benchmark/route_discovery/run.py --limit 10
+
+# Union-by-adjacency placement. Two phases: `fetch` hits the network once per site and
+# caches both representations; `score` runs offline over that cache, so the ablation sweep
+# can be repeated without refetching.
+bench-union-fetch:
+	uv run --package webgraph python benchmark/union_adjacency/run.py fetch
+
+bench-union:
+	uv run --package webgraph python benchmark/union_adjacency/run.py score
+
+# Reading order: geometric recovery vs a DOM walk, scored on geometric axioms rather than
+# on either method's own output. Offline; uses the same page cache as bench-union.
+bench-reading-order:
+	uv run --package webgraph python benchmark/reading_order/run.py
+
+# Deployment. See docs/DEPLOY.md for what these flags mean and why.
+GCP_REGION ?= us-central1
+GCP_SERVICE ?= webgraph-api
+ALLOWED_ORIGINS ?= http://localhost:3000
+
+docker-build:
+	docker build -t $(GCP_SERVICE) .
+
+docker-run:
+	docker run --rm -p 8080:8080 \
+	  -e WEBGRAPH_ALLOWED_ORIGINS=$(ALLOWED_ORIGINS) \
+	  $(GCP_SERVICE)
+
+deploy-api:
+	@# --max-instances 1 is load-bearing: the graph cache and crawl slots are in-process,
+	@# so a second instance answers /api/site/context from a process that never crawled.
+	gcloud run deploy $(GCP_SERVICE) \
+	  --source . \
+	  --region $(GCP_REGION) \
+	  --allow-unauthenticated \
+	  --execution-environment gen2 \
+	  --cpu 2 --memory 4Gi \
+	  --max-instances 1 \
+	  --concurrency 20 \
+	  --timeout 3600 \
+	  --set-env-vars WEBGRAPH_ALLOWED_ORIGINS=$(ALLOWED_ORIGINS)
+
+deploy-web:
+	@# NEXT_PUBLIC_API_BASE is inlined at build time; set it in Vercel before this runs.
+	cd apps/web && pnpm dlx vercel --prod
 
 clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
