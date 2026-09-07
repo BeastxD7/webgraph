@@ -92,7 +92,7 @@ def _describe(document: Document) -> dict[str, Any]:
 
 def _cmd_text(args: argparse.Namespace) -> int:
     html, geometry, url = _load_source(args.url, render=args.render, quiet=args.quiet)
-    document = build_document(html, url, geometry=geometry, rtl=args.rtl)
+    document = build_document(html, url, geometry=geometry, rtl=True if args.rtl else None)
 
     if args.markdown:
         print(to_markdown(document, options=MarkdownOptions(front_matter=args.front_matter)))
@@ -111,7 +111,7 @@ def _cmd_text(args: argparse.Namespace) -> int:
 def _cmd_extract(args: argparse.Namespace) -> int:
     schema = json.loads(Path(args.schema).read_text(encoding="utf-8"))
     html, geometry, url = _load_source(args.url, render=args.render, quiet=args.quiet)
-    document = build_document(html, url, geometry=geometry, rtl=args.rtl)
+    document = build_document(html, url, geometry=geometry, rtl=True if args.rtl else None)
 
     facts = extract_facts(document.structured_data, schema, url)
     merged = merge_facts(facts)
@@ -349,7 +349,11 @@ def build_parser() -> argparse.ArgumentParser:
             action="store_true",
             help="force a browser render (needed for accurate reading order)",
         )
-        sub.add_argument("--rtl", action="store_true", help="right-to-left reading direction")
+        sub.add_argument(
+            "--rtl",
+            action="store_true",
+            help="force right-to-left reading order (otherwise detected from dir/lang)",
+        )
 
     text = subparsers.add_parser("text", help="print page text in reading order")
     add_page_args(text)
