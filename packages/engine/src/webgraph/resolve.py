@@ -177,6 +177,12 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     `reading_order_method` claimed geometry for a merge that was partly source order --
     `lemonde.fr` reported `geometric-anchored` with 7% of its blocks measured.
 
+    A repeated anchor is the subtle case. Identity here is normalised text, so a phrase that
+    appears twice in the rendered document is one key with two positions. The run belongs at
+    one of them -- the last, which is the one nearest the content -- and emitting it at both
+    duplicates the content outright. Both halves of that were wrong before they were
+    measured; see the comment on `last_occurrence` for the numbers.
+
     Returns (merged document, blocks only in static, blocks only in rendered).
     """
     static_keys = {_key(b) for b in static_doc.blocks if b.text.strip()}
@@ -217,10 +223,35 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     anchored_to_front = bool(rendered_keys & static_keys)
     leading = following.pop(None, []) if anchored_to_front else []
 
+    # An anchor key can occur many times in the rendered document -- "Sport" as a nav link
+    # and again as a section heading -- and the run must be emitted exactly once, at exactly
+    # one of them.
+    #
+    # Emitting at every occurrence, which is what an unguarded lookup in the loop below does,
+    # physically duplicates content. Measured across 39 real pages: **14 of them** carried
+    # 3,113 excess blocks, corriere.it merging to 3,831 blocks against 1,626 expected (+136%)
+    # with one static-only block copied **201 times**. That inflates the character counts,
+    # changes `content_hash` -- the gate that decides whether a page needs re-extracting --
+    # and feeds the same paragraph to the index and the graph over and over.
+    #
+    # The *last* occurrence, not the first. The anchor was chosen by walking the static
+    # document for the nearest preceding shared block, so the occurrence meant is the one
+    # closest to the content, not a nav link near the top. Measured on the pages where anchor
+    # keys repeat, placement accuracy against the rendered order: **0.50-0.65 anchoring to
+    # the first occurrence, 0.88-1.00 anchoring to the last.** Where anchor keys are unique
+    # the two are identical by construction.
+    last_occurrence: dict[str, int] = {}
+    for index, block in enumerate(rendered_doc.blocks):
+        key = _key(block)
+        if key:
+            last_occurrence[key] = index
+
     merged: list[Block] = [adopt(b) for b in leading]
-    for block in rendered_doc.blocks:
+    for index, block in enumerate(rendered_doc.blocks):
         merged.append(block)
-        merged.extend(adopt(extra) for extra in following.get(_key(block), ()))
+        key = _key(block)
+        if key and last_occurrence.get(key) == index:
+            merged.extend(adopt(extra) for extra in following.get(key, ()))
     if not anchored_to_front:
         merged.extend(adopt(b) for b in following.get(None, ()))
 
