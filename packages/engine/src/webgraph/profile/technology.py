@@ -23,6 +23,20 @@ Alpine.js purely because its sidebar links to `/guides/cms/strapi/` and
 `/guides/integrations-guide/alpinejs/`. Every rule therefore anchors to structure -- a
 `src`/`href` attribute, a generator meta tag, a namespaced class, a JavaScript global -- so
 that writing *about* a technology cannot be mistaken for using it.
+
+**Markup rules are prefiltered by a literal derived from each regex.** Measured before this
+existed: the 116 `html` rules cost 563 ms on a 250 KB page and 4,796 ms on a 2 MB one --
+77% of `build_document` -- because `re` has no fast path for a case-insensitive regex and
+scans the whole page at ~10 ms per 250 KB whatever the pattern says. Almost every rule,
+though, cannot match unless some literal string is present (`api.tinybird.co`,
+`__next_data__`, `data-radix-`), so that string is extracted from the parsed pattern at
+import time and checked with `str.__contains__` first; see `required_literals`. After: 46 ms
+and 626 ms, with identical output on 193 pages (the two above, Zyte's 181, the fixtures).
+The remaining cost is mostly the floor of that check itself -- ~180 distinct needles at
+~0.7 ns per byte, since CPython's substring search is a plain C loop -- plus the handful
+of rules whose needle is an English word (`react`, `ember`, `moment`) and so genuinely has
+to run on a page of prose. A single trie regex over all needles was measured and is no
+faster (29 ms against 36 ms per 250 KB), so the loop stays.
 """
 
 from __future__ import annotations
@@ -30,17 +44,21 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Final
+from re import _parser as sre_parse  # type: ignore[attr-defined]  # see required_literals
+from typing import Any, Final
 
 __all__ = [
     "CATEGORIES",
     "IMPLICATIONS",
     "TECH_RULES",
+    "Clause",
     "RuntimeEvidence",
     "TechRule",
     "Technology",
     "detect_technologies",
+    "fold_for_prefilter",
     "merge_technologies",
+    "required_literals",
 ]
 
 CATEGORIES: Final[tuple[str, ...]] = (
@@ -145,10 +163,212 @@ class TechRule:
     asset: re.Pattern[str] | None = None
     source: re.Pattern[str] | None = None
     confidence: int = 100
+    html_needles: tuple[tuple[str, ...], ...] = ()
+    """`required_literals(html)`: clauses the markup must satisfy before the regex runs."""
+    source_needles: tuple[tuple[str, ...], ...] = ()
+    """The same, for `source`."""
 
 
 def _h(pattern: str) -> re.Pattern[str]:
     return re.compile(pattern, re.IGNORECASE)
+
+
+# ---------------------------------------------------------------------------
+# Required-literal prefilter
+# ---------------------------------------------------------------------------
+
+_PREFILTER_ENABLED: bool = True
+"""Switch for the equivalence check, which runs every rule with and without the prefilter
+over real pages and requires identical output. Never turned off in production."""
+
+_MIN_NEEDLE_CHARS: Final[int] = 3
+"""Shorter literals occur in practically every page, so they would skip nothing."""
+
+_MAX_ALTERNATIVES: Final[int] = 32
+"""Cap on the strings one literal run may expand to. `(?:sm|md|lg|xl|2xl):` is five, which
+is what makes the Tailwind rule skippable at all; a run that would exceed the cap is split."""
+
+_FOLD_FIXES: Final[tuple[tuple[str, str], ...]] = (("\u0131", "i"), ("\u017f", "s"))
+"""Characters that IGNORECASE treats as an ASCII letter but `str.lower()` leaves alone:
+dotless i (U+0131) matches `i`, long s (U+017F) matches `s`. Found by matching every code
+point against every ASCII letter under IGNORECASE; the third and last discrepancy, capital
+dotted I (U+0130), is handled before lowering because its lowercase is two characters."""
+
+Clause = tuple[str, ...]
+"""A disjunction of lowercase literals: at least one must occur wherever the regex matches."""
+
+
+def fold_for_prefilter(text: str) -> str:
+    """Lowercase `text` exactly as a case-insensitive regex will see it, one char per char.
+
+    `str.lower()` is nearly right but disagrees with the regex engine on three characters,
+    all of which are mapped to their ASCII equivalent here (see `_FOLD_FIXES`). The result
+    is therefore a **superset** of what the engine would match -- a page containing U+0131
+    folds to `i`, and the regex does accept U+0131 for `i` -- and it has the **same length**
+    as the input, so offsets found in the fold address the original text. `same_site_assets`
+    depends on that to run a case-sensitive regex over the fold at a sixth of the cost.
+    """
+    if "\u0130" in text:
+        text = text.replace("\u0130", "i")
+    lowered = text.lower()
+    if not lowered.isascii():
+        for special, plain in _FOLD_FIXES:
+            if special in lowered:
+                lowered = lowered.replace(special, plain)
+    return lowered
+
+
+def required_literals(pattern: str) -> tuple[Clause, ...]:
+    """Clauses of lowercase literals that `pattern` cannot match without, most selective first.
+
+    Every clause must be satisfied -- some member of each must occur in the folded text --
+    or the regex cannot match anywhere. The Lenis rule, `class=` then a quote, anything, and
+    `\\blenis\\b`, yields `(("lenis",), ("class='", 'class="'))`: the second clause is true of
+    every page, the first of almost none, and it is the conjunction that makes the rule
+    skippable. Clauses with fewer members, then longer ones, come first so that the test
+    likeliest to fail is the one that runs.
+
+    Read off `re`'s own parse tree (`re._parser`, private but unchanged in shape for two
+    decades), so it follows the pattern's real structure rather than a guess at it. The walk
+    is deliberately conservative: in doubt it yields fewer clauses, and no clauses at all
+    means "run the regex", which costs speed and never correctness.
+
+    - A maximal run of consecutive literals is one clause. A literal is a plain character,
+      a class of plain characters (`[.-]`), or an alternation of nothing but literals
+      (`(?:sm|md|lg)`); the run is the product of the choices, so `(?:src|href)=` yields
+      `("href=", "src=")` and `_ng(?:host|content)-` yields `("_ngcontent-", "_nghost-")`.
+      Anything else -- `.`, a class with a range or a negation, a repeat, an anchor, a
+      lookaround, a backreference -- ends the run. Runs continue through group boundaries,
+      since `ab(?:cd)ef` can only ever match `abcdef`.
+    - A repeat with a minimum of one requires its body at least once, so the body's clauses
+      count; a repeat that may match zero times contributes nothing.
+    - An alternation that is not purely literal requires one of its branches, so it
+      contributes the union of one clause per branch, the most selective of each -- and
+      nothing at all if any branch has no clause of its own.
+    - A clause is kept only if **every** member is ASCII and at least `_MIN_NEEDLE_CHARS`
+      long, because dropping a short member would make the clause stronger than the regex.
+      `fold_for_prefilter` makes the ASCII comparison exact under IGNORECASE.
+    """
+    try:
+        parsed = sre_parse.parse(pattern, re.IGNORECASE)
+        clauses = _clauses(list(parsed))
+    except Exception:  # private API drift must degrade to "no prefilter", whatever the cause
+        return ()
+    return tuple(sorted(clauses, key=lambda clause: (len(clause), -min(map(len, clause)))))
+
+
+def _best_clause(clauses: Sequence[Clause]) -> Clause | None:
+    """The most selective clause: longest shortest member, then fewest members."""
+    return max(clauses, key=lambda clause: (min(map(len, clause)), -len(clause)), default=None)
+
+
+def _literal_choices(op: Any, av: Any) -> list[str] | None:
+    """Every string this node can match if it is purely literal, else None."""
+    if op is sre_parse.LITERAL:
+        return [chr(av).lower()] if av < 128 else None
+    if op is sre_parse.IN:
+        if all(member_op is sre_parse.LITERAL and code < 128 for member_op, code in av):
+            return [chr(code).lower() for _, code in av]
+        return None
+    if op is sre_parse.SUBPATTERN:
+        return _pure_strings(av[-1])
+    if op is sre_parse.BRANCH:
+        choices: list[str] = []
+        for branch in av[1]:
+            strings = _pure_strings(branch)
+            if strings is None:
+                return None
+            choices.extend(strings)
+        return choices if len(choices) <= _MAX_ALTERNATIVES else None
+    return None
+
+
+def _pure_strings(items: Sequence[tuple[Any, Any]]) -> list[str] | None:
+    """The product of a sequence made only of literal nodes, else None."""
+    strings = [""]
+    for op, av in items:
+        choices = _literal_choices(op, av)
+        if choices is None or len(strings) * len(choices) > _MAX_ALTERNATIVES:
+            return None
+        strings = [prefix + choice for prefix in strings for choice in choices]
+    return strings
+
+
+def _clauses(items: Sequence[tuple[Any, Any]]) -> list[Clause]:
+    """Every independently required clause of a parsed sequence, in order."""
+    clauses: list[Clause] = []
+    run: list[str] = [""]
+
+    def flush() -> None:
+        nonlocal run
+        if run != [""] and min(map(len, run)) >= _MIN_NEEDLE_CHARS:
+            clauses.append(tuple(sorted(set(run))))
+        run = [""]
+
+    def extend(choices: list[str]) -> None:
+        nonlocal run
+        if len(run) * len(choices) > _MAX_ALTERNATIVES:
+            flush()  # what follows is still contiguous with the choices, so restart from them
+        run = [prefix + choice for prefix in run for choice in choices]
+
+    def visit(sequence: Sequence[tuple[Any, Any]]) -> None:
+        for op, av in sequence:
+            choices = _literal_choices(op, av)
+            if choices is not None:
+                extend(choices)
+                continue
+            if op is sre_parse.SUBPATTERN:
+                visit(av[-1])  # a group is plain concatenation: the run continues through it
+                continue
+            flush()
+            if op in _REPEATS:
+                minimum, _maximum, body = av
+                if minimum >= 1:
+                    clauses.extend(_clauses(body))
+            elif op is sre_parse.BRANCH:
+                chosen = [_best_clause(_clauses(branch)) for branch in av[1]]
+                if all(chosen):
+                    clauses.append(tuple(sorted({n for clause in chosen if clause for n in clause})))
+            elif op is sre_parse.ATOMIC_GROUP:
+                clauses.extend(_clauses(av))
+
+    visit(items)
+    flush()
+    return clauses
+
+
+_REPEATS: Final[frozenset[Any]] = frozenset(
+    {sre_parse.MAX_REPEAT, sre_parse.MIN_REPEAT, sre_parse.POSSESSIVE_REPEAT}
+)
+
+
+def _prefiltered_search(
+    pattern: re.Pattern[str],
+    clauses: tuple[Clause, ...],
+    text_lower: str,
+    text: str,
+    seen: dict[str, bool] | None = None,
+) -> re.Match[str] | None:
+    """`pattern.search(text)`, skipped when some clause has no member in `text_lower`.
+
+    `text_lower` must be `fold_for_prefilter(text)`. A rule with no clauses always runs.
+    Measured: one membership test costs ~0.2 ms per 250 KB and ~1.3 ms per 2 MB (CPython's
+    substring search is a C loop, not SIMD), against ~10 ms and ~100 ms for the regex.
+    `seen` memoises tests across rules within one page -- nine rules share
+    `name="generator"` and a dozen share `.js` -- and must not outlive the page.
+    """
+    if _PREFILTER_ENABLED:
+        memo = {} if seen is None else seen
+        for clause in clauses:
+            for needle in clause:
+                present = memo.get(needle)
+                if present is None:
+                    present = memo[needle] = needle in text_lower
+                if present:
+                    break
+            else:
+                return None
+    return pattern.search(text)
 
 
 def _rule(
@@ -175,15 +395,21 @@ def _rule(
         asset=_h(asset) if asset else None,
         source=_h(source) if source else None,
         confidence=confidence,
+        html_needles=required_literals(html) if html else (),
+        source_needles=required_literals(source) if source else (),
     )
 
 
-_ATTRIBUTE_URL: Final[re.Pattern[str]] = re.compile(
-    r"""(?:src|href|data-src|srcset)\s*=\s*["']([^"']{2,400})["']""", re.IGNORECASE
-)
+_ATTRIBUTE_URL_SOURCE: Final[str] = r"""(?:src|href|data-src|srcset)\s*=\s*["']([^"']{2,400})["']"""
+_ATTRIBUTE_URL: Final[re.Pattern[str]] = re.compile(_ATTRIBUTE_URL_SOURCE, re.IGNORECASE)
+_ATTRIBUTE_URL_FOLDED: Final[re.Pattern[str]] = re.compile(_ATTRIBUTE_URL_SOURCE)
+"""The case-sensitive twin, searched over `fold_for_prefilter(html)`. Measured: 2.2 ms
+against 14 ms on a 250 KB page and 18 ms against 135 ms on a 2 MB one, with identical spans.
+It is exact because the fold is one-to-one and touches no character the pattern cares
+about -- no whitespace, no quote, no `=` -- and the spans index the original markup."""
 
 
-def same_site_assets(html: str, url: str = "") -> list[str]:
+def same_site_assets(html: str, url: str = "", *, folded: str | None = None) -> list[str]:
     """Every `src`/`href` on the page that points at **this** site.
 
     This closes a whole class of false positive. Matching a path fragment anywhere in the
@@ -203,9 +429,16 @@ def same_site_assets(html: str, url: str = "") -> list[str]:
         if match:
             host = match.group(1).lower().removeprefix("www.")
 
+    if folded is None:
+        folded = fold_for_prefilter(html)
+    if _PREFILTER_ENABLED and len(folded) == len(html):
+        spans = [found.span(1) for found in _ATTRIBUTE_URL_FOLDED.finditer(folded)]
+    else:
+        spans = [found.span(1) for found in _ATTRIBUTE_URL.finditer(html)]
+
     assets: list[str] = []
-    for found in _ATTRIBUTE_URL.finditer(html):
-        value = found.group(1).strip()
+    for start, end in spans:
+        value = html[start:end].strip()
         if not value or value.startswith(("#", "data:", "javascript:", "mailto:", "tel:")):
             continue
         lowered = value.lower()
@@ -699,6 +932,7 @@ def detect_technologies(
     cookies: Mapping[str, str] | None = None,
     bundle_source: str = "",
     url: str = "",
+    folded: str | None = None,
 ) -> list[Technology]:
     """Identify technologies from every signal the caller managed to collect.
 
@@ -718,12 +952,19 @@ def detect_technologies(
       mount their attributes only on interaction are still named in it.
     - `url` lets `asset` rules tell this site's own references from links to other people's.
       Without it, only relative references qualify -- the conservative reading.
+    - `folded` is `fold_for_prefilter(html)` if the caller already has it; otherwise it is
+      computed here. It is the haystack every markup rule's needles are checked against.
 
     Headers are matched case-insensitively by name, since HTTP header casing is arbitrary
     and servers are inconsistent about it.
     """
     normalized_headers = {k.lower(): v for k, v in (headers or {}).items()}
-    assets = same_site_assets(html, url) if html else []
+    if folded is None:
+        folded = fold_for_prefilter(html) if html else ""
+    bundle_folded = fold_for_prefilter(bundle_source) if bundle_source else ""
+    assets = same_site_assets(html, url, folded=folded) if html else []
+    seen_in_html: dict[str, bool] = {}
+    seen_in_bundle: dict[str, bool] = {}
     cookie_names = list(cookies or ())
     set_cookie = normalized_headers.get("set-cookie", "")
     found: dict[str, Technology] = {}
@@ -795,13 +1036,17 @@ def detect_technologies(
                 continue
 
         if rule.html is not None and html:
-            match = rule.html.search(html)
+            match = _prefiltered_search(
+                rule.html, rule.html_needles, folded, html, seen_in_html
+            )
             if match:
                 _consider(rule, match, f"markup: {match.group(0)[:60]}")
                 continue
 
         if rule.source is not None and bundle_source:
-            match = rule.source.search(bundle_source)
+            match = _prefiltered_search(
+                rule.source, rule.source_needles, bundle_folded, bundle_source, seen_in_bundle
+            )
             if match:
                 _consider(rule, match, f"bundle: {match.group(0)[:60]}")
                 continue

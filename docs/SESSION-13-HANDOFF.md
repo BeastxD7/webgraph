@@ -16,7 +16,7 @@ Last full verification: engine suite green, `make lint` green (4/4 checks), API 
 ### New files
 | Path | What |
 |---|---|
-| `packages/engine/src/webgraph/main_content.py` | **The precision fix.** Max-subarray main-content selector. Opt-in, not wired into `build_document`. |
+| `packages/engine/src/webgraph/main_content.py` | **The precision fix.** Max-subarray main-content selector. *Session 14: now wired into production through `content.py` -- every crawl page's `content_markdown`, `/api/text`, and `webgraph text --content`. See `docs/SESSION-14-ARCHITECTURE.md`.* |
 | `packages/engine/tests/test_rtl.py` | 23 tests, RTL detection + column flip |
 | `packages/engine/tests/test_gates.py` | 6 tests, interstitial dismissal + identical-content warning |
 | `packages/engine/tests/test_shadow_dom.py` | 10 tests, shadow-root piercing + template flattening |

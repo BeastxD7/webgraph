@@ -80,7 +80,8 @@ class Strategy(StrEnum):
     """Cheap path. Used when rendering is unavailable or explicitly disabled."""
 
     RENDERED_ONLY = "rendered-only"
-    """Static fetch failed or returned nothing usable."""
+    """The browser's document alone. Reported when the static fetch failed or returned
+    nothing usable; requestable when the static HTML is known to be a decoy."""
 
     UNION = "union"
     """Both representations obtained and merged. The completeness path."""
@@ -299,9 +300,24 @@ def resolve_page(
 ) -> ResolvedPage:
     """Resolve a page as completely as possible.
 
-    With `strategy` unset the decision is made per page: render whenever the profiler is not
-    confident the static HTML is complete, then union. Set `Strategy.STATIC_ONLY` for bulk
-    crawls where budget matters more than the last few percent.
+    `strategy` means exactly what it says, and unset means **complete**:
+
+    - `None` or `UNION`: fetch both ways and merge. This is the default because the module
+      docstring's measurement stands -- partial content loss cannot be predicted from the
+      static HTML, so there is no per-page heuristic that could safely skip the render. An
+      earlier version of this docstring promised one ("render whenever the profiler is not
+      confident"); the code never did that, and the promise was withdrawn rather than the
+      code changed. The per-*site* version of that decision does exist and is measured, not
+      predicted: `analyze_site` fetches the root both ways and recommends `STATIC_ONLY` only
+      when the comparison found the static HTML complete.
+    - `STATIC_ONLY`: never render, even when the static HTML is visibly a shell. The caller
+      chose budget over completeness and the profile says so via `requires_render`.
+    - `RENDERED_ONLY`: the browser's document alone, falling back to static only when the
+      render fails. For pages whose static HTML is known to be a decoy -- a consent
+      interstitial served to non-browsers -- that the union would otherwise merge in.
+
+    Rendering silently degrades to `STATIC_ONLY` when Playwright is not installed or the
+    render fails; `render_error` on the result says which.
     """
     static_result = fetch_static(url, config=fetch_config)
 
@@ -335,13 +351,10 @@ def resolve_page(
             blocks_only_in_rendered=0,
         )
 
-    should_render = (
-        PLAYWRIGHT_AVAILABLE
-        and (strategy is Strategy.UNION or static_doc is None or static_doc.profile.requires_render
-             or strategy is None)
-    )
-
-    if not should_render:
+    # Everything that is not STATIC_ONLY renders. There is deliberately no profile check
+    # here: `requires_render` catches the empty shell, which is the case that needs no
+    # catching, and cannot see the 68% page -- see the module docstring.
+    if not PLAYWRIGHT_AVAILABLE:
         if static_doc is None:
             raise ValueError(f"could not resolve {url}: {static_result.error}")
         chars = len(static_doc.text)
@@ -385,13 +398,15 @@ def resolve_page(
         runtime=observed,
     )
 
-    if static_doc is None:
+    if static_doc is None or strategy is Strategy.RENDERED_ONLY:
         chars = len(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
             document=rendered_doc,
             strategy=Strategy.RENDERED_ONLY,
-            static_chars=0,
+            # What the static fetch held is still reported when it was obtained: a caller
+            # asking for the browser's view alone is entitled to know what it declined.
+            static_chars=len(static_doc.text) if static_doc is not None else 0,
             rendered_chars=chars,
             union_chars=chars,
             blocks_only_in_static=0,

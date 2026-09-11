@@ -19,22 +19,34 @@ from typing import Final, NamedTuple
 
 from lxml.html import HtmlElement
 
-from webgraph.profile.technology import RuntimeEvidence, detect_technologies
+from webgraph.profile.technology import (
+    RuntimeEvidence,
+    _prefiltered_search,
+    detect_technologies,
+    fold_for_prefilter,
+    required_literals,
+)
 from webgraph.types import StackProfile
 
 __all__ = ["FRAMEWORK_RULES", "profile_page"]
 
 
 class Rule(NamedTuple):
-    """A framework signature. `pattern` is matched against the raw HTML."""
+    """A framework signature. `pattern` is matched against the raw HTML.
+
+    `needles` are the literals `required_literals` reads off the pattern; the regex only
+    runs when one of them is present. Measured before the prefilter: these 22 rules cost
+    115 ms on a 250 KB page, every one a full case-insensitive scan of the markup.
+    """
 
     name: str
     pattern: re.Pattern[str]
     hint: str
+    needles: tuple[tuple[str, ...], ...] = ()
 
 
 def _rule(name: str, pattern: str, hint: str) -> Rule:
-    return Rule(name, re.compile(pattern, re.IGNORECASE), hint)
+    return Rule(name, re.compile(pattern, re.IGNORECASE), hint, required_literals(pattern))
 
 
 FRAMEWORK_RULES: Final[tuple[Rule, ...]] = (
@@ -102,8 +114,11 @@ def profile_page(
     frameworks: list[str] = []
     signals: list[str] = []
 
+    # Folded once and shared with `detect_technologies`: 1 ms per 250 KB, 8 ms per 2 MB.
+    folded = fold_for_prefilter(html)
+    seen: dict[str, bool] = {}
     for rule in FRAMEWORK_RULES:
-        if rule.pattern.search(html):
+        if _prefiltered_search(rule.pattern, rule.needles, folded, html, seen):
             frameworks.append(rule.name)
             signals.append(f"{rule.name}: {rule.hint}")
 
@@ -134,6 +149,7 @@ def profile_page(
         cookies=evidence.cookies,
         bundle_source=evidence.bundle_source,
         url=url,
+        folded=folded,
     )
     # The framework list stays the short client-side view; `technologies` is the full picture.
     for tech in technologies:

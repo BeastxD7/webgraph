@@ -29,11 +29,10 @@ class Modality(StrEnum):
     TEXT = "text"
     """Text nodes read from the rendered or parsed DOM."""
 
-    OCR = "ocr"
-    IMAGE = "image"
-    CHART = "chart"
-    VIDEO_TRANSCRIPT = "video-transcript"
-    VIDEO_FRAME = "video-frame"
+    # Only modalities something constructs are listed. `ocr`, `chart`, `image` and two video
+    # modalities were declared for three sessions and produced by nothing; an enum value that
+    # appears in the API schema is a claim about capability, and these were false ones. Add a
+    # modality in the same change that adds the extractor producing it.
 
 
 class Extractor(StrEnum):
@@ -46,12 +45,11 @@ class Extractor(StrEnum):
     STRUCTURED_DATA = "structured-data"
     """Zero-cost path: the page handed us the data. Always preferred."""
 
-    SELECTOR = "selector"
-    """Cached XPath replay. Zero model cost, but can silently rot -- see D5."""
-
     LLM = "llm"
-    VLM = "vlm"
-    ENSEMBLE = "ensemble"
+    """A language model reading the page text. Not yet built: it is the planned path that
+    turns each page into notes, entities and relationships for the graph, and it is declared
+    here so `Fact.outranks` already knows where it sits. `selector`, `ensemble` and `vlm`
+    were declared alongside it, had no plan, and were removed."""
 
 
 class Verification(StrEnum):
@@ -60,7 +58,8 @@ class Verification(StrEnum):
     VERIFIED = "verified"
     UNVERIFIED = "unverified"
     """Excluded from change alerts. A visually-inferred number misread twice in a row
-    is exactly the phantom alert that drives users away (PRD v3 3.3)."""
+    is exactly the phantom alert that drives users away (PRD v3 3.3). Nothing produces it
+    yet; the model path will, and the field exists so that path cannot forget to."""
 
 
 class ReadingOrderMethod(StrEnum):
@@ -235,11 +234,8 @@ class Fact(BaseModel):
         and the latter is a guess. Within the same extractor tier, higher confidence wins.
         """
         rank = {
-            Extractor.STRUCTURED_DATA: 4,
-            Extractor.SELECTOR: 3,
-            Extractor.ENSEMBLE: 2,
-            Extractor.LLM: 1,
-            Extractor.VLM: 0,
+            Extractor.STRUCTURED_DATA: 1,
+            Extractor.LLM: 0,
         }
         mine = rank[self.provenance.extractor]
         theirs = rank[other.provenance.extractor]
@@ -307,7 +303,12 @@ class Document(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     url: str
-    html: str
+    html: str = ""
+    """The markup this document was built from. Empty on documents a crawl has finished
+    with: the crawler reads it once, for links, and then drops it, because it is the largest
+    field by an order of magnitude and nothing downstream of link extraction needs it. A
+    document built directly by `build_document` always carries it."""
+
     blocks: tuple[Block, ...]
     """In reading order -- see `reading_order_method` for how that was established."""
 

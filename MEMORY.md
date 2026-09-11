@@ -308,7 +308,7 @@ therefore the correct choice, for a licensing reason the original research misse
 
 - `crawl/frontier.py` — URL normalisation, scoping, BFS frontier
 - `crawl/discovery.py` — robots.txt, sitemap enumeration, link/canonical extraction
-- `crawl/crawler.py` — batched-parallel BFS crawl with content-hash gating
+- `crawl/crawler.py` — batched-parallel BFS crawl with content-hash gating *(deleted in session 14: `stream_site` superseded it and nothing imported it)*
 - `resolve.py` — the union strategy
 - `analyze.py` + `webgraph analyze` — Stage 0: technology, measured render verdict, page count
 
@@ -2443,3 +2443,115 @@ Two lessons. An agent's claim of validation is not validation; the artifact has 
 And a benchmark harness pinned to a code snapshot is the only way to get a comparable number
 while the engine is being edited -- the first WCEB run was discarded because `main_content.py`
 changed underneath it.
+
+## Session 14 — architecture fixes (branch `architecture-fixes`)
+
+The user's instruction: "if you feel that something is off, just fix it... whatever it
+takes." The architecture review had listed twelve issues; the ones below were fixed, and one
+was found by measurement while fixing another and turned out to be the largest.
+
+### D87 — The precision fix was finished work that nothing shipped
+
+`main_content.py` (Zyte 0.647 -> 0.872, WCXB +0.065 across seven page types, CleanEval +2.2)
+was imported by six benchmark scripts and zero product paths. The crawl applied landmarks and
+cross-page chrome; `/api/text` applied landmarks only; the selector ran nowhere a user could
+reach. Two definitions of "the content" that disagreed with each other, and the best one
+absent from both.
+
+Fixed with one module, `content.py`, whose `select_content` is *the* decision -- landmarks,
+then site chrome (when a crawl has one), then the main-content boundary -- returning a
+`ContentSelection` that says which steps fired. The crawl's `content_markdown`, `/api/text`,
+`webgraph text --content` and the Zyte benchmark's `webgraph_content` variant all call it.
+Order matters: the selector's adaptive cost is a multiple of mean block length, and a page
+still carrying its navigation has a shorter mean.
+
+Measured after wiring: `webgraph_content` on Zyte = **F1 0.872, P 0.795, R 0.966**, identical
+to the benchmark-only composition, so nothing was lost in the plumbing. Recall stays above
+every system ranked higher.
+
+### D88 — The root was fetched three times, robots and sitemaps twice
+
+`stream_site` called `resolve_root` (static GET to follow redirects), then `analyze_site`
+(static + render), then queued the root as the first crawl page (static + render again), and
+loaded robots.txt and walked the sitemaps once in analysis and once for the frontier.
+Measured on quotes.toscrape.com, 6 pages static-only: **14 GETs before, 9 after; root 3 -> 1,
+robots 2 -> 1, sitemap probes 4 -> 2; 11.4 s -> 7.3 s.** With rendering on, that is also two
+browser renders of the root saved per crawl.
+
+Fixed by making Stage 0 keep what it fetched: `probe_site` returns a `SiteProbe` (analysis +
+resolved root page + robots policy + sitemap URLs), `analyze_site` is now `probe_site(...)
+.analysis`, and the crawl's first result is the already-resolved root via
+`_page_from_resolved` -- the same accounting as every other page, with `Frontier.mark_seen`
+so a link back to the root is neither re-queued nor counted as a discovery. The redirect is
+read off the resolved page's URL instead of a separate fetch, so `SiteAnalysis.root` is now
+the *landed* URL (it was the requested one).
+
+### D89 — Every page's HTML was retained until the crawl ended
+
+`Document.html` is read exactly once after extraction, for links, and is the largest field a
+page carries: on a 2 MB Wikipedia article the blocks hold 1.1 MB and the HTML 2.1 MB. The
+crawl kept every `PageExtraction` -- HTML included -- in `all_pages` for entity aggregation
+at the end, so an unbounded crawl held the whole site's markup to compute a handful of counts.
+
+`Document.html` now defaults to `""` and the crawl drops it the moment links are read
+(`_without_html`). Blocks, payloads and profile stay, because chrome detection and
+aggregation read them. Pages returned by `extract_site` carry no HTML either; a `Document`
+built directly by `build_document` always does.
+
+### D90 — `strategy=None` promised a heuristic the code never had
+
+`resolve_page`'s docstring: "with `strategy` unset ... render whenever the profiler is not
+confident the static HTML is complete". The expression was
+`strategy is UNION or static_doc is None or profile.requires_render or strategy is None` --
+so with `None` the profile check was unreachable and every page rendered. And
+`Strategy.RENDERED_ONLY`, passed in explicitly, fell through to a static-only result.
+
+Resolved in favour of the code, because the module's own measurement says the docstring was
+wrong: partial loss cannot be predicted from static HTML, so there is no safe per-page
+heuristic. `None` = complete = UNION; `STATIC_ONLY` never renders, even for a shell;
+`RENDERED_ONLY` now actually returns the browser's document (falling back to static only on
+render failure, and still reporting `static_chars`). The per-*site* version of the skipped
+heuristic exists and is measured -- `analyze_site` compares the root both ways and recommends
+`STATIC_ONLY` only when static was shown complete. Pinned by `test_resolve_strategy.py`.
+
+### D91 — `detect_technologies` was 77% of `build_document`
+
+Found while measuring the two-parse cost in `pipeline.py`, which turned out to be 37 ms of a
+**6.3 s** `build_document` on a 2 MB page (0.89 s on 250 KB). Profiling: 116 `TechRule.html`
+regexes, every one `re.IGNORECASE`, every one scanned over the *full raw HTML* of *every
+page* -- ~10 ms each per 250 KB regardless of pattern, 563 ms total; 4.8 s on the 2 MB page.
+This ran per page in every crawl, on a GIL-bound thread pool, so it also serialised the
+workers. The two-parse "fix" I had planned would have saved 22 ms next to it.
+
+Fixed with an automatic required-literal prefilter in `profile/technology.py` -- measured
+`build_document` 773 -> 128 ms (250 KB) and 6323 -> 1114 ms (2 MB); `detect_technologies`
+582 -> 46 ms and 4928 -> 630 ms; 193 pages x 2 URL modes, 0 output differences: derive from each pattern the ASCII literals at least one of
+which must occur for the regex to match, lowercase the HTML once, and run the regex only
+when a literal is present. Correctness was proven by equivalence -- identical output with the
+prefilter on and off across the fixture set, 181 Zyte pages and the two large pages -- not by
+reasoning about regexes. `pipeline.py` also now copies the parsed tree (15 ms per 2 MB)
+instead of parsing twice (37 ms).
+
+Lesson: I proposed "halve parse cost" from reading the code. The first measurement showed
+parse was 0.6% of the cost. Measure before proposing, even for the things that look obvious.
+
+### D92 — Dead code and false capability claims removed
+
+- `crawl/crawler.py` (277 lines): no importer anywhere; `stream_site` superseded it. Deleted.
+- `Extractor.SELECTOR/ENSEMBLE/VLM`, `Modality.OCR/IMAGE/CHART/VIDEO_TRANSCRIPT/VIDEO_FRAME`:
+  declared for three sessions, constructed by nothing, visible in the API schema as
+  capabilities. Removed. `Extractor.LLM` and `Verification.UNVERIFIED` stay because the model
+  path is the stated next product step and they are its contract.
+- `webgraph analyze --json` was broken: `SiteAnalysis` is a `slots=True` dataclass and
+  `analysis.__dict__` raised. Now `asdict`.
+- ~176 lines of JavaScript in three Python strings moved to `fetch/js/*.js`, and the three
+  `data-wg-*` marker names -- which lived in Python twice and in the JS three times -- now
+  come from one module, `markers.py`, passed to the scripts as an argument.
+  `test_markers.py` asserts no `.js` file contains the literal.
+
+### Deferred, deliberately
+
+Async Playwright (one browser, N pages, no thread-local pool) is the remaining structural
+item. It is the largest change, touches `fetch/browser.py`, `render.py`, `site.py` and the
+API's threading model, and nothing above depends on it. Do it as its own branch with its own
+measurement.

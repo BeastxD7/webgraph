@@ -244,6 +244,22 @@ class Frontier:
     def add_many(self, urls: list[str], depth: int, *, base: str | None = None) -> int:
         return len(self.extend(urls, depth, base=base))
 
+    def mark_seen(self, url: str) -> bool:
+        """Record `url` as visited without queuing it. Returns whether it was new.
+
+        For a page the caller already holds -- the root, which site analysis fetched before
+        the crawl began -- so the frontier neither re-queues it nor counts it as undiscovered
+        when a later page links back to it.
+        """
+        normalized = normalize_url(url)
+        if normalized is None:
+            return False
+        key = canonical_key(normalized)
+        if key in self._seen:
+            return False
+        self._seen.add(key)
+        return True
+
     def pop(self) -> tuple[str, int] | None:
         return self._queue.popleft() if self._queue else None
 

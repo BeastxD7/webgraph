@@ -140,6 +140,9 @@ packages/engine/          # the extraction engine — no HTTP, no UI, importable
     pipeline.py           # HTML -> Document (blocks, order, provenance)
     site.py               # the interleaved crawl+extract generator
     boilerplate.py        # cross-page site-chrome detection
+    main_content.py       # max-subarray main-content boundary (measured, opt-in per call)
+    content.py            # THE content decision: landmarks -> chrome -> main content
+    markers.py            # data-wg-* attribute contract between fetch/js/*.js and dom/
     render_markdown.py    # Document -> Markdown
     types.py              # Block, Document, Fact, Rect, Verification
     crawl/                # frontier, normalisation, robots, sitemaps, discovery

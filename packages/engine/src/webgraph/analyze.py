@@ -31,7 +31,7 @@ from webgraph.profile.technology import (
 )
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 
-__all__ = ["SiteAnalysis", "analyze_site"]
+__all__ = ["SiteAnalysis", "SiteProbe", "analyze_site", "probe_site"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,17 +147,40 @@ class SiteAnalysis:
         return "\n".join(lines)
 
 
-def analyze_site(
+@dataclass(frozen=True, slots=True)
+class SiteProbe:
+    """Everything Stage 0 fetched, kept so the crawl that follows can reuse it.
+
+    `analyze_site` used to return only the verdict, and the crawl then fetched the root
+    again: once statically to follow redirects, once both ways for the verdict, and once more
+    as the first page of the crawl -- three static fetches and two browser renders of one
+    URL, plus robots.txt and every sitemap read twice. The page the analysis measured *is*
+    the root page; discarding it and re-fetching it was work with no information in it.
+
+    The verdict stays the public, serialisable `SiteAnalysis`. This holds the rest.
+    """
+
+    analysis: SiteAnalysis
+    resolved: ResolvedPage | None = None
+    """The root page, as fully as the site allowed. None when unreachable."""
+
+    policy: RobotsPolicy | None = None
+    sitemap_pages: tuple[str, ...] = ()
+    """Page URLs the sitemaps advertise, up to the caller's limit. Unfiltered by host: the
+    analysis reports how many pointed elsewhere, and the frontier applies its own scope."""
+
+
+def probe_site(
     root: str,
     *,
     fetch_config: FetchConfig | None = None,
     render_config: RenderConfig | None = None,
     sitemap_limit: int = 5000,
-) -> SiteAnalysis:
-    """Profile a site: technology, rendering behaviour, and public page count."""
+) -> SiteProbe:
+    """Stage 0, keeping what it fetched. `analyze_site` is this with only the verdict."""
     normalized = normalize_url(root)
     if normalized is None:
-        return SiteAnalysis(root=root, reachable=False, error="not a crawlable URL")
+        return SiteProbe(SiteAnalysis(root=root, reachable=False, error="not a crawlable URL"))
 
     notes: list[str] = []
 
@@ -169,9 +192,19 @@ def analyze_site(
             render_config=render_config,
         )
     except PageMissingError as exc:
-        return SiteAnalysis(root=normalized, reachable=False, error=str(exc))
+        return SiteProbe(SiteAnalysis(root=normalized, reachable=False, error=str(exc)))
     except ValueError as exc:
-        return SiteAnalysis(root=normalized, reachable=False, error=str(exc))
+        return SiteProbe(SiteAnalysis(root=normalized, reachable=False, error=str(exc)))
+
+    # The root is the URL the site *served*, not the one requested. Scoping a crawl to the
+    # requested host silently kills it when the two differ: `docs.pydantic.dev/latest/`
+    # redirects to `pydantic.dev/docs/...`, and every link on the destination was then
+    # rejected as off-site. The redirect was already followed to obtain the page above, so
+    # the answer is free here; fetching the root a separate time to learn it was not.
+    landed = normalize_url(resolved.url) or normalized
+    if landed != normalized:
+        notes.append(f"redirected: {normalized} -> {landed}")
+        normalized = landed
 
     if not PLAYWRIGHT_AVAILABLE:
         notes.append(
@@ -235,7 +268,7 @@ def analyze_site(
             if gained > 0:
                 notes.append(f"{gained} further technologies identified from bundle source")
 
-    return SiteAnalysis(
+    analysis = SiteAnalysis(
         root=normalized,
         reachable=True,
         frameworks=document.profile.frameworks,
@@ -261,3 +294,25 @@ def analyze_site(
         sample_pages=tuple(on_site[:8]),
         notes=tuple(notes),
     )
+    return SiteProbe(
+        analysis=analysis,
+        resolved=resolved,
+        policy=policy,
+        sitemap_pages=tuple(sitemap_pages),
+    )
+
+
+def analyze_site(
+    root: str,
+    *,
+    fetch_config: FetchConfig | None = None,
+    render_config: RenderConfig | None = None,
+    sitemap_limit: int = 5000,
+) -> SiteAnalysis:
+    """Profile a site: technology, rendering behaviour, and public page count."""
+    return probe_site(
+        root,
+        fetch_config=fetch_config,
+        render_config=render_config,
+        sitemap_limit=sitemap_limit,
+    ).analysis
