@@ -9,10 +9,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from webgraph.analyze import analyze_site
+from webgraph.content import select_content
 from webgraph.eval.harness import format_report, load_corpus, run_corpus
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
@@ -94,6 +96,18 @@ def _cmd_text(args: argparse.Namespace) -> int:
     html, geometry, url = _load_source(args.url, render=args.render, quiet=args.quiet)
     document = build_document(html, url, geometry=geometry, rtl=True if args.rtl else None)
 
+    if args.content:
+        # The same reduction the crawl applies -- landmarks, then the main-content boundary.
+        # A single page has no cross-page chrome profile, and says so via the method list.
+        selection = select_content(document.blocks)
+        document = document.model_copy(update={"blocks": tuple(selection.blocks)})
+        if not args.quiet:
+            print(
+                f"# content: {selection.kept}/{selection.total} blocks kept"
+                + (f" ({', '.join(selection.methods)})" if selection.methods else ""),
+                file=sys.stderr,
+            )
+
     if args.markdown:
         print(to_markdown(document, options=MarkdownOptions(front_matter=args.front_matter)))
         return 0
@@ -138,7 +152,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     """Stage 0: identify the stack, measure whether rendering is needed, count public pages."""
     analysis = analyze_site(args.url)
     if args.json:
-        print(json.dumps(analysis.__dict__, indent=2, default=str))
+        print(json.dumps(asdict(analysis), indent=2, default=str))
     else:
         print(analysis.report())
     return 0 if analysis.reachable else 1
@@ -364,6 +378,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     text.add_argument(
         "--front-matter", action="store_true", help="prepend YAML front matter (with --markdown)"
+    )
+    text.add_argument(
+        "--content", "-c", action="store_true",
+        help="keep only the page's content: navigation, footers and boilerplate removed",
     )
     text.set_defaults(func=_cmd_text)
 

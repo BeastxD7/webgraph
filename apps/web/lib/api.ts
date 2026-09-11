@@ -87,8 +87,13 @@ export interface TextResponse {
   text: string;
   /** Structure-preserving Markdown: headings, images, links, tables, code. */
   markdown: string;
-  /** The same page with `<nav>` and `<footer>` removed. Empty when it declares neither. */
+  /** The page reduced to its content: `<nav>`/`<footer>` removed, then the main-content
+   *  boundary drawn around the densest run of prose. Empty when nothing was removed. */
   content_markdown: string;
+  /** Steps that removed something, in order: "landmarks", "main-content". */
+  content_methods: string[];
+  /** Blocks kept in `content_markdown`, out of `page.blocks`. */
+  content_blocks: number;
   images: string[];
   tables: number;
 }
@@ -335,8 +340,15 @@ export interface PageEvent {
   error: string | null;
   chars: number;
   markdown: string;
-  /** Same page with site chrome removed. Empty when chrome could not be identified. */
+  /** The page reduced to its content: landmarks, cross-page chrome and boilerplate removed,
+   *  then the main-content boundary drawn. Empty when nothing was removed. */
   content_markdown: string;
+  /** Blocks kept in `content_markdown`, out of `blocks`. Null when content selection is off. */
+  content_blocks: number | null;
+  /** Which steps removed something, in order: "landmarks", "site-chrome", "main-content". */
+  content_methods: string[];
+  /** Blocks in the complete document. */
+  blocks: number;
   images: string[];
   tables: number;
   strategy: string | null;

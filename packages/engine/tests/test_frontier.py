@@ -197,3 +197,45 @@ class TestCanonicalKey:
         queued = frontier.pop()
         assert queued is not None
         assert queued[0] == "https://www.solidjs.com/store"
+
+
+class TestMarkSeen:
+    """A page the caller already holds is visited, not queued.
+
+    The root is fetched by site analysis before the crawl begins; the frontier must neither
+    queue it again nor treat a later link back to it as a discovery.
+    """
+
+    def test_marked_url_is_not_queued(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
+        assert frontier.mark_seen("https://example.test/") is True
+        assert len(frontier) == 0
+        assert frontier.seen_count == 1
+
+    def test_marked_url_is_rejected_when_linked_later(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
+        frontier.mark_seen("https://example.test/")
+        assert frontier.add("https://example.test/", 1) is False
+        assert frontier.add("https://www.example.test/", 1) is False
+        assert frontier.extend(["https://example.test/", "https://example.test/a"], 1) == [
+            "https://example.test/a"
+        ]
+
+    def test_marking_twice_is_idempotent(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
+        assert frontier.mark_seen("https://example.test/") is True
+        assert frontier.mark_seen("https://example.test/") is False
+        assert frontier.seen_count == 1
+
+    def test_garbage_is_ignored(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
+        assert frontier.mark_seen("not a url") is False
+        assert frontier.seen_count == 0

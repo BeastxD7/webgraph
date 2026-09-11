@@ -29,7 +29,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from webgraph.boilerplate import strip_landmarks
+from webgraph.content import select_content
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch import guard
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
@@ -231,9 +231,18 @@ class TextResponse(BaseModel):
     )
     content_markdown: str = Field(
         default="",
-        description="The same page with `<nav>` and `<footer>` removed. Empty when the page "
-        "declares neither. Cross-page chrome detection needs a whole crawl; landmarks are "
-        "declared on the page itself, so a single page gets this much.",
+        description="The page reduced to its content: `<nav>`/`<footer>` landmarks removed, "
+        "then the main-content boundary drawn around the densest run of prose. Empty when "
+        "nothing was removed. Cross-page chrome removal needs a whole crawl and is applied "
+        "only there; `content_methods` says which steps fired here.",
+    )
+    content_methods: list[str] = Field(
+        default_factory=list,
+        description="Steps that removed something to produce `content_markdown`, in order: "
+        "any of `landmarks`, `main-content`.",
+    )
+    content_blocks: int = Field(
+        default=0, description="Blocks kept in `content_markdown`, out of `page.blocks`."
     )
     images: list[str] = Field(default_factory=list, description="Absolute image URLs found")
     tables: int = Field(default=0, description="Tables extracted with their rows intact")
@@ -366,12 +375,15 @@ async def get_text(request: TextRequest) -> TextResponse:
     images = [b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href]
     tables = sum(1 for b in document.blocks if b.kind is BlockKind.TABLE)
 
-    kept = strip_landmarks(list(document.blocks))
+    # The same reduction the crawl applies, minus cross-page chrome, which one page cannot
+    # know. One function decides what "content" means -- see `webgraph.content`.
+    selection = select_content(document.blocks)
     content = (
         to_markdown(
-            document.model_copy(update={"blocks": tuple(kept)}), options=MarkdownOptions()
+            document.model_copy(update={"blocks": tuple(selection.blocks)}),
+            options=MarkdownOptions(),
         )
-        if len(kept) != len(document.blocks)
+        if selection.changed
         else ""
     )
 
@@ -380,6 +392,8 @@ async def get_text(request: TextRequest) -> TextResponse:
         text=document.text,
         markdown=to_markdown(document, options=MarkdownOptions()),
         content_markdown=content,
+        content_methods=list(selection.methods),
+        content_blocks=selection.kept,
         images=images,
         tables=tables,
     )

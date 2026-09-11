@@ -130,6 +130,7 @@ def variants(blocks: Sequence[Block]) -> dict[str, str]:
     work and would let a non-deterministic parse make the variants incomparable.
     """
     from webgraph.boilerplate import strip_landmarks
+    from webgraph.content import select_content
 
     kept = strip_landmarks(blocks)
     prose = [b for b in blocks if b.kind.value in PROSE_KINDS]
@@ -139,6 +140,10 @@ def variants(blocks: Sequence[Block]) -> dict[str, str]:
         "webgraph_landmarks": join(kept),
         "webgraph_prose": join(prose),
         "webgraph_prose_landmarks": join(prose_kept),
+        # The production path: what `/api/text`, `webgraph text --content` and every crawl
+        # page's `content_markdown` actually ship. Scored so the leaderboard number is the
+        # product's number, not a benchmark-only composition.
+        "webgraph_content": join(select_content(blocks).blocks),
     }
 
 

@@ -20,6 +20,7 @@ from lxml import etree
 from lxml.html import HtmlElement
 
 from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
+from webgraph.markers import BREAK_ATTRIBUTE
 from webgraph.types import Block, BlockKind
 
 __all__ = ["extract_rich_blocks"]
@@ -79,14 +80,6 @@ def _inline_markdown(element: HtmlElement, base: str) -> str:
     return normalize_text("".join(parts))
 
 
-BREAK_ATTRIBUTE: Final[str] = "data-wg-brk"
-"""Stamped by the renderer on elements the browser lays out as their own box.
-
-Mirrors `fetch.render.BREAK_ATTRIBUTE`. Absent on a static fetch, where `flowed_text` then
-behaves exactly as `text_content()` did -- a page nobody rendered gets no layout claims.
-"""
-
-
 def flowed_text(element: HtmlElement) -> str:
     """`text_content()`, but honouring the line boxes the browser actually laid out.
 
@@ -105,6 +98,10 @@ def flowed_text(element: HtmlElement) -> str:
     """
     parts: list[str] = [element.text or ""]
     for child in element:
+        # BREAK_ATTRIBUTE is stamped by the renderer (`fetch/js/collect.js`) on elements the
+        # browser laid out as their own box. Absent on a static fetch, so this branch never
+        # fires and the function behaves exactly as `text_content()` did -- a page nobody
+        # rendered gets no layout claims.
         if isinstance(child.tag, str) and child.get(BREAK_ATTRIBUTE) is not None:
             parts.append(" ")
         parts.append(flowed_text(child))

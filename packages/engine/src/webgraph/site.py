@@ -20,18 +20,15 @@ import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
-from webgraph.analyze import SiteAnalysis, analyze_site
+from webgraph.analyze import SiteAnalysis, SiteProbe, probe_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
-from webgraph.boilerplate import (
-    SiteChrome,
-    detect_site_chrome,
-    strip_landmarks,
-    strip_site_chrome,
-)
+from webgraph.boilerplate import SiteChrome, detect_site_chrome
+from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
+    RobotsPolicy,
     discover_by_crawling,
     discover_sitemap_urls,
     extract_links,
@@ -43,7 +40,7 @@ from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.resolve import PageMissingError, Strategy, resolve_page
+from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
 
 IDENTICAL_CONTENT_WARNING: Final[int] = 3
@@ -101,11 +98,18 @@ class SiteConfig:
     respect_robots: bool = True
 
     remove_chrome: bool = True
-    """Emit a chrome-stripped `content_markdown` alongside the full Markdown.
+    """Emit `content_markdown` -- the page with landmarks, site chrome and boilerplate
+    removed -- alongside the full Markdown. See `webgraph.content`.
 
-    Requires several pages before it can say anything, so the first few page events are held
-    back briefly (see `stream_site`). Costs nothing at crawl time -- it is computed from
-    blocks already extracted."""
+    Landmarks apply from the first page. Cross-page chrome needs several pages to exist
+    before it can say anything and is applied from then on. Costs nothing at crawl time --
+    it is computed from blocks already extracted."""
+
+    main_content: bool = True
+    """Also draw the main-content boundary (`webgraph.main_content`) when producing
+    `content_markdown`. Off, the structural steps alone run: for a crawl whose pages are
+    link hubs by design, where the list of links *is* the content."""
+
     strategy: Strategy | None = None
     """Overrides the strategy Stage 0 recommends. Leave unset to use the measured verdict."""
 
@@ -190,8 +194,13 @@ class PageExtraction:
     """Structure-preserving output: headings, images, tables, code, in reading order."""
 
     content_markdown: str = ""
-    """The same page with site chrome removed. Empty until enough pages exist to identify
-    chrome; never a substitute for `markdown`, always an addition to it."""
+    """The same page reduced to its content -- see `webgraph.content.select_content`. Empty
+    when nothing was removed, so a consumer need not hold two copies of one page; never a
+    substitute for `markdown`, always an addition to it."""
+
+    content_methods: tuple[str, ...] = ()
+    """Which steps produced `content_markdown`: any of `landmarks`, `site-chrome`,
+    `main-content`. Empty when it is empty."""
 
     images: tuple[str, ...] = ()
     tables: int = 0
@@ -347,7 +356,7 @@ def verify_inventory(
 
 
 def build_inventory(
-    root: str, *, config: SiteConfig | None = None
+    root: str, *, config: SiteConfig | None = None, probe: SiteProbe | None = None
 ) -> PageInventory:
     """Stage 1: enumerate the site's pages from every available source, then verify.
 
@@ -362,8 +371,16 @@ def build_inventory(
     broken sitemap and found 4 pages where the site actually serves dozens.
     """
     config = config or SiteConfig()
-    root = resolve_root(root, config=config.fetch)
-    policy = load_robots(root, config=config.fetch)
+    policy: RobotsPolicy
+    if probe is not None and probe.analysis.reachable and probe.policy is not None:
+        # Stage 0 already followed the redirect, read robots.txt and walked the sitemaps.
+        root = probe.analysis.root
+        policy = probe.policy
+        sitemap_pages: Iterable[str] = probe.sitemap_pages
+    else:
+        root = resolve_root(root, config=config.fetch)
+        policy = load_robots(root, config=config.fetch)
+        sitemap_pages = discover_sitemap_urls(root, policy=policy, config=config.fetch)
 
     candidates: list[str] = []
     seen: set[str] = set()
@@ -378,9 +395,7 @@ def build_inventory(
                 added += 1
         return added
 
-    from_sitemap = add(
-        discover_sitemap_urls(root, policy=policy, config=config.fetch)
-    )
+    from_sitemap = add(sitemap_pages)
 
     from_crawl = 0
     if config.follow_links:
@@ -436,21 +451,13 @@ def build_inventory(
     )
 
 
-def _extract_one(
-    url: str, schema: dict[str, Any] | None, strategy: Strategy, config: SiteConfig
-) -> PageExtraction:
-    try:
-        resolved = resolve_page(
-            url,
-            strategy=strategy,
-            fetch_config=config.fetch,
-            render_config=config.render,
-        )
-    except PageMissingError as exc:
-        return PageExtraction(url=url, error=f"HTTP {exc.status}")
-    except ValueError as exc:
-        return PageExtraction(url=url, error=str(exc))
+def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -> PageExtraction:
+    """Everything a crawl records about one page, from a page already resolved.
 
+    Split from `_extract_one` so the root -- which Stage 0 has already fetched both ways --
+    goes through exactly the same accounting as every other page instead of being fetched
+    a second time to reach it.
+    """
     document = resolved.document
     facts: dict[str, Fact] = {}
     if schema:
@@ -477,6 +484,65 @@ def _extract_one(
         tables=tables,
         title=heading,
     )
+
+
+def _extract_one(
+    url: str, schema: dict[str, Any] | None, strategy: Strategy, config: SiteConfig
+) -> PageExtraction:
+    try:
+        resolved = resolve_page(
+            url,
+            strategy=strategy,
+            fetch_config=config.fetch,
+            render_config=config.render,
+        )
+    except PageMissingError as exc:
+        return PageExtraction(url=url, error=f"HTTP {exc.status}")
+    except ValueError as exc:
+        return PageExtraction(url=url, error=str(exc))
+    return _page_from_resolved(resolved, schema)
+
+
+def _without_html(page: PageExtraction) -> PageExtraction:
+    """The same page, minus the markup it was built from.
+
+    The HTML is read exactly once after extraction -- for links -- and is the largest thing
+    a page carries by an order of magnitude: on a 2 MB Wikipedia article the blocks hold
+    1.1 MB, the HTML 2.1 MB, and a crawl that keeps every page's HTML for the aggregation at
+    the end holds the whole site in memory to compute a handful of entity counts. The blocks
+    stay, because chrome detection and aggregation read them; the markup goes.
+    """
+    if page.document is None or not page.document.html:
+        return page
+    return replace(page, document=page.document.model_copy(update={"html": ""}))
+
+
+def _content_of(
+    page: PageExtraction, chrome: SiteChrome | None, config: SiteConfig
+) -> tuple[str, ContentSelection | None]:
+    """`content_markdown` for one page, and the selection that produced it."""
+    if not config.remove_chrome or page.document is None:
+        return "", None
+    selection = select_content(
+        page.document.blocks, chrome=chrome, main_content=config.main_content
+    )
+    if not selection.changed:
+        return "", selection
+    markdown = to_markdown(
+        page.document.model_copy(update={"blocks": tuple(selection.blocks)}),
+        options=MarkdownOptions(),
+    )
+    return markdown, selection
+
+
+def _chrome_for(pages: Iterable[PageExtraction], config: SiteConfig) -> SiteChrome | None:
+    """Cross-page chrome, once enough pages exist to say anything; None before that."""
+    if not config.remove_chrome:
+        return None
+    documents = [p.document for p in pages if p.document is not None]
+    if len(documents) < MIN_CHROME_PAGES:
+        return None
+    return detect_site_chrome([d.blocks for d in documents])
 
 
 def _aggregate_entities(pages: Iterable[PageExtraction]) -> tuple[SiteEntity, ...]:
@@ -527,22 +593,35 @@ def extract_site(
     if normalized_root is None:
         raise ValueError(f"not a crawlable URL: {root}")
 
-    analysis = analyze_site(
-        normalized_root, fetch_config=config.fetch, render_config=config.render
-    )
+    probe = probe_site(normalized_root, fetch_config=config.fetch, render_config=config.render)
+    analysis = probe.analysis
+    if analysis.reachable:
+        normalized_root = analysis.root
     strategy = config.strategy or analysis.recommended_strategy
 
-    inventory = build_inventory(normalized_root, config=config)
+    inventory = build_inventory(normalized_root, config=config, probe=probe)
 
-    targets = list(inventory.live)[: config.max_pages]
-    if normalized_root not in targets:
-        targets.insert(0, normalized_root)
-        targets = targets[: config.max_pages]
+    targets = [u for u in inventory.live if u != normalized_root][: max(config.max_pages - 1, 0)]
 
     with ThreadPoolExecutor(max_workers=max(1, config.concurrency)) as pool:
-        pages = tuple(
-            pool.map(lambda u: _extract_one(u, schema, strategy, config), targets)
-        )
+        others = list(pool.map(lambda u: _extract_one(u, schema, strategy, config), targets))
+
+    # The root was fetched by Stage 0; it is the first page, not a fourth fetch of one URL.
+    first = (
+        _page_from_resolved(probe.resolved, schema)
+        if probe.resolved is not None
+        else _extract_one(normalized_root, schema, strategy, config)
+    )
+    pages = [_without_html(first), *(_without_html(p) for p in others)]
+
+    chrome = _chrome_for(pages, config)
+    pages = [
+        replace(page, content_markdown=markdown, content_methods=selection.methods)
+        if selection is not None and markdown
+        else page
+        for page in pages
+        for markdown, selection in [_content_of(page, chrome, config)]
+    ]
 
     entities = _aggregate_entities(pages)
 
@@ -558,13 +637,38 @@ def extract_site(
         root=normalized_root,
         analysis=analysis,
         inventory=inventory,
-        pages=pages,
+        pages=tuple(pages),
         entities=entities,
         site_facts={k: tuple(v) for k, v in site_facts.items()},
         fact_sources={k: tuple(dict.fromkeys(v)) for k, v in fact_sources.items()},
         schema_supplied=schema is not None,
         duration_seconds=time.monotonic() - started,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class _Fetched:
+    """One page as the crawl loop consumes it: extracted, with its links already read."""
+
+    page: PageExtraction
+    depth: int
+    links: list[str]
+    canonical: str | None
+    anchored: list[tuple[str, str]]
+    requested: str
+
+
+def _fetched(page: PageExtraction, depth: int, requested: str, root: str) -> _Fetched:
+    """Read a page's links, then let go of its HTML -- the only thing that needed it."""
+    links: list[str] = []
+    anchored: list[tuple[str, str]] = []
+    canonical: str | None = None
+    if page.document is not None and page.document.html:
+        found = extract_links(page.document.html, page.url)
+        links = [reconcile_scheme(link, root) for link in found.links]
+        anchored = [(reconcile_scheme(href, root), text) for href, text in found.anchored]
+        canonical = found.canonical
+    return _Fetched(_without_html(page), depth, links, canonical, anchored, requested)
 
 
 def stream_site(
@@ -586,7 +690,8 @@ def stream_site(
     With `max_pages = 0` the crawl is unbounded: it runs until the frontier is exhausted.
     Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
 
-    Events carry a `type`: `stage`, `analysis`, `frontier`, `page`, `done`, `error`.
+    Events carry a `type`: `stage`, `analysis`, `frontier`, `page`, `warning`, `done`,
+    `error`.
 
     `builder`, when supplied, is filled in as pages arrive. It belongs to the caller rather
     than being returned, because a generator has no way to hand back an object mid-stream and
@@ -597,6 +702,10 @@ def stream_site(
     of renders is in flight -- so an abandoned crawl needs a flag it checks itself. Without
     one, a client that disconnects leaves a full-speed crawl running for the life of the
     process, and a handful of those is enough to starve every later request.
+
+    The root is fetched **once**. Stage 0 resolves it both ways to measure the site, and
+    that resolved page is the crawl's first result rather than being discarded and fetched
+    again. Before this the root cost three static fetches and two renders per crawl.
     """
     config = config or SiteConfig()
     started = time.monotonic()
@@ -606,25 +715,24 @@ def stream_site(
         yield {"type": "error", "message": f"not a crawlable URL: {root}"}
         return
 
-    # Scope on the URL the site actually serves, not the one requested. A cross-host
-    # redirect otherwise rejects every link as off-site.
-    effective_root = resolve_root(normalized_root, config=config.fetch)
-    if effective_root != normalized_root:
-        yield {
-            "type": "stage",
-            "stage": "analyze",
-            "message": f"Redirected to {effective_root}",
-        }
-        normalized_root = effective_root
-
     yield {"type": "stage", "stage": "analyze", "message": "Detecting technology stack"}
 
-    analysis = analyze_site(
-        normalized_root, fetch_config=config.fetch, render_config=config.render
+    probe = probe_site(
+        normalized_root,
+        fetch_config=config.fetch,
+        render_config=config.render,
+        sitemap_limit=config.sitemap_limit,
     )
-    if not analysis.reachable:
+    analysis = probe.analysis
+    if not analysis.reachable or probe.resolved is None or probe.policy is None:
         yield {"type": "error", "message": analysis.error or "site unreachable"}
         return
+
+    # Scope on the URL the site actually serves, not the one requested. A cross-host
+    # redirect otherwise rejects every link as off-site.
+    if analysis.root != normalized_root:
+        yield {"type": "stage", "stage": "analyze", "message": f"Redirected to {analysis.root}"}
+        normalized_root = analysis.root
 
     strategy = config.strategy or analysis.recommended_strategy
     yield {
@@ -644,15 +752,11 @@ def stream_site(
 
     yield {"type": "stage", "stage": "enumerate", "message": "Seeding from sitemap"}
 
-    policy = load_robots(normalized_root, config=config.fetch)
+    policy = probe.policy
     scope = CrawlScope(root=normalized_root, max_depth=config.discovery_depth)
     frontier = Frontier(scope=scope)
-    frontier.add(normalized_root, 0)
-
-    sitemap_urls = discover_sitemap_urls(
-        normalized_root, policy=policy, config=config.fetch, limit=config.sitemap_limit
-    )
-    seeded = frontier.extend(list(sitemap_urls), 1)
+    frontier.mark_seen(normalized_root)
+    seeded = frontier.extend(list(probe.sitemap_pages), 1)
 
     yield {
         "type": "frontier",
@@ -686,50 +790,48 @@ def stream_site(
     totals = {"chars": 0, "markdown": 0, "images": 0, "tables": 0}
     all_pages: list[PageExtraction] = []
 
-    def work(
-        item: tuple[str, int],
-    ) -> tuple[PageExtraction, int, list[str], str | None, list[tuple[str, str]], str]:
+    def work(item: tuple[str, int]) -> _Fetched:
         url, depth = item
         if delay > 0:
             time.sleep(delay)
         page = _extract_one(url, schema, strategy, config)
-        links: list[str] = []
-        anchored: list[tuple[str, str]] = []
-        canonical: str | None = None
-        if page.document is not None:
-            found = extract_links(page.document.html, page.url)
-            links = [reconcile_scheme(link, normalized_root) for link in found.links]
-            anchored = [
-                (reconcile_scheme(href, normalized_root), text) for href, text in found.anchored
-            ]
-            canonical = found.canonical
-        return page, depth, links, canonical, anchored, url
+        return _fetched(page, depth, url, normalized_root)
 
+    # The root is already in hand. It is the first batch, at no cost.
+    pending: list[_Fetched] = [
+        _fetched(_page_from_resolved(probe.resolved, schema), 0, normalized_root, normalized_root)
+    ]
     stopped = False
 
     with ThreadPoolExecutor(max_workers=max(1, config.concurrency)) as pool:
-        while extracted + failed < budget and len(frontier) > 0:
+        while extracted + failed < budget and (pending or len(frontier) > 0):
             if should_stop is not None and should_stop():
                 stopped = True
                 break
 
-            batch: list[tuple[str, int]] = []
-            while len(frontier) > 0 and len(batch) < config.concurrency:
-                if extracted + failed + len(batch) >= budget:
+            if pending:
+                results: Iterable[_Fetched] = pending
+                pending = []
+            else:
+                batch: list[tuple[str, int]] = []
+                while len(frontier) > 0 and len(batch) < config.concurrency:
+                    if extracted + failed + len(batch) >= budget:
+                        break
+                    item = frontier.pop()
+                    if item is None:
+                        break
+                    if config.respect_robots and not policy.allows(
+                        item[0], config.fetch.user_agent
+                    ):
+                        continue
+                    batch.append(item)
+                if not batch:
                     break
-                item = frontier.pop()
-                if item is None:
-                    break
-                if config.respect_robots and not policy.allows(item[0], config.fetch.user_agent):
-                    continue
-                batch.append(item)
+                results = pool.map(work, batch)
 
-            if not batch:
-                break
-
-            for page, depth, links, canonical, anchored, requested in pool.map(
-                work, batch
-            ):
+            for fetched in results:
+                page = fetched.page
+                depth = fetched.depth
                 if page.ok:
                     extracted += 1
                     totals["chars"] += page.text_chars
@@ -748,43 +850,25 @@ def stream_site(
                         page.document,
                         depth=depth,
                         title=page.title,
-                        anchored_links=anchored,
+                        anchored_links=fetched.anchored,
                         # Other sites link to the address they know, which is often the one
                         # that redirected here rather than the URL finally served.
-                        requested_url=requested,
-                        canonical_url=canonical,
+                        requested_url=fetched.requested,
+                        canonical_url=fetched.canonical,
                     )
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
                 discovered_here = frontier.extend(
-                    links, depth + 1, base=canonical or page.url
+                    fetched.links, depth + 1, base=fetched.canonical or page.url
                 )
 
                 # Chrome is knowable only once several pages exist. Compute it the first
                 # time that is true, then reuse it -- recomputing per page would be
                 # quadratic for no benefit, since the answer stabilises immediately.
-                if (
-                    config.remove_chrome
-                    and chrome is None
-                    and sum(1 for p in all_pages if p.document is not None) >= MIN_CHROME_PAGES
-                ):
-                    chrome = detect_site_chrome(
-                        [p.document.blocks for p in all_pages if p.document is not None]
-                    )
+                if chrome is None:
+                    chrome = _chrome_for(all_pages, config)
 
-                content_md = ""
-                if config.remove_chrome and page.document is not None:
-                    # Landmarks first, and unconditionally: `<nav>` and `<footer>` are
-                    # declared on the page itself, so this works from the first result
-                    # rather than waiting for six pages of repetition to mean something.
-                    kept = strip_landmarks(list(page.document.blocks))
-                    if chrome is not None and chrome.active:
-                        kept = strip_site_chrome(kept, chrome)
-                    if len(kept) != len(page.document.blocks):
-                        content_md = to_markdown(
-                            page.document.model_copy(update={"blocks": tuple(kept)}),
-                            options=MarkdownOptions(),
-                        )
+                content_md, selection = _content_of(page, chrome, config)
 
                 if page.ok and page.document is not None and page.text_chars:
                     group = by_content[page.document.content_hash]
@@ -820,6 +904,9 @@ def stream_site(
                     "chars": page.text_chars,
                     "markdown": page.markdown,
                     "content_markdown": content_md,
+                    "content_blocks": selection.kept if selection is not None else None,
+                    "content_methods": list(selection.methods) if selection is not None else [],
+                    "blocks": len(page.document.blocks) if page.document is not None else 0,
                     "images": list(page.images),
                     "tables": page.tables,
                     "strategy": page.strategy.value if page.strategy else None,
@@ -850,8 +937,8 @@ def stream_site(
         "pages_total": extracted + failed,
         "failed": failed,
         "discovered": frontier.seen_count,
-        "remaining_queued": len(frontier),
-        "exhausted": len(frontier) == 0 and not stopped,
+        "remaining_queued": len(frontier) + len(pending),
+        "exhausted": len(frontier) == 0 and not pending and not stopped,
         "stopped": stopped,
         "total_chars": totals["chars"],
         "total_markdown_chars": totals["markdown"],
