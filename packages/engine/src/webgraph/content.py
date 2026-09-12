@@ -254,16 +254,8 @@ def _fold(text: str) -> str:
     return " ".join(text.lower().split())
 
 
-def _restore_title(
-    candidates: list[Block], kept: list[Block], title: str
-) -> tuple[list[Block], bool]:
-    """Put the page's title block back if the last step cut it, keeping document order.
-
-    The title block is the first candidate whose text the `<title>` contains, or which
-    contains the `<title>` with its site suffix removed. Both directions, because a
-    `<title>` is usually "Page title | Site" and the block is usually just "Page title" --
-    but on some sites the block is the longer of the two.
-    """
+def _title_core(title: str) -> str:
+    """The page's own name out of its `<title>`: the part before the site separator."""
     wanted = _fold(title)
     # "Nvidia is the central bank of AI | Hacker News": the part before the separator is
     # the page's name; the part after is the site's. The block on the page carries the
@@ -276,20 +268,48 @@ def _restore_title(
             if len(head) >= 8 and len(tail.split()) <= 5:
                 core = head
             break
-    if len(core) < 8:
-        return kept, False
+    return core if len(core) >= 8 else ""
 
-    def matches(block: Block) -> bool:
-        text = _fold(block.text)
-        return 8 <= len(text) <= 300 and (core in text or text in core)
+
+def _title_matches(block: Block, core: str) -> bool:
+    text = _fold(block.text)
+    return 8 <= len(text) <= 300 and (core in text or text in core)
+
+
+def _title_block(blocks: Sequence[Block], title: str) -> Block | None:
+    """The block that carries the page's title: the heading when there is one, else the
+    longest match. jpost.com's title is "... - Breaking News - The Jerusalem Post", and the
+    first block containing a piece of it was the "BREAKING NEWS" kicker, not the headline."""
+    core = _title_core(title)
+    if not core:
+        return None
+    matches = [block for block in blocks if _title_matches(block, core)]
+    if not matches:
+        return None
+    return max(matches, key=lambda block: (block.kind is BlockKind.HEADING, len(block.text)))
+
+
+def _restore_title(
+    candidates: list[Block], kept: list[Block], title: str
+) -> tuple[list[Block], bool]:
+    """Put the page's title block back if the last step cut it, keeping document order.
+
+    The title block is a candidate whose text the `<title>` contains, or which contains the
+    `<title>` with its site suffix removed. Both directions, because a `<title>` is usually
+    "Page title | Site" and the block is usually just "Page title" -- but on some sites the
+    block is the longer of the two.
+    """
+    core = _title_core(title)
+    if not core:
+        return kept, False
 
     # If the content already carries the title, nothing was cut. Restoring a second copy
     # from a breadcrumb or a "you are here" strip would add the very chrome the earlier
     # steps removed.
-    if any(matches(block) for block in kept):
+    if any(_title_matches(block, core) for block in kept):
         return kept, False
     kept_ids = {id(block) for block in kept}
-    cut = next((block for block in candidates if id(block) not in kept_ids and matches(block)), None)
+    cut = _title_block([block for block in candidates if id(block) not in kept_ids], title)
     if cut is None:
         return kept, False
     # Rebuilt from `candidates` so the block lands where it was, in whatever order the

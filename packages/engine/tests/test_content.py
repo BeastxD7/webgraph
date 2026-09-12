@@ -257,3 +257,22 @@ class TestTitleProtection:
         blocks = self.thread()
         assert select_content(blocks, title="").title_restored is False
         assert select_content(blocks, title="Home").title_restored is False
+
+
+class TestTitleBlockChoice:
+    """jpost.com: <title> "Son of former German president stabbed ... - Breaking News - The
+    Jerusalem Post". The first block containing a piece of it was the "BREAKING NEWS" kicker
+    above the headline; the headline itself came second."""
+
+    def test_heading_beats_a_kicker_that_matches_the_site_suffix(self) -> None:
+        from webgraph.content import _title_block
+
+        blocks = [
+            Block(text="BREAKING NEWS", tag="p", xpath="/html/body/p[1]", dom_index=0),
+            Block(
+                text="Son of former German president stabbed to death in Berlin", tag="h1",
+                xpath="/html/body/h1[1]", dom_index=1, kind=BlockKind.HEADING, level=1,
+            ),
+        ]
+        chosen = _title_block(blocks, "Son of former German president stabbed to death in Berlin - Breaking News - The Jerusalem Post")
+        assert chosen is not None and chosen.kind is BlockKind.HEADING
