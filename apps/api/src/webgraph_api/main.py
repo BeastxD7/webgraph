@@ -43,6 +43,7 @@ from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
+from webgraph.page import stream_page
 from webgraph.pagetype import default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
@@ -684,6 +685,61 @@ def _trace_path(url: str) -> Path:
     """One file per run, named so it can be found by host and time without an index."""
     host = re.sub(r"[^a-z0-9.-]+", "-", urlsplit(url).netloc.lower()) or "site"
     return TRACE_DIR / f"{host}-{time.strftime('%Y%m%dT%H%M%S')}.jsonl"
+
+
+@app.post("/api/text/stream")
+async def text_stream(request: TextRequest) -> StreamingResponse:
+    """One page, streamed stage by stage.
+
+    The same pipeline `/api/text` runs, reported as it happens. Behind a browser render a
+    single page can take ten seconds, and a request that says nothing until it finishes is
+    indistinguishable from one that has hung -- which is why the whole-site crawl has always
+    streamed and this, until now, did not.
+
+    Every failure arrives as an `error` event and closes the stream. Nothing here raises
+    into a half-written response: once the first byte is sent an HTTP status can no longer
+    say anything, so the status is not where failure is reported.
+    """
+    # Checked before a single byte is sent, because after that a status code can no longer
+    # say anything. Everything that can only be discovered *during* the run reports as an
+    # event instead.
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="url must be http or https")
+    guard.check_url(request.url)
+
+    strategy = Strategy.UNION if request.render else Strategy.STATIC_ONLY
+
+    async def generate() -> AsyncIterator[str]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        def produce() -> None:
+            try:
+                for event in trace_events(
+                    stream_page(request.url, strategy=strategy), _trace_path(request.url)
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, dict(event))
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"type": "error", "stage": "unknown", "message": f"{type(exc).__name__}: {exc}"},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        loop.run_in_executor(_crawl_pool, produce)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                return
+            yield _sse(event)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _effective_concurrency(requested: int) -> int:
