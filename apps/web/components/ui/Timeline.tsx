@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 /**
  * A run, told in the order it happened -- and only as far as it has got.
@@ -27,7 +27,10 @@ export interface TimelineStep {
   state: TimelineState;
   /** Elapsed time, already formatted. Ticks while running, freezes when done. */
   duration?: string;
-  /** The evidence: what the stage found. Rendered below the description. */
+  /** One line of what the stage found, shown while the step is collapsed:
+   *  "union · 39,966 chars · 2 payloads". The evidence in brief. */
+  summary?: string;
+  /** The evidence: what the stage found. Rendered only when the step is expanded. */
   children?: ReactNode;
 }
 
@@ -53,14 +56,45 @@ export default function Timeline({
   /** Whether more steps may still arrive; draws the fading rail tail under the last one. */
   live: boolean;
 }) {
+  /**
+   * Which steps the reader has opened or closed by hand. Anything not in here follows the
+   * default: the running step is open, because that is where the attention is, and a
+   * finished step is closed, leaving one line -- its name, its summary, its time. A run of
+   * five stages is then five lines tall until someone wants more.
+   */
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
+  const [all, setAll] = useState<"open" | "closed" | null>(null);
+  const isOpen = (step: TimelineStep) => {
+    if (step.id in toggled) return toggled[step.id] ?? false;
+    if (all) return all === "open";
+    return step.state === "running" || step.state === "failed";
+  };
+  const anyClosed = steps.some((step) => !isOpen(step));
+
   return (
     <ol className="flex flex-col" aria-live="polite">
+      {steps.length > 1 && (
+        <li className="flex justify-end px-4 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setToggled({});
+              setAll(anyClosed ? "open" : "closed");
+            }}
+            className="text-[11.5px] font-semibold text-ink-faint hover:text-ink"
+          >
+            {anyClosed ? "Show all details" : "Hide all details"}
+          </button>
+        </li>
+      )}
       {steps.map((step, index) => {
         const last = index === steps.length - 1;
+        const open = isOpen(step);
+        const expandable = Boolean(step.children || step.description);
         return (
           <li
             key={step.id}
-            className="grid animate-[reveal_320ms_ease-out_both] grid-cols-[2.1rem_1fr] gap-x-3 px-4 py-3.5"
+            className="grid animate-[reveal_320ms_ease-out_both] grid-cols-[2.1rem_1fr] gap-x-3 px-4 py-2.5"
           >
             <div className="flex flex-col items-center">
               <span
@@ -81,7 +115,23 @@ export default function Timeline({
             </div>
 
             <div className="min-w-0">
-              <div className="flex flex-wrap items-baseline gap-x-2.5">
+              {/* The whole first line is the toggle: a step is opened by clicking its name,
+                  not by hunting for a chevron the size of a comma. */}
+              <button
+                type="button"
+                onClick={() => expandable && setToggled((t) => ({ ...t, [step.id]: !open }))}
+                aria-expanded={expandable ? open : undefined}
+                disabled={!expandable}
+                className="flex w-full flex-wrap items-baseline gap-x-2.5 text-left disabled:cursor-default"
+              >
+                {expandable && (
+                  <span
+                    aria-hidden
+                    className={`text-[9px] text-ink-faint transition-transform ${open ? "rotate-90" : ""}`}
+                  >
+                    ▶
+                  </span>
+                )}
                 <h3 className="text-[13.5px] font-bold">{step.title}</h3>
                 {BADGE[step.state] && (
                   <span
@@ -96,18 +146,21 @@ export default function Timeline({
                     {BADGE[step.state]}
                   </span>
                 )}
+                {!open && step.summary && (
+                  <span className="truncate font-mono text-[11.5px] text-ink-soft">{step.summary}</span>
+                )}
                 {step.duration && (
                   <span className="tabular ml-auto font-mono text-[11px] text-ink-faint">
                     {step.duration}
                   </span>
                 )}
-              </div>
-              {step.description && (
+              </button>
+              {open && step.description && (
                 <p className="mt-1 max-w-[62ch] text-[12.5px] leading-relaxed text-ink-faint">
                   {step.description}
                 </p>
               )}
-              {step.children}
+              {open && step.children}
             </div>
           </li>
         );

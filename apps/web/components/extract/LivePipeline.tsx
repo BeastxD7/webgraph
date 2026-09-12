@@ -151,10 +151,19 @@ export default function LivePipeline({
           ? "failed"
           : "stopped"
         : "done";
+    const summary =
+      id === "probe" && analysis
+        ? `${analysis.technologies.slice(0, 3).map((t) => t.name).join(", ") || "no stack detected"} · ${analysis.strategy}`
+        : id === "queue" && discovered > 0
+          ? `${discovered.toLocaleString("en-US")} addresses${cap > 0 && queued > cap ? ` · cap ${cap}` : ""}`
+          : id === "crawl"
+            ? `${extracted.toLocaleString("en-US")} extracted${failed ? ` · ${failed} failed` : ""} · ${rate.toFixed(1)}/min`
+            : undefined;
     steps.push({
       id,
       title: copy.title,
       description: copy.does,
+      summary,
       state,
       duration: timing ? seconds(timing, now) : undefined,
       children: (
