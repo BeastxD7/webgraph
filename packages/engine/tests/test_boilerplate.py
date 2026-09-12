@@ -312,3 +312,21 @@ class TestConsentDialogs:
         widgets = {b.text[:9]: b.widget for b in document.blocks}
         assert widgets["This site"] == "consent"
         assert widgets["Our cooki"] is None
+
+
+class TestAsideStripped:
+    """mspoweruser.com: a "Deals" river of twenty teasers in an `<aside>` inside `<main>`,
+    kept by the boundary step because a teaser blurb scores like a sentence. Measured on
+    WCXB dev, stripping `aside` gains on six of seven page types."""
+
+    def test_aside_inside_main_is_stripped(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        body = "".join(f"<p>Paragraph {i} of the article, with enough words to count as prose here.</p>" for i in range(8))
+        deals = "".join(f"<h3>Deal Alert {i}: gadget {i} discounted</h3><p>Amazon is offering gadget {i} at a discount today.</p>" for i in range(6))
+        html = f"<html><body><main><article><h1>Title</h1>{body}</article><aside>{deals}</aside></main></body></html>"
+        document = build_document(html, "https://news.test/story")
+        kept = strip_landmarks(list(document.blocks))
+        assert not any("Deal Alert" in b.text for b in kept)
+        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
