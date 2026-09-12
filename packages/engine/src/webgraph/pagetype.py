@@ -785,8 +785,16 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     product         off          0.589 -> 0.538
     forum           off          0.733 -> 0.713
     ```
+
+    Product pages get `product_sheet` instead (D103): the sections about *other* things --
+    reviews, "you may also like", Q&A -- are dropped by their headings, related-product
+    grids and review lists by their shape, and `Label: value` specification lines are kept
+    however short. Dev F1 0.586 -> 0.601; each of the three parts measured as contributing
+    (0.597 without the spec floor, 0.598 without the group prune).
     """
     kind = PageType(page_type) if page_type else PageType.UNKNOWN
     if kind in (PageType.LISTING, PageType.COLLECTION, PageType.SERVICE, PageType.DOCUMENTATION):
         return MainContentConfig(group_repeats="all", group_min_share=0.3)
+    if kind is PageType.PRODUCT:
+        return MainContentConfig(product_sheet=True)
     return MainContentConfig()

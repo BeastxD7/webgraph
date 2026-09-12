@@ -96,7 +96,9 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
     kept = [
         block
         for block in blocks
-        if block.region not in STRIPPED_REGIONS and not LANDMARK_XPATH.search(block.xpath)
+        if block.region not in STRIPPED_REGIONS
+        and block.widget not in STRIPPED_WIDGETS
+        and not LANDMARK_XPATH.search(block.xpath)
     ]
     if not kept:
         return list(blocks)
@@ -107,6 +109,9 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
 
 
 STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer"})
+STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter"})
+"""Named panels `strip_landmarks` removes with the landmarks: a faceted-search filter is
+navigation over the catalogue, whatever element it is built from. See `Block.widget`."""
 """Landmark regions `strip_landmarks` removes -- the same two as `LANDMARK_XPATH`, now also
 reached through `role="navigation"` and `role="contentinfo"`, which the XPath cannot see."""
 
