@@ -18,6 +18,7 @@ from typing import Final
 __all__ = [
     "BREAK_ATTRIBUTE",
     "GATE_ATTRIBUTE",
+    "HIDDEN_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
     "marker_arguments",
 ]
@@ -37,6 +38,13 @@ markup. Absent on a static fetch, where `flowed_text` then behaves exactly as `t
 did: a page nobody rendered gets no layout claims. Stamped by `fetch/js/collect.js`."""
 
 GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
+
+HIDDEN_ATTRIBUTE: Final[str] = "data-wg-hidden"
+"""Stamped by the renderer on elements with `display: none` or `visibility: hidden`.
+
+Not every hidden element is dropped -- a collapsed disclosure's body is hidden and is
+content. What the mark enables is telling a hidden *twin* from the rest: two siblings with
+the same text where one is hidden is one thing rendered twice for two screen widths."""
 """Interstitial dismissal candidates. `fetch/js/gate_probe.js` marks the controls most likely
 to open a first-run gate, numbered in the order they should be tried, and
 `fetch.render._open_gate` clicks them by this attribute."""
@@ -48,4 +56,9 @@ def marker_arguments() -> dict[str, str]:
     Each `fetch/js/*.js` file is an arrow function `(markers) => { ... }` and reads
     `markers.marker`, `markers.brk` and `markers.gate` instead of hard-coding the names.
     """
-    return {"marker": MARKER_ATTRIBUTE, "brk": BREAK_ATTRIBUTE, "gate": GATE_ATTRIBUTE}
+    return {
+        "marker": MARKER_ATTRIBUTE,
+        "brk": BREAK_ATTRIBUTE,
+        "gate": GATE_ATTRIBUTE,
+        "hidden": HIDDEN_ATTRIBUTE,
+    }
