@@ -26,6 +26,7 @@ import hashlib
 from typing import TYPE_CHECKING
 
 from webgraph.dom.blocks import is_rtl_document, parse_html
+from webgraph.dom.markup_stats import markup_stats
 from webgraph.dom.reading_order import OrderingConfig, order_blocks
 from webgraph.dom.rich import extract_rich_blocks
 from webgraph.profile.fingerprint import profile_page
@@ -103,12 +104,16 @@ def build_document(
     )
 
     title, description = _head_text(payload_tree)
+    # Counted on the payload parse, which still has the whole tree; block extraction strips
+    # the copy it is given. The router reads these on crawled pages whose HTML is gone.
+    markup = markup_stats(payload_tree)
 
     return Document(
         url=url,
         html=html,
         title=title,
         description=description,
+        markup=markup,
         blocks=tuple(ordered),
         reading_order_method=method,
         profile=profile,
