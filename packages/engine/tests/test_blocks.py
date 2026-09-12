@@ -150,6 +150,21 @@ class TestParserLimits:
         with pytest.raises(ValueError, match="exceeding"):
             parse_html(html, max_bytes=1000)
 
+    def test_xhtml_encoding_declaration_does_not_kill_the_page(self) -> None:
+        """XHTML served as HTML carries `<?xml … encoding="utf-8"?>`, and lxml raises
+        `ValueError: Unicode strings with encoding declaration are not supported` on a `str`
+        that has one. The whole document was lost, not a fragment. Found on WCEB."""
+        html = (
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" '
+            '"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Body text survives.</p></body></html>'
+        )
+        assert blocks_of(html) == ["Body text survives."]
+
+    def test_a_page_without_a_declaration_is_untouched(self) -> None:
+        assert blocks_of("<html><body><p>Plain page.</p></body></html>") == ["Plain page."]
+
 
 class TestFlowedText:
     """Line boundaries the browser laid out, honoured when flattening an element to text.

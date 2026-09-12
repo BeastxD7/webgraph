@@ -21,6 +21,26 @@ __all__ = ["MarkdownOptions", "to_markdown"]
 
 _ESCAPE: Final[re.Pattern[str]] = re.compile(r"([\\`*_\[\]])")
 _TABLE_PIPE: Final[re.Pattern[str]] = re.compile(r"\|")
+_CURRENCY_DOLLAR: Final[re.Pattern[str]] = re.compile(r"(?<!\\)\$(?=\d)")
+"""A `$` that begins an amount of money: not already escaped, and followed by a digit.
+
+Escaped **always**, not under `escape_text`, because this one is not cosmetic. Every Markdown
+dialect that carries mathematics -- which is every dialect a model reads this output in --
+delimits it with `$...$`, so an unescaped currency amount silently becomes a formula, and a
+*pair* of them silently becomes a formula containing all the prose between them. Measured on
+WebMainBench: 18 of 200 pages containing no mathematics at all were scored as emitting
+formulas, because of sentences like "spends $29.8 billion … a surplus of $344 million".
+
+**The digit lookahead is the whole rule, and it was measured rather than guessed.** An
+earlier version escaped every `$`, which fixed the false positives and broke the true ones:
+the formula column's page count fell from 282 to 130 and its mean fell with it, because real
+mathematics was being escaped out of existence too. In the corpus's own ground truth an
+escaped dollar is followed by a digit 953 times out of 1,221, while a bare one is followed by
+a space (2,743), a backslash beginning a LaTeX command (1,189), or another `$` opening display
+maths (921). Money is written `$29.8`; mathematics is written `$\frac…`, `$ x`, or `$$`.
+
+The engine's plain-text output is left alone: it is not Markdown and nothing there is a
+delimiter."""
 
 
 class MarkdownOptions:
@@ -49,7 +69,8 @@ class MarkdownOptions:
 
 
 def _text(value: str, options: MarkdownOptions) -> str:
-    return _ESCAPE.sub(r"\\\1", value) if options.escape_text else value
+    escaped = _ESCAPE.sub(r"\\\1", value) if options.escape_text else value
+    return _CURRENCY_DOLLAR.sub(r"\\$", escaped)
 
 
 def _body(block: Block, options: MarkdownOptions) -> str:
@@ -59,16 +80,32 @@ def _body(block: Block, options: MarkdownOptions) -> str:
     and escaping would turn `[label](url)` into literal brackets.
     """
     if block.rich_text and options.include_links:
-        return block.rich_text
+        # Still escape `$`: the rich form carries deliberate *link* syntax, never deliberate
+        # math delimiters, so a dollar in it is currency and has to say so.
+        return _CURRENCY_DOLLAR.sub(r"\\$", block.rich_text)
     return _text(block.text, options)
 
 
 def _render_table(block: Block) -> str:
-    """Render a table, padding ragged rows rather than dropping them.
+    """Render a table as pipes when pipes can say what it says, and as its own markup when
+    they cannot.
 
-    Real tables have merged cells and inconsistent row lengths. Dropping short rows loses
-    data; padding keeps every value and keeps the Markdown valid.
+    Pipe syntax has no way to express a merged cell. Rendering `<td colspan="3">` as pipes
+    drops the merge and shifts every value beneath it into the wrong column, which corrupts
+    the data rather than merely reformatting it. Markdown allows inline HTML, so a table that
+    nests or spans keeps its own structure (`Block.table_html`, already cleaned down to the
+    table tags and the two span attributes) and a plain grid renders as pipes, which is what
+    a reader actually wants to look at.
+
+    This is the rule MinerU-HTML uses, arrived at independently and for the same reason, and
+    it is measurable: on WebMainBench's pages whose ground truth holds an HTML table, a pipe
+    rendering caps at 0.445 where the table's own markup reaches 1.000.
+
+    Ragged rows are padded rather than dropped, in the pipe path: dropping a short row loses
+    its values, and padding keeps them and keeps the Markdown valid.
     """
+    if block.table_html:
+        return block.table_html
     if not block.rows:
         return ""
 
@@ -76,7 +113,8 @@ def _render_table(block: Block) -> str:
     padded = [list(row) + [""] * (width - len(row)) for row in block.rows]
 
     def line(cells: list[str]) -> str:
-        return "| " + " | ".join(_TABLE_PIPE.sub(r"\\|", c) for c in cells) + " |"
+        cleaned = (_CURRENCY_DOLLAR.sub(r"\\$", _TABLE_PIPE.sub(r"\\|", c)) for c in cells)
+        return "| " + " | ".join(cleaned) + " |"
 
     header, *body = padded
     out = [line(header), "| " + " | ".join("---" for _ in range(width)) + " |"]

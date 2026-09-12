@@ -13,6 +13,8 @@ reproduce the document rather than a transcript of it.
 
 from __future__ import annotations
 
+import copy
+import re
 from typing import Final
 from urllib.parse import urljoin
 
@@ -31,6 +33,12 @@ _TEXT_CONTAINERS: Final[frozenset[str]] = frozenset({
     "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
     "li", "dt", "dd", "caption", "figcaption", "summary", "details",
     "address", "label", "button", "legend",
+    # `td` and `th` are here for the *layout* table only. A data table's cells are consumed
+    # whole by `_table_block`, so they never reach this path. A layout table's cells do, and
+    # without these two a cell holding bare text -- `<td>About us</td>` -- produced no block
+    # and its text was lost outright. Found by a test written for the shape rule that sends
+    # more tables down the layout path than used to go there.
+    "td", "th",
 })
 
 _ATOMIC: Final[frozenset[str]] = frozenset({"table", "pre", "blockquote", "img", "figure"})
@@ -255,10 +263,32 @@ def _media_block(
     )
 
 
-_LAYOUT_TABLE_TAGS: Final[frozenset[str]] = frozenset(
-    {"table", "div", "p", "form", "ul", "ol", "section", "article", "h1", "h2", "h3"}
+_PAGE_LEVEL_TAGS: Final[frozenset[str]] = frozenset(
+    {"table", "form", "section", "article", "h1", "h2", "h3"}
 )
-"""Block-level content inside a cell. A data table holds values; a layout table holds a page."""
+"""Tags that appear in a cell only when the cell is holding a *page*.
+
+`div` and `p` were in this set and had to come out. They are the single most common way a
+CMS wraps a value -- `<td><p>12.4</p></td>` is what every WYSIWYG editor emits -- so counting
+them as layout evidence threw away real data tables. Measured on WebMainBench: a 17-row,
+111-cell table of numbers was classified as layout and flattened to paragraphs because each
+cell wrapped its number in a `<p>`. Zero tables were extracted from that page."""
+
+LONG_CELL_CHARS: Final[int] = 200
+"""A cell holding more text than this is prose, not a value.
+
+This is what replaced the tag test, and it is the signal that actually separates the two
+cases. A layout cell holds an article; a data cell holds a number or a short label. Tag
+identity cannot tell those apart because both use `<p>`; length can."""
+
+
+def _is_page_like(cell: HtmlElement) -> bool:
+    """Whether this cell is holding a page rather than a value."""
+    if any(node.tag in _PAGE_LEVEL_TAGS for node in cell.iter() if node is not cell):
+        return True
+    if len(cell.xpath(".//p")) >= 2:
+        return True
+    return len(normalize_text(cell.text_content())) >= LONG_CELL_CHARS
 
 
 def is_layout_table(element: HtmlElement) -> bool:
@@ -271,8 +301,13 @@ def is_layout_table(element: HtmlElement) -> bool:
 
     Two signals, both structural:
 
-    - a cell containing block-level content, above all another `<table>`. A pricing table
-      holds numbers; a layout table holds a page.
+    - a cell holding a *page*: another `<table>`, a `<form>`, a heading, or simply more than
+      `LONG_CELL_CHARS` of prose. A pricing table holds numbers; a layout table holds an
+      article. Note what is **not** a signal: a `<p>` or a `<div>` wrapping a value, which is
+      how most content management systems emit an ordinary data cell.
+    - a shape that cannot hold data: one row, one column, or a grid whose cells are mostly
+      empty. A table exists to cross-reference a row against a column, and there is nothing
+      to cross-reference in a single line of cells.
     - the absence of every marker a data table normally carries -- `<th>`, `<thead>`,
       `<caption>` -- combined with enough rows that its author would have used one.
 
@@ -294,8 +329,42 @@ def is_layout_table(element: HtmlElement) -> bool:
     if not cells:
         return False
 
-    busy = sum(1 for cell in cells if any(c.tag in _LAYOUT_TABLE_TAGS for c in cell))
-    return busy * 2 >= len(cells)
+    if _is_degenerate(element):
+        return True
+
+    return sum(1 for cell in cells if _is_page_like(cell)) * 2 >= len(cells)
+
+
+MIN_GRID: Final[int] = 2
+"""A data table needs at least this many rows *and* columns.
+
+A table exists to cross-reference a row against a column. One row, or one column, has nothing
+to cross-reference, so it is a layout device wearing table markup. Measured on WebMainBench:
+of the tables the engine emitted where the annotators saw none, most were exactly this -- a
+1x1 cell reading "Home", a 1x2 "Rate this" widget, a 1x4 auto-refresh control strip, a 6x1
+list of tool names."""
+
+MIN_FILLED_SHARE: Final[float] = 0.4
+"""And enough of its cells must hold something. A 5x3 grid with two non-empty cells is a
+layout scaffold, not a sparse dataset."""
+
+
+def _is_degenerate(element: HtmlElement) -> bool:
+    """Whether this table's *shape* rules out its being a table of data."""
+    rows = [row for section in _OWN_ROW_SECTIONS for row in element.xpath(section)]
+    if len(rows) < MIN_GRID:
+        return True
+    widths = [len(row.xpath("./td|./th")) for row in rows]
+    if max(widths, default=0) < MIN_GRID:
+        return True
+    total = sum(widths)
+    filled = sum(
+        1
+        for row in rows
+        for cell in row.xpath("./td|./th")
+        if normalize_text(cell.text_content())
+    )
+    return bool(total) and filled < total * MIN_FILLED_SHARE
 
 
 _OWN_ROW_SECTIONS: Final[tuple[str, ...]] = ("./thead/tr", "./tr", "./tbody/tr", "./tfoot/tr")
@@ -459,6 +528,61 @@ def _collapse_header(grid: list[list[str]], depth: int) -> list[tuple[str, ...]]
     return [tuple(joined), *(tuple(row) for row in grid[depth:])]
 
 
+_TABLE_TAGS: Final[frozenset[str]] = frozenset(
+    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup"}
+)
+"""Tags kept when preserving a table's own markup. `sub` and `sup` are here because a
+chemical formula or a footnote marker inside a cell is content, not presentation."""
+
+_TABLE_ATTRS: Final[frozenset[str]] = frozenset({"colspan", "rowspan"})
+"""Attributes kept. These two carry meaning no other representation can hold; everything
+else -- styles, widths, tracking ids, translation-tool bookkeeping -- is noise that would
+otherwise be emitted verbatim into the output."""
+
+_MAX_PRESERVED_TABLE_BYTES: Final[int] = 200_000
+"""Refuse to inline a table larger than this. Untrusted input, and a runaway table would
+otherwise dominate a page's output."""
+
+
+def is_complex_table(element: HtmlElement) -> bool:
+    """Whether Markdown's pipe syntax can express this table at all.
+
+    It cannot, when a cell spans more than one row or column, or when a table nests inside
+    another. Pipes have no way to say "this cell covers three columns", so rendering such a
+    table as pipes drops the merge and shifts every value under it into the wrong column --
+    which is not a formatting loss but a data-corruption one.
+    """
+    if element.xpath(".//table"):
+        return True
+    for cell in element.xpath(".//td|.//th"):
+        for name in ("colspan", "rowspan"):
+            raw = (cell.get(name) or "").strip()
+            # `colspan="50%"` appears on real pages; anything unparseable is not a span.
+            if raw.isdigit() and int(raw) > 1:
+                return True
+    return False
+
+
+def preserved_table_html(element: HtmlElement) -> str | None:
+    """The table's own markup with everything but structure removed, or None if too large."""
+    copied = copy.deepcopy(element)
+    for node in copied.iter():
+        if not isinstance(node.tag, str):
+            continue
+        if node.tag not in _TABLE_TAGS and node is not copied:
+            node.tag = "span"  # unwrapped below by `strip_tags`, keeping the text
+        for name in list(node.attrib):
+            if name not in _TABLE_ATTRS:
+                del node.attrib[name]
+    etree.strip_tags(copied, "span")
+    markup = etree.tostring(copied, encoding="unicode", method="html").strip()
+    markup = _COLLAPSE_SPACE.sub(" ", markup)
+    return None if len(markup) > _MAX_PRESERVED_TABLE_BYTES else markup
+
+
+_COLLAPSE_SPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
+
+
 def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None:
     """Build a table block preserving its rows.
 
@@ -473,6 +597,7 @@ def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None
 
     caption = element.xpath("./caption")
     summary = normalize_text(flowed_text(caption[0])) if caption else ""
+    preserved = preserved_table_html(element) if is_complex_table(element) else None
 
     # Every row, not a preview, and the caption in addition to them rather than instead.
     #
@@ -491,6 +616,7 @@ def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None
         dom_index=index,
         kind=BlockKind.TABLE,
         rows=tuple(rows),
+        table_html=preserved,
     )
 
 
@@ -508,21 +634,17 @@ _NESTED_CONTAINERS: Final[frozenset[str]] = frozenset({"ul", "ol", "table", "dl"
 
 
 def _own_text(element: HtmlElement) -> str:
-    """Text belonging to this element, excluding nested lists and tables.
+    """Text belonging to this element that no other block will carry. Alias of
+    `_orphan_text`, kept because list items and definition terms read better under this name:
+    a `<li>` whose label sits beside a nested list keeps the label and nothing else."""
+    return _orphan_text(element)
 
-    Needed because a list item that contains a sub-list would otherwise be skipped by the
-    innermost-block rule and its own label lost entirely -- `<li>outer<ul><li>inner</li>
-    </ul></li>` dropped "outer" completely. Its own text is real content and must survive.
-    """
-    parts: list[str] = [element.text or ""]
-    for child in element:
-        tag = child.tag
-        if isinstance(tag, str) and tag in _NESTED_CONTAINERS:
-            parts.append(child.tail or "")
-            continue
-        parts.append(flowed_text(child))
-        parts.append(child.tail or "")
-    return normalize_text("".join(parts))
+
+_CARRIED_ELSEWHERE: Final[frozenset[str]] = (
+    _TEXT_CONTAINERS | _HEADINGS | _ATOMIC | _NESTED_CONTAINERS
+)
+"""Tags whose text some *other* block will emit: block containers, headings, atomic
+elements, and the list and table containers whose items are blocks of their own."""
 
 
 def _orphan_text(element: HtmlElement) -> str:
@@ -543,24 +665,40 @@ def _orphan_text(element: HtmlElement) -> str:
     181 pages lose more than 10% of their body this way and 4 lose essentially all of it** --
     MacRumors, AppleInsider, IGN and jaraguadosul, all `<br>`-separated 2019 article markup.
 
-    Distinct from `_own_text`, which keeps a list item's label by excluding only nested
-    *lists and tables*. Here every child that will itself become a block contributes only its
-    tail, while inline children (`<a>`, `<em>`, `<span>`) contribute their text, because
-    nothing else will. That split is what makes this additive rather than duplicating.
+    **The walk is recursive, and the first version was not.** It looked at direct children
+    only: a child that was itself a block contributed its tail, and any other child
+    contributed its *whole subtree text*. So one non-block wrapper between the container and
+    its paragraphs -- a `<span>`, a `<ul>`, a custom element like `<bsx-section>` -- handed
+    the entire article back as one block, alongside the paragraph blocks already emitted
+    from inside it. Measured on WCXB dev: on tires.bridgestone.com a 1,372-word `<section>`
+    block sat beside its own 24 paragraphs; on proserveit.com a 2,728-word `<div>` beside
+    its 85; on ama.org four `<ul>`s were re-emitted whole beside their 33 items. Word counts
+    doubled, precision halved to 0.48-0.49 with recall at 1.00, and the exact-text
+    deduplicator could not see it because a container's text is never *equal* to any one
+    child's. Now every descendant is visited, block-bearing subtrees are skipped wherever
+    they sit, and only text nothing else carries is kept.
     """
     parts: list[str] = [element.text or ""]
+    _orphan_parts(element, parts)
+    return normalize_text("".join(parts))
+
+
+def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
     for child in element:
         tag = child.tag
         if not isinstance(tag, str):
             parts.append(child.tail or "")
             continue
-        if tag in _TEXT_CONTAINERS or tag in _HEADINGS or tag in _ATOMIC:
-            # It gets its own block; only the text after it is orphaned.
+        if tag in _CARRIED_ELSEWHERE:
+            # It gets its own block(s); only the text after it is orphaned.
             parts.append(child.tail or "")
-        else:
-            parts.append(flowed_text(child))
-            parts.append(child.tail or "")
-    return normalize_text("".join(parts))
+            continue
+        # Same line-box rule as `flowed_text`: a separator where the browser drew one.
+        if child.get(BREAK_ATTRIBUTE) is not None:
+            parts.append(" ")
+        parts.append(child.text or "")
+        _orphan_parts(child, parts)
+        parts.append(child.tail or "")
 
 
 def _list_context(element: HtmlElement) -> tuple[bool, int]:
@@ -593,6 +731,7 @@ def extract_rich_blocks(
     blocks: list[Block] = []
     index = 0
     consumed: set[HtmlElement] = set()
+    landmark_cache: dict[HtmlElement, tuple[str | None, bool]] = {}
 
     for element in root.iter():
         tag = element.tag
@@ -716,7 +855,53 @@ def extract_rich_blocks(
         if block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA) and len(block.text) < min_chars:
             continue
 
+        region, in_main = _landmarks_of(element, landmark_cache)
+        if region is not None or in_main:
+            block = block.model_copy(update={"region": region, "in_main": in_main})
         blocks.append(block)
         index += 1
 
     return blocks
+
+
+_LANDMARK_TAGS: Final[dict[str, str]] = {
+    "main": "main", "nav": "nav", "header": "header", "footer": "footer", "aside": "aside",
+}
+_LANDMARK_ROLES: Final[dict[str, str]] = {
+    "main": "main",
+    "navigation": "nav",
+    "banner": "header",
+    "contentinfo": "footer",
+    "complementary": "aside",
+}
+
+
+def _landmark_of_element(element: HtmlElement) -> str | None:
+    """The landmark this element *is*, by tag or ARIA role; None if it is neither."""
+    tag = element.tag if isinstance(element.tag, str) else ""
+    role = (element.get("role") or "").strip().lower()
+    if role in _LANDMARK_ROLES:
+        return _LANDMARK_ROLES[role]
+    return _LANDMARK_TAGS.get(tag)
+
+
+def _landmarks_of(
+    element: HtmlElement, cache: dict[HtmlElement, tuple[str | None, bool]]
+) -> tuple[str | None, bool]:
+    """(innermost landmark region, whether any ancestor is main), memoised per element.
+
+    Walks up once per distinct ancestor; a page with thousands of blocks shares a handful of
+    ancestor chains, so the memo makes this linear in practice.
+    """
+    hit = cache.get(element)
+    if hit is not None:
+        return hit
+    own = _landmark_of_element(element)
+    parent = element.getparent()
+    if parent is None:
+        result: tuple[str | None, bool] = (own, own == "main")
+    else:
+        parent_region, parent_main = _landmarks_of(parent, cache)
+        result = (own if own is not None else parent_region, parent_main or own == "main")
+    cache[element] = result
+    return result

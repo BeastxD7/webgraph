@@ -256,6 +256,71 @@ class MainContentConfig:
     Kept at zero rather than deleted, because both ideas are ones someone will have again and
     the argument against them should be a table rather than an opinion."""
 
+    trust_main_links: bool = True
+    """Inside a `main` landmark, count linked words as content rather than as chrome.
+
+    Link density is the selector's primary boilerplate signal, and on articles it is right:
+    a run of links is navigation. On the page types where the *content is a list of links* it
+    is structurally wrong, and no threshold fixes it. Measured on WCXB dev, the share of
+    ground-truth words that sit inside `<a>`:
+
+    ```
+    article 0.11   documentation 0.16   forum 0.13   product 0.19
+    service 0.20   collection 0.40      listing 0.49
+    ```
+
+    Half of a listing page's ground truth is link text -- the item titles -- which the
+    scoring function valued at zero and then charged the block cost for. The page's own
+    `<main>` is the signal that says those links are content: navigation lives in `<nav>`,
+    and a link grid inside `<main>` is what the author put there for the reader.
+
+    **Measured twice, with opposite verdicts, and the second is the one that counts.** The
+    first WCXB dev run said -0.003 overall (listing +0.052, article -0.008, product -0.018,
+    collection -0.020) and it was declined. That run was taken on top of the wrapper
+    duplication bug (`_orphan_text`, see `dom/rich.py`), which was doubling the word count
+    of a third of the articles; with that fixed the same flag reads:
+
+    ```
+                    off      on
+    overall        0.803   0.810
+    article        0.919   0.920
+    documentation  0.884   0.906
+    service        0.768   0.777
+    forum          0.730   0.733
+    collection     0.530   0.555
+    listing        0.527   0.558
+    product        0.587   0.589
+    ```
+
+    Every type improves. An experiment measured on top of a bug measures the bug."""
+
+    group_repeats: str = "off"
+    """Score repeated sibling items -- the cards of a product grid, the rows of a listing,
+    the posts of a thread -- as **one unit** that pays the block cost once.
+
+    `"off"`, `"main"` (only groups inside a `main` landmark) or `"all"`.
+
+    Why: on WCXB dev, 66 of 117 collection pages and 39 of 99 listing pages are *over-cut* --
+    the block list holds the grid (recall 0.90 before the selector) and the selector drops it
+    (0.56 after). Each card is a short block, so each pays a full block cost and the run
+    cannot survive a grid of forty of them. But forty cards that share one XPath template --
+    `.../ul/li[n]/div/h3` -- are one thing the author laid out, not forty. Grouped, the grid
+    is a single unit worth its total words minus one cost, and the run carries it.
+
+    The risk is the sidebar: "Recent posts" is also a repeated group. `"main"` limits the
+    treatment to groups the page itself places in its main content. Both settings are
+    measured on WCXB dev before either ships; see the table in MEMORY.md."""
+
+    min_group_size: int = 3
+    """Fewer repeated siblings than this is not a grid."""
+
+    group_min_share: float = 0.3
+    """A repeated group is scored as one unit only when it carries at least this share of
+    the page's words. A grid that *is* the page -- a collection, a listing -- clears it; a
+    related-products rail or a comment list beside an article does not, and its items stay
+    individually scored. Measured: with no share guard, grouping cost articles -0.015 and
+    products -0.063 on WCXB dev while lifting listings +0.054."""
+
     min_run_share: float = 0.02
     """Refuse to return less than this share of the document's words.
 
@@ -296,7 +361,8 @@ def content_value(block: Block, config: MainContentConfig) -> float:
         # list of filenames. It never anchors a run.
         return -config.block_cost
 
-    free = words * (1.0 - link_density(block))
+    density = 0.0 if (config.trust_main_links and block.in_main) else link_density(block)
+    free = words * (1.0 - density)
 
     if block.kind is BlockKind.HEADING:
         return free + config.heading_bonus - config.block_cost
@@ -319,6 +385,65 @@ def content_value(block: Block, config: MainContentConfig) -> float:
     return free - config.block_cost
 
 
+_INDEX: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")
+
+
+def _repeat_groups(blocks: Sequence[Block], config: MainContentConfig) -> list[int]:
+    """Assign each block a group id: blocks inside repeated sibling containers share one; -1
+    otherwise.
+
+    A repeated container is an XPath prefix that ends in a positional index and occurs with
+    at least `min_group_size` distinct indices -- `/main/ul/li[*]` when `li[1]`, `li[2]`,
+    `li[3]`... each hold blocks. Every block under the container joins the group whatever its
+    tag, which is what makes a card's title, price and blurb one thing: an earlier version
+    keyed on the block's full path template, so the titles formed one group and the prices
+    another, interleaved, and nothing ever merged.
+
+    Candidates are tried from the innermost index outward and the first that qualifies
+    wins, so a paragraph in `div[3]/p[2]` groups with its sibling paragraphs and not with
+    every top-level `div[*]` on the page -- the coarser repetition would make the whole
+    page one unit, which is the leak this must not cause.
+    """
+    if config.group_repeats == "off":
+        return [-1] * len(blocks)
+    only_main = config.group_repeats == "main"
+
+    # Container prefix -> the distinct indices seen under it, and the blocks under it.
+    positions: dict[str, set[str]] = {}
+    members: dict[str, list[int]] = {}
+    candidates: list[list[str]] = []
+    for index, block in enumerate(blocks):
+        own: list[str] = []
+        if not (only_main and not block.in_main):
+            for match in reversed(list(_INDEX.finditer(block.xpath))):
+                prefix = block.xpath[: match.start()] + "[*]"
+                own.append(prefix)
+                positions.setdefault(prefix, set()).add(match.group(0))
+                members.setdefault(prefix, []).append(index)
+        candidates.append(own)
+
+    total_words = sum(word_count(b.text) for b in blocks) or 1
+    group_words = {
+        prefix: sum(word_count(blocks[i].text) for i in indices)
+        for prefix, indices in members.items()
+    }
+
+    def qualifies(prefix: str) -> bool:
+        return (
+            len(positions[prefix]) >= config.min_group_size
+            and group_words[prefix] >= config.group_min_share * total_words
+        )
+
+    groups = [-1] * len(blocks)
+    ids: dict[str, int] = {}
+    for index, own in enumerate(candidates):
+        for prefix in own:  # innermost first
+            if qualifies(prefix):
+                groups[index] = ids.setdefault(prefix, len(ids))
+                break
+    return groups
+
+
 def select_main_content(
     blocks: Sequence[Block], *, config: MainContentConfig | None = None
 ) -> list[Block]:
@@ -337,33 +462,55 @@ def select_main_content(
 
     values = [content_value(block, config) for block in blocks]
 
+    # Units: consecutive blocks of one repeated group are scored together, paying the block
+    # cost once -- see `MainContentConfig.group_repeats`. With grouping off every block is
+    # its own unit and this is plain Kadane over blocks.
+    groups = _repeat_groups(blocks, config)
+    units: list[tuple[int, int, float]] = []  # (first block, last block + 1, value)
+    index = 0
+    while index < len(blocks):
+        end = index + 1
+        if groups[index] >= 0:
+            while end < len(blocks) and groups[end] == groups[index]:
+                end += 1
+        if end - index == 1:
+            units.append((index, end, values[index]))
+        else:
+            # The members keep their own scores -- link density still says what it says --
+            # and the unit pays the block cost once instead of once per card.
+            members = end - index
+            units.append(
+                (index, end, sum(values[index:end]) + (members - 1) * config.block_cost)
+            )
+        index = end
+
     # Kadane, tracking the winning bounds. Ties keep the earlier, longer run: an article
     # sits above the comments, and preferring the earlier span is the tie-break that says so.
     # Kadane, with a tolerance: the run restarts only once its accumulated deficit exceeds
     # `bridge`, rather than the instant the total dips below zero. See `MainContentConfig`.
     tolerance = -config.bridge * config.block_cost
     best_total = float("-inf")
-    best = (0, len(blocks))
+    best_units = (0, len(units))
     running = 0.0
     start = 0
-    for index, value in enumerate(values):
+    for position, (_, _, value) in enumerate(units):
         if running < tolerance:
             running = value
-            start = index
+            start = position
         else:
             running += value
         if running > best_total:
             best_total = running
-            best = (start, index + 1)
+            best_units = (start, position + 1)
 
     # Trim the boundaries back to content. A bridged run may open or close on the chrome it
     # was allowed to absorb, and a leading "share edit follow" is not the start of an article.
-    first, last = best
-    while first < last - 1 and values[first] <= 0:
+    first, last = best_units
+    while first < last - 1 and units[first][2] <= 0:
         first += 1
-    while last - 1 > first and values[last - 1] <= 0:
+    while last - 1 > first and units[last - 1][2] <= 0:
         last -= 1
-    best = (first, last)
+    best = (units[first][0], units[last - 1][1])
 
     # A run worth nothing is not a run. When every block scores negative -- a sitemap, an
     # index, a link hub -- Kadane still returns something: the single least-negative block.

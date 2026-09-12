@@ -183,8 +183,36 @@ class Block(BaseModel):
     rows: tuple[tuple[str, ...], ...] = ()
     """Table cells, first row treated as the header."""
 
+    table_html: str | None = None
+    """The table's own markup, cleaned, for a table whose structure Markdown cannot express.
+
+    Present only when the table nests another table or carries a `colspan`/`rowspan` greater
+    than one. A pipe table has no way to say that one cell spans three columns, so rendering
+    such a table as pipes silently discards the merge and every value beneath it shifts into
+    the wrong column. Markdown allows inline HTML, so the honest rendering is the table's own
+    markup; a simple grid still renders as pipes, which is what a reader wants to see.
+
+    Cleaned, not raw: only `colspan` and `rowspan` survive, and only table tags plus `sub`
+    and `sup`. Everything else on a real page's table -- style attributes, tracking ids,
+    translation-tool bookkeeping -- is noise that would land in the output verbatim."""
+
     language: str | None = None
     """Code-block language, when the markup declares one."""
+
+    region: str | None = None
+    """The innermost landmark this block sits in -- `main`, `nav`, `header`, `footer` or
+    `aside` -- read from the element's ancestors by tag *or* ARIA role (`role="main"`,
+    `navigation`, `banner`, `contentinfo`, `complementary`). None outside any landmark.
+
+    The XPath cannot carry this: `role="main"` on a `<div>` is invisible in
+    `/html/body/div[2]/div`, and measured on WCXB dev 178 of 1,476 pages declare their main
+    content that way and no other. The page's own statement of what is what is the
+    strongest structural signal there is, and it was being read from the tag name only."""
+
+    in_main: bool = False
+    """Whether any ancestor is a `main` landmark. Distinct from `region`, because a `<nav>`
+    inside `<main>` -- an in-page table of contents -- is both inside the main content and
+    navigation, and the two questions have different answers."""
 
     rich_text: str | None = None
     """Inline Markdown for this block: links, emphasis and inline code preserved.
