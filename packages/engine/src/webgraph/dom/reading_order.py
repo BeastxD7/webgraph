@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from statistics import median
 from typing import Final
 
 from webgraph import config
@@ -166,7 +165,10 @@ def order_blocks(
         return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
 
     heights = [b.rect.height for b in measured if b.rect is not None and b.rect.height > 0]
-    unit = median(heights) if heights else 16.0
+    unit = _line_unit(heights)
+
+    blocks = _demote_rails(blocks, unit)
+    measured = [b for b in blocks if b.rect is not None]
 
     if len(measured) == len(blocks):
         # Nothing to anchor, so neither guard applies: complete geometry is always used.
@@ -180,6 +182,51 @@ def order_blocks(
 
     ordered = _cut_with_cards(list(measured), rtl=rtl, config=config, unit=unit)
     return _anchor_unmeasured(ordered, blocks), ReadingOrderMethod.GEOMETRIC_ANCHORED
+
+
+_UNIT_QUANTILE: Final[float] = 0.25
+
+
+def _line_unit(heights: list[float]) -> float:
+    """The height of a line of text on this page, estimated from its block heights.
+
+    The gap thresholds are multiples of this. It used to be the median block height, which
+    is the height of a *typical block*, not of a line: on docs.python.org the typical block
+    is a two-line paragraph 51px tall, so the column threshold came out at 51px and the
+    36px gutter between the sidebar and the article was never a cut -- the sidebar's
+    "Previous topic" was read between the article's first two paragraphs. The lower
+    quartile of block heights is the one-liners -- headings, list items, short paragraphs
+    -- whose height is the line height, on that page as on a page of short blocks where
+    the two estimates agree.
+    """
+    if not heights:
+        return 16.0
+    ordered = sorted(heights)
+    return ordered[min(len(ordered) - 1, int(len(ordered) * _UNIT_QUANTILE))]
+
+
+_RAIL_ASPECT: Final[float] = 8.0
+
+
+def _demote_rails(blocks: list[Block], unit: float) -> list[Block]:
+    """Strip the measurement from a rail: a block no wider than a line and many lines tall.
+
+    A rail is furniture standing *in* a gutter -- the "«" handle that collapses the sidebar
+    on docs.python.org is 12px wide and 901px tall and sits in the 36px between the sidebar
+    and the article. Left measured, it does two kinds of damage: it splits the gutter into
+    two gaps too narrow to cut, so the columns are never separated, and it bridges every
+    row, so no band can be cut either; the page then falls to position order and the
+    sidebar's "Previous topic" is read between the article's first two paragraphs.
+    Unmeasured, it is anchored where the DOM puts it -- between the two columns -- and the
+    gutter is whole again.
+    """
+    out: list[Block] = []
+    for block in blocks:
+        rect = block.rect
+        if rect is not None and rect.width <= unit and rect.height >= rect.width * _RAIL_ASPECT:
+            block = block.model_copy(update={"rect": None})
+        out.append(block)
+    return out
 
 
 _INDEXED_STEP: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")

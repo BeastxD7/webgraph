@@ -29,10 +29,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
+from webgraph import config
 from webgraph.blockmodel import BlockModel, default_model, select_by_model
 from webgraph.boilerplate import SiteChrome, scope_to_main, strip_landmarks, strip_site_chrome
 from webgraph.main_content import MainContentConfig, select_main_content
-from webgraph.types import Block
+from webgraph.types import Block, BlockKind
 
 __all__ = ["SHIPPED_MODEL", "ContentSelection", "select_content"]
 
@@ -194,11 +195,14 @@ def select_content(
         main_content_removed = before - len(kept)
     if main_content and title:
         kept, title_restored = _restore_title(structural, kept, title)
+        restored = 1 if title_restored else 0
         if title_restored:
-            if resolved is not None:
-                block_model_removed -= 1
-            else:
-                main_content_removed -= 1
+            kept, lead = _restore_lead(structural, kept)
+            restored += lead
+        if resolved is not None:
+            block_model_removed -= restored
+        else:
+            main_content_removed -= restored
 
     return ContentSelection(
         blocks=kept,
@@ -210,6 +214,40 @@ def select_content(
         block_model_removed=block_model_removed,
         title_restored=title_restored,
     )
+
+
+_LEAD_MAX_BLOCKS: Final[int] = config.CONTENT_LEAD_MAX_BLOCKS
+_LEAD_MAX_LIST_SHARE: Final[float] = config.CONTENT_LEAD_MAX_LIST_SHARE
+
+
+def _restore_lead(candidates: list[Block], kept: list[Block]) -> tuple[list[Block], int]:
+    """Put back what sits between a restored title and the body it was cut from.
+
+    `_restore_title` puts the title back alone, which leaves a hole: the boundary step that
+    cut the title also cut everything between it and the first dense paragraph, and that
+    is the lead -- the byline, the standfirst, the source line, the opening sentence.
+    Measured on docs.python.org/3/library/functools.html: the run began at the fourth
+    paragraph, so "The functools module is for higher-order functions..." -- the sentence
+    that says what the page is about -- was missing while the title above it was restored.
+
+    The gap between the title and the run is restored whole when it is short and made of
+    prose, not a list: a menu that happens to sit under the title is the one thing that
+    lives there and is not lead, and it announces itself by being list items.
+    """
+    kept_ids = {id(block) for block in kept}
+    positions = [i for i, block in enumerate(candidates) if id(block) in kept_ids]
+    if len(positions) < 2:
+        return kept, 0
+    title_at = positions[0]
+    body_at = positions[1]
+    gap = candidates[title_at + 1 : body_at]
+    if not gap or len(gap) > _LEAD_MAX_BLOCKS:
+        return kept, 0
+    lists = sum(1 for block in gap if block.kind is BlockKind.LIST_ITEM)
+    if lists / len(gap) > _LEAD_MAX_LIST_SHARE:
+        return kept, 0
+    kept_ids.update(id(block) for block in gap)
+    return [block for block in candidates if id(block) in kept_ids], len(gap)
 
 
 def _fold(text: str) -> str:

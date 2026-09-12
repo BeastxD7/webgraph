@@ -186,6 +186,12 @@ CONTENT_MIN_GROUP_SIZE = 3  # fewer repeated siblings than this is not a grid
 CONTENT_GROUP_MIN_SHARE = 0.3  # a group is scored as a unit only above this share of words
 # Never return less than this share of the document's words.
 CONTENT_MIN_RUN_SHARE = 0.02
+# When the boundary step cut the page's title and it is put back, the blocks between the
+# title and the body (byline, standfirst, opening sentence) come back with it -- if there
+# are at most this many, and at most this share of them are list items (a menu under the
+# title is not a lead).
+CONTENT_LEAD_MAX_BLOCKS = 12
+CONTENT_LEAD_MAX_LIST_SHARE = 0.5
 
 # ======================================================================================
 # Site chrome (blocks repeated across a site's pages)

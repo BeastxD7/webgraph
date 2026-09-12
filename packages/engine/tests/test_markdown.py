@@ -920,3 +920,69 @@ class TestHiddenTwins:
         html = '<main><p><span>NEW</span> <span>NEW</span></p></main>'
         blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
         assert [b.text for b in blocks] == ["NEW NEW"]
+
+
+class TestOrphanRuns:
+    """A container's own text is emitted where it sits among the child blocks."""
+
+    def test_text_between_child_blocks_keeps_its_place(self) -> None:
+        html = (
+            "<main><div>"
+            "<p>Opening sentence of the post.</p>"
+            "<p>Second paragraph of the post.</p>"
+            "<em>Caption under the second paragraph.</em><br>"
+            "<p>Third paragraph of the post.</p>"
+            "Closing words after everything."
+            "</div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == [
+            "Opening sentence of the post.",
+            "Second paragraph of the post.",
+            "Caption under the second paragraph.",
+            "Third paragraph of the post.",
+            "Closing words after everything.",
+        ]
+        caption = blocks[2]
+        assert caption.xpath.endswith("/div/em"), "measured by the element that carries it"
+        assert caption.rich_text == "*Caption under the second paragraph.*"
+        assert blocks[4].xpath.endswith("/div/text()[2]"), "bare text has no element to borrow"
+
+    def test_leading_text_precedes_the_first_child_block(self) -> None:
+        html = "<main><div>Lead-in words.<p>Body paragraph here.</p></div></main>"
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["Lead-in words.", "Body paragraph here."]
+
+    def test_trailing_text_after_a_nested_subtree(self) -> None:
+        html = (
+            "<main><div><div><p>Inner paragraph.</p><span>deep <b>tail</b></span></div>"
+            "Outer closing line.</div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["Inner paragraph.", "deep tail", "Outer closing line."]
+
+
+class TestButtons:
+    def test_hidden_copy_button_is_not_a_paragraph(self) -> None:
+        html = (
+            '<main><p>For example:</p><div><button data-wg-hidden="opacity">Copy</button>'
+            "<pre>x = 1</pre></div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["For example:", "x = 1"]
+
+    def test_visible_button_stays_however_short(self) -> None:
+        html = "<main><p>Intro paragraph.</p><button>Show more</button></main>"
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["Intro paragraph.", "Show more"]
+
+    def test_accordion_question_in_a_button_is_kept(self) -> None:
+        html = (
+            "<main><div><button>How long does shipping take to reach me?</button>"
+            "<div><p>Three to five days.</p></div></div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == [
+            "How long does shipping take to reach me?",
+            "Three to five days.",
+        ]

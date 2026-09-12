@@ -40,7 +40,11 @@ did: a page nobody rendered gets no layout claims. Stamped by `fetch/js/collect.
 GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
 
 HIDDEN_ATTRIBUTE: Final[str] = "data-wg-hidden"
-"""Stamped by the renderer on elements with `display: none` or `visibility: hidden`.
+"""Stamped by the renderer on elements the browser is not showing.
+
+The value names the mechanism -- `display`, `visibility` or `opacity` -- so a consumer can
+treat `opacity: 0` (often a scroll-reveal animation's starting state, i.e. real content)
+differently from the other two.
 
 Not every hidden element is dropped -- a collapsed disclosure's body is hidden and is
 content. What the mark enables is telling a hidden *twin* from the rest: two siblings with

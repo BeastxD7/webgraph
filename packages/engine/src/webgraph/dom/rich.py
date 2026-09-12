@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import re
+from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urljoin
 
@@ -108,45 +109,52 @@ def _inline_markdown(
             # It becomes a block of its own; only the text after it belongs here.
             parts.append(child.tail or "")
             continue
-        if _breaks_line(child):
-            parts.append(" ")
-        # The child's text with its edge whitespace intact. Normalising here, per child,
-        # is what fused `<span>: </span>Connecting` into `:Connecting` -- the space that
-        # separated two words lived at the end of the span, and stripping each child
-        # deleted it before the parent ever saw it. Whitespace at a child's edges belongs to
-        # the run of text, not to the child; only the whole is normalised, at the end.
-        raw = (
-            _inline_markdown(child, base, orphan_only=orphan_only, _final=False)
-            if len(child)
-            else flowed_text(child)
-        )
-        inner = normalize_text(raw)
-        lead = " " if raw[:1].isspace() else ""
-        trail = " " if raw[-1:].isspace() else ""
-
-        if tag == "a":
-            href = _absolute(child.get("href"), base)
-            label = inner or normalize_text(flowed_text(child))
-            # A link with no text contributes nothing a reader can use. A `javascript:`
-            # target is not a destination either -- it is a toggle, and `[[-]](javascript:
-            # void(0))` on every Hacker News comment is noise nobody can follow.
-            usable = href and label and not href.lower().startswith("javascript:")
-            parts.append(f"{lead}[{label}]({href}){trail}" if usable else f"{lead}{label}{trail}")
-        elif tag in _INLINE_EMPHASIS and inner:
-            parts.append(f"{lead}**{inner}**{trail}")
-        elif tag in _INLINE_ITALIC and inner:
-            parts.append(f"{lead}*{inner}*{trail}")
-        elif tag == "code" and inner:
-            parts.append(f"{lead}`{inner}`{trail}")
-        elif tag == "br":
-            parts.append(" ")
-        else:
-            parts.append(raw)
-
+        parts.append(_inline_child(child, base, orphan_only=orphan_only))
         parts.append(child.tail or "")
 
     joined = "".join(parts)
     return normalize_text(joined) if _final else joined
+
+
+def _inline_child(child: HtmlElement, base: str, *, orphan_only: bool) -> str:
+    """One inline child as Markdown, without its tail; un-normalised, edges intact."""
+    tag = child.tag if isinstance(child.tag, str) else ""
+    parts: list[str] = []
+    if _breaks_line(child):
+        parts.append(" ")
+    # The child's text with its edge whitespace intact. Normalising here, per child,
+    # is what fused `<span>: </span>Connecting` into `:Connecting` -- the space that
+    # separated two words lived at the end of the span, and stripping each child
+    # deleted it before the parent ever saw it. Whitespace at a child's edges belongs to
+    # the run of text, not to the child; only the whole is normalised, at the end.
+    raw = (
+        _inline_markdown(child, base, orphan_only=orphan_only, _final=False)
+        if len(child)
+        else flowed_text(child)
+    )
+    inner = normalize_text(raw)
+    lead = " " if raw[:1].isspace() else ""
+    trail = " " if raw[-1:].isspace() else ""
+
+    if tag == "a":
+        href = _absolute(child.get("href"), base)
+        label = inner or normalize_text(flowed_text(child))
+        # A link with no text contributes nothing a reader can use. A `javascript:`
+        # target is not a destination either -- it is a toggle, and `[[-]](javascript:
+        # void(0))` on every Hacker News comment is noise nobody can follow.
+        usable = href and label and not href.lower().startswith("javascript:")
+        parts.append(f"{lead}[{label}]({href}){trail}" if usable else f"{lead}{label}{trail}")
+    elif tag in _INLINE_EMPHASIS and inner:
+        parts.append(f"{lead}**{inner}**{trail}")
+    elif tag in _INLINE_ITALIC and inner:
+        parts.append(f"{lead}*{inner}*{trail}")
+    elif tag == "code" and inner:
+        parts.append(f"{lead}`{inner}`{trail}")
+    elif tag == "br":
+        parts.append(" ")
+    else:
+        parts.append(raw)
+    return "".join(parts)
 
 
 def flowed_text(element: HtmlElement) -> str:
@@ -759,6 +767,77 @@ def _orphan_text(element: HtmlElement) -> str:
     return normalize_text("".join(parts))
 
 
+@dataclass(slots=True)
+class _OrphanRun:
+    """One stretch of a container's own text, with where it sits among the child blocks.
+
+    `before` is the block-bearing child the run precedes -- the block is emitted just ahead
+    of it -- or None for text after the last one, emitted when the container closes.
+    `anchor` is the first element in the run: its measured rectangle stands for the run,
+    since a text node has none of its own. A run with no element at all stays unmeasured
+    and takes its place from document order, which the emit point now gets right.
+    """
+
+    text: str
+    rich: str
+    before: HtmlElement | None
+    anchor: HtmlElement | None
+    ordinal: int
+
+
+def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
+    """`_orphan_text`, split at each child block and kept in its place.
+
+    The one-block version carried all of a container's own text as a single block that sat
+    at the container's top and wore the container's rectangle. On a Discourse post the
+    caption of the ninth image -- an `<em>` the author wrote between two paragraphs -- was
+    read as the first line of the post, ahead of the opening sentence, because the cooked
+    `<div>` it was orphaned in spans the whole post. Same on any `<br>`-separated article
+    whose last sentence follows an embedded figure. Here each stretch between block
+    children is its own block, emitted where the reader meets it and measured by its first
+    element.
+
+    Splitting happens at the container's direct children. A block buried inside an inline
+    wrapper still splits the *text* (that walk is recursive) but not the *placement*: text
+    around it is one run anchored on the wrapper. Rare, and no worse than before.
+    """
+    runs: list[_OrphanRun] = []
+    text_parts: list[str] = [element.text or ""]
+    rich_parts: list[str] = [element.text or ""]
+    anchor: HtmlElement | None = None
+
+    def close(before: HtmlElement | None) -> None:
+        text = normalize_text("".join(text_parts))
+        if text:
+            rich = normalize_text("".join(rich_parts))
+            runs.append(_OrphanRun(text, rich, before, anchor, len(runs)))
+
+    for child in element:
+        tag = child.tag
+        if not isinstance(tag, str):
+            text_parts.append(child.tail or "")
+            rich_parts.append(child.tail or "")
+            continue
+        if tag in _CARRIED_ELSEWHERE:
+            close(child)
+            text_parts = [child.tail or ""]
+            rich_parts = [child.tail or ""]
+            anchor = None
+            continue
+        if anchor is None and tag != "br":
+            # A `<br>` has no box to measure; the first element that does stands for the run.
+            anchor = child
+        if _breaks_line(child):
+            text_parts.append(" ")
+        text_parts.append(child.text or "")
+        _orphan_parts(child, text_parts)
+        text_parts.append(child.tail or "")
+        rich_parts.append(_inline_child(child, base, orphan_only=True))
+        rich_parts.append(child.tail or "")
+    close(None)
+    return runs
+
+
 def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
     for child in element:
         tag = child.tag
@@ -833,6 +912,27 @@ def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
         parent.text = (parent.text or "") + tail
 
 
+def _is_control(button: HtmlElement) -> bool:
+    """Whether a standalone `<button>` is a control the reader cannot even see.
+
+    A button the browser is not showing -- sphinx-copybutton's "Copy", drawn at opacity 0
+    until the code block is hovered -- is never content; it came out as a one-word paragraph
+    between "For example:" and the example on every docs.python.org page. A *visible*
+    button stays, however short: its label can be the only text an interstitial has (the
+    gate probe reads "Solo Founder" off exactly such a button), and an accordion's question
+    is often a button and nothing else.
+    """
+    return button.get(HIDDEN_ATTRIBUTE) is not None
+
+
+def _last_descendant(element: HtmlElement) -> HtmlElement:
+    """The element `root.iter()` visits last inside `element` -- `element` itself if none."""
+    last = element
+    for last in element.iterdescendants():  # noqa: B007 -- the final value is the point
+        pass
+    return last
+
+
 def extract_rich_blocks(
     root: HtmlElement, base_url: str, *, min_chars: int = 1
 ) -> list[Block]:
@@ -850,10 +950,56 @@ def extract_rich_blocks(
     index = 0
     consumed: set[HtmlElement] = set()
     landmark_cache: dict[HtmlElement, tuple[str | None, bool]] = {}
+    # A container's own text, held until the walk reaches the child block it precedes (or
+    # the container's last descendant, for text after every child), so the block lands
+    # where the reader meets it. See `_orphan_runs`.
+    held_before: dict[HtmlElement, list[tuple[HtmlElement, _OrphanRun]]] = {}
+    held_after: dict[HtmlElement, list[tuple[HtmlElement, _OrphanRun]]] = {}
 
+    def admit(block: Block, element: HtmlElement) -> None:
+        nonlocal index
+        if block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA) and len(block.text) < min_chars:
+            return
+        region, in_main = _landmarks_of(element, landmark_cache)
+        if region is not None or in_main:
+            block = block.model_copy(update={"region": region, "in_main": in_main})
+        blocks.append(block)
+        index += 1
+
+    def admit_orphans(held: list[tuple[HtmlElement, _OrphanRun]]) -> None:
+        for container, run in held:
+            source = run.anchor if run.anchor is not None else container
+            xpath = (
+                tree.getpath(run.anchor)
+                if run.anchor is not None
+                else f"{tree.getpath(container)}/text()[{run.ordinal + 1}]"
+            )
+            admit(
+                Block(
+                    text=run.text,
+                    tag=container.tag,
+                    xpath=xpath,
+                    dom_index=index,
+                    kind=BlockKind.PARAGRAPH,
+                    rich_text=run.rich if run.rich != run.text else None,
+                ),
+                source,
+            )
+
+    previous: HtmlElement | None = None
     for element in root.iter():
+        # The previous element is complete once the walk moves on, whatever branch it took.
+        if previous is not None and previous in held_after:
+            # Innermost first: an inner container registered after the outer one it sits
+            # in, and its trailing text comes before the outer container's.
+            admit_orphans(held_after.pop(previous)[::-1])
+        previous = element
         tag = element.tag
-        if not isinstance(tag, str) or element in consumed:
+        if not isinstance(tag, str):
+            continue
+        if element in held_before:
+            admit_orphans(held_before.pop(element))
+        if element in consumed:
             continue
 
         block: Block | None = None
@@ -953,7 +1099,15 @@ def extract_rich_blocks(
             elif tag in {"li", "dd", "dt"}:
                 text = _own_text(element)
             else:
-                text = _orphan_text(element)
+                text = ""
+                for run in _orphan_runs(element, base_url):
+                    if run.before is not None:
+                        held_before.setdefault(run.before, []).append((element, run))
+                    else:
+                        last = _last_descendant(element)
+                        held_after.setdefault(last, []).append((element, run))
+            if text and tag == "button" and _is_control(element):
+                text = ""
             if text:
                 ordered, level = _list_context(element) if tag == "li" else (False, 0)
                 rich = _inline_markdown(element, base_url, orphan_only=has_block_descendant)
@@ -968,16 +1122,10 @@ def extract_rich_blocks(
                     rich_text=rich if rich != text else None,
                 )
 
-        if block is None:
-            continue
-        if block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA) and len(block.text) < min_chars:
-            continue
-
-        region, in_main = _landmarks_of(element, landmark_cache)
-        if region is not None or in_main:
-            block = block.model_copy(update={"region": region, "in_main": in_main})
-        blocks.append(block)
-        index += 1
+        if block is not None:
+            admit(block, element)
+    if previous is not None and previous in held_after:
+        admit_orphans(held_after.pop(previous)[::-1])
 
     return blocks
 
