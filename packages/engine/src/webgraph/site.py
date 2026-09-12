@@ -34,7 +34,13 @@ from webgraph.crawl.discovery import (
     extract_links,
     load_robots,
 )
-from webgraph.crawl.frontier import CrawlScope, Frontier, normalize_url, reconcile_scheme
+from webgraph.crawl.frontier import (
+    CrawlScope,
+    Discovery,
+    Frontier,
+    normalize_url,
+    reconcile_scheme,
+)
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
@@ -788,7 +794,17 @@ def stream_site(
     scope = CrawlScope(root=normalized_root, max_depth=config.discovery_depth)
     frontier = Frontier(scope=scope)
     frontier.mark_seen(normalized_root)
-    seeded = frontier.extend(list(probe.sitemap_pages), 1)
+    # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
+    # citation, including the one the crawl began from.
+    frontier.origin.setdefault(
+        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
+    )
+    # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
+    # citation, including the one the crawl began from.
+    frontier.origin.setdefault(
+        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
+    )
+    seeded = frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
     yield {
         "type": "frontier",
@@ -906,6 +922,11 @@ def stream_site(
                     depth + 1,
                     base=fetched.canonical or page.url,
                     found_on=page.url,
+                    via="link",
+                    # The words a reader would have clicked. Often the only human-readable
+                    # reason a link was followed, and the difference between "we crawled this
+                    # because something pointed at it" and a citation.
+                    anchors=dict(fetched.anchored),
                 )
 
                 # Chrome is knowable only once several pages exist. Compute it the first
@@ -943,10 +964,15 @@ def stream_site(
                     "type": "page",
                     "index": extracted + failed,
                     "url": page.url,
-                    # Where this address was first seen. "Could not fetch X" is not
-                    # actionable without it: the next question is always which page linked
-                    # to X, and only the frontier ever knew.
-                    "found_on": frontier.discovered_on(fetched.requested),
+                    # How this address entered the crawl: which page, by what method, and
+                    # through which link text. "Could not fetch X" is not actionable without
+                    # it -- the next question is always what pointed at X, and only the
+                    # frontier ever knew.
+                    "citation": (
+                        citation.as_dict()
+                        if (citation := frontier.citation(fetched.requested)) is not None
+                        else None
+                    ),
                     "title": page.title,
                     "ok": page.ok,
                     "error": page.error,

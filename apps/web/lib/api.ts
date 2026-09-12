@@ -356,9 +356,19 @@ export interface PageEvent {
   type: "page";
   index: number;
   url: string;
-  /** The page this address was first found on, or null for a seed. "Could not fetch X" is
-   *  not actionable without it: the next question is always which page linked to X. */
-  found_on: string | null;
+  /** How this address came to be in the crawl: by what method, from which page, and through
+   *  which link text. Null only if it was never recorded. Everything the crawl reports
+   *  should be answerable with "and how do you know"; this is that answer for the page
+   *  existing at all. */
+  citation: {
+    /** "seed", "sitemap" or "link". */
+    via: string;
+    found_on: string | null;
+    /** The words a reader would have clicked. Often the only human-readable reason a link
+     *  was followed. */
+    anchor: string | null;
+    depth: number;
+  } | null;
   title: string;
   ok: boolean;
   error: string | null;

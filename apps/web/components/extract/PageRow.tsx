@@ -6,6 +6,7 @@ import type { PageEvent } from "@/lib/api";
 import { compact } from "@/lib/format";
 import CopyButton from "@/components/ui/CopyButton";
 import { renderMarkdown } from "@/lib/markdown";
+import Citation from "@/components/ui/Citation";
 
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
@@ -112,23 +113,7 @@ export default function PageRow({
               truncated message, and the two things needed to act on it -- what went wrong in
               full, and which page sent the crawl here -- both live below the fold. */}
           <p className="font-mono text-[12px] break-words text-flag-bad">{page.error}</p>
-          <p className="mt-2 font-mono text-[11.5px] text-ink-faint">
-            {page.found_on ? (
-              <>
-                linked from{" "}
-                <a
-                  href={page.found_on}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-2 hover:text-ink-soft"
-                >
-                  {page.found_on.replace(/^https?:\/\//, "")}
-                </a>
-              </>
-            ) : (
-              "a starting point for this crawl, not discovered from another page"
-            )}
-          </p>
+          <Citation citation={page.citation} className="mt-2 block" />
           <a
             href={page.url}
             target="_blank"
@@ -153,23 +138,7 @@ export default function PageRow({
                 {page.url}
               </a>
               {/* Where this came from. On a failure it is the only actionable fact. */}
-              <span className="truncate font-mono text-[11px] text-ink-faint">
-                {page.found_on ? (
-                  <>
-                    found on{" "}
-                    <a
-                      href={page.found_on}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline underline-offset-2 hover:text-ink-soft"
-                    >
-                      {page.found_on.replace(/^https?:\/\//, "")}
-                    </a>
-                  </>
-                ) : (
-                  "a starting point for this crawl"
-                )}
-              </span>
+              <Citation citation={page.citation} className="truncate" />
             </span>
 
             <div className="flex flex-wrap items-center gap-2">

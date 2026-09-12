@@ -3248,3 +3248,35 @@ stretch the *shipped* router was the 68-feature unbalanced one -- 0.323 listing 
 than the 0.343 the day started with. Training a model and shipping a model are two actions and
 only one of them had been done. Found by checking what was actually in the file rather than
 what I remembered doing.
+
+### D114 -- Everything a crawl reports should answer "and how do you know"
+
+A run reported that two pages failed and nothing more. The next questions are always the
+same -- what linked to them, what was tried, how long it took -- and none of it survived the
+stream being consumed.
+
+**Citations.** `Frontier.origin` now holds a `Discovery` per address: `via`
+(`seed`/`sitemap`/`link`), `found_on`, `anchor`, `depth`. The anchor is what makes it a
+citation rather than a reference: *the words a reader would have clicked* are the only part
+of a link a person can recognise. Anchors key on the **raw** href because that is what the
+page contained; the frontier stores the normalised form, and the two differ by exactly the
+tracking parameters normalisation removes. Kept for the *first* acceptance -- a URL linked
+from twenty pages is one page, and the citation that matters is the one that brought it in.
+
+Verified on Hacker News: `/newest via=link, on /, link text "new"`. And on a site with a
+sitemap: `via=sitemap, found_on <root>`. The root itself records `via=seed`, so every page in
+a crawl has a citation including the one nothing pointed at.
+
+**Traces.** `webgraph.trace` writes one JSON object per event with a run id, a sequence
+number and seconds since the run began. A pass-through generator, so recording cannot change
+what a consumer sees, and *its own failures are swallowed*: a crawl that dies because its
+trace could not be written has been made worse by the thing meant to help it. Page Markdown
+is stripped -- a trace carrying the whole corpus twice is not a trace. The API writes one per
+crawl under `$WEBGRAPH_TRACE_DIR`.
+
+**And a render timeout is not an empty page.** `wait_until="load"` waits for every advert and
+tracker; on an ad-heavy retail page that event may never fire while the document finished long
+before. The document is now read as it stands. *With a guard, because the first version made
+things worse*: reliancedigital.in answers a 288-character document whose entire body is the
+words "stream timeout", and salvaging it produced somebody else's error as the page. A
+salvaged timeout must hold a real page, not an error wearing one's clothes.
