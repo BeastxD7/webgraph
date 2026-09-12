@@ -239,3 +239,40 @@ class TestLandmarks:
             "<main><p>" + "Main body. " * 12 + "</p></main>"
         )
         assert any("sidebar note" in b.text for b in strip_landmarks(blocks))
+
+
+class TestFilterWidgets:
+    """A faceted-search panel is navigation over the catalogue: inside `main`, link-dense
+    like the grid beside it, named by its authors. newegg.com: 3,000 words of "ASUS" and
+    "394 mm" around a 650-word grid."""
+
+    def test_named_filter_panel_with_controls_is_stripped(self) -> None:
+        from webgraph.pipeline import build_document
+
+        facets = "".join(
+            f'<li><label><input type="checkbox">Brand {i}</label> <span>({i * 7})</span></li>' for i in range(6)
+        )
+        cards = "".join(f"<li><a href='/p/{i}'>Graphics Card {i} 16GB GDDR6</a><span>$ {400 + i}.99</span></li>" for i in range(8))
+        html = (
+            "<html><body><main><h1>GPUs</h1>"
+            f'<div class="product-filters"><h3>Brand</h3><ul>{facets}</ul></div>'
+            f"<ul class='grid'>{cards}</ul></main></body></html>"
+        )
+        document = build_document(html, "https://shop.test/gpus")
+        marked = [b for b in document.blocks if b.widget == "filter"]
+        assert marked and all("Brand" in b.text or "(" in b.text for b in marked)
+        from webgraph.boilerplate import strip_landmarks
+
+        kept = strip_landmarks(list(document.blocks))
+        assert not any(b.widget for b in kept)
+        assert any("Graphics Card 3" in b.text for b in kept)
+
+    def test_a_named_panel_without_controls_is_left_alone(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><main><div class="facet-row filters"><h5>What should I look for?</h5>'
+            "<p>Focus on ease of use, a good manual and a few built-in stitches.</p></div></main></body></html>"
+        )
+        document = build_document(html, "https://shop.test/faq")
+        assert not any(b.widget for b in document.blocks)

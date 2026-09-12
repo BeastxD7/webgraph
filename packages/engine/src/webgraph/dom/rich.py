@@ -951,6 +951,8 @@ def extract_rich_blocks(
     consumed: set[HtmlElement] = set()
     landmark_cache: dict[HtmlElement, tuple[str | None, bool]] = {}
     float_cache: dict[HtmlElement, HtmlElement | None] = {}
+    widget_cache: dict[HtmlElement, str | None] = {}
+    body_words = len(root.text_content().split())
     # A container's own text, held until the walk reaches the child block it precedes (or
     # the container's last descendant, for text after every child), so the block lands
     # where the reader meets it. See `_orphan_runs`.
@@ -967,6 +969,9 @@ def extract_rich_blocks(
         floated = _float_of(element, float_cache)
         if floated is not None:
             block = block.model_copy(update={"float_of": tree.getpath(floated)})
+        widget = _widget_of(element, widget_cache, body_words)
+        if widget is not None:
+            block = block.model_copy(update={"widget": widget})
         blocks.append(block)
         index += 1
 
@@ -1153,6 +1158,67 @@ def _landmark_of_element(element: HtmlElement) -> str | None:
     if role in _LANDMARK_ROLES:
         return _LANDMARK_ROLES[role]
     return _LANDMARK_TAGS.get(tag)
+
+
+_FILTER_TOKENS: Final[frozenset[str]] = frozenset({
+    "filter", "filters", "facet", "facets", "faceted", "refine", "refinement", "refinements",
+    "filterbar", "filternav", "filtersidebar",
+})
+_TOKEN_SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_\-:/.]+")
+
+
+def _names_filter(element: HtmlElement) -> bool:
+    """Whether this element's own class, id or ARIA label says it is a filter panel."""
+    names = " ".join(
+        element.get(attribute) or "" for attribute in ("class", "id", "aria-label", "data-testid")
+    ).lower()
+    if not names:
+        return False
+    return any(token in _FILTER_TOKENS for token in _TOKEN_SPLIT.split(names))
+
+
+def _widget_of(
+    element: HtmlElement, cache: dict[HtmlElement, str | None], body_words: int
+) -> str | None:
+    """The named interactive panel around this element, memoised; None when there is none.
+
+    Only `filter` today. A faceted-search panel on a collection page is the boilerplate no
+    density rule can see: it sits inside `main`, it is made of links and checkboxes like
+    the grid beside it, and on newegg.com it is 3,000 words of "ASUS" and "394 mm" around
+    a 650-word grid. Its authors name it, on the panel or on the fieldsets inside it, and
+    that name is read here.
+
+    A name is not enough on its own: headphones.com wraps its whole grid in a
+    `collection-filters-and-products` div. A panel that holds more than
+    `_MAX_WIDGET_SHARE` of the page's words is the page, not a panel, whatever it is
+    called; and a `<fieldset>` counts only when it holds checkboxes.
+    """
+    if element in cache:
+        return cache[element]
+    parent = element.getparent()
+    above = _widget_of(parent, cache, body_words) if parent is not None else None
+    own: str | None = None
+    if above is None:
+        tag = element.tag if isinstance(element.tag, str) else ""
+        named = tag in _WIDGET_TAGS and (
+            _names_filter(element)
+            or (tag == "fieldset" and bool(element.xpath('.//input[@type="checkbox"]')))
+        )
+        if named and element.xpath(".//input | .//select"):
+            # A filter is operated: it has controls. brother-usa.com builds its FAQ
+            # accordion from a component called `facet-row` / `filters`; it has none.
+            words = len(element.text_content().split())
+            if words <= _MAX_WIDGET_SHARE * body_words:
+                own = "filter"
+    result = above if above is not None else own
+    cache[element] = result
+    return result
+
+
+_WIDGET_TAGS: Final[frozenset[str]] = frozenset(
+    {"div", "section", "aside", "form", "fieldset", "nav", "ul", "details"}
+)
+_MAX_WIDGET_SHARE: Final[float] = 0.4
 
 
 def _float_of(

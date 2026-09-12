@@ -309,6 +309,15 @@ class MainContentConfig:
     individually scored. Measured: with no share guard, grouping cost articles -0.015 and
     products -0.063 on WCXB dev while lifting listings +0.054."""
 
+    product_sheet: bool = False
+    """Product pages: prune the repeated groups that are *other* things -- a grid of related
+    products (prices and links), a list of reviews (ratings and dates) -- before the run is
+    chosen, and keep the specification blocks (tables, `label: value` lines) inside `main`
+    however short they are. Measured on WCXB dev; see `_prune_product`."""
+
+    product_keep_all: bool = False
+    """With `product_sheet`: after pruning, keep everything rather than choosing a run."""
+
     min_run_share: float = config.CONTENT_MIN_RUN_SHARE
     """Refuse to return less than this share of the document's words.
 
@@ -461,7 +470,18 @@ def select_main_content(
         cost = min(max(config.cost_ratio * mean_words, config.cost_floor), config.cost_ceiling)
         config = replace(config, block_cost=cost)
 
+    if config.product_sheet:
+        blocks = _prune_product(blocks, config)
+        blocks = _prune_other_sections(blocks)
+        if len(blocks) < 2 or config.product_keep_all:
+            return list(blocks)
+
     values = [content_value(block, config) for block in blocks]
+    if config.product_sheet:
+        values = [
+            max(v, _SPEC_VALUE) if _is_spec(block) else v
+            for v, block in zip(values, blocks, strict=True)
+        ]
 
     # Units: consecutive blocks of one repeated group are scored together, paying the block
     # cost once -- see `MainContentConfig.group_repeats`. With grouping off every block is
@@ -532,3 +552,129 @@ def select_main_content(
         return list(blocks)
 
     return selected
+
+
+_PRICE: Final[re.Pattern[str]] = re.compile(
+    r"(?:[$€£¥₹]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|INR|CAD|AUD))"
+)
+_LINKED: Final[re.Pattern[str]] = re.compile(r"\]\(")
+_REVIEWISH: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:out of 5|stars?|verified (?:buyer|purchase|owner)|helpful|reviewed?|rating)\b", re.I
+)
+_SPEC_LINE: Final[re.Pattern[str]] = re.compile(r"^[^:]{2,40}:\s*\S")
+_SPEC_VALUE: Final[float] = 0.5
+_MIN_OTHER_GROUP: Final[int] = 3
+
+
+def _is_spec(block: Block) -> bool:
+    """A specification line: a table, or a short `Label: value` line in the main landmark."""
+    if block.kind is BlockKind.TABLE:
+        return True
+    return (
+        block.in_main
+        and block.kind in (BlockKind.PARAGRAPH, BlockKind.LIST_ITEM)
+        and word_count(block.text) <= 20
+        and _SPEC_LINE.match(block.text) is not None
+    )
+
+
+def _prune_product(blocks: Sequence[Block], config: MainContentConfig) -> list[Block]:
+    """Drop the repeated groups on a product page that are about other products or other
+    people: a related-products grid (several items with a price and a link) and a review
+    list (several items with rating or date words). What remains is the product.
+
+    Measured on WCXB dev the product ground truth is the sheet -- title, description,
+    features, specifications -- and the boundary step was keeping the reviews instead: on
+    thomann.de 662 words of "I have to say I am very pleasantly surprised" beside a
+    129-word spec list, because reviews are prose and specs are twenty short lines that
+    each pay the block cost.
+    """
+    grouped = _repeat_groups(blocks, replace(config, group_repeats="all", group_min_share=0.0))
+    members: dict[int, list[int]] = {}
+    for index, group in enumerate(grouped):
+        if group >= 0:
+            members.setdefault(group, []).append(index)
+    drop: set[int] = set()
+    for indices in members.values():
+        instances: dict[str, list[Block]] = {}
+        for i in indices:
+            xpath = blocks[i].xpath
+            matches = list(_INDEX.finditer(xpath))
+            # Group by the outermost repeated step that this group keys on: `_repeat_groups`
+            # already chose the prefix; the instance is the path up to its index.
+            key = xpath[: matches[-1].end()] if matches else xpath
+            instances.setdefault(key, []).append(blocks[i])
+        if len(instances) < _MIN_OTHER_GROUP:
+            continue
+        priced = linked = reviewish = 0
+        for items in instances.values():
+            text = " ".join(b.text for b in items)
+            rich = " ".join(b.rich_text or "" for b in items)
+            if _PRICE.search(text):
+                priced += 1
+            if any(b.href for b in items) or _LINKED.search(rich):
+                linked += 1
+            if _REVIEWISH.search(text) or _DATE.search(text):
+                reviewish += 1
+        n = len(instances)
+        is_grid = priced >= 0.6 * n and linked >= 0.6 * n
+        is_reviews = reviewish >= 0.6 * n
+        if is_grid or is_reviews:
+            drop.update(indices)
+    return [block for index, block in enumerate(blocks) if index not in drop]
+
+
+_DATE: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2},? \d{4}|\d+ (?:days?|weeks?|months?|years?) ago)\b",
+    re.I,
+)
+
+
+_OTHER_SECTION: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:reviews?|ratings?|customers? (?:also|who)|you may also|you might also|also (?:like|bought|viewed)|"
+    r"related (?:products?|items?)|similar (?:products?|items?)|recommended|recommendations|"
+    r"recently viewed|frequently bought|complete the look|pairs? well with|questions?( & answers?| and answers?)?|q\s*&\s*a|"
+    r"compare (?:with )?similar|more from|shop the look|others? (?:also )?(?:bought|viewed)|"
+    r"bestsellers?|best sellers?|new arrivals|trending)\b",
+    re.I,
+)
+
+
+def _prune_other_sections(blocks: Sequence[Block]) -> list[Block]:
+    """Drop the sections of a product page that are about other things.
+
+    A product page is sections under headings, and the headings say what they are:
+    "Customer Reviews", "You may also like", "Frequently bought together", "Questions &
+    Answers". A section is the heading and everything until the next heading of the same
+    or a higher level, and it is dropped only when it is bounded: at most
+    `_MAX_SECTION_BLOCKS` long. simplybirkenstock.com puts a "Write a Review" modal above
+    the description with no heading between them; an unbounded skip ate the page.
+    """
+    n = len(blocks)
+    drop: set[int] = set()
+    index = 0
+    while index < n:
+        block = blocks[index]
+        if (
+            block.kind is BlockKind.HEADING
+            and word_count(block.text) <= 8
+            and _OTHER_SECTION.search(block.text)
+            and not _WRITE.match(block.text)
+        ):
+            level = block.level or 6
+            end = index + 1
+            while end < n and not (
+                blocks[end].kind is BlockKind.HEADING and (blocks[end].level or 6) <= level
+            ):
+                end += 1
+            if end - index <= _MAX_SECTION_BLOCKS:
+                drop.update(range(index, end))
+                index = end
+                continue
+        index += 1
+    out = [block for i, block in enumerate(blocks) if i not in drop]
+    return out if out else list(blocks)
+
+
+_MAX_SECTION_BLOCKS: Final[int] = 60
+_WRITE: Final[re.Pattern[str]] = re.compile(r"^\s*(?:write|leave|add|submit|post)\b", re.I)

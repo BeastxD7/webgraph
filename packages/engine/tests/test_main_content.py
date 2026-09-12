@@ -295,3 +295,67 @@ class TestRepeatedGroups:
         blocks = self._grid(2)
         groups = _repeat_groups(blocks, MainContentConfig(group_repeats="all"))
         assert all(g == -1 for b, g in zip(blocks, groups, strict=True) if "Vent Light" in b.text)
+
+
+class TestProductSheet:
+    """WCXB product ground truth is the sheet -- title, description, features, specs -- and
+    the boundary step was keeping the reviews instead. Dev F1 0.586 -> 0.601 (D103)."""
+
+    @staticmethod
+    def page() -> list[Block]:
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0, xpath: str | None = None) -> Block:
+            return Block(
+                text=text, tag="p", xpath=xpath or f"/html/body/main/div/p[{i + 1}]", dom_index=i,
+                kind=kind, level=level, in_main=True, region="main",
+            )
+
+        blocks = [
+            b("Fender Player II Strat RW BCG", 0, kind=BlockKind.HEADING, level=1),
+            b("Electric Guitar", 1, kind=BlockKind.HEADING, level=2),
+            b("Body: Alder", 2, kind=BlockKind.LIST_ITEM),
+            b("Bolt-on neck: Maple", 3, kind=BlockKind.LIST_ITEM),
+            b("Fingerboard: Rosewood", 4, kind=BlockKind.LIST_ITEM),
+            b("Scale: 648 mm (25.5 inch)", 5, kind=BlockKind.LIST_ITEM),
+            b("Nut width: 42 mm", 6, kind=BlockKind.LIST_ITEM),
+            b("Pickups: 3 Player Series Alnico 5 Strat single coils", 7, kind=BlockKind.LIST_ITEM),
+            b("Customer Reviews", 8, kind=BlockKind.HEADING, level=2),
+        ]
+        for i in range(3):
+            blocks.append(b(f"{PROSE} Review number {i}. 5 out of 5 stars, verified buyer.", 9 + i,
+                            xpath=f"/html/body/main/div/section/div[{i + 1}]/p"))
+        blocks.append(b("You may also like", 12, kind=BlockKind.HEADING, level=2))
+        for i in range(4):
+            blocks.append(Block(
+                text="Fender Player II Strat HSS $899.00", tag="p",
+                xpath=f"/html/body/main/div/ul/li[{i + 1}]/p", dom_index=13 + i,
+                href="https://shop.test/p", in_main=True, region="main",
+            ))
+        return blocks
+
+    def test_specs_kept_reviews_and_related_dropped(self) -> None:
+        kept = select_main_content(self.page(), config=MainContentConfig(product_sheet=True))
+        texts = [b.text for b in kept]
+        assert "Body: Alder" in texts and "Pickups: 3 Player Series Alnico 5 Strat single coils" in texts
+        assert not any("Review number" in t for t in texts)
+        assert not any("$899.00" in t for t in texts)
+        assert "Customer Reviews" not in texts and "You may also like" not in texts
+
+    def test_default_policy_is_unchanged(self) -> None:
+        kept = select_main_content(self.page(), config=MainContentConfig())
+        assert any("Review number" in b.text for b in kept), "without the policy, prose wins"
+
+    def test_write_a_review_is_not_a_section(self) -> None:
+        from webgraph.main_content import _prune_other_sections
+
+        blocks = [
+            Block(text="Write a Review", tag="h3", xpath="/html/body/h3[1]", dom_index=0, kind=BlockKind.HEADING, level=3),
+            Block(text=PROSE, tag="p", xpath="/html/body/p[1]", dom_index=1),
+        ]
+        assert [b.text for b in _prune_other_sections(blocks)] == ["Write a Review", PROSE]
+
+    def test_an_unbounded_tail_is_not_dropped(self) -> None:
+        from webgraph.main_content import _prune_other_sections
+
+        blocks = [Block(text="Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
+        blocks += [Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(80)]
+        assert len(_prune_other_sections(blocks)) == 81
