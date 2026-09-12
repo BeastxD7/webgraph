@@ -31,6 +31,7 @@ __all__ = [
     "RTL_SCRIPTS",
     "SHADOW_TEMPLATE_ATTRIBUTE",
     "SKIP_TAGS",
+    "SR_ONLY_CLASSES",
     "extract_blocks",
     "flatten_shadow_roots",
     "is_rtl_document",
@@ -350,6 +351,22 @@ heading would also mutilate the ones that legitimately end in one.
 """
 
 
+SR_ONLY_CLASSES: Final[frozenset[str]] = frozenset({
+    "sr-only", "visually-hidden", "visuallyhidden", "screen-reader-text", "screen-reader-only",
+    "a11y-hidden", "u-visually-hidden", "is-visually-hidden", "sr_only", "visually_hidden",
+    "assistive-text", "hidden-visually", "offscreen", "clip-hidden",
+})
+"""Class names that clip an element to a 1px box off screen: Bootstrap and Tailwind's
+`sr-only` / `visually-hidden`, WordPress's `screen-reader-text`, and the house variants.
+
+The text is real and read aloud by a screen reader, but it is not what a sighted reader
+sees, and it is usually a label for a control rather than content: "Option: BILLY,
+Bookcase, dark brown oak effect" on every variant swatch of ikea.com's category page --
+1,214 words of it on one page -- "Skip to main content", "Opens in a new window". A
+rendered fetch measures such an element at 1x1px and it goes as unmeasured chrome; a
+static fetch has only the class to go by, and this reads it.
+"""
+
 HEADING_CONTROL_CLASSES: Final[tuple[str, ...]] = ("mw-editsection",)
 """Class names of the control strip beside a heading that is not an anchor.
 
@@ -367,7 +384,11 @@ def strip_permalinks(root: HtmlElement) -> None:
     controls = set(HEADING_CONTROL_CLASSES)
     for element in root.xpath(".//*[@class]"):
         classes = set((element.get("class") or "").lower().split())
-        if not ((element.tag == "a" and classes & permalinks) or classes & controls):
+        if not (
+            (element.tag == "a" and classes & permalinks)
+            or classes & controls
+            or (classes & SR_ONLY_CLASSES and not _sr_only_is_content(element))
+        ):
             continue
         parent = element.getparent()
         if parent is None:
@@ -381,6 +402,16 @@ def strip_permalinks(root: HtmlElement) -> None:
             else:
                 parent.text = (parent.text or "") + element.tail
         parent.remove(element)
+
+
+def _sr_only_is_content(element: HtmlElement) -> bool:
+    """A screen-reader-only element that is the page's own heading is kept: some sites
+    put the article's `<h1>` in `sr-only` beside a logo image. A label of a few words is
+    what the class is for and goes."""
+    tag = element.tag if isinstance(element.tag, str) else ""
+    if tag not in {"h1", "h2", "h3"}:
+        return False
+    return len(element.text_content().split()) >= 4
 
 
 RTL_LANGUAGES: Final[frozenset[str]] = frozenset({

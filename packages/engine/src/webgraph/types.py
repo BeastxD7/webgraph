@@ -8,6 +8,7 @@ one (see MEMORY.md D7).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -381,6 +382,19 @@ class StructuredPayload(BaseModel):
     note: str | None = None
 
 
+_NOT_TEXT: frozenset[BlockKind] = frozenset({BlockKind.IMAGE, BlockKind.MEDIA})
+"""Block kinds whose `text` is not page text: alt text and placeholders."""
+
+
+def blocks_text(blocks: Iterable[Block]) -> str:
+    """The plain text of `blocks` in their order -- `Document.text`, for any block list.
+
+    The benchmark runners join through this too, so a variant differs from the shipped
+    text only by which blocks survive, never by how they are joined.
+    """
+    return "\n\n".join(b.text for b in blocks if b.text.strip() and b.kind not in _NOT_TEXT)
+
+
 class Document(BaseModel):
     """A fetched and parsed page, ready for extraction."""
 
@@ -420,8 +434,16 @@ class Document(BaseModel):
 
     @property
     def text(self) -> str:
-        """Full document text in reading order."""
-        return "\n\n".join(b.text for b in self.blocks if b.text.strip())
+        """Full document text in reading order: what a reader reads.
+
+        Image alt text and media placeholders are not in it. An image block's `text` is its
+        alt -- kept so the Markdown can carry it -- and a `[Media not transcribed.]`
+        placeholder is a note from this engine, not a sentence from the page. Measured on
+        WCXB dev, ikea.com's bookcase category emitted 613 words of alt text ("A tall, white
+        BILLY bookshelf with multiple shelves, suitable for...") that no reader saw as
+        text and no annotator marked.
+        """
+        return blocks_text(self.blocks)
 
     @property
     def dom_order_differs(self) -> bool:

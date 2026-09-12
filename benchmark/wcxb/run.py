@@ -71,6 +71,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from webgraph.types import blocks_text
+
 VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "content", "routed-oof", "routed-truth")
 """The four ways to turn a parsed document into text.
 
@@ -241,7 +243,7 @@ def extract(corpus: Path, split: str, file_id: str, url: str) -> PageOutcome:
 
 
 def _join(blocks: Iterable[object]) -> str:
-    return "\n\n".join(b.text for b in blocks if b.text.strip())  # type: ignore[attr-defined]
+    return blocks_text(blocks)  # type: ignore[arg-type]
 
 
 def _extract_star(args: tuple[Path, str, str, str]) -> PageOutcome:
