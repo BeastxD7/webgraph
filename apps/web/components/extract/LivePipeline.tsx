@@ -151,12 +151,34 @@ export default function LivePipeline({
           ? "failed"
           : "stopped"
         : "done";
+    const elapsedText = timing ? seconds(timing, now) : "";
+    const status =
+      state === "running"
+        ? `In progress${elapsedText ? ` · ${elapsedText}` : ""}`
+        : state === "failed"
+          ? "Failed"
+          : state === "stopped"
+            ? `Stopped${elapsedText ? ` after ${elapsedText}` : ""}`
+            : `Completed${elapsedText ? ` in ${elapsedText}` : ""}`;
+    // The crawl stage's parts, in the reference grammar: what just finished is struck
+    // through, what is being fetched is the filled dot. The queue is not listed -- it is
+    // thousands long and it is the future.
+    const substeps =
+      id === "crawl" && running
+        ? [
+            ...(justFinished
+              ? [{ id: `done-${justFinished.url}`, label: justFinished.url, state: "done" as const }]
+              : []),
+            ...inFlight.map((url) => ({ id: `now-${url}`, label: shortUrl(url), state: "current" as const })),
+          ]
+        : undefined;
     steps.push({
       id,
       title: copy.title,
       description: copy.does,
       state,
-      duration: timing ? seconds(timing, now) : undefined,
+      status,
+      substeps,
       children: (
         <>
           {id === "probe" && analysis && (
@@ -224,33 +246,6 @@ export default function LivePipeline({
 
               <PageTypes pages={pages} total={extracted} />
 
-              {inFlight.length > 0 && (
-                <div className="mt-3 rounded-lg border border-line bg-sunk p-2.5">
-                  <p className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-faint">
-                    fetching now · {inFlight.length} at once
-                  </p>
-                  <ul className="mt-1.5 flex flex-col gap-1">
-                    {inFlight.map((url) => (
-                      <li key={url} className="flex items-center gap-2 font-mono text-[11px] text-ink-soft">
-                        <span
-                          aria-hidden
-                          className="size-1.5 shrink-0 rounded-full bg-leaf-500 motion-safe:animate-[drift_1.2s_ease-in-out_infinite]"
-                        />
-                        <span className="truncate">{shortUrl(url)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {justFinished && (
-                <p className="mt-2 truncate font-mono text-[11px] text-ink-faint">
-                  <span className={justFinished.ok ? "text-leaf-700" : "text-clay"}>
-                    {justFinished.ok ? "✓" : "✕"}
-                  </span>{" "}
-                  just finished {justFinished.url} — {justFinished.detail}
-                </p>
-              )}
             </>
           )}
         </>
