@@ -49,6 +49,30 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Final
 
+from webgraph.config import (
+    CHARS_PER_TOKEN as CHARS_PER_TOKEN,
+)
+from webgraph.config import (
+    DEDUP_PREFIX_CHARS as DEDUP_PREFIX_CHARS,
+)
+from webgraph.config import (
+    FEEDBACK_DISCOUNT as FEEDBACK_DISCOUNT,
+)
+from webgraph.config import (
+    HEADING_UBIQUITY as HEADING_UBIQUITY,
+)
+from webgraph.config import (
+    HEADING_WEIGHT as HEADING_WEIGHT,
+)
+from webgraph.config import (
+    MENTION_WEIGHT as MENTION_WEIGHT,
+)
+from webgraph.config import (
+    PAGE_EVIDENCE_WEIGHT as PAGE_EVIDENCE_WEIGHT,
+)
+from webgraph.config import (
+    B as B,
+)
 from webgraph.graph.model import Section, SiteGraph
 
 __all__ = [
@@ -61,44 +85,7 @@ __all__ = [
 
 _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'_-]*")
 
-CHARS_PER_TOKEN: Final[float] = 4.0
-"""Rough conversion for budgeting. Deliberately approximate: the budget is a guard rail, and
-tokenising precisely would tie the engine to one model's vocabulary."""
-
 K1: Final[float] = 1.5
-B: Final[float] = 0.75
-HEADING_UBIQUITY: Final[float] = 0.5
-"""Share of pages a heading must appear on before it is useless for identifying one."""
-
-DEDUP_PREFIX_CHARS: Final[int] = 300
-"""Characters of a section's opening used to recognise a near-duplicate."""
-
-PAGE_EVIDENCE_WEIGHT: Final[float] = 0.0
-"""How much of its page's total score a section inherits.
-
-Zero: the sweep in `apply_page_evidence` found it neutral at best and harmful on the buckets
-with room to improve. The parameter stays so the measurement can be repeated.
-"""
-
-FEEDBACK_DISCOUNT: Final[float] = 0.5
-"""How much a section found through anchor feedback is worth, against one that matched the
-question directly. Feedback should add, never displace."""
-
-MENTION_WEIGHT: Final[float] = 0.25
-"""Weight of a shared-entity edge, relative to a link.
-
-Set by sweep, not by intuition. Entities derived from anchor consensus produce many
-mentions, and at the 0.7 that structural edges get they cost recall: measured -0.7 points
-on average across three sites, because a section that merely names the same subject is much
-weaker evidence than a link someone chose to write. The value of these edges is between
-sites, where link edges are sparse, so the weight is set to be harmless within one.
-"""
-
-HEADING_WEIGHT: Final[int] = 3
-"""A heading term is worth three body terms. Headings are the author's own summary of the
-section, and a query matching one is a much stronger signal than a passing mention."""
-
-
 def tokenize(text: str) -> list[str]:
     return [m.group(0).lower() for m in _WORD.finditer(text)]
 

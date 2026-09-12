@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import tempfile
 import threading
@@ -34,6 +33,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from webgraph.config import Settings
 from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
@@ -54,50 +54,27 @@ from webgraph.site import SiteConfig, stream_site
 from webgraph.trace import RunTrace, trace_events
 from webgraph.types import BlockKind, Document, Rect
 
-
-def _origins_from_env() -> list[str]:
-    """Browser origins allowed to call this API.
-
-    Comma-separated in `WEBGRAPH_ALLOWED_ORIGINS`; the dev frontend when unset. Never `*`:
-    this service fetches arbitrary URLs on the caller's behalf, so an open CORS policy would
-    hand every page on the internet a proxy that runs inside our network.
-    """
-    raw = os.environ.get("WEBGRAPH_ALLOWED_ORIGINS", "")
-    origins = [item.strip() for item in raw.split(",") if item.strip()]
-    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+# Every value a deployment can set lives in `webgraph.config.Settings`, read once here. The
+# reasoning for each cap is beside its field there; these names are kept because the rest of
+# this module -- and the tests that monkeypatch them -- refer to them.
+SETTINGS = Settings.from_env()
 
 
-ALLOWED_ORIGINS = _origins_from_env()
 
-PAGE_CAP = int(os.environ.get("WEBGRAPH_MAX_PAGES", "0"))
-"""Hard ceiling on pages per crawl, applied after the request is parsed. 0 disables it.
+def _origins_from_env(settings: Settings | None = None) -> list[str]:
+    """Browser origins allowed to call this API: `WEBGRAPH_ALLOWED_ORIGINS`, or the dev
+    frontend when nothing is configured. Never `*`: this service fetches arbitrary URLs on
+    the caller's behalf, so an open CORS policy would hand every page on the internet a
+    proxy that runs inside our network."""
+    configured = (settings or Settings.from_env()).allowed_origins
+    return list(configured) or ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-`SiteRequest.max_pages` defaults to 0, meaning "crawl until the frontier is exhausted",
-which is the right default for someone running this on their own laptop and an unacceptable
-one for a shared deployment: a single caller can otherwise hold a crawl slot for hours. The
-cap lives in the environment rather than the model because the right number is a property of
-the host, not of the API.
-"""
 
-CONCURRENCY_CAP = int(os.environ.get("WEBGRAPH_MAX_CONCURRENCY", "0"))
-"""Ceiling on per-crawl worker concurrency. 0 disables it.
-
-The request model already allows up to 12, which is right for a laptop with headroom and
-wrong for a two-core container: twelve workers there means twelve browsers competing for
-two cores and a fixed memory budget."""
-
-MAX_CONCURRENT_RENDERS = int(os.environ.get("WEBGRAPH_MAX_CONCURRENT_RENDERS", "2"))
-"""Browser launches are the memory bottleneck. Two at a time is what a 16 GB laptop
-tolerates alongside a dev server; raise it only with measurements."""
-
-MAX_CONCURRENT_CRAWLS = int(os.environ.get("WEBGRAPH_MAX_CONCURRENT_CRAWLS", "3"))
-"""Whole-site crawls in flight at once, across all callers.
-
-Each crawl runs its own worker pool of browsers, so this multiplies: three crawls at
-concurrency 6 is already eighteen page fetches in flight. Requests beyond the cap wait
-rather than being rejected -- a crawl is a long operation and a queue is friendlier than
-a 429 -- and are told they are waiting.
-"""
+ALLOWED_ORIGINS: list[str] = _origins_from_env(SETTINGS)
+PAGE_CAP = SETTINGS.max_pages
+CONCURRENCY_CAP = SETTINGS.max_concurrency
+MAX_CONCURRENT_RENDERS = SETTINGS.max_concurrent_renders
+MAX_CONCURRENT_CRAWLS = SETTINGS.max_concurrent_crawls
 
 CRAWL_QUEUE_HIGH_WATER = 64
 """Events buffered before the producer throttles.
@@ -770,12 +747,8 @@ def _engine_version() -> str:
         return "unknown"
 
 
-TRACE_DIR: Final[Path] = Path(
-    os.environ.get("WEBGRAPH_TRACE_DIR", tempfile.gettempdir())
-) / "webgraph-runs"
-"""Where run traces are written. A temp directory by default: a trace is diagnostic, and a
-server that fills a disk with them by default has replaced one problem with another. Point
-`$WEBGRAPH_TRACE_DIR` somewhere durable to keep them."""
+TRACE_DIR: Final[Path] = (SETTINGS.trace_dir or Path(tempfile.gettempdir())) / "webgraph-runs"
+"""Where run traces are written. See `Settings.trace_dir`."""
 
 
 ENGINE_VERSION: Final[str] = _engine_version()

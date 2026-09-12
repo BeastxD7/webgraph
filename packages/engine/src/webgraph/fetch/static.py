@@ -30,62 +30,30 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Final
 
 import httpx
 
+from webgraph.config import (
+    _BROWSER_PREFIX as _BROWSER_PREFIX,
+)
+from webgraph.config import (
+    _MAX_RESPONSE_BYTES as _MAX_RESPONSE_BYTES,
+)
+from webgraph.config import (
+    DEFAULT_USER_AGENT as DEFAULT_USER_AGENT,
+)
+from webgraph.config import (
+    MAX_RETRY_WAIT_SECONDS as MAX_RETRY_WAIT_SECONDS,
+)
+from webgraph.config import (
+    RETRY_STATUSES as RETRY_STATUSES,
+)
+from webgraph.config import (
+    FetchConfig as FetchConfig,
+)
 from webgraph.fetch import guard
 
 __all__ = ["DEFAULT_USER_AGENT", "FetchConfig", "FetchResult", "fetch_static"]
-
-_BROWSER_PREFIX: Final[str] = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-)
-
-DEFAULT_USER_AGENT: Final[str] = (
-    f"{_BROWSER_PREFIX} webgraph/0.1 (+https://github.com/webgraph/webgraph)"
-)
-"""Browser-shaped, and still identifiable.
-
-The shape is load-bearing: many servers reject anything that does not parse as a browser,
-and on the scrape-evals corpus that rejection costs 14 of 143 blocked pages. The suffix is
-also load-bearing, and is the reason this is not simply a Chrome string: a site owner reading
-their logs can see exactly what this is and where to complain. A crawler that cannot be
-identified or contacted is indistinguishable from an abusive one, and the 17 further pages a
-bare spoof would recover do not buy that back.
-
-`FetchConfig.user_agent` overrides it, for a caller whose agreement with a site says to."""
-
-RETRY_STATUSES: Final[frozenset[int]] = frozenset({429, 503})
-"""Statuses that mean *later*, not *no*. Retried once, honouring `Retry-After`.
-
-Nine URLs in the scrape-evals corpus answered 429 and were recorded as failures without a
-second attempt ever being made, which is a bug in the client rather than a property of the
-web. A single retry is deliberate: a crawler that retries hard on 429 is the reason the 429
-was sent."""
-
-MAX_RETRY_WAIT_SECONDS: Final[float] = 5.0
-"""Longest `Retry-After` worth honouring inline. A server asking for a minute is asking to be
-crawled later, not to have a thread held open for it."""
-
-_MAX_RESPONSE_BYTES: Final[int] = 32 * 1024 * 1024
-
-
-@dataclass(frozen=True, slots=True)
-class FetchConfig:
-    timeout_seconds: float = 20.0
-    max_redirects: int = 5
-    max_bytes: int = _MAX_RESPONSE_BYTES
-    user_agent: str = DEFAULT_USER_AGENT
-    extra_headers: dict[str, str] = field(default_factory=dict)
-    http2: bool = True
-    """Negotiate HTTP/2 when the server offers it. Falls back to HTTP/1.1 automatically."""
-
-    retries: int = 1
-    """Extra attempts for a `RETRY_STATUSES` answer or a transport error. One by default:
-    enough for a server that said *later*, not enough to be the reason it said so."""
-
 
 @dataclass(frozen=True, slots=True)
 class FetchResult:

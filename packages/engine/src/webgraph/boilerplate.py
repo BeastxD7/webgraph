@@ -39,6 +39,27 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from webgraph.config import (
+    DEFAULT_THRESHOLD as DEFAULT_THRESHOLD,
+)
+from webgraph.config import (
+    MAIN_MIN_SHARE as MAIN_MIN_SHARE,
+)
+from webgraph.config import (
+    MAIN_MIN_WORDS as MAIN_MIN_WORDS,
+)
+from webgraph.config import (
+    MAX_REMOVAL as MAX_REMOVAL,
+)
+from webgraph.config import (
+    MIN_LANDMARK_CHARS as MIN_LANDMARK_CHARS,
+)
+from webgraph.config import (
+    MIN_PAGES as MIN_PAGES,
+)
+from webgraph.config import (
+    SLOT_PRESENCE as SLOT_PRESENCE,
+)
 from webgraph.types import Block, BlockKind
 
 __all__ = [
@@ -51,34 +72,6 @@ __all__ = [
     "strip_landmarks",
     "strip_site_chrome",
 ]
-
-DEFAULT_THRESHOLD: Final[float] = 0.9
-"""Share of pages a block must appear on to count as chrome. See module docstring for why
-this is not worth tuning."""
-
-MIN_PAGES: Final[int] = 6
-"""Below this, repetition is not evidence of anything."""
-
-MAX_REMOVAL: Final[float] = 0.5
-"""Refuse to treat more than this share of a page as chrome.
-
-Guards against a near-duplicate corpus. Crawling docs.pytest.org reached its version
-archive -- `/en/8.2.x/`, `/en/8.1.x/`, ... -- which are near-identical pages. Their *shared
-real content* then looks exactly like chrome, and detection removed 60.3% of every page.
-On diverse corpora the figure is 9-37%, so a cap at 50% separates the two cases without
-touching the healthy one.
-
-When the cap trips, the page is returned untouched: a wrong removal is silent data loss,
-while a missed removal is merely noise the caller can still see.
-"""
-
-SLOT_PRESENCE: Final[float] = 0.6
-"""Share of pages a template slot must appear on before its variance is judged.
-
-Lower than the text threshold on purpose: a slot only qualifies as chrome if it *also* never
-varies, which is a much stronger condition than text repetition and needs less corroboration.
-"""
-
 
 LANDMARK_XPATH: Final[re.Pattern[str]] = re.compile(r"/(?:nav|footer)(?:\[|/|$)")
 """Blocks inside `<nav>` or `<footer>`.
@@ -106,23 +99,6 @@ whose stated job is not to lose content -- plenty of sites put real material in 
 On MDN alone: precision 0.066 -> 0.584, recall unchanged at 1.000.
 """
 
-MIN_LANDMARK_CHARS: Final[int] = 200
-"""Refuse to leave less than this much text. A sitemap or index page is legitimately almost
-all navigation, and returning nothing for it helps nobody.
-
-An **absolute** floor, having first been a 5% ratio -- and the ratio was the wrong instrument,
-because it lets the size of a page's footer decide whether its body is trustworthy. Measured
-on WCXB, `allbirds.com` carries its entire Terms of Service and Privacy Policy in accordions
-inside `<footer>`: 120,021 characters of chrome against 1,020 characters of product page.
-`strip_landmarks` identified all of it correctly, the remainder came to 0.85% of the page,
-the ratio guard fired, and the function returned **everything** -- precision 0.008 on that
-page. The guard meant to prevent returning nothing instead forced returning 118x too much.
-
-A thousand characters of real content is a good extraction whatever proportion of the
-document it happens to be. The failure the guard exists for is a remainder near zero, and an
-absolute floor names that directly. Fires on 7 of 1,497 WCXB dev pages, 4 of them product."""
-
-
 def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
     """Drop blocks inside `<nav>` and `<footer>`.
 
@@ -145,29 +121,6 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
 STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer"})
 """Landmark regions `strip_landmarks` removes -- the same two as `LANDMARK_XPATH`, now also
 reached through `role="navigation"` and `role="contentinfo"`, which the XPath cannot see."""
-
-MAIN_MIN_WORDS: Final[int] = 100
-MAIN_MIN_SHARE: Final[float] = 0.5
-"""`scope_to_main` only trusts a `<main>` that holds at least this many words *and* this
-share of the page's words. Both guards are measured, not chosen.
-
-A page declares `<main>` and then renders its content somewhere else more often than one
-would hope: measured on WCXB dev, 1,000 of 1,476 pages carry `<main>` or `role="main"`, and
-on 21 of them the landmark is **empty** -- a JavaScript mount point -- with the content in
-the static HTML around it. Trusting those would lose the page. With the guard set at half
-the page's words and 100 words:
-
-```
-guard                    scoped   mean recall of ground truth inside main   <0.5 recall
-none (any <main>)          989      0.960                                     21
->=100 words                979      0.964                                     17
->=100 words, >=50% share   870      0.971                                      6
-```
-
-The six that remain are collection pages whose product grid sits beside, not inside, the
-landmark. The share test is what removes the empty-mount-point case: an empty `<main>`
-holds 0% of the words. The word floor catches the near-empty one."""
-
 
 def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
     """Keep only blocks inside the page's `main` landmark, when the page has a trustworthy one.

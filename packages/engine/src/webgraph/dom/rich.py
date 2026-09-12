@@ -21,6 +21,18 @@ from urllib.parse import urljoin
 from lxml import etree
 from lxml.html import HtmlElement
 
+from webgraph.config import (
+    LONG_CELL_CHARS as LONG_CELL_CHARS,
+)
+from webgraph.config import (
+    MAX_EMPTY_ROW_SHARE as MAX_EMPTY_ROW_SHARE,
+)
+from webgraph.config import (
+    MIN_FILLED_SHARE as MIN_FILLED_SHARE,
+)
+from webgraph.config import (
+    MIN_GRID as MIN_GRID,
+)
 from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
 from webgraph.markers import BREAK_ATTRIBUTE
 from webgraph.types import Block, BlockKind
@@ -329,14 +341,6 @@ them as layout evidence threw away real data tables. Measured on WebMainBench: a
 111-cell table of numbers was classified as layout and flattened to paragraphs because each
 cell wrapped its number in a `<p>`. Zero tables were extracted from that page."""
 
-LONG_CELL_CHARS: Final[int] = 200
-"""A cell holding more text than this is prose, not a value.
-
-This is what replaced the tag test, and it is the signal that actually separates the two
-cases. A layout cell holds an article; a data cell holds a number or a short label. Tag
-identity cannot tell those apart because both use `<p>`; length can."""
-
-
 def _is_page_like(cell: HtmlElement) -> bool:
     """Whether this cell is holding a page rather than a value."""
     if any(node.tag in _PAGE_LEVEL_TAGS for node in cell.iter() if node is not cell):
@@ -390,29 +394,6 @@ def is_layout_table(element: HtmlElement) -> bool:
         return True
 
     return sum(1 for cell in cells if _is_page_like(cell)) * 2 >= len(cells)
-
-
-MIN_GRID: Final[int] = 2
-"""A data table needs at least this many rows *and* columns.
-
-A table exists to cross-reference a row against a column. One row, or one column, has nothing
-to cross-reference, so it is a layout device wearing table markup. Measured on WebMainBench:
-of the tables the engine emitted where the annotators saw none, most were exactly this -- a
-1x1 cell reading "Home", a 1x2 "Rate this" widget, a 1x4 auto-refresh control strip, a 6x1
-list of tool names."""
-
-MIN_FILLED_SHARE: Final[float] = 0.4
-"""And enough of its cells must hold something. A 5x3 grid with two non-empty cells is a
-layout scaffold, not a sparse dataset."""
-
-MAX_EMPTY_ROW_SHARE: Final[float] = 0.2
-"""Above this share of entirely empty rows, the table is being used for spacing.
-
-The clearest signal of the lot, and the one that catches the tables the others miss. A table
-of data does not have blank rows *between its records*; a page laid out in table markup does,
-because an empty `<tr>` was how you made a gap before CSS. Measured on the Hacker News front
-page: 92 rows, **31 of them entirely empty**, no header anywhere, row widths of 0, 2 and 3.
-Every other test here passed it as data, and it is a list of 30 stories."""
 
 
 def _is_degenerate(element: HtmlElement) -> bool:

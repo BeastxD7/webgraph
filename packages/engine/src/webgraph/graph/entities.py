@@ -59,6 +59,21 @@ import re
 from collections import Counter
 from typing import Final
 
+from webgraph.config import (
+    MAX_NAME_CHARS as MAX_NAME_CHARS,
+)
+from webgraph.config import (
+    MAX_NAME_PAGE_SHARE as MAX_NAME_PAGE_SHARE,
+)
+from webgraph.config import (
+    MIN_ANCHOR_AGREEMENT as MIN_ANCHOR_AGREEMENT,
+)
+from webgraph.config import (
+    MIN_CODE_USES as MIN_CODE_USES,
+)
+from webgraph.config import (
+    MIN_NAME_CHARS as MIN_NAME_CHARS,
+)
 from webgraph.graph.model import Entity, SiteGraph
 
 __all__ = [
@@ -68,29 +83,6 @@ __all__ = [
     "derive_entities",
     "derive_page_subjects",
 ]
-
-MIN_NAME_CHARS: Final[int] = 4
-"""Below this a name cannot establish identity. "API", "CLI", "Env"."""
-
-MAX_NAME_CHARS: Final[int] = 60
-"""Above this the anchor text is a sentence, not a name."""
-
-MAX_NAME_PAGE_SHARE: Final[float] = 0.6
-"""A name appearing on more than this share of pages is not discriminating.
-
-Every page of the Flask documentation says "Flask". Linking every section on the site to one
-entity produces a hub that connects everything to everything, which is the same as
-connecting nothing.
-"""
-
-MIN_CODE_USES: Final[int] = 2
-"""Times a heading's text must also appear as inline code before the heading counts as a
-definition. `Environment` is a class because the site writes it in backticks; `Installation`
-is a section because it never does."""
-
-MIN_ANCHOR_AGREEMENT: Final[int] = 2
-"""Distinct source pages that must use an anchor before it counts as the site's name for a
-target. One page's phrasing is a phrasing; two pages agreeing is a name."""
 
 _INLINE_CODE: Final[re.Pattern[str]] = re.compile(r"`([A-Za-z_][A-Za-z0-9_.]{2,60})`")
 _SYMBOLIC: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*$")

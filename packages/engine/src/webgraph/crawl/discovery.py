@@ -17,6 +17,12 @@ from typing import Final
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
+from webgraph.config import (
+    MAX_ANCHOR_CHARS as MAX_ANCHOR_CHARS,
+)
+from webgraph.config import (
+    MAX_SITEMAP_DOCUMENTS as MAX_SITEMAP_DOCUMENTS,
+)
 from webgraph.crawl.frontier import reconcile_scheme
 from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, fetch_static
 
@@ -31,11 +37,6 @@ __all__ = [
 _SITEMAP_LINE: Final[re.Pattern[str]] = re.compile(r"^\s*sitemap:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
 _LOC: Final[re.Pattern[str]] = re.compile(r"<loc>\s*([^<]+?)\s*</loc>", re.IGNORECASE)
 _SITEMAP_INDEX: Final[re.Pattern[str]] = re.compile(r"<sitemapindex", re.IGNORECASE)
-
-MAX_SITEMAP_DOCUMENTS: Final[int] = 20
-"""Sitemap indexes can nest into thousands of files. Bounded so discovery cannot itself
-become the crawl."""
-
 
 @dataclass
 class RobotsPolicy:
@@ -145,11 +146,6 @@ def discover_sitemap_urls(
             found.extend(locations)
 
     return found[:limit]
-
-
-MAX_ANCHOR_CHARS: Final[int] = 160
-"""Anchor text longer than this is a card or a whole paragraph wrapped in a link, not a
-label."""
 
 
 @dataclass
