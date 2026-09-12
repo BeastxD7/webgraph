@@ -1,6 +1,7 @@
 (markers) => {
   const MARKER = markers.marker;
   const BREAK = markers.brk;
+  const HIDDEN = markers.hidden;
   const rects = {};
   let counter = 0;
 
@@ -51,9 +52,13 @@
       el.setAttribute(BREAK, '1');
     }
 
-    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      // Marked, not just skipped: the parser can then tell a hidden twin -- the mobile copy
+      // of a badge beside its desktop copy -- from an inline sibling that is really there.
+      el.setAttribute(HIDDEN, '1');
       continue;
     }
+    if (style.opacity === '0') continue;
     const box = el.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) continue;
 

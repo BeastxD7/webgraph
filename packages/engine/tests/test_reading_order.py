@@ -25,7 +25,9 @@ def block(
     return Block(
         text=text,
         tag="p",
-        xpath=f"/html/body/p[{dom_index or 1}]",
+        # Unique per block: `dom_index or 1` gave blocks 0 and 1 the same path, and two
+        # blocks sharing a path read as one repeated container.
+        xpath=f"/html/body/p[{(dom_index or 0) + 1}]",
         dom_index=dom_index if dom_index is not None else 0,
         rect=Rect(x=x, y=y, width=w, height=h),
     )
@@ -330,3 +332,52 @@ class TestRowBanding:
         ordered, _ = order_blocks([sidebar, lower, upper])
         text = [b.text for b in ordered]
         assert text.index("upper") < text.index("lower")
+
+
+class TestBridgedColumns:
+    """A region no clean cut can split: a sidebar with no vertical gaps bridges every row,
+    and a wide banner across the top bridges every column. Measured on MDN, the sidebar's
+    links and the right-hand table of contents came out zipped together, one line each in
+    turn, because position order was all that was left."""
+
+    @staticmethod
+    def page() -> list[Block]:
+        blocks = [block("banner", 0, 0, w=1000, h=30, dom_index=0)]
+        # Left sidebar: a dense list, 30px apart with 24px items -- no row gap anywhere.
+        for i in range(12):
+            blocks.append(block(f"side{i}", 0, 50 + i * 30, w=200, h=24, dom_index=1 + i))
+        # Right column: a table of contents at the same vertical positions.
+        for i in range(12):
+            blocks.append(block(f"toc{i}", 700, 50 + i * 30, w=200, h=24, dom_index=13 + i))
+        blocks.append(block("footer", 0, 420, w=1000, h=30, dom_index=25))
+        return blocks
+
+    def test_columns_are_read_whole_not_zipped(self) -> None:
+        ordered, method = order_blocks(self.page())
+        names = texts(ordered)
+        assert method is ReadingOrderMethod.GEOMETRIC_XY_CUT
+        side = [n for n in names if n.startswith("side")]
+        toc = [n for n in names if n.startswith("toc")]
+        assert side == [f"side{i}" for i in range(12)]
+        assert toc == [f"toc{i}" for i in range(12)]
+        # No interleaving: every sidebar item precedes every toc item.
+        assert names.index("side11") < names.index("toc0")
+
+    def test_a_banner_comes_first_and_a_footer_last(self) -> None:
+        """A wide block across the columns is read where it sits, not first because it is
+        wide. Reading a footer before the columns above it measured as a loss on every
+        stacked pair on the page."""
+        names = texts(order_blocks(self.page())[0])
+        assert names[0] == "banner"
+        assert names[-1] == "footer"
+
+    def test_too_many_straddlers_means_it_is_one_thing(self) -> None:
+        """Half the blocks crossing the line is a single column of mixed widths, not two."""
+        blocks = []
+        for i in range(10):
+            width = 1000 if i % 2 else 300
+            blocks.append(block(f"p{i}", 0, i * 40, w=width, h=24, dom_index=i))
+            blocks.append(block(f"r{i}", 700, i * 40, w=200, h=24, dom_index=100 + i))
+        names = texts(order_blocks(blocks)[0])
+        # Position order: each row's left then right, top to bottom.
+        assert names[:4] == ["p0", "r0", "p1", "r1"]

@@ -52,9 +52,10 @@ def test_every_js_file_is_shipped_and_loadable() -> None:
     assert on_disk == sorted(f"{name}.js" for name in SCRIPTS)
 
 
-def test_marker_arguments_carry_exactly_the_three_names() -> None:
+def test_marker_arguments_carry_exactly_the_four_names() -> None:
     arguments = markers.marker_arguments()
-    assert set(arguments) == {"marker", "brk", "gate"}
+    assert set(arguments) == {"marker", "brk", "gate", "hidden"}
+    assert arguments["hidden"] == markers.HIDDEN_ATTRIBUTE
     assert arguments["marker"] == markers.MARKER_ATTRIBUTE
     assert arguments["brk"] == markers.BREAK_ATTRIBUTE
     assert arguments["gate"] == markers.GATE_ATTRIBUTE

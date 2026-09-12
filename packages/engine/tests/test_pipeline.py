@@ -170,3 +170,34 @@ class TestDocumentText:
         doc = build_document(SAMPLE, "https://example.com/")
         assert doc.text.startswith("Plans")
         assert "Pro plan costs $49" in doc.text
+
+
+class TestDuplicateResolution:
+    def test_the_heading_survives_its_own_echo_in_the_sidebar(self) -> None:
+        """docs.python.org: the <h1> is also the current item in the sidebar, which is read
+        first. Keeping the first occurrence kept the list item and lost the page's title."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><body>"
+            '<nav><ul><li><a href="#m">itertools — Functions creating iterators</a></li>'
+            "<li><a href='#r'>Recipes</a></li></ul></nav>"
+            "<main><h1>itertools — Functions creating iterators</h1><p>This module implements "
+            "a number of iterator building blocks.</p></main></body></html>"
+        )
+        blocks = build_document(html, "https://docs.python.org/3/library/itertools.html").blocks
+        heading = [b for b in blocks if b.text.startswith("itertools —")]
+        assert len(heading) == 1
+        assert heading[0].tag == "h1"
+        # And it sits where the page put it: before its own first paragraph, not in the nav.
+        texts = [b.text for b in blocks]
+        assert texts.index(heading[0].text) < texts.index("This module implements a number of iterator building blocks.")
+        assert texts.index("Recipes") < texts.index(heading[0].text)
+
+    def test_two_plain_copies_still_keep_the_first(self) -> None:
+        """The general rule is unchanged: the copy a reader reaches first stays."""
+        from webgraph.pipeline import build_document
+
+        html = "<html><body><p>Same words here.</p><section><p>Same words here.</p></section></body></html>"
+        blocks = build_document(html, "https://x.test/").blocks
+        assert [b.text for b in blocks].count("Same words here.") == 1

@@ -23,7 +23,7 @@ from lxml.html import HtmlElement
 
 from webgraph import config
 from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
-from webgraph.markers import BREAK_ATTRIBUTE
+from webgraph.markers import BREAK_ATTRIBUTE, HIDDEN_ATTRIBUTE
 from webgraph.types import Block, BlockKind
 
 LONG_CELL_CHARS = config.LONG_CELL_CHARS
@@ -685,12 +685,24 @@ def _table_block(
 
 
 def _code_language(element: HtmlElement) -> str | None:
+    """The language a code block declares, in any of the spellings sites use.
+
+    `language-js` (highlight.js, Prism, CommonMark renderers), `lang-js`, `highlight-js`,
+    MDN's `brush: js` (two class tokens, SyntaxHighlighter's legacy form), and the
+    `data-language` / `data-lang` attributes Docusaurus and Shiki emit.
+    """
     for node in (element, *element.xpath(".//code")):
-        classes = (node.get("class") or "").split()
-        for value in classes:
+        for attribute in ("data-language", "data-lang"):
+            declared = (node.get(attribute) or "").strip().lower()
+            if declared:
+                return declared
+        classes = [str(token) for token in (node.get("class") or "").split()]
+        for index, value in enumerate(classes):
             for prefix in ("language-", "lang-", "highlight-"):
-                if value.startswith(prefix):
+                if value.startswith(prefix) and len(value) > len(prefix):
                     return value[len(prefix):]
+            if value == "brush:" and index + 1 < len(classes):
+                return str(classes[index + 1]).rstrip(";")
     return None
 
 
@@ -781,6 +793,46 @@ def _list_context(element: HtmlElement) -> tuple[bool, int]:
     return ordered, max(level, 1)
 
 
+def _drop_hidden_twins(root: HtmlElement) -> None:
+    """Remove a hidden element whose visible sibling says the same thing.
+
+    Responsive markup renders one label twice -- `<span class="md:hidden">NEW</span>
+    <span class="hidden md:block">NEW</span>` -- and the browser shows one. Both are inline,
+    so they share a block, and the block read "NEW NEW". Only a hidden element with a
+    *visible* sibling carrying the same text goes; a hidden element saying something of its
+    own (a collapsed panel, a tab) is content and stays, unmeasured, where source order puts
+    it. On a static fetch nothing is marked and nothing happens.
+    """
+    for hidden in root.xpath(f"//*[@{HIDDEN_ATTRIBUTE}]"):
+        parent = hidden.getparent()
+        if parent is None:
+            continue
+        text = normalize_text(hidden.text_content())
+        if not text:
+            continue
+        twin = any(
+            sibling is not hidden
+            and isinstance(sibling.tag, str)
+            and sibling.get(HIDDEN_ATTRIBUTE) is None
+            and normalize_text(sibling.text_content()) == text
+            for sibling in parent
+        )
+        if twin:
+            _carry_tail(parent, hidden)
+            parent.remove(hidden)
+
+
+def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
+    tail = element.tail
+    if not tail:
+        return
+    previous = element.getprevious()
+    if previous is not None:
+        previous.tail = (previous.tail or "") + tail
+    else:
+        parent.text = (parent.text or "") + tail
+
+
 def extract_rich_blocks(
     root: HtmlElement, base_url: str, *, min_chars: int = 1
 ) -> list[Block]:
@@ -791,6 +843,7 @@ def extract_rich_blocks(
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
     strip_permalinks(root)
+    _drop_hidden_twins(root)
 
     tree = root.getroottree()
     blocks: list[Block] = []

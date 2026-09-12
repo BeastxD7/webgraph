@@ -6,6 +6,8 @@ kind of structure that must survive the trip out of the HTML.
 
 from __future__ import annotations
 
+import pytest
+
 from webgraph.dom.blocks import parse_html
 from webgraph.dom.rich import extract_rich_blocks
 from webgraph.pipeline import build_document
@@ -876,3 +878,45 @@ class TestBlockBoundaries:
         assert "javascript:" not in out
         assert "[-]" in out
         assert "[link](https://example.com/x)" in out
+
+
+class TestCodeLanguage:
+    @pytest.mark.parametrize(
+        ("html", "language"),
+        [
+            ('<pre class="language-python"><code>x = 1</code></pre>', "python"),
+            ('<pre><code class="lang-ts">let x</code></pre>', "ts"),
+            ('<pre class="brush: js notranslate"><code>let x</code></pre>', "js"),
+            ('<pre data-language="rust"><code>let x;</code></pre>', "rust"),
+            ("<pre><code>plain</code></pre>", None),
+        ],
+    )
+    def test_every_spelling_a_site_uses(self, html: str, language: str | None) -> None:
+        """MDN writes `brush: js`; Prism writes `language-js`; Shiki writes `data-language`."""
+        code = [b for b in blocks(html) if b.kind is BlockKind.CODE]
+        assert code and code[0].language == language
+
+
+class TestHiddenTwins:
+    """Responsive markup renders one label twice; the browser shows one, and so must we."""
+
+    def test_hidden_twin_of_a_visible_sibling_is_dropped(self) -> None:
+        html = (
+            '<main><p><span class="md:hidden">NEW</span>'
+            '<span class="hidden md:block" data-wg-hidden="1">NEW</span> arrivals</p></main>'
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["NEW arrivals"]
+
+    def test_hidden_element_with_its_own_words_stays(self) -> None:
+        html = (
+            '<main><p>Summary</p>'
+            '<div data-wg-hidden="1"><p>Collapsed body only the disclosure shows.</p></div></main>'
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["Summary", "Collapsed body only the disclosure shows."]
+
+    def test_unmarked_static_fetch_is_untouched(self) -> None:
+        html = '<main><p><span>NEW</span> <span>NEW</span></p></main>'
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["NEW NEW"]

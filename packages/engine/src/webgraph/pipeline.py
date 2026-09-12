@@ -32,7 +32,7 @@ from webgraph.dom.rich import extract_rich_blocks
 from webgraph.profile.fingerprint import profile_page
 from webgraph.profile.technology import RuntimeEvidence
 from webgraph.structured.payloads import extract_payloads
-from webgraph.types import Block, Document, Rect
+from webgraph.types import Block, BlockKind, Document, Rect
 
 if TYPE_CHECKING:
     from lxml.html import HtmlElement
@@ -176,10 +176,15 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
 
     This runs after ordering, so "first" means first in reading order rather than first in
     source -- on a page where the two differ, the one a reader reaches first is the one to
-    keep.
+    keep. **Unless the later copy is the real one.** A page's `<h1>` is also the current
+    item in its own sidebar, and the sidebar is read first, so keeping the first occurrence
+    kept a navigation list item and dropped the page's title. Measured on docs.python.org:
+    every module page lost its heading this way. When the later copy is a heading and the
+    earlier is not, or sits in the main content while the earlier sits in navigation, the
+    later copy stays where it is and the earlier one goes.
     """
     seen: dict[tuple[str, str | None], int] = {}
-    kept: list[Block] = []
+    kept: list[Block | None] = []
 
     for block in blocks:
         text = " ".join(block.text.split()).casefold()
@@ -194,11 +199,44 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             kept.append(block)
             continue
 
-        # A later copy that was measured replaces an earlier one that was not.
-        if block.rect is not None and kept[previous].rect is None:
+        earlier = kept[previous]
+        if earlier is None:
+            continue
+        # Two copies the browser drew in two different places are two things. A product
+        # grid says "$100" under six cards and "Men's Tree Runner NZ" over three; the
+        # duplicate rule is for hidden twins -- the mobile layout beside the desktop one --
+        # and a hidden twin has no rectangle. Measured on allbirds.com: 15 of 26 prices and
+        # half the product names were being dropped as repeats.
+        if (
+            block.rect is not None
+            and earlier.rect is not None
+            and (block.rect.x, block.rect.y) != (earlier.rect.x, earlier.rect.y)
+        ):
+            seen[key] = len(kept)
+            kept.append(block)
+            continue
+        if _outranks(block, earlier):
+            # The later copy is the page's own; the earlier was its echo in the chrome.
+            kept[previous] = None
+            seen[key] = len(kept)
+            kept.append(block)
+        elif block.rect is not None and earlier.rect is None:
+            # A later copy that was measured replaces an earlier one that was not.
             kept[previous] = block
 
-    return kept
+    return [block for block in kept if block is not None]
+
+
+_CHROME_REGIONS: frozenset[str] = frozenset({"nav", "header", "footer", "aside"})
+
+
+def _outranks(later: Block, earlier: Block) -> bool:
+    """Whether a repeated block is the page's own copy rather than the chrome's echo."""
+    if later.kind is BlockKind.HEADING and earlier.kind is not BlockKind.HEADING:
+        return True
+    later_chrome = (later.region or "") in _CHROME_REGIONS
+    earlier_chrome = (earlier.region or "") in _CHROME_REGIONS
+    return (later.in_main or not later_chrome) and earlier_chrome and not later_chrome
 
 
 def _attach_geometry(blocks: list[Block], geometry: dict[str, Rect]) -> list[Block]:

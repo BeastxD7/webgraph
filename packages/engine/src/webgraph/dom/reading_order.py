@@ -40,11 +40,13 @@ downstream consumers can see that the ordering was assumed rather than measured.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from statistics import median
+from typing import Final
 
 from webgraph import config
-from webgraph.types import Block, ReadingOrderMethod
+from webgraph.types import Block, ReadingOrderMethod, Rect
 
 __all__ = ["OrderingConfig", "detect_columns", "order_blocks"]
 
@@ -168,7 +170,7 @@ def order_blocks(
 
     if len(measured) == len(blocks):
         # Nothing to anchor, so neither guard applies: complete geometry is always used.
-        ordered = _cut(list(blocks), rtl=rtl, config=config, unit=unit, depth=0)
+        ordered = _cut_with_cards(list(blocks), rtl=rtl, config=config, unit=unit)
         return ordered, ReadingOrderMethod.GEOMETRIC_XY_CUT
 
     if len(measured) < len(blocks) * config.min_measured_share:
@@ -176,8 +178,105 @@ def order_blocks(
         # measurements would dress source order up as a measurement.
         return sorted(blocks, key=lambda b: b.dom_index), ReadingOrderMethod.DOM_FALLBACK
 
-    ordered = _cut(list(measured), rtl=rtl, config=config, unit=unit, depth=0)
+    ordered = _cut_with_cards(list(measured), rtl=rtl, config=config, unit=unit)
     return _anchor_unmeasured(ordered, blocks), ReadingOrderMethod.GEOMETRIC_ANCHORED
+
+
+_INDEXED_STEP: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")
+_MAX_CARD_SHARE: Final[float] = 0.2
+"""The largest a repeated container may be, as a share of the page's measured blocks, and
+still count as a card. A page is not a card of itself."""
+_MIN_CARD_SIBLINGS: Final[int] = 3
+
+
+def _card_of(xpath: str, siblings: dict[str, set[str]], sizes: dict[str, int], limit: int) -> str | None:
+    """The outermost repeated container this block belongs to, or None.
+
+    A card is `/main/ul/li[3]`: the ancestor whose template `/main/ul/li[*]` occurs with
+    several distinct indices, each holding a bounded number of blocks. The outermost such
+    ancestor, so that a card's inner `div[*]`s do not split it into pieces; bounded, so
+    that `/html/body/div[*]` -- two halves of a page -- is not two cards.
+    """
+    matches = list(_INDEXED_STEP.finditer(xpath))
+    for match in matches:  # outermost first
+        template = xpath[: match.start()] + "[*]"
+        instance = xpath[: match.end()]
+        if len(siblings.get(template, ())) >= _MIN_CARD_SIBLINGS and sizes.get(instance, 0) <= limit:
+            return instance
+    return None
+
+
+def _cut_with_cards(
+    blocks: list[Block], *, rtl: bool, config: OrderingConfig, unit: float
+) -> list[Block]:
+    """XY-cut over the page with each repeated card treated as one block.
+
+    A product grid defeats a geometric cut twice over. Its cards nearly touch -- an 11px
+    gutter between 312px cards on allbirds.com, narrower than any row gap -- so no column
+    cut is found, and the row gap between a card's image and its title *is* found, so the
+    page is read as a row of images, then a row of titles, then a row of prices. Every
+    card's parts end up interleaved with its neighbours'.
+
+    The DOM knows what geometry does not: the card is a repeated sibling container, and
+    everything inside it belongs together. So each card is collapsed to one block spanning
+    its members' rectangles, the cut runs over cards and loose blocks alike, and each card
+    is then expanded by its own geometry -- image, name, colour, price, top to bottom --
+    which no neighbouring card can interleave with any more.
+    """
+    measured = [b for b in blocks if b.rect is not None]
+    siblings: dict[str, set[str]] = {}
+    sizes: dict[str, int] = {}
+    for b in measured:
+        for match in _INDEXED_STEP.finditer(b.xpath):
+            template = b.xpath[: match.start()] + "[*]"
+            instance = b.xpath[: match.end()]
+            siblings.setdefault(template, set()).add(match.group(0))
+            sizes[instance] = sizes.get(instance, 0) + 1
+    limit = max(1, int(len(measured) * _MAX_CARD_SHARE))
+
+    cards: dict[str, list[Block]] = {}
+    loose: list[Block] = []
+    for b in blocks:
+        card = _card_of(b.xpath, siblings, sizes, limit) if b.rect is not None else None
+        if card is None:
+            loose.append(b)
+        else:
+            cards.setdefault(card, []).append(b)
+
+    # Cards of one block are just blocks; only a card with several members changes anything.
+    for key in [k for k, members in cards.items() if len(members) < 2]:
+        loose.extend(cards.pop(key))
+    if not cards:
+        return _cut(blocks, rtl=rtl, config=config, unit=unit, depth=0)
+
+    proxies: dict[int, list[Block]] = {}
+    stand_ins: list[Block] = []
+    for key, members in cards.items():
+        rects = [m.rect for m in members if m.rect is not None]
+        x0 = min(r.x for r in rects)
+        y0 = min(r.y for r in rects)
+        x1 = max(r.right for r in rects)
+        y1 = max(r.bottom for r in rects)
+        first = min(members, key=lambda m: m.dom_index)
+        proxy = first.model_copy(
+            update={"rect": Rect(x=x0, y=y0, width=x1 - x0, height=y1 - y0), "xpath": key}
+        )
+        proxies[id(proxy)] = members
+        stand_ins.append(proxy)
+
+    ordered = _cut([*loose, *stand_ins], rtl=rtl, config=config, unit=unit, depth=0)
+    out: list[Block] = []
+    for b in ordered:
+        inside = proxies.get(id(b))
+        if inside is None:
+            out.append(b)
+            continue
+        # Inside the card, geometry again: a card is small enough that its own layout is
+        # unambiguous, and a badge the author placed last in the markup but drew at the top
+        # is read at the top. Source order was tried and measured 0.2 points worse on the
+        # stacked axiom for exactly that reason.
+        out.extend(_cut(inside, rtl=rtl, config=config, unit=unit, depth=1))
+    return out
 
 
 def _anchor_unmeasured(ordered: list[Block], every: list[Block]) -> list[Block]:
@@ -252,8 +351,107 @@ def _cut(
             out.extend(_cut(band, rtl=rtl, config=config, unit=unit, depth=depth + 1))
         return out
 
+    # No clean cut on either axis. Before giving up and reading by position, look for a
+    # cut that a *few* blocks straddle. This is the deadlock a docs site produces: a
+    # sidebar list with no vertical gaps bridges every row, and a wide banner across the
+    # top bridges every column, so no whitespace band crosses the whole region -- yet the
+    # region is plainly three columns. Measured on MDN, the sidebar's links and the
+    # right-hand table of contents came out zipped together, one line each in turn,
+    # because position order was all that was left. A cut that only the banner crosses
+    # separates them; the banner is read first, then each column in turn.
+    bridged = _tolerant_cut(blocks, rtl=rtl, config=config, unit=unit, depth=depth)
+    if bridged is not None:
+        return bridged
+
     return _positional(blocks, rtl=rtl)
 
+
+_MAX_BRIDGE_SHARE: Final[float] = 0.04
+"""Blocks that may straddle a tolerant cut, as a share of the region (and never fewer than
+one). Above this the region is not two things with something across them; it is one thing."""
+
+
+def _tolerant_cut(
+    blocks: list[Block],
+    *,
+    rtl: bool,
+    config: OrderingConfig,
+    unit: float,
+    depth: int,
+) -> list[Block] | None:
+    """Cut into columns where at most a few wide blocks straddle the gutter, or None.
+
+    Every block edge along x is a candidate line. A line qualifies when the blocks it
+    crosses are few, both sides hold more than a stray block, and once the bridges are set
+    aside the sides are separated by a real gutter. The widest such gutter wins.
+
+    The bridges are not read first. A wide block across the columns is a banner when it sits
+    at the top and a footer when it sits at the bottom, and reading a footer before the
+    columns above it puts the end of the page first -- measured as a 0.8-point loss on the
+    stacked axiom when this did exactly that. Instead each bridge divides the region into
+    the bands above and below it: the columns of a band are read left to right, then the
+    bridge, then the next band. A banner therefore comes first and a footer last, and a
+    mid-page bridge separates what is above from what is below, which is what it does on
+    the screen.
+
+    Columns only. The mirror case -- a horizontal cut that a tall sidebar straddles -- is
+    left to position order, because a tall bridge has no equivalent "above / below" reading
+    that is right often enough to ship.
+    """
+    measured = [b for b in blocks if b.rect is not None]
+    if len(measured) < 4:
+        return None
+    allowance = max(1, int(len(measured) * _MAX_BRIDGE_SHARE))
+    threshold = max(config.min_absolute_gap, unit * config.min_col_gap_ratio)
+
+    extents = _extents(measured, "x")
+    best: tuple[float, float] | None = None  # (gap, line)
+    edges = sorted({start for start, _, _ in extents} | {end for _, end, _ in extents})
+    for line in edges:
+        before = [e for e in extents if e[1] <= line + _EPSILON]
+        after = [e for e in extents if e[0] >= line - _EPSILON]
+        straddling = len(extents) - len(before) - len(after)
+        if straddling > allowance or len(before) < 2 or len(after) < 2:
+            continue
+        gap = min(a[0] for a in after) - max(b[1] for b in before)
+        if gap >= threshold and (best is None or gap > best[0]):
+            best = (gap, line)
+    if best is None:
+        return None
+    _, line = best
+
+    left = [b for s_, e_, b in extents if e_ <= line + _EPSILON]
+    right = [b for s_, e_, b in extents if s_ >= line - _EPSILON]
+    sided = {id(b) for b in left} | {id(b) for b in right}
+    bridges = sorted(
+        (b for b in measured if id(b) not in sided), key=lambda b: b.rect.y if b.rect else 0.0
+    )
+    unmeasured = [b for b in blocks if b.rect is None]
+
+    def band(items: list[Block], top: float, bottom: float) -> list[Block]:
+        return [
+            b
+            for b in items
+            if b.rect is not None and top <= (b.rect.y + b.rect.bottom) / 2 < bottom
+        ]
+
+    columns = [left, right]
+    if rtl:
+        columns.reverse()
+    out: list[Block] = []
+    top = float("-inf")
+    for bridge in [*bridges, None]:
+        bottom = bridge.rect.y if bridge is not None and bridge.rect is not None else float("inf")
+        for column in columns:
+            part = band(column, top, bottom)
+            if part:
+                out.extend(_cut(part, rtl=rtl, config=config, unit=unit, depth=depth + 1))
+        if bridge is not None:
+            out.append(bridge)
+            top = bottom
+    # Blocks without geometry cannot be placed by a cut; they follow, in source order.
+    out.extend(unmeasured)
+    return out
 
 def _extents(blocks: list[Block], axis: str) -> list[tuple[float, float, Block]]:
     out: list[tuple[float, float, Block]] = []
