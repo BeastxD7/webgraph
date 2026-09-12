@@ -8,11 +8,13 @@ import GraphPanel from "./GraphPanel";
 import PageList from "./PageList";
 import LivePipeline from "./LivePipeline";
 import ProgressRail from "./ProgressRail";
+import RunLog from "./RunLog";
 import RunSummary from "./RunSummary";
 import RunTabs, { type RunTab } from "./RunTabs";
 import TechnologyPanel from "./TechnologyPanel";
 import UrlList from "./UrlList";
 import { PHASE_LABEL, useSiteStream } from "@/hooks/useSiteStream";
+import type { RunMeta } from "@/lib/runlog";
 
 const PHASE_DOT: Record<string, string> = {
   analyzing: "bg-leaf-300 animate-pulse",
@@ -48,6 +50,22 @@ export default function SiteRun({
       queuedUrls: run.discoveredUrls.filter((candidate) => !settled.has(candidate)),
     };
   }, [run.pages, run.discoveredUrls]);
+
+  /**
+   * The header of the copied log. `endedAt` comes from the run's own elapsed clock rather
+   * than a `Date.now()` read during render, which would not be idempotent.
+   */
+  const logMeta: RunMeta = {
+    url,
+    mode: "whole site",
+    request: { complete, max_pages: maxPages },
+    header: (run.log.entries.current[0]?.event.type === "run"
+      ? run.log.entries.current[0]?.event
+      : null) as Record<string, unknown> | null,
+    startedAt: run.log.startedAt.current,
+    endedAt: run.running ? null : run.log.startedAt.current + run.elapsed * 1000,
+    outcome: run.error ? `failed: ${run.error}` : run.phase,
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5 px-5 pb-20 sm:px-8">
@@ -134,6 +152,10 @@ export default function SiteRun({
           </button>
         ))}
       </div>
+
+      {/* Above the page lists rather than below them: a crawl that discovered 1,600 URLs
+          would otherwise bury its own record under 1,600 rows. */}
+      <RunLog log={run.log} meta={logMeta} />
 
       {run.analysis && <TechnologyPanel analysis={run.analysis} />}
 

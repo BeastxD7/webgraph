@@ -140,7 +140,7 @@ class TestRenderFailure:
         import threading
 
         class Attachment(http.server.BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # noqa: N802 - http.server's spelling
+            def do_GET(self) -> None:
                 body = b"id,name\n1,thing\n"
                 self.send_response(200)
                 self.send_header("Content-Type", "text/csv")
@@ -149,7 +149,7 @@ class TestRenderFailure:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def log_message(self, *args: object) -> None:
+            def log_message(self, *args: object) -> None:  # noqa: ARG002
                 return
 
         server = http.server.HTTPServer(("127.0.0.1", 0), Attachment)

@@ -447,7 +447,34 @@ export interface ErrorEvent {
   message: string;
 }
 
+/**
+ * The first frame of either stream: what this run is, and where the server wrote its trace.
+ *
+ * Sent before any work happens, and before the site crawl's queue wait, so a run that never
+ * produced a page still has an identity. `options` are the ones actually applied after the
+ * host's caps -- a log that reports what was asked for rather than what was run explains
+ * nothing on the occasions the two differ.
+ */
+export interface RunEvent {
+  type: "run";
+  /** Server-side run id. The same id names the trace file and prefixes every line in it. */
+  run: string;
+  /** File name only, never a path: enough to find the trace, nothing about the server. */
+  trace: string;
+  url: string;
+  mode: "page" | "site";
+  engine: string;
+  /** Server wall clock, seconds. The client's own clock is what the log measures against. */
+  started: number;
+  strategy?: string;
+  render?: boolean;
+  complete?: boolean;
+  max_pages?: number;
+  concurrency?: number;
+}
+
 export type SiteEvent =
+  | RunEvent
   | StageEvent
   | AnalysisEvent
   | InventoryEvent
@@ -466,6 +493,7 @@ export type SiteEvent =
  */
 /** One stage of a single-page extraction, as the engine reports it. */
 export type PageStageEvent =
+  | RunEvent
   | { type: "stage"; stage: string; state: "running"; message: string }
   | {
       type: "resolve";

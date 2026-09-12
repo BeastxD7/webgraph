@@ -21,6 +21,7 @@ import re
 import tempfile
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
@@ -49,7 +50,7 @@ from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
 from webgraph.site import SiteConfig, stream_site
-from webgraph.trace import trace_events
+from webgraph.trace import RunTrace, trace_events
 from webgraph.types import BlockKind, Document, Rect
 
 
@@ -673,6 +674,19 @@ def _effective_max_pages(requested: int) -> int:
     return PAGE_CAP if requested == 0 else min(requested, PAGE_CAP)
 
 
+def _engine_version() -> str:
+    """The installed engine's version, or "unknown" rather than a number that is a guess.
+
+    Read once at import: a log line that names the wrong build sends whoever reads it to the
+    wrong source."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("webgraph")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 TRACE_DIR: Final[Path] = Path(
     os.environ.get("WEBGRAPH_TRACE_DIR", tempfile.gettempdir())
 ) / "webgraph-runs"
@@ -681,10 +695,40 @@ server that fills a disk with them by default has replaced one problem with anot
 `$WEBGRAPH_TRACE_DIR` somewhere durable to keep them."""
 
 
-def _trace_path(url: str) -> Path:
-    """One file per run, named so it can be found by host and time without an index."""
+ENGINE_VERSION: Final[str] = _engine_version()
+
+
+def _open_trace(url: str) -> RunTrace:
+    """One file per run, named so it can be found by host and time without an index.
+
+    The run id is in the filename as well as inside the file. Host and second alone are not
+    unique -- two tabs pointed at the same site in the same second would have opened the
+    same path in `"w"` mode, and the second run would have silently erased the first. A
+    trace that can vanish is worse than no trace, because it is trusted.
+    """
     host = re.sub(r"[^a-z0-9.-]+", "-", urlsplit(url).netloc.lower()) or "site"
-    return TRACE_DIR / f"{host}-{time.strftime('%Y%m%dT%H%M%S')}.jsonl"
+    run_id = uuid.uuid4().hex[:12]
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    return RunTrace(TRACE_DIR / f"{host}-{stamp}-{run_id}.jsonl", run_id=run_id)
+
+
+def _run_header(url: str, trace: RunTrace, **options: Any) -> dict[str, Any]:
+    """The first frame of a stream, and the first line of its trace.
+
+    Everything needed to read the rest of the log without guessing: which address, which
+    options were *actually applied* after this host's caps, which engine, and the id of the
+    file on the server holding the same events. The file name travels; the path does not --
+    a client has no use for the server's directory layout.
+    """
+    return {
+        "type": "run",
+        "run": trace.run_id,
+        "trace": trace.path.name,
+        "url": url,
+        "engine": ENGINE_VERSION,
+        "started": time.time(),
+        **options,
+    }
 
 
 @app.post("/api/text/stream")
@@ -713,18 +757,36 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
 
+        trace = _open_trace(request.url)
+        # First frame and first line, identical. A log someone pastes into a bug report and
+        # the file left on the server now name each other, so the two can be put side by
+        # side without anyone having to guess which run they are looking at.
+        header = _run_header(
+            request.url, trace, mode="page", strategy=strategy.value, render=request.render
+        )
+        trace.write(header)
+        yield _sse(header)
+
         def produce() -> None:
+            # The trace is owned here rather than by `trace_events`, so that the failure
+            # below is written *before* the file closes. A tracer that closed it in its own
+            # `finally` would miss exactly the event worth keeping.
             try:
                 for event in trace_events(
-                    stream_page(request.url, strategy=strategy), _trace_path(request.url)
+                    stream_page(request.url, strategy=strategy), trace
                 ):
                     loop.call_soon_threadsafe(queue.put_nowait, dict(event))
             except Exception as exc:
-                loop.call_soon_threadsafe(
-                    queue.put_nowait,
-                    {"type": "error", "stage": "unknown", "message": f"{type(exc).__name__}: {exc}"},
-                )
+                failure = {
+                    "type": "error",
+                    "stage": "unknown",
+                    "message": f"{type(exc).__name__}: {exc}",
+                }
+                trace.write(failure)
+                loop.call_soon_threadsafe(queue.put_nowait, failure)
             finally:
+                trace.write({"type": "trace-closed"})
+                trace.close()
                 loop.call_soon_threadsafe(queue.put_nowait, None)
 
         loop.run_in_executor(_crawl_pool, produce)
@@ -790,6 +852,26 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
             builder = GraphBuilder(request.url)
             _remember_graph(request.url, builder)
 
+            # Emitted after the slot is acquired, not before: a run that spent two minutes
+            # queued did not start two minutes ago, and every `at` in the trace below is
+            # measured from here.
+            trace = _open_trace(request.url)
+            header = _run_header(
+                request.url,
+                trace,
+                mode="site",
+                # The caps this host applied, not what the client asked for. A log that
+                # reports the request rather than the run explains nothing when they differ.
+                max_pages=config.max_pages,
+                concurrency=config.concurrency,
+                # None means Stage 0's measured verdict decides per site, which is a real
+                # answer and not a missing one.
+                strategy=config.strategy.value if config.strategy else "measured",
+                complete=request.complete,
+            )
+            trace.write(header)
+            yield _sse(header)
+
             def produce() -> None:
                 try:
                     # Every run leaves a file behind. The stream is consumed and dropped, so
@@ -804,7 +886,7 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                             should_stop=stop.is_set,
                             builder=builder,
                         ),
-                        _trace_path(request.url),
+                        trace,
                     ):
                         if stop.is_set():
                             return
@@ -812,11 +894,15 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                             time.sleep(0.05)
                         loop.call_soon_threadsafe(queue.put_nowait, event)
                 except Exception as exc:
-                    loop.call_soon_threadsafe(
-                        queue.put_nowait,
-                        {"type": "error", "message": f"{type(exc).__name__}: {exc}"},
-                    )
+                    failure = {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
+                    trace.write(failure)
+                    loop.call_soon_threadsafe(queue.put_nowait, failure)
                 finally:
+                    # Recorded whichever way the crawl ended, including the early `return`
+                    # above when the reader walked away mid-crawl -- "stopped at page 40" is
+                    # a different fact from "finished", and the file should say which.
+                    trace.write({"type": "trace-closed", "stopped": stop.is_set()})
+                    trace.close()
                     loop.call_soon_threadsafe(queue.put_nowait, None)
 
             loop.run_in_executor(_crawl_pool, produce)
