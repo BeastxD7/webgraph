@@ -212,7 +212,8 @@ class Block(BaseModel):
     widget: str | None = None
     """The interactive panel this block sits in, when its markup names one: `filter` for a
     faceted-search panel (an ancestor whose class or id says filter/facet/refine, or a
-    fieldset of checkboxes). Filters are the one kind of chrome that lives *inside* `main`
+    fieldset of checkboxes), `consent` for a cookie-consent dialog (OneTrust, Cookiebot,
+    Didomi, TrustArc, Sourcepoint, or a hand-rolled `cookie-banner`). Filters are the one kind of chrome that lives *inside* `main`
     on a collection page and is link-dense by design, so no density rule can find it; the
     markup names it, and this records the name. None elsewhere."""
 
