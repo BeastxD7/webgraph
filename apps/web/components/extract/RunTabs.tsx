@@ -3,7 +3,7 @@
 import type { Live } from "@/hooks/useSiteStream";
 import { compact, duration } from "@/lib/format";
 
-export type RunTab = "discovered" | "queued" | "extracted" | "failed" | "graph";
+export type RunTab = "discovered" | "queued" | "extracted" | "failed" | "graph" | "depth";
 
 export interface TabCounts {
   discovered: number;

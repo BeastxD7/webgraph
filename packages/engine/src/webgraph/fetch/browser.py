@@ -26,7 +26,7 @@ import shlex
 import threading
 from typing import TYPE_CHECKING, Any, Final
 
-from webgraph.config import SETTINGS
+from webgraph.settings import SETTINGS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from playwright.sync_api import Browser, Playwright

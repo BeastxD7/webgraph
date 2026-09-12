@@ -16,16 +16,12 @@ from lxml import etree
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
-from webgraph.config import (
-    MAX_DOCUMENT_BYTES as MAX_DOCUMENT_BYTES,
-)
-from webgraph.config import (
-    NOSCRIPT_CONTENT_MIN_WORDS as NOSCRIPT_CONTENT_MIN_WORDS,
-)
-from webgraph.config import (
-    NOSCRIPT_SHELL_MAX_WORDS as NOSCRIPT_SHELL_MAX_WORDS,
-)
+from webgraph import config
 from webgraph.types import Block
+
+MAX_DOCUMENT_BYTES = config.MAX_DOCUMENT_BYTES
+NOSCRIPT_SHELL_MAX_WORDS = config.NOSCRIPT_SHELL_MAX_WORDS
+NOSCRIPT_CONTENT_MIN_WORDS = config.NOSCRIPT_CONTENT_MIN_WORDS
 
 __all__ = [
     "BLOCK_TAGS",

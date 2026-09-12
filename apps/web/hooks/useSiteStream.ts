@@ -9,6 +9,7 @@ import {
   type SiteEvent,
   streamSite,
 } from "@/lib/api";
+import { readOverrides } from "@/lib/options";
 import { type RunLog, useRunLog } from "./useRunLog";
 
 export type Phase =
@@ -66,6 +67,12 @@ interface RunState {
   pages: PageEvent[];
   /** Every URL the crawl has accepted, in discovery order, rebuilt from `new_urls` deltas. */
   discoveredUrls: string[];
+  /** Where each discovered address came from: the page that linked to it (or the root, for
+   *  the sitemap) and its link distance from the root. What the depth tree is drawn from. */
+  origins: Record<string, { foundOn: string | null; depth: number; via: "seed" | "sitemap" | "link" }>;
+  /** Addresses accepted at each depth, from the engine's own frontier. */
+  depthCounts: Record<string, number>;
+  root: string | null;
   /** URLs dispatched and not yet returned: what is being fetched at this moment. */
   inFlight: string[];
   live: Live;
@@ -82,6 +89,9 @@ const INITIAL: RunState = {
   analysis: null,
   pages: [],
   discoveredUrls: [],
+  origins: {},
+  depthCounts: {},
+  root: null,
   inFlight: [],
   live: NO_COUNTS,
   summary: null,
@@ -130,21 +140,53 @@ function reduce(state: RunState, action: Action): RunState {
     }
     case "analysis":
       return { ...state, analysis: event };
-    case "frontier":
+    case "frontier": {
+      // The seed frontier: the root itself, and the sitemap's addresses hang off the root
+      // at depth 1. A `frontier` event carries no per-URL parent, and the engine's rule
+      // is exactly that -- sitemap entries are cited as found on the root.
+      const origins = { ...state.origins };
+      let root = state.root;
+      for (const url of event.new_urls ?? []) {
+        if (root === null) {
+          root = url;
+          origins[url] = { foundOn: null, depth: 0, via: "seed" };
+        } else if (!(url in origins)) {
+          origins[url] = { foundOn: root, depth: 1, via: "sitemap" };
+        }
+      }
       return {
         ...state,
+        root,
+        origins,
+        depthCounts: event.depth_counts ?? state.depthCounts,
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: { ...state.live, discovered: event.discovered, queued: event.queued },
       };
+    }
     case "fetching":
       // Replaces rather than appends: one batch is in flight at a time, and anything left
       // over from the previous one has already been accounted for by its `page` event.
       return { ...state, inFlight: event.urls };
-    case "page":
+    case "page": {
       // Newest first: on a long crawl the interesting thing is what just landed.
+      const origins = { ...state.origins };
+      const depth = (event.depth ?? event.citation?.depth ?? 0) + 1;
+      for (const url of event.new_urls ?? []) {
+        if (!(url in origins)) origins[url] = { foundOn: event.url, depth, via: "link" };
+      }
+      if (!(event.url in origins)) {
+        origins[event.url] = {
+          foundOn: event.citation?.found_on ?? null,
+          depth: event.depth ?? event.citation?.depth ?? 0,
+          via: (event.citation?.via as "seed" | "sitemap" | "link" | undefined) ?? "link",
+        };
+      }
       return {
         ...state,
         pages: [event, ...state.pages],
+        origins,
+        root: state.root ?? (event.depth === 0 ? event.url : null),
+        depthCounts: event.depth_counts ?? state.depthCounts,
         inFlight: state.inFlight.filter((url) => url !== event.url),
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: {
@@ -159,6 +201,7 @@ function reduce(state: RunState, action: Action): RunState {
           tables: event.totals.tables,
         },
       };
+    }
     case "done":
       return {
         ...state,
@@ -226,8 +269,19 @@ export function useSiteStream(request: SiteStreamRequest): SiteStream {
 
     void (async () => {
       try {
+        // The reader's saved settings ride along. A page cap given in the address wins
+        // over a saved one -- it is the more deliberate of the two.
+        const saved = readOverrides();
         await streamSite(
-          { url, max_pages: maxPages, concurrency: 6, complete },
+          {
+            url,
+            max_pages: maxPages || saved.max_pages || 0,
+            concurrency: saved.concurrency ?? 6,
+            complete,
+            crawl: saved.crawl,
+            fetch: saved.fetch,
+            renderOptions: saved.renderOptions,
+          },
           (event) => {
             log.record(event);
             dispatch({ kind: "event", event });

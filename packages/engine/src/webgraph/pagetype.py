@@ -45,12 +45,12 @@ from importlib.resources import files
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from webgraph.config import (
-    DEFAULT_MIN_CONFIDENCE as DEFAULT_MIN_CONFIDENCE,
-)
+from webgraph import config
 from webgraph.dom.markup_stats import CLASS_BUCKETS, COUNTED_TAGS
 from webgraph.main_content import MainContentConfig, _repeat_groups, link_density, word_count
 from webgraph.types import Block, BlockKind, Document, PayloadSource
+
+DEFAULT_MIN_CONFIDENCE = config.ROUTER_MIN_CONFIDENCE
 
 __all__ = [
     "FEATURE_NAMES",

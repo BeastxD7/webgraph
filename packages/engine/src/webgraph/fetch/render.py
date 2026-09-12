@@ -30,27 +30,10 @@ import re
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
-from webgraph.config import (
-    GATE_MAX_LINKS as GATE_MAX_LINKS,
-)
-from webgraph.config import (
-    GATE_MAX_TEXT as GATE_MAX_TEXT,
-)
-from webgraph.config import (
-    GATE_MIN_GAIN as GATE_MIN_GAIN,
-)
-from webgraph.config import (
-    MAX_RECORDED_REQUESTS as MAX_RECORDED_REQUESTS,
-)
-from webgraph.config import (
-    MIN_SALVAGED_TEXT as MIN_SALVAGED_TEXT,
-)
-from webgraph.config import (
-    RenderConfig as RenderConfig,
-)
+from webgraph import config
 from webgraph.fetch import browser as browser_module
 from webgraph.fetch import guard
 from webgraph.fetch.browser import shared_browser
@@ -61,6 +44,12 @@ from webgraph.markers import (
     marker_arguments,
 )
 from webgraph.types import Rect
+
+GATE_MAX_TEXT = config.GATE_MAX_TEXT
+GATE_MAX_LINKS = config.GATE_MAX_LINKS
+GATE_MIN_GAIN = config.GATE_MIN_GAIN
+MAX_RECORDED_REQUESTS = config.MAX_RECORDED_REQUESTS
+MIN_SALVAGED_TEXT = config.MIN_SALVAGED_TEXT
 
 __all__ = [
     "BREAK_ATTRIBUTE",
@@ -86,6 +75,66 @@ except ImportError:  # pragma: no cover
 
 
 @cache
+
+@dataclass(frozen=True, slots=True)
+class RenderConfig:
+    timeout_ms: int = config.RENDER_TIMEOUT_MS
+    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = config.RENDER_WAIT_UNTIL  # type: ignore[assignment]
+    """`load`, not `networkidle`.
+
+    `networkidle` waits for 500ms of no network activity, which **never happens** on sites
+    with analytics beacons, polling, websockets or video preloading. Measured against 24 real
+    sites it timed out on 5 of them (21%) -- Shopify, Squarespace, Stripe, python.org and
+    Figma -- losing those pages entirely. `load` plus an explicit settle is slightly earlier
+    but actually fires."""
+
+    viewport_width: int = config.RENDER_VIEWPORT_WIDTH
+    viewport_height: int = config.RENDER_VIEWPORT_HEIGHT
+    """Width matters for reading order -- a narrow viewport collapses a multi-column layout
+    into one column, which changes the correct answer."""
+
+    settle_ms: int = config.RENDER_SETTLE_MS
+    """Pause after load to let hydration and layout settle before measuring.
+
+    Carries the weight that `networkidle` used to: most client-side frameworks finish
+    hydrating within a few hundred milliseconds of `load`, and measuring before that captures
+    the pre-hydration layout."""
+
+    dismiss_gates: bool = config.RENDER_DISMISS_GATES
+    """Open a first-run interstitial that is blocking the page from mounting.
+
+    On by default, on the same asymmetric-cost reasoning that biases `_needs_render` toward
+    rendering: a gate left closed loses essentially the whole site -- 97% of the text and
+    *every* internal link on the measured case -- while a wrongly-suspected gate costs one
+    guarded click and is discarded unless it measurably improves the page.
+
+    This is the one place the engine clicks anything, and `fetch/js/reveal.js`'s reasons for
+    refusing to click still stand, so the click is fenced in four ways: it only happens on a
+    page that has almost no text *and* almost no internal links; candidates inside a `<form>`
+    or carrying a real `href` are never chosen; labels reading as a transaction, refusal or
+    sign-out are excluded; and the result is thrown away unless the page gets decisively
+    better. A click that navigates off-origin is reverted.
+    """
+
+    reveal_collapsed: bool = config.RENDER_REVEAL_COLLAPSED
+    """Open `<details>` and ARIA disclosure panels before measuring.
+
+    Reaches content the page hides until someone interacts, without clicking anything -- see
+    `fetch/js/reveal.js` for why clicking is the wrong tool. Off until measured; see MEMORY.md.
+    """
+
+    user_agent: str | None = None
+    headless: bool = config.RENDER_HEADLESS
+    reuse_browser: bool = config.RENDER_REUSE_BROWSER
+    """Reuse the calling thread's browser rather than launching one per page.
+
+    Launch is a fixed cost per page -- see `fetch/browser.py` for why the reuse is
+    thread-local. Disable it to isolate a page that crashes the browser."""
+
+    block_resources: tuple[str, ...] = config.RENDER_BLOCK_RESOURCES
+    """Skipped to cut bandwidth and time. Fonts are blocked deliberately: metrics shift
+    slightly without them, but not enough to change column structure."""
+
 def _script(name: str) -> str:
     """Browser-side program `fetch/js/<name>.js`, read once per process.
 

@@ -255,3 +255,58 @@ class TestScriptHoles:
 
         assert normalize_url("https://x.test/nullable-types") is not None
         assert normalize_url("https://x.test/undefined-behaviour-in-c") is not None
+
+
+class TestBreadthFirstByDepth:
+    """Depth is link distance from the root, and the queue empties one depth at a time."""
+
+    def test_every_page_at_depth_n_precedes_every_page_at_depth_n_plus_1(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://x.test/", max_depth=5))
+        frontier.add("https://x.test/a", 1)
+        frontier.add("https://x.test/b", 1)
+        # Children of /a arrive while /b is still queued; they must wait behind it.
+        frontier.add("https://x.test/a/1", 2)
+        frontier.add("https://x.test/a/2", 2)
+        frontier.add("https://x.test/c", 1)
+        depths = []
+        while (item := frontier.pop()) is not None:
+            depths.append(item[1])
+        assert depths == sorted(depths)
+
+    def test_max_depth_is_a_hard_wall(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://x.test/", max_depth=1))
+        assert frontier.add("https://x.test/a", 1)
+        assert not frontier.add("https://x.test/a/deep", 2)
+
+    def test_depth_counts_describe_the_shape(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://x.test/", max_depth=5))
+        frontier.mark_seen("https://x.test/")
+        for n in range(3):
+            frontier.add(f"https://x.test/{n}", 1)
+        frontier.add("https://x.test/0/x", 2)
+        assert frontier.depth_counts() == {0: 1, 1: 3, 2: 1}
+
+
+class TestDomainStrictness:
+    def test_strict_keeps_to_the_host_and_its_www(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope
+
+        scope = CrawlScope(root="https://www.example.com/", allow_subdomains=False)
+        assert scope.permits("https://example.com/a", 1)
+        assert not scope.permits("https://blog.example.com/a", 1)
+        assert not scope.permits("https://other.com/a", 1)
+
+    def test_relaxed_follows_subdomains_but_never_other_sites(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope
+
+        scope = CrawlScope(root="https://example.com/", allow_subdomains=True)
+        assert scope.permits("https://blog.example.com/a", 1)
+        assert scope.permits("https://shop.example.com/a", 1)
+        assert not scope.permits("https://other.com/a", 1)
+        assert not scope.permits("https://notexample.com/a", 1)

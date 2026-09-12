@@ -33,27 +33,31 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from webgraph.config import (
-    _BROWSER_PREFIX as _BROWSER_PREFIX,
-)
-from webgraph.config import (
-    _MAX_RESPONSE_BYTES as _MAX_RESPONSE_BYTES,
-)
-from webgraph.config import (
-    DEFAULT_USER_AGENT as DEFAULT_USER_AGENT,
-)
-from webgraph.config import (
-    MAX_RETRY_WAIT_SECONDS as MAX_RETRY_WAIT_SECONDS,
-)
-from webgraph.config import (
-    RETRY_STATUSES as RETRY_STATUSES,
-)
-from webgraph.config import (
-    FetchConfig as FetchConfig,
-)
+from webgraph import config
 from webgraph.fetch import guard
 
+_BROWSER_PREFIX = config.USER_AGENT_BROWSER
+DEFAULT_USER_AGENT = config.USER_AGENT
+RETRY_STATUSES = config.RETRY_STATUSES
+MAX_RETRY_WAIT_SECONDS = config.MAX_RETRY_WAIT_SECONDS
+_MAX_RESPONSE_BYTES = config.FETCH_MAX_BYTES
+
 __all__ = ["DEFAULT_USER_AGENT", "FetchConfig", "FetchResult", "fetch_static"]
+
+
+@dataclass(frozen=True, slots=True)
+class FetchConfig:
+    timeout_seconds: float = config.FETCH_TIMEOUT_SECONDS
+    max_redirects: int = config.FETCH_MAX_REDIRECTS
+    max_bytes: int = config.FETCH_MAX_BYTES
+    user_agent: str = config.USER_AGENT
+    extra_headers: dict[str, str] = field(default_factory=dict)
+    http2: bool = config.FETCH_HTTP2
+    """Negotiate HTTP/2 when the server offers it. Falls back to HTTP/1.1 automatically."""
+
+    retries: int = config.FETCH_RETRIES
+    """Extra attempts for a `RETRY_STATUSES` answer or a transport error. One by default:
+    enough for a server that said *later*, not enough to be the reason it said so."""
 
 @dataclass(frozen=True, slots=True)
 class FetchResult:

@@ -49,31 +49,17 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Final
 
-from webgraph.config import (
-    CHARS_PER_TOKEN as CHARS_PER_TOKEN,
-)
-from webgraph.config import (
-    DEDUP_PREFIX_CHARS as DEDUP_PREFIX_CHARS,
-)
-from webgraph.config import (
-    FEEDBACK_DISCOUNT as FEEDBACK_DISCOUNT,
-)
-from webgraph.config import (
-    HEADING_UBIQUITY as HEADING_UBIQUITY,
-)
-from webgraph.config import (
-    HEADING_WEIGHT as HEADING_WEIGHT,
-)
-from webgraph.config import (
-    MENTION_WEIGHT as MENTION_WEIGHT,
-)
-from webgraph.config import (
-    PAGE_EVIDENCE_WEIGHT as PAGE_EVIDENCE_WEIGHT,
-)
-from webgraph.config import (
-    B as B,
-)
+from webgraph import config
 from webgraph.graph.model import Section, SiteGraph
+
+CHARS_PER_TOKEN = config.GRAPH_CHARS_PER_TOKEN
+B = config.GRAPH_BM25_B
+HEADING_UBIQUITY = config.GRAPH_HEADING_UBIQUITY
+DEDUP_PREFIX_CHARS = config.GRAPH_DEDUP_PREFIX_CHARS
+PAGE_EVIDENCE_WEIGHT = config.GRAPH_PAGE_EVIDENCE_WEIGHT
+FEEDBACK_DISCOUNT = config.GRAPH_FEEDBACK_DISCOUNT
+MENTION_WEIGHT = config.GRAPH_MENTION_WEIGHT
+HEADING_WEIGHT = config.GRAPH_HEADING_WEIGHT
 
 __all__ = [
     "Assembled",

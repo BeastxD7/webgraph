@@ -59,22 +59,14 @@ import re
 from collections import Counter
 from typing import Final
 
-from webgraph.config import (
-    MAX_NAME_CHARS as MAX_NAME_CHARS,
-)
-from webgraph.config import (
-    MAX_NAME_PAGE_SHARE as MAX_NAME_PAGE_SHARE,
-)
-from webgraph.config import (
-    MIN_ANCHOR_AGREEMENT as MIN_ANCHOR_AGREEMENT,
-)
-from webgraph.config import (
-    MIN_CODE_USES as MIN_CODE_USES,
-)
-from webgraph.config import (
-    MIN_NAME_CHARS as MIN_NAME_CHARS,
-)
+from webgraph import config
 from webgraph.graph.model import Entity, SiteGraph
+
+MIN_NAME_CHARS = config.GRAPH_MIN_NAME_CHARS
+MAX_NAME_CHARS = config.GRAPH_MAX_NAME_CHARS
+MAX_NAME_PAGE_SHARE = config.GRAPH_MAX_NAME_PAGE_SHARE
+MIN_CODE_USES = config.GRAPH_MIN_CODE_USES
+MIN_ANCHOR_AGREEMENT = config.GRAPH_MIN_ANCHOR_AGREEMENT
 
 __all__ = [
     "MAX_NAME_PAGE_SHARE",
