@@ -1031,3 +1031,22 @@ class TestDocumentText:
         document = build_document(html, "https://shop.test/")
         assert document.text == "First sentence of the page.\n\nSecond sentence."
         assert any(b.kind is BlockKind.IMAGE for b in document.blocks), "the image is still a block"
+
+
+class TestCodeHeaders:
+    """MDN: `<div class="example-header"><span>js</span><button>Copy</button></div><pre>` --
+    "js Copy" before every one of the eleven examples on Array.prototype.reduce()."""
+
+    def test_language_and_copy_strip_is_dropped(self) -> None:
+        html = (
+            '<main><p>The callback is invoked four times:</p>'
+            '<div class="code-example"><div class="example-header"><span>js</span><button>Copy</button></div>'
+            "<pre><code>const array = [1, 2, 3, 4];</code></pre></div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
+        assert [b.text for b in blocks] == ["The callback is invoked four times:", "const array = [1, 2, 3, 4];"]
+
+    def test_a_sentence_before_code_is_kept(self) -> None:
+        html = "<main><p>Here we reduce the same array with an initial value of ten passed in:</p><pre>x</pre></main>"
+        blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
+        assert len(blocks) == 2
