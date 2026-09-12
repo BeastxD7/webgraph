@@ -77,9 +77,24 @@ export interface Fact {
   source_xpath: string | null;
 }
 
+/** Why these fields and not others, when the engine chose the schema rather than the caller. */
+export interface SchemaChoice {
+  page_type: string;
+  confidence: number;
+  fields: string[];
+  /** The `@type` of every node accepted as describing this page. Empty is a real answer:
+   *  the page shipped structured data about its site or its breadcrumbs, nothing about
+   *  itself — the common case on category pages. */
+  subject_types: string[];
+  payloads_considered: number;
+  payloads_used: number;
+}
+
 export interface ExtractResponse {
   page: PageInfo;
   facts: Record<string, Fact>;
+  /** Present only when no schema was supplied. */
+  schema_choice: SchemaChoice | null;
 }
 
 export interface TextResponse {
@@ -217,7 +232,8 @@ export const api = {
 
   extract: (input: {
     url: string;
-    schema: unknown;
+    /** Omit to let the engine classify the page and pick the schema for that type. */
+    schema?: unknown;
     render: boolean;
     rtl: boolean;
   }) => request<ExtractResponse>("/api/extract", input),
@@ -229,8 +245,15 @@ export const api = {
 export const SCHEMA_PRESETS: ReadonlyArray<{
   label: string;
   description: string;
-  schema: unknown;
+  /** Undefined means "let the engine choose", which is the default. */
+  schema?: unknown;
 }> = [
+  {
+    label: "Auto",
+    description:
+      "Detect the page type, then read only the structured-data node that describes this " +
+      "page — not the site's organisation or its breadcrumbs.",
+  },
   {
     label: "Product",
     description: "Name, SKU and price from schema.org Product markup",

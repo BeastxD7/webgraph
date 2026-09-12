@@ -266,3 +266,209 @@ class TestRealWorldShapes:
 
     def test_empty_payload_list(self) -> None:
         assert extract_facts([], {"type": "object", "properties": {}}, URL) == []
+
+
+class TestDecimalSeparators:
+    """Prices written the way most of Europe writes them.
+
+    `_coerce` used to strip everything but digits, dots and minus, which turns `"19,99"`
+    into `1999.0` — a hundred times the real price, emitted with full confidence and no
+    way for anything downstream to notice. It is the worst failure shape this module can
+    have: not a missing value, an authoritative wrong one.
+
+    It is also not rare. In a census of 2,008 labelled pages, comma-decimal was 34% of
+    string-valued prices, and the two largest e-commerce platforms are the reason:
+    WooCommerce formats prices through PHP's `number_format` with the store's own decimal
+    separator, and Shopify emits the price as a quoted string.
+    """
+
+    SCHEMA: ClassVar[dict[str, Any]] = {
+        "type": "object", "properties": {"price": {"type": "number"}},
+    }
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("19,99", 19.99),
+            ("1.299,00", 1299.0),
+            ("1 299,99", 1299.99),
+            # A non-breaking space, which is what a page actually contains when it groups
+            # thousands: browsers and CMSes both emit it so the number cannot wrap.
+            ("1\u00a0299,99", 1299.99),
+            ("1,299.00", 1299.0),
+            ("$168.00", 168.0),
+            ("1,299", 1299.0),
+            ("€ 19,99", 19.99),
+            ("19.99", 19.99),
+        ],
+    )
+    def test_reads_both_conventions(self, raw: str, expected: float) -> None:
+        assert values(self.SCHEMA, {"price": raw})["price"] == expected
+
+    @pytest.mark.parametrize("raw", ["1.2.3", "12,34,56", "1,2345"])
+    def test_declines_when_the_convention_cannot_be_told(self, raw: str) -> None:
+        """Emitting nothing is recoverable. Emitting the wrong number is not.
+
+        `"1,2345"` has no reading under either convention — four digits after a comma is
+        not a decimal fraction and not a thousands group.
+        """
+        assert values(self.SCHEMA, {"price": raw}) == {}
+
+    @pytest.mark.parametrize("raw", ["1.299", "1,299", "1 299"])
+    def test_three_digits_after_a_separator_is_a_thousands_group(self, raw: str) -> None:
+        """Both conventions agree here, for once.
+
+        `"1.299"` is 1,299 in Berlin and $1.299 in Boston — but a price written to three
+        decimal places is far rarer than a price of one thousand two hundred and ninety
+        nine, so the thousands reading is the one that is almost always right.
+        """
+        assert values(self.SCHEMA, {"price": raw})["price"] == 1299.0
+
+
+class TestEntitiesAndEnums:
+    def test_html_entities_are_unescaped(self) -> None:
+        """JSON-LD is JSON, so entities in it were never meant to survive.
+
+        They do, on roughly one in six pages carrying JSON-LD, because the emitter built
+        the string from already-escaped HTML: `"Maria &amp; Katerina"` where the page
+        shows `"Maria & Katerina"`.
+        """
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        assert values(schema, {"name": "Maria &amp; Katerina"})["name"] == "Maria & Katerina"
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "https://schema.org/InStock",
+            "http://schema.org/InStock",
+            "InStock",
+            "https://schema.org/InStock/",
+        ],
+    )
+    def test_enum_matches_the_last_path_segment(self, raw: str) -> None:
+        """All four spellings are in the wild, and the `http://` half is not legacy drift:
+        Shopify's current default themes emit it."""
+        schema = {
+            "type": "object",
+            "properties": {"availability": {"type": "string", "enum": ["InStock", "OutOfStock"]}},
+        }
+        assert values(schema, {"availability": raw})["availability"] == "InStock"
+
+    def test_a_value_outside_the_enum_is_declined(self) -> None:
+        """One page in the census says `OutStock`. A typo is not a state."""
+        schema = {
+            "type": "object",
+            "properties": {"availability": {"type": "string", "enum": ["InStock", "OutOfStock"]}},
+        }
+        assert values(schema, {"availability": "OutStock"}) == {}
+
+
+class TestDateFormat:
+    """`format: "date-time"` means ISO-8601 or nothing.
+
+    7% of `datePublished` values are not ISO, and they include `"13/11/2025 09:21:40"` —
+    day-month or month-day, indistinguishable for any day below 13. A date read the wrong
+    way round is wrong for eleven months of the year and right for one.
+    """
+
+    SCHEMA: ClassVar[dict[str, Any]] = {
+        "type": "object",
+        "properties": {"datePublished": {"type": "string", "format": "date-time"}},
+    }
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "2024-03-11T09:00:00Z",
+            "2024-03-11T09:00:00+05:30",
+            "2024-03-11",
+            '"2024-03-11T09:00:00Z"',
+        ],
+    )
+    def test_accepts_iso_8601(self, raw: str) -> None:
+        assert values(self.SCHEMA, {"datePublished": raw})["datePublished"].startswith("2024-03-11")
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "Feb 08, 2022",
+            "November 18, 2025",
+            "Thu, 09/25/2025 - 11:38",
+            "13/11/2025 09:21:40",
+            "On 8 Oct 2022",
+        ],
+    )
+    def test_declines_everything_else(self, raw: str) -> None:
+        assert values(self.SCHEMA, {"datePublished": raw}) == {}
+
+    def test_the_format_only_applies_to_dates(self) -> None:
+        """A string field without `format` keeps taking whatever the page said."""
+        schema = {"type": "object", "properties": {"datePublished": {"type": "string"}}}
+        assert values(schema, {"datePublished": "Feb 08, 2022"})["datePublished"] == "Feb 08, 2022"
+
+
+class TestListsAndWrappers:
+    """Values the page put inside a list.
+
+    `_lookup` used to recurse into dicts only, so anything a publisher wrapped in a list was
+    invisible: an article with two authors reported none, and every WooCommerce product
+    reported no price at all — WooCommerce always wraps `offers` in a one-element array.
+    That is a large share of the web's shops answering "no price" for a reason that has
+    nothing to do with the page.
+    """
+
+    def test_finds_a_key_inside_a_list_of_objects(self) -> None:
+        schema = {"type": "object", "properties": {"price": {"type": "number"}}}
+        payload = {"@type": "Product", "offers": [{"@type": "Offer", "price": "19.99"}]}
+        assert values(schema, payload)["price"] == 19.99
+
+    def test_a_one_element_list_satisfies_an_object_field(self) -> None:
+        """WooCommerce's shape: `offers` is always an array, even for one offer."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "offers": {"type": "object", "properties": {"price": {"type": "number"}}}
+            },
+        }
+        payload = {"@type": "Product", "offers": [{"@type": "Offer", "price": "1.299,00"}]}
+        assert values(schema, payload)["offers.price"] == 1299.0
+
+    def test_the_first_author_of_several(self) -> None:
+        """21% of article author values are a list. One byline is not every byline, but it
+        is the one the page leads with, and it beats reporting none."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "author": {"type": "object", "properties": {"name": {"type": "string"}}}
+            },
+        }
+        payload = {
+            "@type": "Article",
+            "author": [{"@type": "Person", "name": "Ada"}, {"@type": "Person", "name": "Grace"}],
+        }
+        assert values(schema, payload)["author.name"] == "Ada"
+
+    def test_an_aggregate_offer_does_not_supply_a_price(self) -> None:
+        """`AggregateOffer.lowPrice` is the cheapest variant, not the price of the thing.
+
+        WooCommerce emits one whenever a variable product's cheapest and dearest variants
+        differ, so this is the common case on exactly the pages where getting it wrong is
+        most visible.
+        """
+        schema = {
+            "type": "object",
+            "properties": {
+                "offers": {"type": "object", "properties": {"price": {"type": "number"}}}
+            },
+        }
+        payload = {
+            "@type": "Product",
+            "offers": [{"@type": "AggregateOffer", "lowPrice": "89.00", "highPrice": "400.00"}],
+        }
+        assert values(schema, payload) == {}
+
+    def test_a_shallower_match_still_wins(self) -> None:
+        """Entering lists must not let a deep value outrank one at the top level."""
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        payload = {"name": "Right", "items": [{"name": "Wrong"}]}
+        assert values(schema, payload)["name"] == "Right"
