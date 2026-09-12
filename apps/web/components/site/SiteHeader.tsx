@@ -8,6 +8,7 @@ const LINKS: ReadonlyArray<{ label: string; href: Route }> = [
   { label: "Capabilities", href: "/#capabilities" },
   { label: "Evidence", href: "/#evidence" },
   { label: "Benchmarks", href: "/benchmarks" },
+  { label: "Settings", href: "/settings" },
 ];
 
 /** Brand mark: a page reduced to the three blocks the engine keeps. */

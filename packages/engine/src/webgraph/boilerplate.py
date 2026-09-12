@@ -39,28 +39,16 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
-from webgraph.config import (
-    DEFAULT_THRESHOLD as DEFAULT_THRESHOLD,
-)
-from webgraph.config import (
-    MAIN_MIN_SHARE as MAIN_MIN_SHARE,
-)
-from webgraph.config import (
-    MAIN_MIN_WORDS as MAIN_MIN_WORDS,
-)
-from webgraph.config import (
-    MAX_REMOVAL as MAX_REMOVAL,
-)
-from webgraph.config import (
-    MIN_LANDMARK_CHARS as MIN_LANDMARK_CHARS,
-)
-from webgraph.config import (
-    MIN_PAGES as MIN_PAGES,
-)
-from webgraph.config import (
-    SLOT_PRESENCE as SLOT_PRESENCE,
-)
+from webgraph import config
 from webgraph.types import Block, BlockKind
+
+DEFAULT_THRESHOLD = config.CHROME_THRESHOLD
+MIN_PAGES = config.CHROME_MIN_PAGES
+MAX_REMOVAL = config.CHROME_MAX_REMOVAL
+SLOT_PRESENCE = config.CHROME_SLOT_PRESENCE
+MIN_LANDMARK_CHARS = config.CHROME_MIN_LANDMARK_CHARS
+MAIN_MIN_WORDS = config.CHROME_MAIN_MIN_WORDS
+MAIN_MIN_SHARE = config.CHROME_MAIN_MIN_SHARE
 
 __all__ = [
     "BoilerplateProfile",

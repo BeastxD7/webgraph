@@ -27,14 +27,12 @@ from __future__ import annotations
 
 from urllib.parse import urljoin, urlsplit
 
-from webgraph.config import (
-    MAX_SCRIPTS as MAX_SCRIPTS,
-)
-from webgraph.config import (
-    MAX_TOTAL_BYTES as MAX_TOTAL_BYTES,
-)
+from webgraph import config
 from webgraph.dom.blocks import parse_html
 from webgraph.fetch.static import FetchConfig, fetch_static
+
+MAX_SCRIPTS = config.PROFILE_MAX_SCRIPTS
+MAX_TOTAL_BYTES = config.PROFILE_MAX_TOTAL_BYTES
 
 __all__ = ["MAX_SCRIPTS", "MAX_TOTAL_BYTES", "collect_bundle_source"]
 

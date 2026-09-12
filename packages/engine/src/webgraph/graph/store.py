@@ -29,9 +29,9 @@ import time
 from pathlib import Path
 from typing import Final
 
-from webgraph.config import Settings
 from webgraph.graph.export import load_jsonl, write_jsonl
 from webgraph.graph.model import SiteGraph
+from webgraph.settings import Settings
 
 __all__ = ["GraphStore", "default_graph_dir"]
 

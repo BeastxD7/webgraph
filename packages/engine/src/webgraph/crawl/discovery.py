@@ -17,14 +17,12 @@ from typing import Final
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
-from webgraph.config import (
-    MAX_ANCHOR_CHARS as MAX_ANCHOR_CHARS,
-)
-from webgraph.config import (
-    MAX_SITEMAP_DOCUMENTS as MAX_SITEMAP_DOCUMENTS,
-)
+from webgraph import config
 from webgraph.crawl.frontier import reconcile_scheme
 from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, fetch_static
+
+MAX_SITEMAP_DOCUMENTS = config.MAX_SITEMAP_DOCUMENTS
+MAX_ANCHOR_CHARS = config.MAX_ANCHOR_CHARS
 
 __all__ = [
     "RobotsPolicy",
@@ -205,6 +203,7 @@ def discover_by_crawling(
     *,
     max_urls: int = 500,
     max_depth: int = 3,
+    allow_subdomains: bool = False,
     concurrency: int = 6,
     config: FetchConfig | None = None,
     policy: RobotsPolicy | None = None,
@@ -225,7 +224,7 @@ def discover_by_crawling(
 
     from webgraph.crawl.frontier import CrawlScope, Frontier
 
-    scope = CrawlScope(root=root, max_depth=max_depth)
+    scope = CrawlScope(root=root, max_depth=max_depth, allow_subdomains=allow_subdomains)
     frontier = Frontier(scope=scope)
     frontier.add(root, 0)
 

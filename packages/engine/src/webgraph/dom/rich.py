@@ -21,21 +21,15 @@ from urllib.parse import urljoin
 from lxml import etree
 from lxml.html import HtmlElement
 
-from webgraph.config import (
-    LONG_CELL_CHARS as LONG_CELL_CHARS,
-)
-from webgraph.config import (
-    MAX_EMPTY_ROW_SHARE as MAX_EMPTY_ROW_SHARE,
-)
-from webgraph.config import (
-    MIN_FILLED_SHARE as MIN_FILLED_SHARE,
-)
-from webgraph.config import (
-    MIN_GRID as MIN_GRID,
-)
+from webgraph import config
 from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
 from webgraph.markers import BREAK_ATTRIBUTE
 from webgraph.types import Block, BlockKind
+
+LONG_CELL_CHARS = config.LONG_CELL_CHARS
+MIN_GRID = config.MIN_GRID
+MIN_FILLED_SHARE = config.MIN_FILLED_SHARE
+MAX_EMPTY_ROW_SHARE = config.MAX_EMPTY_ROW_SHARE
 
 __all__ = ["extract_rich_blocks"]
 

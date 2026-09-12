@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import AskPanel from "./AskPanel";
+import DepthTree from "./DepthTree";
 import GraphPanel from "./GraphPanel";
 import PageList from "./PageList";
 import LivePipeline from "./LivePipeline";
@@ -145,7 +146,7 @@ export default function SiteRun({
       />
 
       <div className="flex flex-wrap gap-2">
-        {(["extracted", "graph"] as const).map((view) => (
+        {(["extracted", "depth", "graph"] as const).map((view) => (
           <button
             key={view}
             type="button"
@@ -157,7 +158,7 @@ export default function SiteRun({
                 : "rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-soft transition-colors hover:bg-haze"
             }
           >
-            {view === "extracted" ? "Pages" : "Site graph"}
+            {view === "extracted" ? "Pages" : view === "depth" ? "Depth tree" : "Site graph"}
           </button>
         ))}
       </div>
@@ -202,6 +203,16 @@ export default function SiteRun({
         ))}
 
       {tab === "graph" && <GraphPanel siteUrl={url} />}
+
+      {tab === "depth" && (
+        <DepthTree
+          root={run.root}
+          origins={run.origins}
+          depthCounts={run.depthCounts}
+          pages={run.pages}
+          cap={run.cap}
+        />
+      )}
 
       {tab === "failed" &&
         (failedPages.length > 0 ? (

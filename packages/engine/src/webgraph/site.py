@@ -23,15 +23,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
+from webgraph import config
 from webgraph.analyze import SiteAnalysis, SiteProbe, probe_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
 from webgraph.boilerplate import SiteChrome, detect_site_chrome
-from webgraph.config import (
-    IDENTICAL_CONTENT_WARNING as IDENTICAL_CONTENT_WARNING,
-)
-from webgraph.config import (
-    SiteConfig as SiteConfig,
-)
 from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
     RobotsPolicy,
@@ -48,12 +43,15 @@ from webgraph.crawl.frontier import (
     reconcile_scheme,
 )
 from webgraph.extract.schema import extract_facts, merge_facts
+from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
 from webgraph.pagetype import default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact, PayloadSource
+
+IDENTICAL_CONTENT_WARNING = config.IDENTICAL_CONTENT_WARNING
 
 __all__ = [
     "IDENTICAL_CONTENT_WARNING",
@@ -69,6 +67,65 @@ __all__ = [
     "verify_inventory",
 ]
 
+
+
+@dataclass(frozen=True, slots=True)
+class SiteConfig:
+    max_pages: int = config.CRAWL_MAX_PAGES
+    """0 means unbounded: crawl until the frontier is exhausted."""
+    concurrency: int = config.CRAWL_CONCURRENCY
+    delay_seconds: float = config.CRAWL_DELAY_SECONDS
+    verify_inventory: bool = config.CRAWL_VERIFY_INVENTORY
+    """Check each advertised URL before crawling it. Costs one cheap request per URL and
+    prevents a stale sitemap from consuming the whole page budget on 404s."""
+
+    follow_links: bool = config.CRAWL_FOLLOW_LINKS
+    """Discover routes by following links in addition to reading the sitemap. Both run
+    always -- a sitemap is frequently stale, incomplete, or both."""
+
+    discovery_limit: int = config.CRAWL_DISCOVERY_LIMIT
+    """Ceiling on URLs harvested by link-following before verification."""
+
+    max_depth: int = config.CRAWL_MAX_DEPTH
+    """How many links away from the root the crawl will go. 0 is the root alone.
+
+    The crawl is breadth-first: every page at depth *n* is fetched before any page at depth
+    *n + 1*, so a bounded page budget is spent near the root, where the pages that describe
+    a site live. Depth 0 is the address given; depth 1 is everything the root page links to
+    or its sitemap lists; depth 2 is everything those pages link to, and so on. High by
+    default -- a deep site is still a finite one, and the page budget is the real bound."""
+
+    strict_domain: bool = config.CRAWL_STRICT_DOMAIN
+    """Stay on the root's host, or also follow its subdomains.
+
+    Strict means `www.example.com` and `example.com` only -- they are the same site by
+    universal convention. Off, `blog.example.com` and `shop.example.com` are followed too.
+    Off by choice rather than default because subdomains are usually separate applications,
+    and quietly following them turns a bounded crawl into an unbounded one. A redirect is
+    not a scope question: a short link that lands on the real host is scoped to where it
+    landed."""
+
+    sitemap_limit: int = config.CRAWL_SITEMAP_LIMIT
+    respect_robots: bool = config.CRAWL_RESPECT_ROBOTS
+
+    remove_chrome: bool = config.CRAWL_REMOVE_CHROME
+    """Emit `content_markdown` -- the page with landmarks, site chrome and boilerplate
+    removed -- alongside the full Markdown. See `webgraph.content`.
+
+    Landmarks apply from the first page. Cross-page chrome needs several pages to exist
+    before it can say anything and is applied from then on. Costs nothing at crawl time --
+    it is computed from blocks already extracted."""
+
+    main_content: bool = config.CRAWL_MAIN_CONTENT
+    """Also draw the main-content boundary (`webgraph.main_content`) when producing
+    `content_markdown`. Off, the structural steps alone run: for a crawl whose pages are
+    link hubs by design, where the list of links *is* the content."""
+
+    strategy: Strategy | None = Strategy(config.CRAWL_STRATEGY) if config.CRAWL_STRATEGY else None
+    """Overrides the strategy Stage 0 recommends. Leave unset to use the measured verdict."""
+
+    fetch: FetchConfig = field(default_factory=FetchConfig)
+    render: RenderConfig = field(default_factory=RenderConfig)
 
 def resolve_root(root: str, *, config: FetchConfig | None = None) -> str:
     """Follow redirects from `root` and return the URL the site actually serves.
@@ -369,7 +426,8 @@ def build_inventory(
             discover_by_crawling(
                 root,
                 max_urls=config.discovery_limit,
-                max_depth=config.discovery_depth,
+                max_depth=config.max_depth,
+                allow_subdomains=not config.strict_domain,
                 concurrency=config.concurrency,
                 config=config.fetch,
                 policy=policy,
@@ -776,7 +834,11 @@ def stream_site(
     yield {"type": "stage", "stage": "enumerate", "message": "Seeding from sitemap"}
 
     policy = probe.policy
-    scope = CrawlScope(root=normalized_root, max_depth=config.discovery_depth)
+    scope = CrawlScope(
+        root=normalized_root,
+        max_depth=config.max_depth,
+        allow_subdomains=not config.strict_domain,
+    )
     frontier = Frontier(scope=scope)
     frontier.mark_seen(normalized_root)
     # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
@@ -795,6 +857,7 @@ def stream_site(
         "type": "frontier",
         "queued": len(frontier),
         "discovered": frontier.seen_count,
+        "depth_counts": frontier.depth_counts(),
         "from_sitemap": len(seeded),
         "extracted": 0,
         # The root plus everything the sitemap contributed. Clients rebuild the discovered
@@ -982,6 +1045,7 @@ def stream_site(
                     "strategy": page.strategy.value if page.strategy else None,
                     "queued": len(frontier),
                     "discovered": frontier.seen_count,
+                    "depth_counts": frontier.depth_counts(),
                     "extracted": extracted,
                     "failed": failed,
                     "newly_queued": len(discovered_here),

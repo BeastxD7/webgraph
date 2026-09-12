@@ -34,10 +34,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-from webgraph.config import (
-    _MAX_VALUE_CHARS as _MAX_VALUE_CHARS,
-)
-from webgraph.config import Settings
+from webgraph import config
+from webgraph.settings import Settings
+
+_MAX_VALUE_CHARS = config.TRACE_MAX_VALUE_CHARS
+
 
 __all__ = ["RunTrace", "trace_events"]
 

@@ -28,20 +28,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Final
 
-from webgraph.config import (
-    BLOCKING_STATUSES as BLOCKING_STATUSES,
-)
-from webgraph.config import (
-    MAX_BLOCK_PAGE_CHARS as MAX_BLOCK_PAGE_CHARS,
-)
-from webgraph.config import (
-    MISSING_STATUSES as MISSING_STATUSES,
-)
-from webgraph.config import (
-    Strategy as Strategy,
-)
+from webgraph import config
 from webgraph.fetch.render import (
     PLAYWRIGHT_AVAILABLE,
     RenderConfig,
@@ -54,6 +44,10 @@ from webgraph.pipeline import build_document
 from webgraph.profile.technology import RuntimeEvidence
 from webgraph.types import Block, BlockKind, Document, ReadingOrderMethod
 
+MISSING_STATUSES = config.MISSING_STATUSES
+BLOCKING_STATUSES = config.BLOCKING_STATUSES
+MAX_BLOCK_PAGE_CHARS = config.MAX_BLOCK_PAGE_CHARS
+
 __all__ = [
     "MISSING_STATUSES",
     "PageBlockedError",
@@ -65,6 +59,18 @@ __all__ = [
     "resolve_page",
     "union_documents",
 ]
+
+
+class Strategy(StrEnum):
+    STATIC_ONLY = "static-only"
+    """Cheap path. Used when rendering is unavailable or explicitly disabled."""
+
+    RENDERED_ONLY = "rendered-only"
+    """The browser's document alone. Reported when the static fetch failed or returned
+    nothing usable; requestable when the static HTML is known to be a decoy."""
+
+    UNION = "union"
+    """Both representations obtained and merged. The completeness path."""
 
 class PageMissingError(Exception):
     """Raised when a URL does not exist. Distinct from a transport failure."""

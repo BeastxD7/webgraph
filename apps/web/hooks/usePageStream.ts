@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type PageStageEvent, streamPage } from "@/lib/api";
+import { readOverrides } from "@/lib/options";
 import { type RunLog, useRunLog } from "./useRunLog";
 
 /**
@@ -77,7 +78,8 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
 
     void (async () => {
       try {
-        await streamPage({ url, render }, (event) => {
+        const saved = readOverrides();
+        await streamPage({ url, render, fetch: saved.fetch, renderOptions: saved.renderOptions }, (event) => {
           log.record(event);
           setRun((state) => {
             switch (event.type) {

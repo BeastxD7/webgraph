@@ -140,6 +140,17 @@ export class ApiError extends Error {
   }
 }
 
+async function requestGet<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`);
+  } catch {
+    throw new ApiError(unreachableMessage(), 0);
+  }
+  if (!response.ok) throw new ApiError(`The API answered ${response.status}.`, response.status);
+  return (await response.json()) as T;
+}
+
 async function request<T>(path: string, body?: unknown): Promise<T> {
   let response: Response;
   try {
@@ -217,7 +228,31 @@ export interface GraphSummary {
   deepest: string[];
 }
 
+/** Per-run overrides. Every field optional; the server's defaults are webgraph/config.py. */
+export interface RunOptions {
+  crawl?: Record<string, number | boolean | string>;
+  fetch?: Record<string, number | boolean | string>;
+  renderOptions?: Record<string, number | boolean | string>;
+  /** Top-level request fields the settings page may also set. */
+  max_pages?: number;
+  concurrency?: number;
+}
+
+export interface ConfigSetting {
+  value: unknown;
+  comment: string;
+  section: string;
+}
+
+export interface ConfigResponse {
+  settings: Record<string, ConfigSetting>;
+  overridable: Record<"crawl" | "fetch" | "renderOptions", string[]>;
+  caps: Record<string, number>;
+}
+
 export const api = {
+  config: () => requestGet<ConfigResponse>("/api/config"),
+
   health: () => request<HealthResponse>("/api/health"),
 
   graphSummary: (url: string) =>
@@ -350,6 +385,9 @@ export interface InventoryEvent {
   fully_verified: boolean;
 }
 
+/** How many addresses were accepted at each link distance from the root. */
+export type DepthCounts = Record<string, number>;
+
 export interface FrontierEvent {
   type: "frontier";
   queued: number;
@@ -359,6 +397,7 @@ export interface FrontierEvent {
   /** URLs newly accepted into the frontier. Clients rebuild the discovered set from these
    *  deltas; resending the whole frontier on every event would be quadratic. */
   new_urls: string[];
+  depth_counts?: DepthCounts;
 }
 
 /**
@@ -428,6 +467,7 @@ export interface PageEvent {
   newly_queued: number;
   /** URLs this page contributed to the frontier. */
   new_urls: string[];
+  depth_counts?: DepthCounts;
   pages_per_minute: number;
   totals: { chars: number; markdown: number; images: number; tables: number };
   /** Null when graph building is disabled. */
@@ -494,6 +534,8 @@ export interface RunEvent {
   complete?: boolean;
   max_pages?: number;
   concurrency?: number;
+  max_depth?: number;
+  strict_domain?: boolean;
 }
 
 export type SiteEvent =
@@ -593,7 +635,7 @@ export type PageStageEvent =
  * wire format is a second place for a frame split across TCP reads to be mishandled.
  */
 export async function streamPage(
-  input: { url: string; render: boolean },
+  input: { url: string; render: boolean } & Pick<RunOptions, "fetch" | "renderOptions">,
   onEvent: (event: PageStageEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -670,7 +712,8 @@ async function streamFrames(
 }
 
 export async function streamSite(
-  input: { url: string; max_pages: number; concurrency: number; complete: boolean },
+  input: { url: string; max_pages: number; concurrency: number; complete: boolean } &
+    Pick<RunOptions, "crawl" | "fetch" | "renderOptions">,
   onEvent: (event: SiteEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {

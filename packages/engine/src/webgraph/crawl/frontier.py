@@ -241,8 +241,14 @@ class Frontier:
     """
 
     scope: CrawlScope
-    _queue: deque[tuple[str, int]] = field(default_factory=deque)
+    _lanes: dict[int, deque[str]] = field(default_factory=dict)
+    """One FIFO per depth. `pop` drains the shallowest non-empty lane, so the crawl is
+    breadth-first by construction rather than by the accident of arrival order: a
+    depth-2 address queued while depth-1 addresses are still arriving waits behind all of
+    them, whichever thread found it first."""
     _seen: set[str] = field(default_factory=set)
+    _depths: dict[str, int] = field(default_factory=dict)
+    """Link distance from the root for every accepted address, by canonical key."""
 
     origin: dict[str, Discovery] = field(default_factory=dict)
     """How each address came to be in this crawl, for whoever accepted it first.
@@ -267,7 +273,8 @@ class Frontier:
         if not self.scope.permits(normalized, depth):
             return False
         self._seen.add(key)
-        self._queue.append((normalized, depth))
+        self._lanes.setdefault(depth, deque()).append(normalized)
+        self._depths[key] = depth
         return True
 
     def extend(
@@ -335,13 +342,31 @@ class Frontier:
         if key in self._seen:
             return False
         self._seen.add(key)
+        # The page the caller holds is the root, and the root is depth 0.
+        self._depths.setdefault(key, 0)
         return True
 
     def pop(self) -> tuple[str, int] | None:
-        return self._queue.popleft() if self._queue else None
+        """The next address to fetch: the oldest one at the shallowest depth."""
+        for depth in sorted(self._lanes):
+            lane = self._lanes[depth]
+            if lane:
+                return lane.popleft(), depth
+        return None
+
+    def depth_counts(self) -> dict[int, int]:
+        """How many addresses were accepted at each link distance from the root.
+
+        The shape of a site as the crawl sees it: `{0: 1, 1: 98, 2: 1,340}` says the root
+        links to 98 pages and those link to 1,340 more. Reported on every event so a reader
+        can watch a breadth-first crawl finish one depth before it starts the next."""
+        counts: dict[int, int] = {}
+        for depth in self._depths.values():
+            counts[depth] = counts.get(depth, 0) + 1
+        return dict(sorted(counts.items()))
 
     def __len__(self) -> int:
-        return len(self._queue)
+        return sum(len(lane) for lane in self._lanes.values())
 
     @property
     def seen_count(self) -> int:

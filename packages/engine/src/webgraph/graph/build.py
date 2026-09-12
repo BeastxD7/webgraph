@@ -16,15 +16,13 @@ import re
 from typing import Any, Final
 from urllib.parse import urljoin
 
-from webgraph.config import (
-    MAX_SECTION_CHARS as MAX_SECTION_CHARS,
-)
-from webgraph.config import (
-    MIN_SECTION_CHARS as MIN_SECTION_CHARS,
-)
+from webgraph import config
 from webgraph.crawl.frontier import canonical_key, normalize_url, same_site
 from webgraph.graph.model import Entity, PageNode, Section, SiteGraph, section_id
 from webgraph.types import BlockKind, Document
+
+MAX_SECTION_CHARS = config.GRAPH_MAX_SECTION_CHARS
+MIN_SECTION_CHARS = config.GRAPH_MIN_SECTION_CHARS
 
 __all__ = ["GraphBuilder", "sections_from_document"]
 

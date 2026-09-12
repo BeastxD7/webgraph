@@ -40,11 +40,10 @@ downstream consumers can see that the ordering was assumed rather than measured.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from statistics import median
 
-from webgraph.config import (
-    OrderingConfig as OrderingConfig,
-)
+from webgraph import config
 from webgraph.types import Block, ReadingOrderMethod
 
 __all__ = ["OrderingConfig", "detect_columns", "order_blocks"]
@@ -76,6 +75,58 @@ order actually disagree, against 94.0%. Taking the conservative one is the same 
 engine makes everywhere else: do not make a correct answer wrong in order to fix more of a
 wrong one."""
 
+
+
+@dataclass(frozen=True, slots=True)
+class OrderingConfig:
+    """Tuning for cut detection.
+
+    Gap thresholds are expressed as multiples of the median block height rather than as
+    absolute pixels, so the same config works on a dense sidebar and an airy landing page.
+    """
+
+    min_row_gap_ratio: float = config.ORDER_MIN_ROW_GAP_RATIO
+    """A vertical whitespace band must exceed this multiple of median block height to count
+    as a row separator. Below it, the gap is ordinary line spacing."""
+
+    min_col_gap_ratio: float = config.ORDER_MIN_COL_GAP_RATIO
+    """A horizontal whitespace band must exceed this multiple of median block height to
+    count as a column gutter. Set higher than the row threshold because inline spacing
+    between words and inline elements is common and must not be read as a column break."""
+
+    min_absolute_gap: float = config.ORDER_MIN_ABSOLUTE_GAP
+    """Floor in CSS pixels, guarding against degenerate tiny-text pages."""
+
+    max_depth: int = config.ORDER_MAX_DEPTH
+    """Recursion guard. Deeply nested cuts past this point are ordered positionally."""
+
+    min_measured_share: float = config.ORDER_MIN_MEASURED_SHARE
+    """Share of blocks that must carry geometry before it is allowed to lead the ordering.
+
+    Set by measurement, having first been guessed at 0.5. Method: take pages the browser
+    measured almost completely, treat their full-geometry order as ground truth, blind a
+    share of blocks, and score the anchored result by how often a pair of blocks keeps its
+    correct relative order.
+
+    Blinding in **clustered runs**, because that is the shape of the real thing -- a
+    collapsed section, or the blocks that exist only in the static half of a union fetch.
+    Random blinding is a materially easier problem and overstates how well this works.
+
+    ```
+    share measured   90%   75%   60%   50%   40%   30%   20%   10%
+    clustered       1.00  0.97  0.97  0.98  0.92  0.92  0.88  0.91
+    random          0.99  0.99  0.98  0.98  0.97  0.96  0.96  0.94
+    source order    0.89  <- what falling back produces
+    ```
+
+    Anchoring beats the fallback down to about 30% and loses below roughly 25%. The crossover
+    is noisy over six pages, so the threshold sits on the conservative side of it.
+
+    The guessed 0.5 was costing real accuracy: a union document merges static-only blocks,
+    which by construction carry no rectangle, so its measured share is always lower than the
+    rendered document's. Four sites in a robustness sweep -- lemonde.fr, shopify.com,
+    ar.wikipedia and aljazeera -- sat between 0.34 and 0.47 and read in source order.
+    """
 
 def order_blocks(
     blocks: list[Block],

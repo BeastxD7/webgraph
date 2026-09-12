@@ -450,3 +450,59 @@ class TestRefusedAddresses:
         response = client.post("/api/text", json={"url": "http://10.0.0.1/"})
         assert response.status_code in (403, 502)
         assert response.json()["detail"]
+
+
+class TestConfigEndpoint:
+    def test_settings_come_from_config_py_with_their_comments(self, client: TestClient) -> None:
+        from webgraph import config
+
+        body = client.get("/api/config").json()
+        depth = body["settings"]["CRAWL_MAX_DEPTH"]
+        assert depth["value"] == config.CRAWL_MAX_DEPTH
+        assert "breadth-first" in depth["comment"]
+        assert depth["section"].startswith("Crawling")
+
+    def test_it_says_what_a_request_may_override(self, client: TestClient) -> None:
+        body = client.get("/api/config").json()
+        assert "max_depth" in body["overridable"]["crawl"]
+        assert "strict_domain" in body["overridable"]["crawl"]
+        assert "timeout_ms" in body["overridable"]["renderOptions"]
+        assert "caps" in body
+
+
+class TestPerRequestOptions:
+    def test_crawl_options_are_applied_and_reported(self, client: TestClient, server: str) -> None:
+        import json
+
+        with client.stream(
+            "POST",
+            "/api/site/stream",
+            json={
+                "url": f"{server}/docs_static.html",
+                "max_pages": 1,
+                "concurrency": 1,
+                "complete": False,
+                "crawl": {"max_depth": 2, "strict_domain": False},
+            },
+        ) as response:
+            header = next(
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ") and '"type": "run"' in line
+            )
+        assert header["max_depth"] == 2
+        assert header["strict_domain"] is False
+
+    def test_an_out_of_range_option_is_rejected_before_anything_runs(self, client: TestClient, server: str) -> None:
+        response = client.post(
+            "/api/text/stream",
+            json={"url": f"{server}/docs_static.html", "renderOptions": {"timeout_ms": 5}},
+        )
+        assert response.status_code == 422
+
+    def test_an_unknown_option_is_ignored_not_fatal(self, client: TestClient, server: str) -> None:
+        """A newer client sending a field this server does not know should still be served."""
+        response = client.post(
+            "/api/text", json={"url": f"{server}/docs_static.html", "fetch": {"timeout_seconds": 5, "colour": "red"}}
+        )
+        assert response.status_code == 200

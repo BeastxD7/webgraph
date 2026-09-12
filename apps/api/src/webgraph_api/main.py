@@ -25,6 +25,7 @@ from collections import OrderedDict
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final, Literal
 from urllib.parse import urlsplit
@@ -33,13 +34,12 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-from webgraph.config import Settings
 from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch import guard
-from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
-from webgraph.fetch.static import fetch_static
+from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig, geometry_by_xpath, render_page
+from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
 from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
@@ -50,11 +50,12 @@ from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
+from webgraph.settings import Settings, describe_config
 from webgraph.site import SiteConfig, stream_site
 from webgraph.trace import RunTrace, trace_events
 from webgraph.types import BlockKind, Document, Rect
 
-# Every value a deployment can set lives in `webgraph.config.Settings`, read once here. The
+# Every value a deployment can set lives in `webgraph.settings.Settings` (defaults in `webgraph.config`), read once here. The
 # reasoning for each cap is beside its field there; these names are kept because the rest of
 # this module -- and the tests that monkeypatch them -- refer to them.
 SETTINGS = Settings.from_env()
@@ -170,10 +171,57 @@ class ExtractRequest(BaseModel):
     rtl: bool = Field(default=False, description="Right-to-left reading direction")
 
 
+class RenderOptions(BaseModel):
+    """Per-request overrides for the browser. Every field defaults to `webgraph.config`."""
+
+    timeout_ms: int | None = Field(default=None, ge=1_000, le=120_000)
+    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] | None = None
+    settle_ms: int | None = Field(default=None, ge=0, le=10_000)
+    dismiss_gates: bool | None = None
+    reveal_collapsed: bool | None = None
+    viewport_width: int | None = Field(default=None, ge=320, le=3840)
+    viewport_height: int | None = Field(default=None, ge=320, le=2160)
+
+
+class FetchOptions(BaseModel):
+    """Per-request overrides for the plain HTTP fetch."""
+
+    timeout_seconds: float | None = Field(default=None, ge=1, le=120)
+    retries: int | None = Field(default=None, ge=0, le=5)
+
+
+class CrawlOptions(BaseModel):
+    """Per-request overrides for a whole-site crawl. Defaults come from `webgraph.config`;
+    the host's caps in `Settings` still apply on top."""
+
+    max_depth: int | None = Field(default=None, ge=0, le=50)
+    strict_domain: bool | None = None
+    delay_seconds: float | None = Field(default=None, ge=0, le=10)
+    verify_inventory: bool | None = None
+    follow_links: bool | None = None
+    discovery_limit: int | None = Field(default=None, ge=0, le=10_000)
+    sitemap_limit: int | None = Field(default=None, ge=0, le=200_000)
+    respect_robots: bool | None = None
+    remove_chrome: bool | None = None
+    main_content: bool | None = None
+
+
+def _applied(dataclass_default: Any, options: BaseModel | None) -> Any:
+    """A config dataclass with the request's non-null overrides applied."""
+    if options is None:
+        return dataclass_default
+    overrides = {k: v for k, v in options.model_dump().items() if v is not None}
+    return replace(dataclass_default, **overrides) if overrides else dataclass_default
+
+
 class TextRequest(BaseModel):
     url: str
     render: bool = False
     rtl: bool = False
+    fetch: FetchOptions | None = None
+    render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
+
+    model_config = {"populate_by_name": True}
 
 
 class FactOut(BaseModel):
@@ -292,6 +340,11 @@ class SiteRequest(BaseModel):
         description="Union static and rendered fetches per page. Slower, but neither mode "
         "alone is complete -- see the engine's resolve module.",
     )
+    crawl: CrawlOptions | None = None
+    fetch: FetchOptions | None = None
+    render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
+
+    model_config = {"populate_by_name": True}
 
 
 class HealthResponse(BaseModel):
@@ -787,6 +840,40 @@ def _run_header(url: str, trace: RunTrace, **options: Any) -> dict[str, Any]:
     }
 
 
+class ConfigResponse(BaseModel):
+    settings: dict[str, dict[str, Any]] = Field(
+        description="Every setting in webgraph/config.py: value, comment, section."
+    )
+    overridable: dict[str, list[str]] = Field(
+        description="Which of them a request may override, by request field: crawl, fetch, "
+        "renderOptions. Everything else is changed by editing config.py."
+    )
+    caps: dict[str, int] = Field(description="The host's caps from the environment; 0 means none.")
+
+
+@app.get("/api/config", response_model=ConfigResponse)
+async def get_config() -> ConfigResponse:
+    """The engine's settings, as the settings page shows them.
+
+    Values and comments come straight from `webgraph/config.py`, so the page and the file
+    never disagree. The `overridable` map says which a request may change per run.
+    """
+    return ConfigResponse(
+        settings=describe_config(),
+        overridable={
+            "crawl": sorted(CrawlOptions.model_fields),
+            "fetch": sorted(FetchOptions.model_fields),
+            "renderOptions": sorted(RenderOptions.model_fields),
+        },
+        caps={
+            "max_pages": PAGE_CAP,
+            "max_concurrency": CONCURRENCY_CAP,
+            "max_concurrent_renders": MAX_CONCURRENT_RENDERS,
+            "max_concurrent_crawls": MAX_CONCURRENT_CRAWLS,
+        },
+    )
+
+
 @app.post("/api/text/stream")
 async def text_stream(request: TextRequest) -> StreamingResponse:
     """One page, streamed stage by stage.
@@ -808,6 +895,8 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
     guard.check_url(request.url)
 
     strategy = Strategy.UNION if request.render else Strategy.STATIC_ONLY
+    fetch_config = _applied(FetchConfig(), request.fetch)
+    render_config = _applied(RenderConfig(), request.render_options)
 
     async def generate() -> AsyncIterator[str]:
         loop = asyncio.get_running_loop()
@@ -829,7 +918,13 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
             # `finally` would miss exactly the event worth keeping.
             try:
                 for event in trace_events(
-                    stream_page(request.url, strategy=strategy), trace
+                    stream_page(
+                        request.url,
+                        strategy=strategy,
+                        fetch_config=fetch_config,
+                        render_config=render_config,
+                    ),
+                    trace,
                 ):
                     loop.call_soon_threadsafe(queue.put_nowait, dict(event))
             except Exception as exc:
@@ -876,10 +971,15 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
     if not request.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url must be http or https")
 
-    config = SiteConfig(
-        max_pages=_effective_max_pages(request.max_pages),
-        concurrency=_effective_concurrency(request.concurrency),
-        strategy=Strategy.UNION if request.complete else Strategy.STATIC_ONLY,
+    config = _applied(
+        SiteConfig(
+            max_pages=_effective_max_pages(request.max_pages),
+            concurrency=_effective_concurrency(request.concurrency),
+            strategy=Strategy.UNION if request.complete else Strategy.STATIC_ONLY,
+            fetch=_applied(FetchConfig(), request.fetch),
+            render=_applied(RenderConfig(), request.render_options),
+        ),
+        request.crawl,
     )
 
     async def generate() -> AsyncIterator[str]:
@@ -924,6 +1024,8 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                 # answer and not a missing one.
                 strategy=config.strategy.value if config.strategy else "measured",
                 complete=request.complete,
+                max_depth=config.max_depth,
+                strict_domain=config.strict_domain,
             )
             trace.write(header)
             yield _sse(header)
