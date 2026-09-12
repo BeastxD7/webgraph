@@ -3,3 +3,8 @@ members = ["packages/engine", "apps/api"]
 
 [tool.uv.sources]
 webgraph = { workspace = true }
+
+[dependency-groups]
+bench = [
+    "h2>=4.1",
+]

@@ -6,7 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
-    "httpx>=0.28",
+    # `http2` pulls in h2. Not decoration: measured on 1,000 live URLs, a client that speaks
+    # only HTTP/1.1 and refuses brotli is answered differently by several CDNs than one that
+    # negotiates what a browser negotiates. See `webgraph.fetch.static`.
+    "httpx[http2]>=0.28",
+    "brotli>=1.1",
     "lxml>=5.3",
     "pydantic>=2.10",
     "jsonschema>=4.23",
@@ -44,6 +48,8 @@ bench = [
     "beautifulsoup4>=4.12",
     "jieba>=0.42",
     "resiliparse>=0.14.5",
+    "rouge-score>=0.1.2",
+    "scikit-learn>=1.5",
 ]
 
 [build-system]
@@ -62,6 +68,13 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "ARG", "PTH"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# RUF001 flags "ambiguous" Unicode -- a multiplication sign that could be the letter x, a
+# minus sign that could be a hyphen. In a MathML-to-LaTeX table those characters are the
+# subject, not a typo: the whole file exists to map them to their LaTeX spellings.
+"src/webgraph/dom/math.py" = ["RUF001"]
+"tests/test_math.py" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"
