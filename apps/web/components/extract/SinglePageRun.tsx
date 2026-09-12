@@ -1,15 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+
+import PageStages from "./PageStages";
+import { usePageStream } from "@/hooks/usePageStream";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   type ExtractResponse,
   SCHEMA_PRESETS,
+  type PageInfo,
   type TextResponse,
   api,
 } from "@/lib/api";
 import { compact, percent } from "@/lib/format";
+import { renderMarkdown } from "@/lib/markdown";
+import CopyButton from "@/components/ui/CopyButton";
 
 function Meta({ page }: { page: TextResponse["page"] }) {
   const flags: ReadonlyArray<{ label: string; tone: "ok" | "warn" | "plain" }> = [
@@ -54,42 +60,63 @@ function Meta({ page }: { page: TextResponse["page"] }) {
  * absent row here is the engine declining, not failing silently.
  */
 export default function SinglePageRun({ url }: { url: string }) {
-  const [text, setText] = useState<TextResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  // The component is keyed by URL, so a new target remounts it and these start clean.
-  const [loading, setLoading] = useState(true);
+  // Streamed rather than awaited. A render can take ten seconds, and a page that says
+  // nothing until it finishes is indistinguishable from one that has hung -- which is why
+  // the whole-site crawl has always streamed and this, until now, did not.
+  const run = usePageStream({ url, render: true });
+  const loading = run.running;
+  const error = run.error;
 
   // Landmarks are declared on the page itself, so a single page gets a content-only view
   // without the whole-site crawl that cross-page chrome detection needs.
   const [contentOnly, setContentOnly] = useState(true);
+  // Rendered by default. Markdown is what the engine produces, but a reader checking whether
+  // the extraction is right reads the page, not the syntax.
+  const [preview, setPreview] = useState(true);
   const [presetIndex, setPresetIndex] = useState(0);
   const [facts, setFacts] = useState<ExtractResponse | null>(null);
   const [mapping, setMapping] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const cancelled = useRef(false);
-
-  useEffect(() => {
-    cancelled.current = false;
-
-    api
-      .text({ url, render: true, rtl: false })
-      .then((response) => {
-        if (!cancelled.current) setText(response);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled.current) {
-          setError(cause instanceof Error ? cause.message : "Extraction failed.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled.current) setLoading(false);
-      });
-
-    return () => {
-      cancelled.current = true;
+  /**
+   * The finished page in the shape the rest of this view already expects.
+   *
+   * Derived from the stream rather than fetched separately: two requests for one page would
+   * double the work and could disagree with each other, and the stream already carries
+   * everything the old response did.
+   */
+  const text: TextResponse | null = useMemo(() => {
+    if (!run.done) return null;
+    return {
+      page: {
+        url: run.done.url,
+        content_hash: run.parse?.content_hash ?? "",
+        reading_order: (run.parse?.reading_order ?? "dom-fallback") as PageInfo["reading_order"],
+        reading_order_measured: run.parse?.reading_order_measured ?? false,
+        dom_order_differs: run.parse?.dom_order_differs ?? false,
+        blocks: run.parse?.blocks ?? 0,
+        frameworks: run.parse?.frameworks ?? [],
+        requires_render: run.parse?.requires_render ?? false,
+        payloads: run.parse?.payloads ?? [],
+      },
+      text: run.done.text,
+      markdown: run.done.markdown,
+      content_markdown: run.done.content_markdown,
+      content_methods: run.select?.methods ?? [],
+      content_blocks: run.select?.kept ?? 0,
+      page_type: run.classify?.page_type ?? "unknown",
+      page_type_confidence: run.classify?.confidence ?? 0,
+      images: run.done.images,
+      tables: run.done.tables,
     };
-  }, [url]);
+  }, [run.done, run.parse, run.select, run.classify]);
+
+  const hasCleanView = Boolean(text?.content_markdown);
+  const shown = (contentOnly && hasCleanView ? text?.content_markdown : text?.markdown) ?? "";
+  const removed =
+    text && hasCleanView
+      ? 1 - text.content_markdown.length / Math.max(text.markdown.length, 1)
+      : 0;
 
   const mapSchema = useCallback(async () => {
     const preset = SCHEMA_PRESETS[presetIndex];
@@ -110,7 +137,7 @@ export default function SinglePageRun({ url }: { url: string }) {
     <div className="mx-auto w-full max-w-6xl space-y-5 px-5 pb-20 sm:px-8">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[13.5px] font-semibold">
-          {loading ? "Fetching and rendering…" : error ? "Failed" : "Extracted"}
+          {loading ? "Extracting…" : error ? "Failed" : "Extracted"}
         </span>
         <Link
           href="/#start"
@@ -120,13 +147,24 @@ export default function SinglePageRun({ url }: { url: string }) {
         </Link>
       </div>
 
+      {/* Always visible, running or not: while the run is going it is the only thing
+          happening, and once it has finished or failed it is the record of what was done. */}
+      <PageStages run={run} />
+
       {error && (
-        <p
+        <div
           role="alert"
-          className="rounded-2xl border border-flag-bad/25 bg-flag-bad/5 px-5 py-4 text-[13.5px] font-semibold text-flag-bad"
+          className="flex flex-wrap items-center gap-3 rounded-2xl border border-flag-bad/25 bg-flag-bad/5 px-5 py-4"
         >
-          {error}
-        </p>
+          <p className="text-[13.5px] font-semibold text-flag-bad">{error}</p>
+          <button
+            type="button"
+            onClick={run.retry}
+            className="ml-auto rounded-full border border-flag-bad/40 px-3.5 py-1.5 text-[12.5px] font-bold text-flag-bad transition-colors hover:bg-flag-bad/10"
+          >
+            Try again
+          </button>
+        </div>
       )}
 
       {text && (
@@ -218,21 +256,38 @@ export default function SinglePageRun({ url }: { url: string }) {
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line p-4">
+            <div className="flex flex-wrap items-center gap-3 border-b border-line p-4">
               <h2 className="text-[15px] font-extrabold tracking-tight">Markdown</h2>
-              {text.content_markdown && (
-                <div role="group" aria-label="Markdown view" className="flex rounded-full bg-sunk p-0.5">
+              {hasCleanView && (
+                <span
+                  title="Share of the page identified as navigation, footer or other furniture"
+                  className="tabular rounded-full bg-leaf-50 px-2 py-0.5 text-[11.5px] font-semibold text-leaf-700"
+                >
+                  −{Math.round(removed * 100)}% chrome
+                </span>
+              )}
+
+              <div className="ml-auto flex flex-wrap items-center gap-2">
+                {/* Copies exactly what is on screen: switching a toggle changes what you
+                    get, which is the only behaviour that is not surprising. */}
+                <CopyButton text={shown} label={contentOnly && hasCleanView ? "Copy content" : "Copy page"} />
+
+                {/* Two orthogonal questions -- *what* to show and *how* -- kept as separate
+                    controls rather than one four-way switch, because they are not
+                    alternatives to each other. Same pair the crawl's page rows carry, so a
+                    page read on its own behaves like the same page read inside a site. */}
+                <div role="group" aria-label="How to show it" className="flex rounded-full bg-sunk p-0.5">
                   {[
-                    { id: true, label: "Content only" },
-                    { id: false, label: "Full page" },
+                    { id: true, label: "Preview" },
+                    { id: false, label: "Markdown" },
                   ].map((option) => (
                     <button
                       key={String(option.id)}
                       type="button"
-                      aria-pressed={contentOnly === option.id}
-                      onClick={() => setContentOnly(option.id)}
+                      aria-pressed={preview === option.id}
+                      onClick={() => setPreview(option.id)}
                       className={
-                        contentOnly === option.id
+                        preview === option.id
                           ? "rounded-full bg-surface px-3 py-1 text-[12px] font-bold shadow-sm"
                           : "rounded-full px-3 py-1 text-[12px] font-semibold text-ink-soft"
                       }
@@ -241,11 +296,57 @@ export default function SinglePageRun({ url }: { url: string }) {
                     </button>
                   ))}
                 </div>
-              )}
+
+                {hasCleanView && (
+                  <div role="group" aria-label="What to show" className="flex rounded-full bg-sunk p-0.5">
+                    {[
+                      { id: true, label: "Content only" },
+                      { id: false, label: "Full page" },
+                    ].map((option) => (
+                      <button
+                        key={String(option.id)}
+                        type="button"
+                        aria-pressed={contentOnly === option.id}
+                        onClick={() => setContentOnly(option.id)}
+                        className={
+                          contentOnly === option.id
+                            ? "rounded-full bg-surface px-3 py-1 text-[12px] font-bold shadow-sm"
+                            : "rounded-full px-3 py-1 text-[12px] font-semibold text-ink-soft"
+                        }
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-            <pre className="max-h-[38rem] overflow-auto p-5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
-              {contentOnly && text.content_markdown ? text.content_markdown : text.markdown}
-            </pre>
+
+            {text.images.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto border-b border-line px-4 py-3">
+                {text.images.slice(0, 12).map((src) => (
+                  // Arbitrary remote hosts, so next/image's optimiser is not usable here.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={src}
+                    src={src}
+                    alt=""
+                    loading="lazy"
+                    className="h-16 w-24 shrink-0 rounded-lg border border-line object-cover"
+                  />
+                ))}
+              </div>
+            )}
+
+            {preview ? (
+              <div className="max-h-[38rem] overflow-auto px-5 py-4 text-[14px]">
+                {renderMarkdown(shown)}
+              </div>
+            ) : (
+              <pre className="max-h-[38rem] overflow-auto p-5 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+                {shown}
+              </pre>
+            )}
           </section>
         </>
       )}

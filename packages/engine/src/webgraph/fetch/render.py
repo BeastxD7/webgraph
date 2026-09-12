@@ -297,6 +297,19 @@ def _open_gate(page: Any) -> tuple[bool, str | None]:
     )
 
 
+class DownloadedInsteadOfPageError(Exception):
+    """The address served a file, not a document.
+
+    Its own type rather than a string match at the call site: a caller deciding whether to
+    retry, escalate or give up needs to tell "this is not a web page" from "the browser
+    broke", and those want opposite responses."""
+
+
+def _is_download(exc: Exception) -> bool:
+    """Whether Playwright refused a navigation because it became a download."""
+    return "download is starting" in str(exc).lower()
+
+
 MIN_SALVAGED_TEXT: Final[int] = 200
 """Visible characters a timed-out document must hold to count as a page.
 
@@ -387,6 +400,16 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                 # merits rather than on the timeout's say-so.
                 response = None
                 navigation_note = _timeout_note(exc, config)
+            except Exception as exc:
+                if not _is_download(exc):
+                    raise
+                # The navigation produced a file, not a page. There is nothing to render and
+                # nothing to wait for, so the browser's own message ("Download is starting")
+                # is reported as what it means instead of surfacing a driver error. Seen on
+                # amazon.in, which answers some requests with an attachment.
+                raise DownloadedInsteadOfPageError(
+                    "the server returned a file download rather than a page"
+                ) from exc
             # The browser follows redirects itself, so the address that was checked above
             # is not necessarily the one that answered. Raising here is caught by the
             # handler at the bottom and reported as a failed render.
@@ -488,6 +511,11 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             gate_note=payload.get("gate_note") or None,
             navigation_note=payload.get("navigation_note") or None,
         )
+
+    except DownloadedInsteadOfPageError as exc:
+        # Our own diagnosis, so it is reported as a sentence rather than decorated with a
+        # class name the reader has no use for.
+        return RenderResult(url=url, html="", rects={}, ok=False, error=str(exc))
 
     except Exception as exc:
         return RenderResult(

@@ -38,7 +38,7 @@ from webgraph.fetch.render import (
     geometry_by_xpath,
     render_page,
 )
-from webgraph.fetch.static import FetchConfig, fetch_static
+from webgraph.fetch.static import FetchConfig, FetchResult, fetch_static
 from webgraph.pipeline import build_document
 from webgraph.profile.technology import RuntimeEvidence
 from webgraph.types import Block, Document, ReadingOrderMethod
@@ -291,6 +291,43 @@ def runtime_evidence(rendered: RenderResult) -> RuntimeEvidence:
     )
 
 
+BLOCKING_STATUSES: Final[dict[int, str]] = {
+    401: "the page requires a sign-in",
+    403: "the site refused this client",
+    429: "the site is rate-limiting this client",
+    451: "the page is blocked for legal reasons",
+    503: "the site said it was too busy, which is also how several of them refuse bots",
+}
+"""Statuses that mean something a person can act on, said in words.
+
+`HTTP 503` is accurate and tells a reader nothing. Whether a page is dead, gated, or refusing
+us decides what to do next, and the status alone does not distinguish them -- so the reason is
+spelled out and, where the server explained itself, quoted."""
+
+_TAGS: Final[re.Pattern[str]] = re.compile(r"<[^>]+>")
+_RUNS: Final[re.Pattern[str]] = re.compile(r"\s+")
+
+
+def _server_said(html: str, limit: int = 140) -> str:
+    """The server's own words, when it bothered to write any. Quoted, never paraphrased."""
+    text = _RUNS.sub(" ", _TAGS.sub(" ", html)).strip()
+    return text[:limit].strip() if len(text) >= 20 else ""
+
+
+def _both_failed(url: str, static: FetchResult, render_error: str | None) -> str:
+    """One message covering both paths, because both were tried and both have something to say."""
+    parts: list[str] = []
+    if static.status in BLOCKING_STATUSES:
+        parts.append(f"HTTP {static.status} -- {BLOCKING_STATUSES[static.status]}")
+        if said := _server_said(static.html):
+            parts.append(f'it said: "{said}"')
+    elif static.error:
+        parts.append(f"plain fetch: {static.error}")
+    if render_error:
+        parts.append(f"browser: {render_error.splitlines()[0][:120]}")
+    return f"could not resolve {url}: " + "; ".join(parts or ["no reason reported"])
+
+
 def resolve_page(
     url: str,
     *,
@@ -356,7 +393,7 @@ def resolve_page(
     # catching, and cannot see the 68% page -- see the module docstring.
     if not PLAYWRIGHT_AVAILABLE:
         if static_doc is None:
-            raise ValueError(f"could not resolve {url}: {static_result.error}")
+            raise ValueError(_both_failed(url, static_result, "rendering not installed"))
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -374,7 +411,10 @@ def resolve_page(
 
     if not rendered.ok:
         if static_doc is None:
-            raise ValueError(f"could not resolve {url}: {rendered.error}")
+            # Both paths failed and they usually failed for *different* reasons. Reporting
+            # only the second leaves a caller unable to tell "the site refused us" from "the
+            # browser could not start", which are different problems with different fixes.
+            raise ValueError(_both_failed(url, static_result, rendered.error))
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,

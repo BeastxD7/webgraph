@@ -37,7 +37,7 @@ from webgraph.fetch.static import FetchConfig
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, Strategy, resolve_page
-from webgraph.types import BlockKind, Document
+from webgraph.types import BlockKind, Document, ReadingOrderMethod
 
 __all__ = ["stream_page"]
 
@@ -111,6 +111,15 @@ def stream_page(
         "blocks": len(document.blocks),
         "words": len(document.text.split()),
         "reading_order": document.reading_order_method.value,
+        # Whether the order was *measured* from a rendered layout or assumed from source
+        # order. A caller showing "reading order" without this cannot tell a reconstruction
+        # from a guess, and the two deserve different confidence.
+        "reading_order_measured": document.reading_order_method
+        in (ReadingOrderMethod.GEOMETRIC_XY_CUT, ReadingOrderMethod.GEOMETRIC_ANCHORED),
+        "dom_order_differs": document.dom_order_differs,
+        "content_hash": document.content_hash,
+        "frameworks": list(document.profile.frameworks),
+        "requires_render": document.profile.requires_render,
         "kinds": _kind_counts(document),
         "payloads": sorted({p.source.value for p in document.structured_data}),
     }
