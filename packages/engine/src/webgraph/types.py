@@ -340,6 +340,17 @@ class Document(BaseModel):
     blocks: tuple[Block, ...]
     """In reading order -- see `reading_order_method` for how that was established."""
 
+    title: str = ""
+    """The `<title>` element's text, whitespace-folded. Empty when the page has none.
+
+    Captured at build time because it lives in `<head>`, which block extraction never
+    visits, and because the crawl drops `html` once links are read. Two things depend on
+    it: the router, for which the page's own name is evidence about its type, and content
+    selection, which must never cut the block that *is* the title."""
+
+    description: str = ""
+    """`<meta name="description">`, or the Open Graph description when that is absent."""
+
     reading_order_method: ReadingOrderMethod
     profile: StackProfile
     structured_data: tuple[StructuredPayload, ...] = ()

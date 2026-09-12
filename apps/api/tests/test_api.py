@@ -196,9 +196,16 @@ class TestAutoSchema:
         body = client.post(
             "/api/extract", json={"url": f"{server}/ecommerce_jsonld.html"}
         ).json()
-        assert body["schema_choice"] is not None
-        assert body["schema_choice"]["page_type"]
-        assert body["schema_choice"]["fields"]
+        choice = body["schema_choice"]
+        assert choice is not None
+        assert choice["page_type"]
+        # Below the router's confidence floor the type is `unknown` and there is no schema
+        # to offer -- an empty field list is that decision reported, not a failure. Above
+        # it, the schema for the type is what the fields are.
+        if choice["page_type"] == "unknown":
+            assert choice["fields"] == [] and choice["confidence"] < 0.5
+        else:
+            assert choice["fields"] and choice["confidence"] >= 0.5
 
     def test_the_choice_says_which_nodes_it_read(self, client: TestClient, server: str) -> None:
         """A caller who did not write the schema is owed the reasoning: "no price" means
@@ -409,3 +416,37 @@ class TestRunHeader:
         assert first["type"] == "run"
         assert first["mode"] == "site"
         assert first["max_pages"] == 3
+
+
+class TestRefusedAddresses:
+    """A private address is refused with a reason the browser can read.
+
+    The streaming endpoint used to let the guard's exception escape before the first byte,
+    producing a bare 500 with no CORS headers -- which a browser reports as a network
+    failure, and which the web client then described as "Cannot reach the API. Is it
+    running?" for a request the API had deliberately refused.
+    """
+
+    def test_the_stream_refuses_with_a_403_and_a_reason(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph.fetch import guard
+
+        monkeypatch.setattr(guard, "_blocked", True)
+        response = client.post(
+            "/api/text/stream",
+            json={"url": "http://127.0.0.1:8000/api/health"},
+            headers={"Origin": "http://localhost:3000"},
+        )
+        assert response.status_code == 403
+        assert "refused" in response.json()["detail"]
+        # The CORS header is the whole point: without it the browser hides the status.
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+    def test_the_plain_endpoint_agrees(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.fetch import guard
+
+        monkeypatch.setattr(guard, "_blocked", True)
+        response = client.post("/api/text", json={"url": "http://10.0.0.1/"})
+        assert response.status_code in (403, 502)
+        assert response.json()["detail"]

@@ -36,24 +36,60 @@ function safeHref(raw: string): string | null {
   }
 }
 
-function inline(text: string, keyPrefix: string): ReactNode[] {
+/** Markdown's backslash escapes, undone for display: `\$5` is five dollars. */
+function unescape(text: string): string {
+  return text.replace(/\\([\\`*_{}[\]()#+\-.!$|>~])/g, "$1");
+}
+
+function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
   const out: ReactNode[] = [];
-  // One pass, longest-first so `**bold**` is not eaten by the italic rule.
-  const pattern = /(`[^`]+`)|(\[([^\]]*)\]\(([^)\s]+)\))|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
+  // One pass, longest-first so `**bold**` is not eaten by the italic rule. Images come
+  // before links because `![alt](src)` is a link with a bang in front, and matching the
+  // link first rendered every picture as "!" followed by a link named after its alt text.
+  const pattern =
+    /(`[^`]+`)|(!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\*\*(.+?)\*\*)|(\*([^*\s][^*]*?)\*)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let index = 0;
+  // Bold, italic and link labels are themselves Markdown -- `**see [the docs](url)**` is
+  // common -- so their contents go back through this function. Bounded, because nothing
+  // real nests more than a few levels and an unbounded recursion on adversarial input is
+  // a way to hang the page.
+  const nested = (inner: string, key: string): ReactNode[] =>
+    depth < 4 ? inline(inner, key, depth + 1) : [unescape(inner)];
+
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index > last) out.push(text.slice(last, match.index));
+    if (match.index > last) out.push(unescape(text.slice(last, match.index)));
     const key = `${keyPrefix}-${index++}`;
     if (match[1]) {
       out.push(
         <code key={key} className="rounded bg-sunk px-1 py-0.5 font-mono text-[0.9em]">
-          {(match[1] ?? "").slice(1, -1)}
+          {match[1].slice(1, -1)}
         </code>,
       );
     } else if (match[2]) {
-      const href = safeHref(match[4] ?? "");
+      const src = safeHref(match[4] ?? "");
+      const alt = unescape(match[3] ?? "");
+      out.push(
+        src && !src.startsWith("mailto:") ? (
+          // Arbitrary remote hosts, so next/image's optimiser is not usable here.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={key}
+            src={src}
+            alt={alt}
+            loading="lazy"
+            className="my-2 inline-block max-h-64 max-w-full rounded-lg border border-line align-middle"
+          />
+        ) : (
+          <span key={key} className="text-ink-faint">
+            [image: {alt || "untitled"}]
+          </span>
+        ),
+      );
+    } else if (match[5]) {
+      const href = safeHref(match[7] ?? "");
+      const label = match[6] ?? "";
       out.push(
         href ? (
           <a
@@ -63,20 +99,20 @@ function inline(text: string, keyPrefix: string): ReactNode[] {
             rel="noreferrer nofollow"
             className="text-leaf-700 underline underline-offset-2"
           >
-            {match[3] || href}
+            {label ? nested(label, key) : href}
           </a>
         ) : (
-          <span key={key}>{match[3]}</span>
+          <span key={key}>{nested(label, key)}</span>
         ),
       );
-    } else if (match[5]) {
-      out.push(<strong key={key}>{(match[5] ?? "").slice(2, -2)}</strong>);
-    } else if (match[6]) {
-      out.push(<em key={key}>{(match[6] ?? "").slice(1, -1)}</em>);
+    } else if (match[8]) {
+      out.push(<strong key={key}>{nested(match[9] ?? "", key)}</strong>);
+    } else if (match[10]) {
+      out.push(<em key={key}>{nested(match[11] ?? "", key)}</em>);
     }
     last = pattern.lastIndex;
   }
-  if (last < text.length) out.push(text.slice(last));
+  if (last < text.length) out.push(unescape(text.slice(last)));
   return out;
 }
 
@@ -214,13 +250,31 @@ export function renderMarkdown(source: string): ReactNode[] {
 
     const bullet = /^\s*([-*+]|\d+\.)\s+/.exec(line);
     if (bullet) {
-      const start = i;
-      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i] ?? "")) i += 1;
-      const items = lines.slice(start, i).map((row) => row.replace(/^\s*([-*+]|\d+\.)\s+/, ""));
       const ordered = /\d/.test(bullet[1] ?? "");
+      const marker = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*+]\s+/;
+      const items: string[] = [];
+      // A "loose" list has a blank line between its items, and the engine emits ordered
+      // lists that way. Stopping at the first blank line rendered `1. a / 2. b / 3. c` as
+      // three one-item lists, every one of them numbered 1.
+      while (i < lines.length) {
+        const row = lines[i] ?? "";
+        if (marker.test(row)) {
+          items.push(row.replace(marker, ""));
+          i += 1;
+        } else if (!row.trim() && marker.test(lines[i + 1] ?? "")) {
+          i += 1;
+        } else {
+          break;
+        }
+      }
+      const first = Number.parseInt(bullet[1] ?? "1", 10);
       const Tag = ordered ? "ol" : "ul";
       out.push(
-        <Tag key={`l${key++}`} className={`my-2 pl-5 ${ordered ? "list-decimal" : "list-disc"}`}>
+        <Tag
+          key={`l${key++}`}
+          className={`my-2 pl-5 ${ordered ? "list-decimal" : "list-disc"}`}
+          {...(ordered && first > 1 ? { start: first } : {})}
+        >
           {items.map((item, n) => (
             <li key={n} className="my-0.5">
               {inline(item, `li${n}`)}

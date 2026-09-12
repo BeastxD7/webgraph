@@ -111,3 +111,54 @@ class TestInThePage:
         root = parse_html("<html><body><p><math><mi>a</mi></math></p></body></html>")
         assert root.xpath("//*[local-name()='math']") == []
         assert replace_math_with_latex(root) == 0
+
+
+class TestFallbackImages:
+    """The picture of the formula that sits beside the formula.
+
+    MediaWiki emits every equation twice: `<math>` for machines, and an `<img>` of the
+    rendering for browsers without MathML, with the same LaTeX in its `alt`. Converting the
+    first and keeping the second reported every formula twice -- 204 images of equations
+    already in the text on one Wikipedia article.
+    """
+
+    WIKI = (
+        '<p>Momentum: <span class="mwe-math-element">'
+        '<span class="mwe-math-mathml-inline" style="display:none">'
+        '<math><semantics><mi>x</mi><annotation encoding="application/x-tex">'
+        "{\\displaystyle x}</annotation></semantics></math></span>"
+        '<img class="mwe-math-fallback-image-inline" alt="{\\displaystyle x}" '
+        'src="https://wikimedia.org/api/rest_v1/media/math/render/svg/abc"></span> is it.</p>'
+    )
+
+    def test_the_fallback_image_is_dropped(self) -> None:
+        from webgraph.pipeline import build_document
+        from webgraph.render_markdown import to_markdown
+
+        out = to_markdown(build_document(f"<html><body>{self.WIKI}</body></html>", "https://x.test/"))
+        assert "$" in out and "displaystyle x" in out
+        assert "math/render" not in out
+        assert "is it." in out
+
+    def test_a_real_figure_beside_an_equation_survives(self) -> None:
+        from webgraph.pipeline import build_document
+        from webgraph.render_markdown import to_markdown
+
+        html = (
+            "<p><math><mi>y</mi></math>"
+            '<img alt="Diagram of the apparatus" src="https://x.test/apparatus.png" width="400" height="300"></p>'
+        )
+        out = to_markdown(build_document(f"<html><body>{html}</body></html>", "https://x.test/"))
+        assert "apparatus.png" in out
+
+    def test_an_unconvertible_formula_keeps_its_picture(self) -> None:
+        """When nothing can be read from the `<math>`, the image *is* the content."""
+        from webgraph.pipeline import build_document
+        from webgraph.render_markdown import to_markdown
+
+        html = (
+            '<p><span><math></math></span>'
+            '<img alt="{\\displaystyle z}" src="https://wikimedia.org/api/rest_v1/media/math/render/svg/z" width="40" height="40"></p>'
+        )
+        out = to_markdown(build_document(f"<html><body>{html}</body></html>", "https://x.test/"))
+        assert "math/render/svg/z" in out

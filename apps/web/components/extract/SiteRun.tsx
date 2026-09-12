@@ -13,7 +13,9 @@ import RunSummary from "./RunSummary";
 import RunTabs, { type RunTab } from "./RunTabs";
 import TechnologyPanel from "./TechnologyPanel";
 import UrlList from "./UrlList";
+import Citation from "@/components/ui/Citation";
 import { PHASE_LABEL, useSiteStream } from "@/hooks/useSiteStream";
+import { useTabTitle } from "@/hooks/useTabTitle";
 import type { RunMeta } from "@/lib/runlog";
 
 const PHASE_DOT: Record<string, string> = {
@@ -36,6 +38,10 @@ export default function SiteRun({
 }) {
   const run = useSiteStream({ url, complete, maxPages });
   const [tab, setTab] = useState<RunTab>("extracted");
+  useTabTitle(
+    run.running ? "running" : run.phase === "failed" ? "failed" : run.phase === "stopped" ? "stopped" : "done",
+    url.replace(/^https?:\/\//, "").split("/")[0] ?? url,
+  );
 
   const { succeeded, failedPages, queuedUrls } = useMemo(() => {
     const ok = run.pages.filter((page) => page.ok);
@@ -95,7 +101,7 @@ export default function SiteRun({
         </div>
       </div>
 
-      <ProgressRail live={run.live} active={run.running} />
+      <ProgressRail live={run.live} active={run.running} cap={run.cap} />
 
       {/* The stages themselves, filling in what each one found. A progress bar says how far
           along a run is; this says what the engine is actually doing and what it learned. */}
@@ -105,6 +111,7 @@ export default function SiteRun({
         analysis={run.analysis}
         pages={run.pages}
         queued={run.live.queued}
+        cap={run.cap}
         discovered={run.live.discovered}
         extracted={run.live.extracted}
         failed={run.live.failed}
@@ -212,6 +219,9 @@ export default function SiteRun({
                     {page.url}
                   </a>
                   <span className="text-[12.5px] font-semibold text-flag-bad">{page.error}</span>
+                  {/* Where the crawl got this address. On a failure it is the only fact a
+                      reader can act on: a link that 404s from one page is that page's bug. */}
+                  <Citation citation={page.citation} />
                 </li>
               ))}
             </ul>

@@ -71,6 +71,9 @@ interface RunState {
   live: Live;
   summary: DoneEvent | null;
   error: string | null;
+  /** The page cap the server applied, or 0 for an unbounded crawl. From the `run` frame,
+   *  so it is what will actually happen rather than what was asked for. */
+  cap: number;
 }
 
 const INITIAL: RunState = {
@@ -83,6 +86,7 @@ const INITIAL: RunState = {
   live: NO_COUNTS,
   summary: null,
   error: null,
+  cap: 0,
 };
 
 /** Stamp the current phase as finished and the next one as started. */
@@ -113,6 +117,8 @@ function reduce(state: RunState, action: Action): RunState {
 
   const event = action.event;
   switch (event.type) {
+    case "run":
+      return { ...state, cap: event.max_pages ?? 0 };
     case "stage": {
       const phase =
         event.stage === "analyze"

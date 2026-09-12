@@ -630,7 +630,19 @@ async function streamFrames(
   }
 
   if (!response.ok || !response.body) {
-    throw new ApiError(`Stream failed with status ${response.status}`, response.status);
+    // The server usually says why -- "refused: private addresses are blocked" -- and a
+    // status number alone sends the reader to the wrong place.
+    let detail = "";
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      // Not JSON; the status is all there is.
+    }
+    throw new ApiError(
+      detail || `The API answered ${response.status} without saying why.`,
+      response.status,
+    );
   }
 
   const reader = response.body.getReader();

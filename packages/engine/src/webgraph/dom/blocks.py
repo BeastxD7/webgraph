@@ -182,7 +182,44 @@ def replace_math_with_latex(root: HtmlElement) -> int:
         holder.tail = element.tail
         parent.replace(element, holder)
         replaced += 1
+        _drop_fallback_images(holder)
     return replaced
+
+
+def _drop_fallback_images(holder: HtmlElement) -> None:
+    """Remove the picture of the formula that sits beside the formula.
+
+    MediaWiki, MathJax's CommonHTML output and several LaTeX-to-HTML converters emit the
+    equation twice: once as `<math>` for machines and once as an `<img>` of the rendered
+    equation for browsers without MathML, with the same LaTeX in its `alt`. Having just
+    converted the first, keeping the second reports every formula twice -- on Wikipedia's
+    Navier-Stokes article that was 204 images of equations already in the text, and a
+    document nearly twice its real size.
+
+    The image is identified by what it is, not by class name: an `<img>` among the same
+    parent's children whose `alt` is the formula (or is empty, on converters that leave it
+    blank). A genuine figure next to an equation has its own alt text and survives.
+    """
+    latex = (holder.text or "").strip("$ ")
+    # MediaWiki wraps the `<math>` in an accessibility span and puts the image beside *that*,
+    # so the image is one level up from where the formula was. Two levels covers every
+    # emitter seen; further up and an image is a figure in its own right.
+    node: HtmlElement | None = holder
+    for _ in range(2):
+        if node is None:
+            return
+        parent = node.getparent()
+        if parent is None:
+            return
+        for sibling in list(parent):
+            if sibling is node or sibling.tag != "img":
+                continue
+            alt = (sibling.get("alt") or "").strip()
+            if alt and alt.strip("$ ") != latex:
+                continue
+            _carry_tail(parent, sibling)
+            parent.remove(sibling)
+        node = parent
 
 
 NOSCRIPT_SHELL_MAX_WORDS: Final[int] = 150

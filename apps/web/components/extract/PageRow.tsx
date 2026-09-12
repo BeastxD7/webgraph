@@ -201,11 +201,11 @@ export default function PageRow({
 
           {page.images.length > 0 && (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {page.images.slice(0, 12).map((src) => (
+              {page.images.slice(0, 12).map((src, n) => (
                 // Arbitrary remote hosts, so next/image's optimiser is not usable here.
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  key={src}
+                  key={`${n}-${src}`}
                   src={src}
                   alt=""
                   loading="lazy"

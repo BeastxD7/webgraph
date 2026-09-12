@@ -123,7 +123,13 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
           errorStage: state.current ?? "unknown",
         }));
       } finally {
-        setRun((state) => (state.running ? { ...state, running: false } : state));
+        // Only the attempt that is still current may declare the run over. React's
+        // development double-mount aborts the first attempt as the second starts, and a
+        // `finally` that ran regardless flipped `running` to false on the live run -- so
+        // the header said "Extracted" at 0.0s while the first stage was still fetching.
+        if (!controller.signal.aborted) {
+          setRun((state) => (state.running ? { ...state, running: false } : state));
+        }
       }
     })();
 

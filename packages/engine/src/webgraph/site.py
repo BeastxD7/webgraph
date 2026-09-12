@@ -563,6 +563,7 @@ def _content_of(
         chrome=chrome,
         main_content=config.main_content,
         config=policy_for(page.page_type),
+        title=page.document.title,
     )
     if not selection.changed:
         return "", selection

@@ -36,7 +36,7 @@ from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.resolve import PageMissingError, Strategy, resolve_page
+from webgraph.resolve import PageBlockedError, PageMissingError, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, ReadingOrderMethod
 
 __all__ = ["stream_page"]
@@ -79,7 +79,9 @@ def stream_page(
         resolved = resolve_page(
             url, strategy=strategy, fetch_config=fetch_config, render_config=render_config
         )
-    except PageMissingError as exc:
+    except (PageMissingError, PageBlockedError) as exc:
+        # Diagnosed failures: the message is the whole story, and a class name in front of
+        # it is noise to the reader it is written for.
         yield {"type": "error", "stage": "resolve", "message": str(exc), "at": _elapsed(started)}
         return
     except Exception as exc:
@@ -163,6 +165,7 @@ def stream_page(
     selection = select_content(
         document.blocks,
         config=policy_for(routing.page_type if routing else PageType.UNKNOWN),
+        title=document.title,
     )
     yield {
         "type": "select",

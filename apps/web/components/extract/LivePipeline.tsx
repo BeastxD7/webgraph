@@ -82,6 +82,7 @@ export default function LivePipeline({
   analysis,
   pages,
   queued,
+  cap = 0,
   discovered,
   extracted,
   failed,
@@ -94,6 +95,8 @@ export default function LivePipeline({
   analysis: AnalysisEvent | null;
   pages: PageEvent[];
   queued: number;
+  /** The server's page cap, 0 when unbounded. */
+  cap?: number;
   discovered: number;
   extracted: number;
   failed: number;
@@ -212,6 +215,9 @@ export default function LivePipeline({
                   <dl className="mt-2.5">
                     <Row label="Addresses accepted" value={discovered.toLocaleString("en-US")} />
                     <Row label="Waiting in the queue" value={queued.toLocaleString("en-US")} />
+                    {cap > 0 && queued > cap && (
+                      <Row label="Will be crawled" value={`${cap.toLocaleString("en-US")} (the page cap)`} />
+                    )}
                   </dl>
                 )}
 
@@ -219,7 +225,14 @@ export default function LivePipeline({
                   <>
                     <dl className="mt-2.5">
                       <Row label="Extracted" value={`${extracted.toLocaleString("en-US")}${failed ? ` · ${failed} failed` : ""}`} />
-                      <Row label="Still queued" value={queued.toLocaleString("en-US")} />
+                      <Row
+                        label="Still queued"
+                        value={
+                          cap > 0 && queued > Math.max(cap - extracted - failed, 0)
+                            ? `${Math.max(cap - extracted - failed, 0).toLocaleString("en-US")} of ${queued.toLocaleString("en-US")} discovered (page cap ${cap})`
+                            : queued.toLocaleString("en-US")
+                        }
+                      />
                       <Row label="Rate" value={`${rate.toFixed(1)} pages/min · ${elapsed.toFixed(0)}s elapsed`} />
                       {latest?.ok && (
                         <Row

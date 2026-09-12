@@ -51,41 +51,96 @@ _MIN_IMAGE_DIMENSION: Final[int] = 32
 _INLINE_EMPHASIS: Final[frozenset[str]] = frozenset({"strong", "b"})
 _INLINE_ITALIC: Final[frozenset[str]] = frozenset({"em", "i"})
 
+_BLOCK_BY_DEFAULT: Final[frozenset[str]] = frozenset({
+    "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
+    "ul", "ol", "li", "dl", "dt", "dd", "h1", "h2", "h3", "h4", "h5", "h6",
+    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption",
+    "blockquote", "pre", "figure", "figcaption", "form", "fieldset", "legend",
+    "address", "hr", "br", "details", "summary",
+})
+"""Elements a browser lays out as their own box unless a stylesheet says otherwise.
 
-def _inline_markdown(element: HtmlElement, base: str) -> str:
+`flowed_text` reads the renderer's mark for this, which is exact -- and absent on a static
+fetch, where the old behaviour fell all the way back to `text_content()` and glued
+`<div>Example 1 of 5:</div><div>Connecting to a chat server</div>` into one word. Found on
+react.dev headings and in every multi-paragraph Hacker News comment (`fun.)The real`). A
+stylesheet can make a `<div>` inline, but a `<div>` that is not is the overwhelmingly common
+case, and a spurious space costs a reader far less than two words fused into one."""
+
+
+def _breaks_line(child: HtmlElement) -> bool:
+    """Whether a separator belongs before `child`: the browser said so, or its tag says so."""
+    tag = child.tag
+    return isinstance(tag, str) and (
+        child.get(BREAK_ATTRIBUTE) is not None or tag in _BLOCK_BY_DEFAULT
+    )
+
+
+def _inline_markdown(
+    element: HtmlElement, base: str, *, orphan_only: bool = False, _final: bool = True
+) -> str:
     """Render a block's inline content as Markdown, preserving link targets.
 
     Plain `text_content()` throws away every `href`. Measured against trafilatura on
     danluu.com, that lost **201 links on a single page** -- for an engine whose job is rich
     extraction, the URL is often the most useful part of the sentence.
 
-    Only inline constructs are handled here; block structure is the caller's concern.
+    Only inline constructs are handled here; block structure is the caller's concern -- and
+    that is what `orphan_only` is for. A container that holds block children (a `<div>` with
+    `<p>`s in it, an `<li>` with a nested `<ul>`) gets its *text* from `_orphan_text`, which
+    correctly skips those children because they become blocks of their own. Its *rich text*
+    used to be rendered from the whole subtree regardless, so the Markdown carried every
+    child paragraph glued together, and then carried each of them again as its own block.
+    Measured on a Hacker News post: the body appeared twice, once fused into a single
+    paragraph. With `orphan_only`, the rich rendering follows the same rule as the text.
     """
     parts: list[str] = [element.text or ""]
 
     for child in element:
         tag = child.tag if isinstance(child.tag, str) else ""
-        inner = _inline_markdown(child, base) if len(child) else normalize_text(flowed_text(child))
+        if orphan_only and tag in _CARRIED_ELSEWHERE:
+            # It becomes a block of its own; only the text after it belongs here.
+            parts.append(child.tail or "")
+            continue
+        if _breaks_line(child):
+            parts.append(" ")
+        # The child's text with its edge whitespace intact. Normalising here, per child,
+        # is what fused `<span>: </span>Connecting` into `:Connecting` -- the space that
+        # separated two words lived at the end of the span, and stripping each child
+        # deleted it before the parent ever saw it. Whitespace at a child's edges belongs to
+        # the run of text, not to the child; only the whole is normalised, at the end.
+        raw = (
+            _inline_markdown(child, base, orphan_only=orphan_only, _final=False)
+            if len(child)
+            else flowed_text(child)
+        )
+        inner = normalize_text(raw)
+        lead = " " if raw[:1].isspace() else ""
+        trail = " " if raw[-1:].isspace() else ""
 
         if tag == "a":
             href = _absolute(child.get("href"), base)
             label = inner or normalize_text(flowed_text(child))
-            # A link with no text contributes nothing a reader can use.
-            parts.append(f"[{label}]({href})" if href and label else label)
+            # A link with no text contributes nothing a reader can use. A `javascript:`
+            # target is not a destination either -- it is a toggle, and `[[-]](javascript:
+            # void(0))` on every Hacker News comment is noise nobody can follow.
+            usable = href and label and not href.lower().startswith("javascript:")
+            parts.append(f"{lead}[{label}]({href}){trail}" if usable else f"{lead}{label}{trail}")
         elif tag in _INLINE_EMPHASIS and inner:
-            parts.append(f"**{inner}**")
+            parts.append(f"{lead}**{inner}**{trail}")
         elif tag in _INLINE_ITALIC and inner:
-            parts.append(f"*{inner}*")
+            parts.append(f"{lead}*{inner}*{trail}")
         elif tag == "code" and inner:
-            parts.append(f"`{inner}`")
+            parts.append(f"{lead}`{inner}`{trail}")
         elif tag == "br":
             parts.append(" ")
         else:
-            parts.append(inner)
+            parts.append(raw)
 
         parts.append(child.tail or "")
 
-    return normalize_text("".join(parts))
+    joined = "".join(parts)
+    return normalize_text(joined) if _final else joined
 
 
 def flowed_text(element: HtmlElement) -> str:
@@ -110,7 +165,7 @@ def flowed_text(element: HtmlElement) -> str:
         # browser laid out as their own box. Absent on a static fetch, so this branch never
         # fires and the function behaves exactly as `text_content()` did -- a page nobody
         # rendered gets no layout claims.
-        if isinstance(child.tag, str) and child.get(BREAK_ATTRIBUTE) is not None:
+        if _breaks_line(child):
             parts.append(" ")
         parts.append(flowed_text(child))
         parts.append(child.tail or "")
@@ -727,8 +782,9 @@ def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
             # It gets its own block(s); only the text after it is orphaned.
             parts.append(child.tail or "")
             continue
-        # Same line-box rule as `flowed_text`: a separator where the browser drew one.
-        if child.get(BREAK_ATTRIBUTE) is not None:
+        # Same line-box rule as `flowed_text`: a separator where the browser drew one, or
+        # where the tag says the browser would have.
+        if _breaks_line(child):
             parts.append(" ")
         parts.append(child.text or "")
         _orphan_parts(child, parts)
@@ -872,7 +928,7 @@ def extract_rich_blocks(
                 text = _orphan_text(element)
             if text:
                 ordered, level = _list_context(element) if tag == "li" else (False, 0)
-                rich = _inline_markdown(element, base_url)
+                rich = _inline_markdown(element, base_url, orphan_only=has_block_descendant)
                 block = Block(
                     text=text,
                     tag=tag,
