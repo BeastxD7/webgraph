@@ -1165,6 +1165,21 @@ _FILTER_TOKENS: Final[frozenset[str]] = frozenset({
     "filterbar", "filternav", "filtersidebar",
 })
 _TOKEN_SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_\-:/.]+")
+_CONSENT_MARKERS: Final[re.Pattern[str]] = re.compile(
+    # Vendors' own container names, then the generic ones sites hand-roll.
+    r"(?:^|[\s_\-])(?:onetrust|ot-sdk|optanon|cybotcookiebotdialog|cookiebot|qc-cmp2|didomi|"
+    r"truste|sp_message|cookieconsent|cc-window|cookie-?(?:banner|notice|consent|bar|popup|"
+    r"modal|dialog|law|policy-banner|settings)|consent-?(?:banner|manager|modal|dialog|popup|"
+    r"notice|overlay)|gdpr-?(?:banner|consent|modal|popup|notice)|privacy-?(?:banner|manager))"
+    r"(?:$|[\s_\-])",
+    re.I,
+)
+
+
+def _names_consent(element: HtmlElement) -> bool:
+    """Whether this element's own class or id says it is a cookie-consent dialog."""
+    names = f"{element.get('class') or ''} {element.get('id') or ''}".strip()
+    return bool(names) and _CONSENT_MARKERS.search(names) is not None
 
 
 def _names_filter(element: HtmlElement) -> bool:
@@ -1200,6 +1215,12 @@ def _widget_of(
     own: str | None = None
     if above is None:
         tag = element.tag if isinstance(element.tag, str) else ""
+        if tag in _WIDGET_TAGS and _names_consent(element):
+            # A cookie-consent dialog. OneTrust's preference centre is 2,000 words of
+            # "Strictly Necessary Cookies" and "We and our 644 partners", in the DOM of 12%
+            # of WCXB dev and chosen as the main content of a GameFAQs thread (P 0.03).
+            cache[element] = "consent"
+            return "consent"
         named = tag in _WIDGET_TAGS and (
             _names_filter(element)
             or (tag == "fieldset" and bool(element.xpath('.//input[@type="checkbox"]')))

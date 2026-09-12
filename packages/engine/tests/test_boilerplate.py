@@ -276,3 +276,39 @@ class TestFilterWidgets:
         )
         document = build_document(html, "https://shop.test/faq")
         assert not any(b.widget for b in document.blocks)
+
+
+class TestConsentDialogs:
+    """OneTrust's preference centre is 2,000 words of "Strictly Necessary Cookies" in the
+    DOM of 12% of WCXB dev, and it was chosen as the main content of a GameFAQs thread."""
+
+    def test_vendor_consent_dialog_is_stripped(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><body><main><h1>Thread</h1><p>No YT stream link this time. The VOD goes up in an hour.</p>"
+            + "".join(f"<p>Reply number {i}: I think the timing is unusual and it will kick ass, honestly.</p>" for i in range(8))
+            + "</main>"
+            '<div id="onetrust-consent-sdk"><div id="onetrust-pc-sdk"><h2>We Care About Your Privacy</h2>'
+            "<p>We and our 644 partners store and access personal data, like browsing data or unique identifiers.</p>"
+            "<h3>Strictly Necessary Cookies</h3><p>These cookies are necessary for the website to function.</p>"
+            "</div></div></body></html>"
+        )
+        document = build_document(html, "https://forum.test/t/1")
+        assert [b.widget for b in document.blocks if "partners" in b.text] == ["consent"]
+        kept = strip_landmarks(list(document.blocks))
+        assert all(b.widget is None for b in kept)
+        assert any("VOD" in b.text for b in kept)
+
+    def test_hand_rolled_cookie_banner_is_stripped_and_prose_is_not(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><div class="cookie-banner"><p>This site uses cookies to improve your experience.</p></div>'
+            '<article><p class="policy-text">Our cookie policy explains how we bake them.</p></article></body></html>'
+        )
+        document = build_document(html, "https://bakery.test/")
+        widgets = {b.text[:9]: b.widget for b in document.blocks}
+        assert widgets["This site"] == "consent"
+        assert widgets["Our cooki"] is None

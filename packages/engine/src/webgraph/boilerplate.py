@@ -109,7 +109,7 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
 
 
 STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer"})
-STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter"})
+STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent"})
 """Named panels `strip_landmarks` removes with the landmarks: a faceted-search filter is
 navigation over the catalogue, whatever element it is built from. See `Block.widget`."""
 """Landmark regions `strip_landmarks` removes -- the same two as `LANDMARK_XPATH`, now also
