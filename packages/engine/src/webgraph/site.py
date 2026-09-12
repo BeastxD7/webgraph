@@ -26,6 +26,12 @@ from typing import Any, Final
 from webgraph.analyze import SiteAnalysis, SiteProbe, probe_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
 from webgraph.boilerplate import SiteChrome, detect_site_chrome
+from webgraph.config import (
+    IDENTICAL_CONTENT_WARNING as IDENTICAL_CONTENT_WARNING,
+)
+from webgraph.config import (
+    SiteConfig as SiteConfig,
+)
 from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
     RobotsPolicy,
@@ -42,28 +48,12 @@ from webgraph.crawl.frontier import (
     reconcile_scheme,
 )
 from webgraph.extract.schema import extract_facts, merge_facts
-from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
 from webgraph.pagetype import default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact, PayloadSource
-
-IDENTICAL_CONTENT_WARNING: Final[int] = 3
-"""Distinct URLs yielding byte-identical extracted text before a warning is raised.
-
-A gate that blocks the page from mounting -- a persona or region picker, an age gate, an
-onboarding wizard -- serves the same interstitial on every route. Every other signal stays
-green while this happens: the fetch succeeds, the render succeeds, geometry binds, the
-profiler reports "static content looks complete". Measured on zerotoonepmtoolkit.app, whose
-21 routes returned byte-identical 1,130-character output and whose crawl then reported itself
-`exhausted` after one page.
-
-The engine now opens such gates (see `RenderConfig.dismiss_gates`), so this is the net that
-catches the ones it cannot open. Three is enough: two identical pages happen (a redirect
-pair, a duplicated route), three is a pattern.
-"""
 
 __all__ = [
     "IDENTICAL_CONTENT_WARNING",
@@ -78,50 +68,6 @@ __all__ = [
     "stream_site",
     "verify_inventory",
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class SiteConfig:
-    max_pages: int = 0
-    """0 means unbounded: crawl until the frontier is exhausted."""
-    concurrency: int = 4
-    delay_seconds: float = 0.3
-    verify_inventory: bool = True
-    """Check each advertised URL before crawling it. Costs one cheap request per URL and
-    prevents a stale sitemap from consuming the whole page budget on 404s."""
-
-    follow_links: bool = True
-    """Discover routes by following links in addition to reading the sitemap. Both run
-    always -- a sitemap is frequently stale, incomplete, or both."""
-
-    discovery_limit: int = 400
-    """Ceiling on URLs harvested by link-following before verification."""
-
-    discovery_depth: int = 12
-    """Link depth ceiling. High by default -- a deep site is still a finite one, and the
-    page budget is the real bound."""
-
-    sitemap_limit: int = 50000
-    respect_robots: bool = True
-
-    remove_chrome: bool = True
-    """Emit `content_markdown` -- the page with landmarks, site chrome and boilerplate
-    removed -- alongside the full Markdown. See `webgraph.content`.
-
-    Landmarks apply from the first page. Cross-page chrome needs several pages to exist
-    before it can say anything and is applied from then on. Costs nothing at crawl time --
-    it is computed from blocks already extracted."""
-
-    main_content: bool = True
-    """Also draw the main-content boundary (`webgraph.main_content`) when producing
-    `content_markdown`. Off, the structural steps alone run: for a crawl whose pages are
-    link hubs by design, where the list of links *is* the content."""
-
-    strategy: Strategy | None = None
-    """Overrides the strategy Stage 0 recommends. Leave unset to use the measured verdict."""
-
-    fetch: FetchConfig = field(default_factory=FetchConfig)
-    render: RenderConfig = field(default_factory=RenderConfig)
 
 
 def resolve_root(root: str, *, config: FetchConfig | None = None) -> str:

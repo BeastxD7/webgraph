@@ -25,17 +25,18 @@ and attribute literals -- strings a bundler preserves -- rather than prose.
 
 from __future__ import annotations
 
-from typing import Final
 from urllib.parse import urljoin, urlsplit
 
+from webgraph.config import (
+    MAX_SCRIPTS as MAX_SCRIPTS,
+)
+from webgraph.config import (
+    MAX_TOTAL_BYTES as MAX_TOTAL_BYTES,
+)
 from webgraph.dom.blocks import parse_html
 from webgraph.fetch.static import FetchConfig, fetch_static
 
 __all__ = ["MAX_SCRIPTS", "MAX_TOTAL_BYTES", "collect_bundle_source"]
-
-MAX_SCRIPTS: Final[int] = 4
-MAX_TOTAL_BYTES: Final[int] = 3_000_000
-
 
 def collect_bundle_source(
     html: str,

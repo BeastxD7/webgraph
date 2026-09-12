@@ -28,9 +28,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Final
 
+from webgraph.config import (
+    BLOCKING_STATUSES as BLOCKING_STATUSES,
+)
+from webgraph.config import (
+    MAX_BLOCK_PAGE_CHARS as MAX_BLOCK_PAGE_CHARS,
+)
+from webgraph.config import (
+    MISSING_STATUSES as MISSING_STATUSES,
+)
+from webgraph.config import (
+    Strategy as Strategy,
+)
 from webgraph.fetch.render import (
     PLAYWRIGHT_AVAILABLE,
     RenderConfig,
@@ -54,18 +65,6 @@ __all__ = [
     "resolve_page",
     "union_documents",
 ]
-
-MISSING_STATUSES: Final[frozenset[int]] = frozenset({404, 410})
-"""Statuses meaning the page does not exist. Never render these.
-
-A browser renders a server's 404 page perfectly happily, producing "Not Found -- The
-requested URL was not found on this server" as though it were content. Measured on
-ionidea.com, whose relative links resolve into hundreds of URLs that do not exist: without
-this gate every one of them yielded a document.
-
-Deliberately excludes 403/429/5xx. Those usually mean *blocked* or *transient*, not
-*absent* -- and rendering frequently succeeds where a static fetch was refused."""
-
 
 class PageMissingError(Exception):
     """Raised when a URL does not exist. Distinct from a transport failure."""
@@ -112,9 +111,6 @@ _BLOCK_PAGE_PHRASES: Final[re.Pattern[str]] = re.compile(
 )
 """How CDNs and bot-management products phrase a refusal. Only consulted on a page too short
 to be anything else; a real article *about* Cloudflare is thousands of characters long."""
-
-MAX_BLOCK_PAGE_CHARS: Final[int] = 1_500
-"""A block page is a sentence and a button. Above this a page is presumed to be a page."""
 
 _CHALLENGE_MARKERS: Final[tuple[tuple[str, str], ...]] = (
     ("awswafcookie", "AWS WAF"),
@@ -169,18 +165,6 @@ def block_page_evidence(text: str) -> str | None:
 
 
 _WHITESPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
-
-
-class Strategy(StrEnum):
-    STATIC_ONLY = "static-only"
-    """Cheap path. Used when rendering is unavailable or explicitly disabled."""
-
-    RENDERED_ONLY = "rendered-only"
-    """The browser's document alone. Reported when the static fetch failed or returned
-    nothing usable; requestable when the static HTML is known to be a decoy."""
-
-    UNION = "union"
-    """Both representations obtained and merged. The completeness path."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,19 +370,6 @@ def runtime_evidence(rendered: RenderResult) -> RuntimeEvidence:
         cookies=dict(rendered.cookies),
     )
 
-
-BLOCKING_STATUSES: Final[dict[int, str]] = {
-    401: "the page requires a sign-in",
-    403: "the site refused this client",
-    429: "the site is rate-limiting this client",
-    451: "the page is blocked for legal reasons",
-    503: "the site said it was too busy, which is also how several of them refuse bots",
-}
-"""Statuses that mean something a person can act on, said in words.
-
-`HTTP 503` is accurate and tells a reader nothing. Whether a page is dead, gated, or refusing
-us decides what to do next, and the status alone does not distinguish them -- so the reason is
-spelled out and, where the server explained itself, quoted."""
 
 _TAGS: Final[re.Pattern[str]] = re.compile(r"<[^>]+>")
 _RUNS: Final[re.Pattern[str]] = re.compile(r"\s+")

@@ -26,7 +26,6 @@ level is a decision about what to discard, taken before anyone knows which line 
 from __future__ import annotations
 
 import json
-import os
 import time
 import uuid
 from collections.abc import Iterator, Mapping
@@ -35,11 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
-__all__ = ["RunTrace", "trace_events"]
+from webgraph.config import (
+    _MAX_VALUE_CHARS as _MAX_VALUE_CHARS,
+)
+from webgraph.config import Settings
 
-_MAX_VALUE_CHARS: Final[int] = 2_000
-"""Longest string kept in a trace. A page's Markdown belongs in the result, not in the record
-of the run that produced it -- a trace that carries the whole corpus twice is not a trace."""
+__all__ = ["RunTrace", "trace_events"]
 
 _SKIP_KEYS: Final[frozenset[str]] = frozenset({"markdown", "content_markdown", "html", "text"})
 """Payload fields that are output rather than evidence, dropped whole."""
@@ -128,7 +128,7 @@ def trace_events[E: Mapping[str, Any]](
             yield event
         return
 
-    target = path or os.environ.get("WEBGRAPH_TRACE")
+    target = path or Settings.from_env().trace_file
     if not target:
         yield from events
         return

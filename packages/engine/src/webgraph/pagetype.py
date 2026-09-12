@@ -45,6 +45,9 @@ from importlib.resources import files
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from webgraph.config import (
+    DEFAULT_MIN_CONFIDENCE as DEFAULT_MIN_CONFIDENCE,
+)
 from webgraph.dom.markup_stats import CLASS_BUCKETS, COUNTED_TAGS
 from webgraph.main_content import MainContentConfig, _repeat_groups, link_density, word_count
 from webgraph.types import Block, BlockKind, Document, PayloadSource
@@ -58,18 +61,6 @@ __all__ = [
     "page_features",
     "policy_for",
 ]
-
-
-DEFAULT_MIN_CONFIDENCE: Final[float] = 0.5
-"""Below this the router says `unknown` rather than guessing.
-
-Measured on its out-of-fold predictions over 1,497 labelled pages, the model is well
-calibrated in the one way that matters here: above 0.5 it is right 86% of the time, and
-below 0.5 it is right **44%** of the time -- a coin toss weighted the wrong way. It used to
-commit at any confidence, which is how a Hacker News page became `documentation` at 24% and
-a Shopify product page became `article` at 39%, each then handed the schema for a type it
-was not. The floor costs 5.5% of pages their type; every consumer already treats `unknown`
-as "use the default", which is the right answer for a page nobody can read confidently."""
 
 
 class PageType(StrEnum):

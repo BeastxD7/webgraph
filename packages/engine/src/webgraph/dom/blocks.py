@@ -16,6 +16,15 @@ from lxml import etree
 from lxml import html as lxml_html
 from lxml.html import HtmlElement
 
+from webgraph.config import (
+    MAX_DOCUMENT_BYTES as MAX_DOCUMENT_BYTES,
+)
+from webgraph.config import (
+    NOSCRIPT_CONTENT_MIN_WORDS as NOSCRIPT_CONTENT_MIN_WORDS,
+)
+from webgraph.config import (
+    NOSCRIPT_SHELL_MAX_WORDS as NOSCRIPT_SHELL_MAX_WORDS,
+)
 from webgraph.types import Block
 
 __all__ = [
@@ -80,15 +89,6 @@ def normalize_text(value: str | None) -> str:
     if not value:
         return ""
     return _WHITESPACE.sub(" ", value).strip()
-
-
-MAX_DOCUMENT_BYTES: Final[int] = 32 * 1024 * 1024
-"""Refuse documents larger than this before parsing.
-
-Needed because `huge_tree` (below) disables libxml2's built-in resource guards, and a
-crawler's input is untrusted by definition. Bounding size up front is the safe way to buy
-unlimited nesting depth.
-"""
 
 
 _XML_DECLARATION: Final = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.IGNORECASE)
@@ -220,13 +220,6 @@ def _drop_fallback_images(holder: HtmlElement) -> None:
             _carry_tail(parent, sibling)
             parent.remove(sibling)
         node = parent
-
-
-NOSCRIPT_SHELL_MAX_WORDS: Final[int] = 150
-"""A page with fewer visible words than this outside `<noscript>` is a shell."""
-
-NOSCRIPT_CONTENT_MIN_WORDS: Final[int] = 100
-"""And its `<noscript>` must hold at least this many words to count as the content."""
 
 
 def unwrap_noscript_shell(root: HtmlElement) -> int:

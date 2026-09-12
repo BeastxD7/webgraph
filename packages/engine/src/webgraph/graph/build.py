@@ -16,20 +16,17 @@ import re
 from typing import Any, Final
 from urllib.parse import urljoin
 
+from webgraph.config import (
+    MAX_SECTION_CHARS as MAX_SECTION_CHARS,
+)
+from webgraph.config import (
+    MIN_SECTION_CHARS as MIN_SECTION_CHARS,
+)
 from webgraph.crawl.frontier import canonical_key, normalize_url, same_site
 from webgraph.graph.model import Entity, PageNode, Section, SiteGraph, section_id
 from webgraph.types import BlockKind, Document
 
 __all__ = ["GraphBuilder", "sections_from_document"]
-
-MAX_SECTION_CHARS: Final[int] = 6_000
-"""A section longer than this is split.
-
-Some pages have one heading and twenty thousand characters under it. Left whole, such a
-section either swallows a context budget or is dropped entirely -- both of which lose the
-paragraph that mattered. Splitting on paragraph boundaries keeps the pieces readable and
-keeps their order.
-"""
 
 _MARKDOWN_LINK: Final[re.Pattern[str]] = re.compile(r"\]\(([^)\s]+)")
 """Link targets inside a section's rich Markdown."""
@@ -41,10 +38,6 @@ Sphinx uses a pilcrow, others use `#` or a link emoji. It is a control, not part
 heading, and leaving it in puts `Testimonials¶` in front of the reader and a junk token in
 the index.
 """
-
-MIN_SECTION_CHARS: Final[int] = 40
-"""Below this a section is a stray label, not content."""
-
 
 def sections_from_document(document: Document, *, page_key: str = "") -> list[Section]:
     """Cut a document into heading-scoped sections, in reading order.

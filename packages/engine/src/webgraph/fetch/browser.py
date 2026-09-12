@@ -22,25 +22,22 @@ depends on the cap.
 from __future__ import annotations
 
 import atexit
-import os
 import shlex
 import threading
 from typing import TYPE_CHECKING, Any, Final
+
+from webgraph.config import SETTINGS
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from playwright.sync_api import Browser, Playwright
 
 __all__ = ["LAUNCH_ARGS", "MAX_BROWSERS", "close_thread_browser", "shared_browser"]
 
-MAX_BROWSERS: Final[int] = int(os.environ.get("WEBGRAPH_MAX_BROWSERS", "6"))
-"""Live browsers across the whole process. Roughly 150 MB resident each.
-
-Six suits a laptop with 16 GB. A container with 2 GB cannot hold six, and the failure
-mode is the kernel killing the process rather than anything this code can catch, so the
-cap is read from `WEBGRAPH_MAX_BROWSERS` where the memory budget is known."""
+MAX_BROWSERS: Final[int] = SETTINGS.max_browsers
+"""Live browsers across the whole process. See `Settings.max_browsers` for the reasoning."""
 
 LAUNCH_ARGS: Final[tuple[str, ...]] = tuple(
-    shlex.split(os.environ.get("WEBGRAPH_CHROMIUM_ARGS", ""))
+    shlex.split(SETTINGS.chromium_args)
 )
 """Extra Chromium flags, from `WEBGRAPH_CHROMIUM_ARGS`.
 

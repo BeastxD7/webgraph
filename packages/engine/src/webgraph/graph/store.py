@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 from typing import Final
 
+from webgraph.config import Settings
 from webgraph.graph.export import load_jsonl, write_jsonl
 from webgraph.graph.model import SiteGraph
 
@@ -41,9 +42,11 @@ ENV_VAR: Final[str] = "WEBGRAPH_GRAPH_DIR"
 
 def default_graph_dir() -> Path:
     """Where graphs are kept, overridable with `WEBGRAPH_GRAPH_DIR`."""
-    override = os.environ.get(ENV_VAR)
-    if override:
-        return Path(override).expanduser()
+    # Read at call time, not import time: the directory is chosen per process by whoever
+    # runs it, and a test or a CLI flag may set it after this module was imported.
+    override = Settings.from_env().graph_dir
+    if override is not None:
+        return override.expanduser()
     base = os.environ.get("XDG_CACHE_HOME")
     root = Path(base).expanduser() if base else Path.home() / ".cache"
     return root / "webgraph" / "graphs"

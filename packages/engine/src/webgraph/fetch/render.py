@@ -30,9 +30,27 @@ import re
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
-from typing import Any, Final, Literal
+from typing import Any
 from urllib.parse import urlsplit
 
+from webgraph.config import (
+    GATE_MAX_LINKS as GATE_MAX_LINKS,
+)
+from webgraph.config import (
+    GATE_MAX_TEXT as GATE_MAX_TEXT,
+)
+from webgraph.config import (
+    GATE_MIN_GAIN as GATE_MIN_GAIN,
+)
+from webgraph.config import (
+    MAX_RECORDED_REQUESTS as MAX_RECORDED_REQUESTS,
+)
+from webgraph.config import (
+    MIN_SALVAGED_TEXT as MIN_SALVAGED_TEXT,
+)
+from webgraph.config import (
+    RenderConfig as RenderConfig,
+)
 from webgraph.fetch import browser as browser_module
 from webgraph.fetch import guard
 from webgraph.fetch.browser import shared_browser
@@ -75,96 +93,6 @@ def _script(name: str) -> str:
     argument to `page.evaluate` so the script never spells out an attribute name itself.
     """
     return (files("webgraph.fetch") / "js" / f"{name}.js").read_text(encoding="utf-8")
-
-
-GATE_MAX_TEXT: Final[int] = 4000
-"""Below this much text, together with almost no internal links, a page may be a gate.
-
-Generous on purpose. The check is a *trigger for looking*, not a verdict: nothing is kept
-unless a click measurably improves the page, so a false trigger costs one guarded click and
-changes no output."""
-
-GATE_MAX_LINKS: Final[int] = 1
-"""Internal links above which the page is treated as real navigation, not a gate.
-
-One, not two, and the difference is not cosmetic. At two, a small site's ordinary page --
-2,161 characters and two nav links, in `test_gates.py`'s ungated fixture -- was reported as
-looking gated. Nothing was clicked, because the accept test still refused it, but the engine
-was describing a perfectly normal page as suspicious.
-
-The measured gate has **zero** internal links, because its navigation lives in the subtree
-that never mounted. Allowing one covers a gate that still renders a logo linking home."""
-
-GATE_MIN_GAIN: Final[float] = 1.5
-"""How much better the page must get before a click is kept.
-
-A gate that opens reveals the whole site, so the real signal is large -- 1,137 characters to
-2,344 with 0 links becoming 21 on the measured case. Requiring a decisive improvement keeps
-this from accepting a click that merely opened a tooltip."""
-
-
-MAX_RECORDED_REQUESTS: Final[int] = 400
-"""Requests kept for fingerprinting. Only distinct hosts and paths carry information, and
-an asset-heavy page can issue thousands."""
-
-@dataclass(frozen=True, slots=True)
-class RenderConfig:
-    timeout_ms: int = 30_000
-    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = "load"
-    """`load`, not `networkidle`.
-
-    `networkidle` waits for 500ms of no network activity, which **never happens** on sites
-    with analytics beacons, polling, websockets or video preloading. Measured against 24 real
-    sites it timed out on 5 of them (21%) -- Shopify, Squarespace, Stripe, python.org and
-    Figma -- losing those pages entirely. `load` plus an explicit settle is slightly earlier
-    but actually fires."""
-
-    viewport_width: int = 1440
-    viewport_height: int = 900
-    """Width matters for reading order -- a narrow viewport collapses a multi-column layout
-    into one column, which changes the correct answer."""
-
-    settle_ms: int = 900
-    """Pause after load to let hydration and layout settle before measuring.
-
-    Carries the weight that `networkidle` used to: most client-side frameworks finish
-    hydrating within a few hundred milliseconds of `load`, and measuring before that captures
-    the pre-hydration layout."""
-
-    dismiss_gates: bool = True
-    """Open a first-run interstitial that is blocking the page from mounting.
-
-    On by default, on the same asymmetric-cost reasoning that biases `_needs_render` toward
-    rendering: a gate left closed loses essentially the whole site -- 97% of the text and
-    *every* internal link on the measured case -- while a wrongly-suspected gate costs one
-    guarded click and is discarded unless it measurably improves the page.
-
-    This is the one place the engine clicks anything, and `fetch/js/reveal.js`'s reasons for
-    refusing to click still stand, so the click is fenced in four ways: it only happens on a
-    page that has almost no text *and* almost no internal links; candidates inside a `<form>`
-    or carrying a real `href` are never chosen; labels reading as a transaction, refusal or
-    sign-out are excluded; and the result is thrown away unless the page gets decisively
-    better. A click that navigates off-origin is reverted.
-    """
-
-    reveal_collapsed: bool = False
-    """Open `<details>` and ARIA disclosure panels before measuring.
-
-    Reaches content the page hides until someone interacts, without clicking anything -- see
-    `fetch/js/reveal.js` for why clicking is the wrong tool. Off until measured; see MEMORY.md.
-    """
-
-    user_agent: str | None = None
-    headless: bool = True
-    reuse_browser: bool = True
-    """Reuse the calling thread's browser rather than launching one per page.
-
-    Launch is a fixed cost per page -- see `fetch/browser.py` for why the reuse is
-    thread-local. Disable it to isolate a page that crashes the browser."""
-
-    block_resources: tuple[str, ...] = ("image", "media", "font")
-    """Skipped to cut bandwidth and time. Fonts are blocked deliberately: metrics shift
-    slightly without them, but not enough to change column structure."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,14 +248,6 @@ class DownloadedInsteadOfPageError(RenderDiagnosisError):
 def _is_download(exc: Exception) -> bool:
     """Whether Playwright refused a navigation because it became a download."""
     return "download is starting" in str(exc).lower()
-
-
-MIN_SALVAGED_TEXT: Final[int] = 200
-"""Visible characters a timed-out document must hold to count as a page.
-
-Not a tuning knob so much as the line between "slow" and "nothing". A real page that merely
-lost its adverts still has its article; a server error rendered as a document has a sentence.
-"""
 
 
 def _looks_empty(html: str) -> bool:
