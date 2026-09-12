@@ -226,3 +226,72 @@ class TestSpacelessScripts:
     def test_japanese_is_handled_too(self) -> None:
         blocks = [block(self.JAPANESE, index=i) for i in range(4)]
         assert len(select_main_content(blocks)) == 4
+
+
+class TestRepeatedGroups:
+    """Cards in a grid are one thing the author laid out, not forty separate blocks.
+
+    Measured on WCXB dev: 66 of 117 collection pages and 39 of 99 listing pages were
+    over-cut -- the grid was in the block list (recall 0.90) and the selector dropped it
+    (0.56), because every short card paid a full block cost. Grouped by their repeated
+    container, the cards pay once.
+    """
+
+    def _grid(self, n: int = 24) -> list[Block]:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        cards = "".join(
+            f"<li><a href='/p{i}'><h3>Vent Light Model {i}</h3></a><span>$ {20 + i}.00</span></li>"
+            for i in range(n)
+        )
+        side = "".join(f"<li><a href='/r{i}'>Recent post {i}</a></li>" for i in range(5))
+        html = (
+            "<html><body><nav><a href='/'>Home</a></nav><main><h1>Lights</h1>"
+            "<p>Shop our full range of cycling lights for every ride and every rider.</p>"
+            f"<ul>{cards}</ul></main><aside><ul>{side}</ul></aside></body></html>"
+        )
+        return strip_landmarks(build_document(html, "https://x.test/").blocks)
+
+    def test_off_drops_the_grid(self) -> None:
+        kept = select_main_content(self._grid(), config=MainContentConfig(group_repeats="off"))
+        assert sum(1 for b in kept if "Vent Light" in b.text) == 0
+
+    def test_main_keeps_the_grid_and_not_the_sidebar(self) -> None:
+        kept = select_main_content(self._grid(), config=MainContentConfig(group_repeats="main"))
+        assert sum(1 for b in kept if "Vent Light" in b.text) == 24
+        assert not any("Recent post" in b.text for b in kept)
+
+    def test_all_keeps_the_grid_but_a_small_group_is_not_a_grid(self) -> None:
+        """The sidebar is a repeated group too, but five three-word items are not 30% of
+        the page, so the share guard leaves them individually scored -- and dropped."""
+        kept = select_main_content(self._grid(), config=MainContentConfig(group_repeats="all"))
+        assert sum(1 for b in kept if "Vent Light" in b.text) == 24
+        assert not any("Recent post" in b.text for b in kept)
+
+    def test_a_grouped_link_rail_still_scores_as_links(self) -> None:
+        """Grouping removes the per-card cost, not the link-density signal. A rail of five
+        all-link items outside `main` groups (share guard off) and is still negative: five
+        blocks worth -cost each, paying one cost, is -cost. The first form of grouping
+        counted every word regardless and leaked such rails -- articles -0.015, products
+        -0.063 on WCXB dev."""
+        kept = select_main_content(
+            self._grid(), config=MainContentConfig(group_repeats="all", group_min_share=0.0)
+        )
+        assert sum(1 for b in kept if "Vent Light" in b.text) == 24
+        assert not any("Recent post" in b.text for b in kept)
+
+    def test_a_card_is_one_group_whatever_its_tags(self) -> None:
+        from webgraph.main_content import _repeat_groups
+
+        blocks = self._grid(3)
+        groups = _repeat_groups(blocks, MainContentConfig(group_repeats="all"))
+        card_groups = {g for b, g in zip(blocks, groups, strict=True) if "Vent Light" in b.text or "$" in b.text}
+        assert len(card_groups) == 1
+
+    def test_fewer_than_three_is_not_a_grid(self) -> None:
+        from webgraph.main_content import _repeat_groups
+
+        blocks = self._grid(2)
+        groups = _repeat_groups(blocks, MainContentConfig(group_repeats="all"))
+        assert all(g == -1 for b, g in zip(blocks, groups, strict=True) if "Vent Light" in b.text)

@@ -69,10 +69,14 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Final
+from typing import Any, Final
 
-VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose")
-"""The three ways to turn a parsed document into text.
+VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "content", "routed-oof", "routed-truth")
+"""The four ways to turn a parsed document into text.
+
+`content` is the production path -- `webgraph.content.select_content`: landmarks, then the
+main-content boundary. It is what every crawl page's `content_markdown`, `/api/text` and
+`webgraph text --content` ship, so its row is the product's number.
 
 `raw` is `document.text`: every block the parser found, in reading order. `landmarks` is
 that with `<nav>` and `<footer>` subtrees dropped -- the shipped single-page default.
@@ -163,9 +167,33 @@ class PageOutcome:
     error: str | None = None
 
 
+_OOF_CACHE: dict[str, dict[str, Any]] | None = None
+
+
+def _oof_type(file_id: str) -> str | None:
+    """The router's out-of-fold prediction for this page, from `$WCXB_ROUTER_OOF`."""
+    global _OOF_CACHE
+    if _OOF_CACHE is None:
+        path = os.environ.get("WCXB_ROUTER_OOF")
+        _OOF_CACHE = json.loads(Path(path).read_text(encoding="utf-8")) if path else {}
+    entry = _OOF_CACHE.get(file_id)
+    return str(entry["type"]) if entry else None
+
+
+def _truth_type(corpus: Path, split: str, file_id: str) -> str | None:
+    path = corpus / split / "ground-truth" / f"{file_id}.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return ((data.get("_internal") or {}).get("page_type") or {}).get("primary")
+
+
 def extract(corpus: Path, split: str, file_id: str, url: str) -> PageOutcome:
     """Parse one cached page and derive all three variants from the single parse."""
     from webgraph.boilerplate import strip_landmarks
+    from webgraph.content import select_content
+    from webgraph.pagetype import policy_for
     from webgraph.pipeline import build_document
 
     empty = dict.fromkeys(VARIANTS, "")
@@ -178,10 +206,29 @@ def extract(corpus: Path, split: str, file_id: str, url: str) -> PageOutcome:
         return PageOutcome(file_id, empty, 0, 0, "none", f"{type(exc).__name__}: {exc}")
 
     blocks = list(document.blocks)
+    page_type = _truth_type(corpus, split, file_id)
     texts = {
         "raw": document.text,
         "landmarks": _join(strip_landmarks(blocks)),
         "prose": _join(b for b in blocks if str(b.kind) in PROSE_KINDS),
+        # `model=None` is mandatory here and not a style choice. `select_content` defaults
+        # to the shipped block model, and that model was trained on all of WCXB **dev** --
+        # scoring it on dev would be scoring a model on its own training data. This variant
+        # is the contiguous boundary step. The model's honest number on dev is the
+        # out-of-fold one: `benchmark/train/blockmodel_oof.py`.
+        "content": _join(select_content(blocks, model=None).blocks),
+        # Routing: per-type selector policy (`webgraph.pagetype.policy_for`).
+        #   routed-oof   -- the type predicted by the router *out of fold* (a router that
+        #                   never trained on this page), read from $WCXB_ROUTER_OOF. This is
+        #                   the honest number.
+        #   routed-truth -- the annotated type: the ceiling routing could reach with a
+        #                   perfect router. Diagnostic only; never quote it as a score.
+        "routed-oof": _join(
+            select_content(blocks, model=None, config=policy_for(_oof_type(file_id))).blocks
+        ),
+        "routed-truth": _join(
+            select_content(blocks, model=None, config=policy_for(page_type)).blocks
+        ),
     }
     keys = [" ".join(b.text.split()) for b in blocks if b.text.strip()]
     return PageOutcome(

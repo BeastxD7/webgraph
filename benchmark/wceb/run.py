@@ -83,10 +83,11 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
-VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "main")
+VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "main", "boundary", "model")
 """The four ways to turn a parsed document into text, in increasing order of how much they
 throw away.
 
@@ -321,9 +322,18 @@ class PageOutcome:
     error: str | None = None
 
 
+@lru_cache(maxsize=1)
+def _model():  # type: ignore[no-untyped-def]
+    """The shipped block model, loaded once per worker process."""
+    from webgraph.blockmodel import BlockModel
+
+    return BlockModel.load()
+
+
 def extract(corpus: Path, dataset: str, page_id: str, url: str) -> PageOutcome:
     """Parse one cached page and derive all four variants from the single parse."""
     from webgraph.boilerplate import strip_landmarks
+    from webgraph.content import select_content
     from webgraph.main_content import select_main_content
     from webgraph.pipeline import build_document
 
@@ -338,11 +348,20 @@ def extract(corpus: Path, dataset: str, page_id: str, url: str) -> PageOutcome:
     blocks = list(document.blocks)
     landmarks = strip_landmarks(blocks)
     main = select_main_content(landmarks)
+    model = _model()
     texts = {
         "raw": document.text,
         "landmarks": _join(landmarks),
         "prose": _join(b for b in blocks if str(b.kind) in PROSE_KINDS),
         "main": _join(main),
+        # The two last steps of the production path, against each other over the same
+        # earlier steps. `boundary` is `select_main_content`, asked for by `model=None`;
+        # `model` is the trained per-block classifier. Passing `model=None` explicitly is
+        # load-bearing: `select_content` now defaults to the model, so omitting it would
+        # make these two columns the same number and the comparison would say nothing.
+        # WCEB is an untouched test set for the model -- eight corpora, none of them WCXB.
+        "boundary": _join(select_content(blocks, model=None).blocks),
+        "model": _join(select_content(blocks, model=model).blocks) if model else _join(main),
     }
     return PageOutcome(
         page_id=page_id,

@@ -90,10 +90,17 @@ export interface TextResponse {
   /** The page reduced to its content: `<nav>`/`<footer>` removed, then the main-content
    *  boundary drawn around the densest run of prose. Empty when nothing was removed. */
   content_markdown: string;
-  /** Steps that removed something, in order: "landmarks", "main-content". */
+  /** Steps that removed something, in order: "landmarks", "main-landmark", "block-model"
+   *  or "main-content". */
   content_methods: string[];
   /** Blocks kept in `content_markdown`, out of `page.blocks`. */
   content_blocks: number;
+  /** What kind of page this is, from a trained classifier: "article", "documentation",
+   *  "service", "forum", "collection", "listing", "product", or "unknown". Reported only --
+   *  content selection does not branch on it. */
+  page_type: string;
+  /** Probability assigned to `page_type`; 0 when unknown. */
+  page_type_confidence: number;
   images: string[];
   tables: number;
 }
@@ -331,10 +338,37 @@ export interface FrontierEvent {
   new_urls: string[];
 }
 
+/**
+ * A batch about to be fetched, announced before the work starts.
+ *
+ * Completion events alone can only ever describe the past. This is what lets a live view show
+ * the pages being fetched *now*, and remove each one as its result arrives.
+ */
+export interface FetchingEvent {
+  type: "fetching";
+  urls: string[];
+  queued: number;
+  extracted: number;
+  failed: number;
+}
+
 export interface PageEvent {
   type: "page";
   index: number;
   url: string;
+  /** How this address came to be in the crawl: by what method, from which page, and through
+   *  which link text. Null only if it was never recorded. Everything the crawl reports
+   *  should be answerable with "and how do you know"; this is that answer for the page
+   *  existing at all. */
+  citation: {
+    /** "seed", "sitemap" or "link". */
+    via: string;
+    found_on: string | null;
+    /** The words a reader would have clicked. Often the only human-readable reason a link
+     *  was followed. */
+    anchor: string | null;
+    depth: number;
+  } | null;
   title: string;
   ok: boolean;
   error: string | null;
@@ -349,6 +383,17 @@ export interface PageEvent {
   content_methods: string[];
   /** Blocks in the complete document. */
   blocks: number;
+  /** What kind of page a trained classifier judged this to be: "article", "listing",
+   *  "product", "forum", "collection", "documentation", "service", or "unknown" when no type
+   *  was confident enough. Reported, and used to choose how the content boundary is drawn. */
+  page_type: string;
+  /** Probability the classifier assigned to `page_type`; 0 when unknown. */
+  page_type_confidence: number;
+  /** Why that type, strongest first. Each signal's weight is the probability the chosen type
+   *  loses when the model is not allowed to see it -- measured, not narrated. */
+  page_type_reasons: Array<{ says: string; weight: number }>;
+  /** The type it nearly chose. Most of what "how sure" means is what came second. */
+  page_type_runner_up: { type: string; confidence: number };
   images: string[];
   tables: number;
   strategy: string | null;
@@ -407,6 +452,7 @@ export type SiteEvent =
   | AnalysisEvent
   | InventoryEvent
   | FrontierEvent
+  | FetchingEvent
   | PageEvent
   | DoneEvent
   | ErrorEvent;
@@ -418,14 +464,108 @@ export type SiteEvent =
  * the request carries a JSON body. Events are newline-delimited SSE frames; the buffer is
  * carried across chunks since a frame can be split across TCP reads.
  */
-export async function streamSite(
-  input: { url: string; max_pages: number; concurrency: number; complete: boolean },
-  onEvent: (event: SiteEvent) => void,
+/** One stage of a single-page extraction, as the engine reports it. */
+export type PageStageEvent =
+  | { type: "stage"; stage: string; state: "running"; message: string }
+  | {
+      type: "resolve";
+      stage: "resolve";
+      at: number;
+      url: string;
+      strategy: string;
+      static_chars: number;
+      rendered_chars: number;
+      union_chars: number;
+      static_coverage: number;
+      blocks_only_in_static: number;
+      blocks_only_in_rendered: number;
+      /** Set when the browser was unavailable or gave up. Not a failure: it says the result
+       *  is the plain fetch alone, which a completeness claim has to account for. */
+      render_error: string | null;
+    }
+  | {
+      type: "parse";
+      stage: "parse";
+      at: number;
+      blocks: number;
+      words: number;
+      reading_order: string;
+      /** False means the order was assumed from source, not measured from a rendered
+       *  layout. A reconstruction and a guess deserve different confidence. */
+      reading_order_measured: boolean;
+      dom_order_differs: boolean;
+      content_hash: string;
+      frameworks: string[];
+      requires_render: boolean;
+      kinds: Record<string, number>;
+      payloads: string[];
+    }
+  | {
+      type: "classify";
+      stage: "classify";
+      at: number;
+      page_type: string;
+      confidence: number;
+      reasons: Array<{ says: string; weight: number }>;
+      runner_up: { type: string; confidence: number };
+      /** False when no model shipped. A page typed `unknown` because nothing could judge it
+       *  and one the model declined to commit on are different facts. */
+      available: boolean;
+    }
+  | {
+      type: "select";
+      stage: "select";
+      at: number;
+      kept: number;
+      total: number;
+      methods: string[];
+      removed: Record<string, number>;
+    }
+  | {
+      type: "done";
+      stage: "done";
+      at: number;
+      url: string;
+      title: string;
+      text: string;
+      markdown: string;
+      content_markdown: string;
+      images: string[];
+      tables: number;
+    }
+  | { type: "error"; stage: string; message: string; at?: number };
+
+/**
+ * Stream one page, stage by stage.
+ *
+ * Shares the frame decoding with `streamSite` deliberately: a second parser for the same
+ * wire format is a second place for a frame split across TCP reads to be mishandled.
+ */
+export async function streamPage(
+  input: { url: string; render: boolean },
+  onEvent: (event: PageStageEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamFrames("/api/text/stream", input, onEvent as (event: unknown) => void, signal);
+}
+
+/**
+ * POST a body and read the Server-Sent Event frames that come back.
+ *
+ * `fetch` + ReadableStream rather than `EventSource`, because EventSource is GET-only and
+ * these requests carry a JSON body. The buffer is carried across chunks because a frame can
+ * be split across TCP reads -- and this lives in one function so that a second stream cannot
+ * acquire a second, subtly different, version of that bug.
+ */
+async function streamFrames(
+  path: string,
+  input: unknown,
+  onEvent: (event: unknown) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}/api/site/stream`, {
+    response = await fetch(`${API_BASE}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -439,10 +579,7 @@ export async function streamSite(
   }
 
   if (!response.ok || !response.body) {
-    throw new ApiError(
-      `Stream failed with status ${response.status}`,
-      response.status,
-    );
+    throw new ApiError(`Stream failed with status ${response.status}`, response.status);
   }
 
   const reader = response.body.getReader();
@@ -461,10 +598,18 @@ export async function streamSite(
       const line = frame.split("\n").find((l) => l.startsWith("data: "));
       if (!line) continue;
       try {
-        onEvent(JSON.parse(line.slice(6)) as SiteEvent);
+        onEvent(JSON.parse(line.slice(6)));
       } catch {
         // A malformed frame must not kill the stream.
       }
     }
   }
+}
+
+export async function streamSite(
+  input: { url: string; max_pages: number; concurrency: number; complete: boolean },
+  onEvent: (event: SiteEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamFrames("/api/site/stream", input, onEvent as (event: unknown) => void, signal);
 }

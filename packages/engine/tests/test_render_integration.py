@@ -127,3 +127,40 @@ class TestRenderFailure:
         result = render_page("http://127.0.0.1:9/nothing", config=RenderConfig(timeout_ms=3000))
         assert result.ok is False
         assert result.error
+
+    def test_attachment_is_reported_as_a_download_not_a_driver_error(self) -> None:
+        """A URL that answers with a file must degrade to a sentence, not a Playwright trace.
+
+        Chromium turns a `Content-Disposition: attachment` navigation into a download, and
+        `page.goto` then raises "Download is starting" -- which reads, to anyone holding the
+        report, like the browser broke. It did not; the address is simply not a page. Real
+        sites do this: amazon.in answers some blocked requests with an attachment.
+        """
+        import http.server
+        import threading
+
+        class Attachment(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802 - http.server's spelling
+                body = b"id,name\n1,thing\n"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv")
+                self.send_header("Content-Disposition", 'attachment; filename="export.csv"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Attachment)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/export.csv"
+            result = render_page(url, config=RenderConfig(timeout_ms=10_000))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        assert result.ok is False
+        assert result.error == "the server returned a file download rather than a page"

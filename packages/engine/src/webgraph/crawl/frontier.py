@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import re
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Final
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 __all__ = [
     "CrawlScope",
+    "Discovery",
     "Frontier",
     "canonical_key",
     "normalize_url",
@@ -195,6 +197,33 @@ class CrawlScope:
         return True
 
 
+@dataclass(frozen=True, slots=True)
+class Discovery:
+    """How one address came to be in a crawl. The evidence behind a page being here.
+
+    Everything a crawl reports should be answerable with "and how do you know" -- this is that
+    answer for the existence of a page. `via` is `seed`, `sitemap` or `link`; `anchor` is the
+    text a reader would have clicked, which is often the only human-readable reason a link was
+    followed at all.
+    """
+
+    url: str
+    via: str
+    found_on: str | None = None
+    anchor: str | None = None
+    depth: int = 0
+
+    def as_dict(self) -> dict[str, object]:
+        """Shape the streaming API and the trace both use."""
+        return {
+            "via": self.via,
+            "found_on": self.found_on,
+            "anchor": self.anchor,
+            "depth": self.depth,
+        }
+
+
+
 @dataclass
 class Frontier:
     """Breadth-first queue of URLs to visit, with deduplication.
@@ -207,6 +236,14 @@ class Frontier:
     scope: CrawlScope
     _queue: deque[tuple[str, int]] = field(default_factory=deque)
     _seen: set[str] = field(default_factory=set)
+
+    origin: dict[str, Discovery] = field(default_factory=dict)
+    """How each address came to be in this crawl, for whoever accepted it first.
+
+    Public, because the crawl reports it and a failed page is not actionable without it --
+    "could not fetch X" leaves you hunting for which page linked to X, and only the frontier
+    ever knew. Kept for the *first* acceptance: a URL linked from twenty pages is one page,
+    and the citation that matters is the one that brought it into the crawl."""
 
     def add(self, url: str, depth: int, *, base: str | None = None) -> bool:
         """Queue a URL. Returns whether it was newly accepted.
@@ -226,20 +263,53 @@ class Frontier:
         self._queue.append((normalized, depth))
         return True
 
-    def extend(self, urls: list[str], depth: int, *, base: str | None = None) -> list[str]:
+    def extend(
+        self,
+        urls: list[str],
+        depth: int,
+        *,
+        base: str | None = None,
+        found_on: str | None = None,
+        via: str = "link",
+        anchors: Mapping[str, str] | None = None,
+    ) -> list[str]:
         """Queue several URLs, returning the ones newly accepted.
 
         Callers that only need the count use `add_many`. The list matters to the streaming
         API, which reports discovery incrementally: sending the whole frontier on every
         event would be quadratic, while sending each event's *new* URLs lets a client
         rebuild the same set for a fraction of the bytes.
+
+        The citation is recorded here and nowhere else. `via` says how the address was
+        found, `found_on` which page produced it, and `anchors` maps a raw href to the text
+        of the link that carried it -- so a crawl can answer "why is this page here" with the
+        page, the method and the words a reader would have clicked, rather than an assertion.
+
+        Anchors are keyed by the *raw* href because that is what the page contained; the
+        normalised form is what the frontier stores, and the two differ by exactly the
+        tracking parameters and trailing slashes that normalisation removes.
         """
         accepted: list[str] = []
         for url in urls:
             normalized = normalize_url(url, base=base)
             if normalized is not None and self.add(normalized, depth):
                 accepted.append(normalized)
+                label = (anchors or {}).get(url)
+                self.origin.setdefault(
+                    normalized,
+                    Discovery(
+                        url=normalized,
+                        via=via,
+                        found_on=found_on,
+                        anchor=(label or None),
+                        depth=depth,
+                    ),
+                )
         return accepted
+
+    def citation(self, url: str) -> Discovery | None:
+        """How this address entered the crawl, or None if it was never recorded."""
+        return self.origin.get(url)
 
     def add_many(self, urls: list[str], depth: int, *, base: str | None = None) -> int:
         return len(self.extend(urls, depth, base=base))

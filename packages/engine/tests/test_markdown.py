@@ -97,7 +97,9 @@ class TestTables:
         assert "| only |  |" in out
 
     def test_pipes_in_cells_escaped(self) -> None:
-        out = md("<table><tr><td>a|b</td></tr></table>")
+        # A real 2x2 grid: a single cell is a layout device, not a table, and is unwrapped
+        # before any of this runs.
+        out = md("<table><tr><td>a|b</td><td>c</td></tr><tr><td>d</td><td>e</td></tr></table>")
         assert r"a\|b" in out
 
     def test_empty_table_emits_nothing(self) -> None:
@@ -314,6 +316,109 @@ class TestLayoutTables:
         )
         assert not is_layout_table(root.xpath("//table")[0])
 
+    def test_a_paragraph_in_a_cell_does_not_make_a_table_layout(self) -> None:
+        """The bug this rule had for its whole life.
+
+        `<td><p>12.4</p></td>` is what every content management system emits for an ordinary
+        value, and `p` used to count as evidence of layout. Measured on WebMainBench: a
+        17-row, 111-cell table of numbers -- headers carried by `rowspan`, no `<th>` anywhere,
+        every cell wrapping its number in a `<p>` -- was called layout and flattened. The page
+        yielded **zero** tables and 294 loose blocks where it should have yielded two tables.
+        """
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        cells = "".join(f"<td><p>{n}</p></td>" for n in range(6))
+        rows = "".join(f"<tr>{cells}</tr>" for _ in range(17))
+        root = parse_html(f"<html><body><table><tbody>{rows}</tbody></table></body></html>")
+        assert not is_layout_table(root.xpath("//table")[0])
+
+    def test_a_div_in_a_cell_does_not_either(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        cells = "".join(f"<td><div>{n}</div></td>" for n in range(4))
+        rows = "".join(f"<tr>{cells}</tr>" for _ in range(8))
+        root = parse_html(f"<html><body><table>{rows}</table></body></html>")
+        assert not is_layout_table(root.xpath("//table")[0])
+
+    def test_a_cell_holding_an_article_still_reads_as_layout(self) -> None:
+        """The replacement signal: length, not tag. A cell with 200+ characters of prose is
+        holding a page, however it is marked up."""
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import LONG_CELL_CHARS, is_layout_table
+
+        prose = "The widget is a fastener used in cabinetry and shelving. " * 6
+        assert len(prose) > LONG_CELL_CHARS
+        root = parse_html(
+            f"<html><body><table><tr><td><p>{prose}</p></td>"
+            f"<td><p>{prose}</p></td></tr></table></body></html>"
+        )
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_two_paragraphs_in_one_cell_reads_as_layout(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        cell = "<td><p>First paragraph.</p><p>Second paragraph.</p></td>"
+        root = parse_html(f"<html><body><table><tr>{cell}{cell}</tr></table></body></html>")
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_a_single_row_is_not_a_table(self) -> None:
+        """A table cross-references a row against a column. One row has nothing to cross-
+        reference, so it is a layout device wearing table markup. Measured on WebMainBench:
+        of 38 tables the engine emitted where the annotators saw none, most were this shape --
+        a 1x2 "Rate this" widget, a 1x4 auto-refresh strip, a 1x1 cell reading "Home"."""
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html("<html><body><table><tr><td>Home</td><td>About</td>"
+                          "</tr></table></body></html>")
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_a_single_column_is_not_a_table_either(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        rows = "".join(f"<tr><td>Tool {i}</td></tr>" for i in range(6))
+        root = parse_html(f"<html><body><table>{rows}</table></body></html>")
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_a_mostly_empty_grid_is_a_scaffold(self) -> None:
+        """A 5x3 grid holding two values is a layout scaffold, not a sparse dataset."""
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        rows = "<tr><td>Headline here</td><td></td><td></td></tr>" + "".join(
+            "<tr><td></td><td></td><td></td></tr>" for _ in range(4)
+        )
+        root = parse_html(f"<html><body><table>{rows}</table></body></html>")
+        assert is_layout_table(root.xpath("//table")[0])
+
+    def test_its_content_is_still_extracted(self) -> None:
+        """The point of calling it layout is to read it as a page, never to discard it."""
+        out = md("<table><tr><td>Home</td><td>About us</td></tr></table>")
+        assert "Home" in out
+        assert "About us" in out
+
+    def test_a_two_by_two_grid_is_a_table(self) -> None:
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html("<html><body><table><tr><td>Leeds</td><td>793000</td></tr>"
+                          "<tr><td>Sheffield</td><td>556000</td></tr></table></body></html>")
+        assert not is_layout_table(root.xpath("//table")[0])
+
+    def test_a_header_still_overrides_the_shape_test(self) -> None:
+        """A declared header is the page saying "this is data", and it is trusted over any
+        inference this module makes from shape."""
+        from webgraph.dom.blocks import parse_html
+        from webgraph.dom.rich import is_layout_table
+
+        root = parse_html("<html><body><table><tr><th>Plan</th></tr>"
+                          "<tr><td>Pro</td></tr></table></body></html>")
+        assert not is_layout_table(root.xpath("//table")[0])
+
     def test_a_page_laid_out_in_tables_is_extracted_as_content(self) -> None:
         html = (
             "<table><tr><td>"
@@ -380,9 +485,14 @@ class TestTableSpans:
 
     def test_an_absurd_span_is_bounded(self) -> None:
         """Untrusted input: `colspan="99999999"` is otherwise a memory-exhaustion primitive."""
-        html = '<table><tr><td colspan="99999999">x</td></tr></table>'
+        from webgraph.dom.rich import _MAX_SPAN
+
+        html = ('<table><tr><td colspan="99999999">x</td><td>y</td></tr>'
+                "<tr><td>a</td><td>b</td></tr></table>")
         table = next(b for b in blocks(html) if b.kind is BlockKind.TABLE)
-        assert len(table.rows[0]) <= 1000
+        # The cap bounds each span, so the row is that plus its remaining real cells --
+        # bounded, which is the property that matters, rather than exactly the cap.
+        assert len(table.rows[0]) <= _MAX_SPAN + 10
 
     def test_footer_written_before_the_body_still_renders_last(self) -> None:
         """lxml returns an XPath union in document order, so a single
@@ -498,3 +608,201 @@ class TestMediaPlaceholders:
         texts = [b.text for b in blocks(html)]
         assert "Before the video." in texts
         assert "After the video." in texts
+
+
+class TestDollarEscaping:
+    """A literal `$` must not be readable as a maths delimiter.
+
+    Every Markdown dialect that carries mathematics delimits it with `$...$`, so an
+    unescaped currency amount silently becomes a formula -- and a *pair* of them in one
+    paragraph silently becomes a formula wrapping the prose between them. Measured on
+    WebMainBench: 18 of 200 pages containing no mathematics at all were scored as emitting
+    formulas for exactly this reason. The corpus's own ground truth escapes them, 1,249
+    times across 165 pages.
+    """
+
+    def test_currency_is_escaped(self) -> None:
+        out = md("<p>It spends $29.8 billion, a surplus of $344 million.</p>")
+        assert r"\$29.8" in out
+        assert r"\$344" in out
+
+    def test_a_pair_no_longer_reads_as_one_formula(self) -> None:
+        """The failure shape, as the metric sees it: between two bare dollars lies prose,
+        and a maths-aware reader takes all of it as a formula."""
+        import re
+
+        out = md("<p>from $5 to $10 per unit</p>")
+        assert not re.search(r"(?<!\\)\$(.*?)(?<!\\)\$", out)
+
+    def test_an_already_escaped_dollar_is_not_escaped_twice(self) -> None:
+        assert r"\\$" not in md(r"<p>costs \$5 today</p>")
+
+    def test_real_mathematics_is_left_alone(self) -> None:
+        """The rule the first version of this got wrong. Escaping *every* dollar removed the
+        false formulas and the true ones together: the corpus's formula column lost 152 of
+        its 282 pages. Money is written `$29.8`; mathematics is written `$\frac…` or `$ x`."""
+        for body, keep in (
+            (r"<p>Let $\frac{a}{b}$ be the ratio.</p>", r"$\frac{a}{b}$"),
+            ("<p>where $ x $ is the input</p>", "$ x $"),
+            ("<p>display $$y = mx + c$$ here</p>", "$$y = mx + c$$"),
+        ):
+            assert keep in md(body), body
+
+    def test_the_two_cases_can_share_a_paragraph(self) -> None:
+        out = md(r"<p>It costs $5 when $\alpha$ is small.</p>")
+        assert r"\$5" in out
+        assert r"$\alpha$" in out
+
+    def test_it_applies_inside_a_table(self) -> None:
+        out = md("<table><tr><th>Item</th><th>Price</th></tr>"
+                 "<tr><td>Widget</td><td>$5.00</td></tr></table>")
+        assert r"\$5.00" in out
+
+    def test_it_applies_inside_a_link(self) -> None:
+        out = md('<p><a href="/b">Buy</a> for $9 today</p>')
+        assert r"\$9" in out
+        assert "[Buy](" in out
+
+    def test_plain_text_output_is_untouched(self) -> None:
+        """`document.text` is not Markdown and nothing in it is a delimiter."""
+        document = build_document("<html><body><p>It costs $5</p></body></html>", BASE)
+        assert document.text == "It costs $5"
+
+    def test_mathematics_may_also_begin_with_a_digit(self) -> None:
+        r"""The cost of the digit lookahead, and the reason it is not the whole rule.
+
+        `$0.07^{7}$` is mathematics. Escaping its opening delimiter left the closing one to
+        pair with something far away, and a page whose ground truth is the single formula
+        `0.07` came back as a formula containing the sentence in front of it. A backslash,
+        caret, underscore or brace inside the span is LaTeX; prices have none of them.
+        """
+        assert "$0.07^{7}$" in md("<p>then $0.07^{7}$ follows</p>")
+        assert r"$lpha_1$" in md(r"<p>and $lpha_1$ too</p>")
+
+    def test_a_price_and_an_equation_in_one_sentence(self) -> None:
+        out = md(r"<p>costs $5 when $lpha$ is small</p>")
+        assert r"\$5" in out
+        assert r"$lpha$" in out
+
+    def test_a_span_with_no_latex_in_it_is_still_money(self) -> None:
+        """Two prices in a sentence have nothing mathematical between them, so both escape."""
+        out = md("<p>spends $29.8 billion and $344 million more</p>")
+        assert out.count(r"\$") == 2
+
+
+class TestComplexTablesKeepTheirMarkup:
+    """Pipe syntax cannot express a merged cell, so a table that merges keeps its own markup.
+
+    This is not a formatting preference. `<td colspan="3">` rendered as pipes drops the merge
+    and shifts every value beneath it into the wrong column, which corrupts the data. Markdown
+    permits inline HTML, so the honest rendering of a spanning table is the table. Measured on
+    WebMainBench: on pages whose ground truth holds an HTML table, a pipe rendering caps at
+    0.445 where the table's own markup reaches 1.000.
+    """
+
+    def test_a_plain_grid_still_renders_as_pipes(self) -> None:
+        """The common case, and the one a reader actually wants to look at."""
+        out = md("<table><tr><th>City</th><th>Pop</th></tr>"
+                 "<tr><td>Leeds</td><td>793000</td></tr></table>")
+        assert "| City | Pop |" in out
+        assert "| --- | --- |" in out
+        assert "<table" not in out
+
+    def test_a_colspan_keeps_the_markup(self) -> None:
+        out = md("<table><tr><td>Region</td><td colspan=\"2\">2025</td></tr>"
+                 "<tr><td>EU</td><td>10</td><td>20</td></tr></table>")
+        assert "<table" in out
+        assert 'colspan="2"' in out
+
+    def test_a_rowspan_keeps_the_markup(self) -> None:
+        out = md("<table><tr><td rowspan=\"2\">Region</td><td>Q1</td></tr>"
+                 "<tr><td>Q2</td></tr></table>")
+        assert 'rowspan="2"' in out
+
+    def test_a_nested_table_keeps_the_markup(self) -> None:
+        """Whichever of the two it is, a pipe grid cannot hold a table inside a cell."""
+        out = md("<table><tr><th>a</th></tr><tr><td><table><tr><td>x</td></tr>"
+                 "</table></td></tr></table>")
+        assert out.count("<table") >= 1
+
+    def test_only_structure_survives(self) -> None:
+        """Real tables carry styles, widths, tracking ids and translation bookkeeping. None
+        of it is content, and all of it would otherwise land in the output verbatim."""
+        out = md('<table style="width:0px" width="0" data-anno-uid="anno-7" class="tbl">'
+                 '<tr><td colspan="2" style="color:red" id="c1">x</td></tr>'
+                 '<tr><td>a</td><td>b</td></tr></table>')
+        assert 'colspan="2"' in out
+        for noise in ("style=", "data-anno-uid", "width=", "class=", "id="):
+            assert noise not in out, noise
+
+    def test_a_percentage_colspan_is_not_a_span(self) -> None:
+        """`colspan="50%"` appears on real pages. It is not a span and must not force the
+        markup path for a table pipes can express perfectly well."""
+        out = md('<table><tr><th>a</th><th>b</th></tr>'
+                 '<tr><td colspan="50%">x</td><td>y</td></tr></table>')
+        assert "<table" not in out
+        assert "| a | b |" in out
+
+    def test_span_of_one_is_not_a_span(self) -> None:
+        out = md('<table><tr><th>a</th></tr><tr><td colspan="1" rowspan="1">x</td></tr></table>')
+        assert "<table" not in out
+
+    def test_the_rows_are_still_available_to_everything_else(self) -> None:
+        """`table_html` is a rendering concern. The grid still feeds the content hash,
+        deduplication, reading order and the search index, so it must survive alongside."""
+        found = blocks('<table><tr><td rowspan="2">Region</td><td>Q1</td></tr>'
+                       "<tr><td>Q2</td></tr></table>")
+        table = next(b for b in found if b.kind is BlockKind.TABLE)
+        assert table.table_html is not None
+        assert table.rows
+        assert "Region" in table.text
+
+
+class TestLinksInsideAPreservedTable:
+    """A cell's link target is often the point of the cell, and nothing else can carry it.
+
+    Verified against Hacker News, whose front page is a table of 30 rows where the
+    destination of each row is the single most important fact on the page. Preserving the
+    table's markup without `<a href>` returned all 30 stories and **zero links** -- text that
+    reads correctly and is useless to anything that wanted the articles.
+    """
+
+    HN = (
+        '<table><tbody>'
+        '<tr><td>1.</td><td><a href="/vote?id=1">up</a></td>'
+        '<td><a href="https://example.org/post">A story</a> '
+        '(<a href="/from?site=example.org">example.org</a>)</td></tr>'
+        '<tr><td colspan="2"></td>'
+        '<td>244 points by <a href="/user?id=alice">alice</a> | '
+        '<a href="/item?id=1">40 comments</a></td></tr>'
+        "</tbody></table>"
+    )
+
+    def test_the_markup_is_preserved_because_of_the_colspan(self) -> None:
+        assert "<table" in md(self.HN)
+
+    def test_link_targets_survive(self) -> None:
+        out = md(self.HN)
+        assert 'href="https://example.org/post"' in out
+        assert "A story" in out
+
+    def test_relative_targets_are_made_absolute(self) -> None:
+        """A preserved table travels without the page it came from, so `/user?id=alice`
+        in it points nowhere."""
+        out = md(self.HN)
+        assert f'href="{BASE.rsplit("/", 1)[0]}/user?id=alice"' in out or "example.com/user?id=alice" in out
+
+    def test_noise_attributes_still_go(self) -> None:
+        out = md('<table><tr><td colspan="2" class="x" style="color:red">'
+                 '<a href="/a" class="storylink" onclick="x()">t</a></td></tr>'
+                 "<tr><td>a</td><td>b</td></tr></table>")
+        assert 'colspan="2"' in out
+        assert "href=" in out
+        for noise in ("class=", "style=", "onclick="):
+            assert noise not in out, noise
+
+    def test_an_anchor_with_no_destination_is_not_a_link(self) -> None:
+        out = md('<table><tr><td colspan="2"><a name="top">x</a></td></tr>'
+                 "<tr><td>a</td><td>b</td></tr></table>")
+        assert "<a" not in out
+        assert "x" in out

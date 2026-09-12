@@ -2555,3 +2555,728 @@ Async Playwright (one browser, N pages, no thread-local pool) is the remaining s
 item. It is the largest change, touches `fetch/browser.py`, `render.py`, `site.py` and the
 API's threading model, and nothing above depends on it. Do it as its own branch with its own
 measurement.
+
+## Session 15 — the benchmark climb (branch `benchmark-climb`, off `architecture-fixes`)
+
+User's instruction: run every HTML content-extraction benchmark, find where we lose, research,
+experiment, fix -- "don't cheat, do the hard work". Rules I hold myself to: tune on WCXB **dev**
+only, never look at the held-out test split until the end; every change must be a general
+extraction fix with a reason, not a per-benchmark patch; every number below is from a full
+dev run (1,497 pages), with the run's predictions kept under `scratchpad/results/<step>/`.
+
+Baseline (production path, `select_content`): **WCXB dev 0.714** (leader rs-trafilatura
+0.859). Per type: article 0.841/0.932, documentation 0.822/0.932, service 0.688/0.844,
+forum 0.498/0.808, collection 0.486/0.716, listing 0.423/0.707, product 0.491/0.641.
+Precision 0.675, recall 0.852. `benchmark/wcxb/analyze.py` classifies each page as
+over-cut / leak / ceiling against the `landmarks` variant and prints the worst pages per type
+with their first and last kept block -- that tool found every fix below.
+
+### D93 — Nineteen forum pages parsed to zero blocks: Discourse hides the topic in `<noscript>`
+
+`noscript` is in `SKIP_TAGS`, rightly: on a normal page it holds a "please enable JavaScript"
+nag and a tracking pixel. Discourse (community.openai.com, forum.obsidian.md,
+users.rust-lang.org, home-assistant, letsencrypt, fool.com...) serves a JS shell with the
+entire topic -- every post -- inside `<noscript>` for crawlers. We stripped the forum.
+Measured: 19 of 112 dev forum pages, visible body 5-41 words, noscript 1,000-5,600 words,
+ground-truth recall of the noscript text **1.00 on every one**.
+
+Fix: `unwrap_noscript_shell` in `parse_html`, guarded both ways -- visible words < 150 *and*
+noscript words > 100. Together with D94, WCXB **0.714 -> 0.730**; forum 0.498 -> 0.641.
+
+### D94 — `<select>` options scored as prose
+
+A country selector is 200 unlinked "words". A WordPress archive dropdown is every month
+since 2010. A Google Translate widget is 100 language names. Each is a long run of unlinked
+words, which is exactly what the Kadane selector prizes, so on glossier.com it returned the
+country list *instead of* the article (recall 0.06 against a 1.00 ceiling). Measured:
+12,985 `<option>` words across 26 dev article pages. `select`, `datalist`, `textarea` added
+to `SKIP_TAGS`; `button` kept (an interstitial's only text can be its button).
+
+### D95 — Blocks now know their landmark; `role="main"` was invisible
+
+Landmarks were read from the XPath string, which carries tag names only. 178 of 1,476 dev
+pages declare their main content with `role="main"` on a `<div>` and no other way. `Block`
+gained `region` (innermost landmark by tag or ARIA role) and `in_main`, assigned once per
+element with an ancestor memo in `extract_rich_blocks`. `strip_landmarks` now also drops
+`role="navigation"` / `role="contentinfo"`.
+
+`scope_to_main` keeps only the trusted `<main>`, guarded at >= 100 words and >= 50% of the
+page's words -- measured: 1,000 dev pages carry a main landmark, 21 of them *empty* (a JS
+mount point with the content around it); without the guard 21 pages fall below 0.5 recall,
+with it 6, all collections whose grid sits beside the landmark. Result **0.730 -> 0.734**:
+listing +0.024, product +0.016, article +0.005, collection -0.014, documentation -0.006.
+Small, principled, kept.
+
+### D96 — Negative result: trusting linked words inside `<main>`
+
+Collection ground truth is 40% link text, listing 49% (measured: share of ground-truth words
+inside `<a>` per type; articles 11%). The selector values linked words at zero, so half of a
+listing page's content is scored as chrome. Tried: inside `main`, link density = 0. Listing
++0.052, but article -0.008, product -0.018, collection -0.020: a `<main>` also holds
+related-product rails and tag clouds. Net **-0.003, not adopted** -- *at the time*. See D98: re-measured after D97 the same flag is
++0.007 overall and positive on every type, and it is now on by default. The right signal for a link grid that
+*is* the content is structural repetition of the items (rs-trafilatura's
+`collect_repeated_items`, magic-html's sibling similarity 0.84), not the landmark.
+
+### D97 — The article precision bug was duplication, and exact-match dedup could not see it
+
+186 of 793 dev articles were classed `leak`: precision 0.50, recall 1.00, **predicted words
+2.37x the ground truth**. Inspection of typical cases showed almost no low-overlap blocks --
+the extra words were the article *again*. `_orphan_text` walked direct children only: a
+child that was a block contributed its tail, any other child contributed its **whole subtree
+text**. One non-block wrapper between a container and its paragraphs -- `<span>`, `<ul>`, a
+custom element like `<bsx-section>` -- re-emitted the entire article as one block beside the
+paragraph blocks already emitted from inside it. tires.bridgestone.com: a 1,372-word
+`<section>` beside its 24 paragraphs. proserveit.com: a 2,728-word `<div>` beside its 85.
+ama.org: four `<ul>` re-emitted whole beside their 33 items. The deduplicator keys on exact
+normalised text, and a container's text never equals any one child's.
+
+Fix: `_orphan_text` recurses, skipping block-bearing subtrees (`_TEXT_CONTAINERS`,
+`_HEADINGS`, `_ATOMIC`, and `ul/ol/dl/table`) wherever they sit; `_own_text` is the same
+function. On the three pages: 2,985 -> 1,714 words (ref 1,438), 5,572 -> 3,213 (ref 2,711),
+3,698 -> 2,408 (ref 1,812). WCXB dev **0.734 -> 0.803**; precision 0.706 -> 0.821 with recall
+0.860 -> 0.847; article 0.850 -> 0.919 (leader 0.932), documentation 0.825 -> 0.884, service
+0.697 -> 0.768, forum 0.648 -> 0.730, collection 0.481 -> 0.530, listing 0.447 -> 0.527, product
+0.519 -> 0.587. One parser bug was worth more than every selector experiment combined.
+
+Lesson (again): "precision problem" was the wrong frame. A precision number can be a
+*recall bug in disguise* -- here the parser emitting content twice. The analysis tool's
+`pred/ref token ratio` column is what exposed it; F1 alone never would have.
+
+### What the leaders do (research, session 15)
+
+rs-trafilatura is not a port of trafilatura: it adds a page-type router (URL regex, JSON-LD
+`@type`, XGBoost on 181 features) and per-type extraction profiles -- forum comments are
+content, product descriptions fall back to JSON-LD, listings collect >= 3 repeated same-tag
+siblings of >= 15 words, service pages merge top-scoring non-overlapping sections
+(`aggregate_sections`, accept >= top/5). Per-type gain over Python trafilatura: forum +0.207,
+collection +0.160, listing +0.115, product +0.103. MinerU-HTML simplifies the DOM to
+class+id-only blocks truncated at 500 chars and has a 0.6B model label each block main/other.
+WCXB ground truth per type: forum = OP + all replies *including usernames and timestamps*;
+collection/listing = the item grid itself (names, prices); product = title + description +
+specs, price sometimes; documentation = all prose, code and attribute tables, TOC excluded.
+
+### D98 — An experiment measured on top of a bug measures the bug
+
+D96 declined `trust_main_links` at -0.003. D97 then removed the wrapper duplication that was
+doubling a third of the articles. Re-run on the fixed parser, the same flag reads **+0.007
+overall and positive on all seven types**: docs +0.022, listing +0.031, collection +0.025,
+service +0.009 (0.803 -> 0.810). Adopted; both tables are in the config docstring.
+
+Lesson: negative results are only as durable as the pipeline they were measured on. When a
+large upstream bug is fixed, the recent negatives need re-running before they are believed.
+WCXB dev now **0.810** -- above trafilatura (0.791), below MinerU-HTML (0.827) and
+rs-trafilatura (0.859).
+
+### D99 — Repeated-sibling grouping, first form: recall up, precision down, net loss
+
+Cards in a grid each paid a full block cost, so the selector dropped grids (66 of 117
+collections, 39 of 99 listings over-cut). First implementation: blocks under a repeated
+container (`.../li[*]`, >= 3 distinct indices, innermost qualifying index) form one unit
+worth all its words minus one cost. WCXB dev, on top of 0.810:
+
+```
+                 shipped   groups=main   groups=all
+overall           0.810      0.801         0.794
+precision         0.815      0.761         0.725
+recall            0.864      0.920         0.956
+listing           0.558      0.612         0.642
+service           0.777      0.792         0.795
+documentation     0.906      0.917         0.925
+collection        0.555      0.532         0.567
+article           0.920      0.905         0.887
+product           0.589      0.526         0.516
+forum             0.733      0.727         0.700
+```
+
+The grid it was built for is found; so are the related-products rail, the comment list and
+the tag cloud, which are repeated groups too. Two things were wrong: the unit ignored link
+density (all words counted), and any group of three qualified. Second form under test:
+members keep their own scores and the unit pays one cost, and a group counts only when it
+carries >= 30% of the page's words -- a grid that *is* the page rather than a rail beside it.
+
+Also learned: the forum ground truth is a **prefix of the thread**. On mumsnet the GT ends at
+post ~30 of 95; the excluded posts are visible, ordinary `div.post-body` replies, not hidden.
+Not something to chase -- the honest output includes them.
+
+Zyte after D93-D98: **0.872 -> 0.895**, rank 17 -> 15 of 35.
+
+### D100 — Grouping, second form: the per-type split is stable, so it is a routing decision
+
+Members keep their own scores, unit pays one cost, group must carry >= 30% (or 15%) of the
+page. WCXB dev, on top of 0.810:
+
+```
+                 shipped  main-30  main-15  all-30
+overall           0.810    0.806    0.805    0.804
+listing           0.558    0.612    0.614    0.649
+service           0.777    0.790    0.793    0.798
+documentation     0.906    0.913    0.916    0.922
+collection        0.555    0.537    0.537    0.574
+article           0.920    0.911    0.910    0.897
+product           0.589    0.541    0.535    0.538
+forum             0.733    0.731    0.731    0.713
+```
+
+Same shape as D99: listing/service/docs want grouping on, article/product/forum want it off,
+and no global setting wins. That is the empirical case for a page-type router: the user
+approved building one plus a trained per-block classifier. `group_repeats` stays `"off"` by
+default; the router will turn it on per type. Discipline for both: WCXB dev only, 5-fold CV
+numbers reported, Zyte/CleanEval/WCEB/WebMainBench untouched as tests, held-out split closed.
+
+### D101 — The page-type router: CV accuracy 0.838, routed WCXB dev 0.810 -> 0.817 (honest)
+
+`webgraph/pagetype.py` + `models/router_gbdt.json`: 62 generic features (URL words, JSON-LD
+types, og:type, structure), HistGradientBoosting exported to JSON, pure-Python inference
+exact to sklearn, 0.76 ms/page, 194 ms load. 5-fold CV accuracy **0.838** (rs-trafilatura
+0.866). Weak class: listing, recall 0.343 -- news fronts and category pages look alike, and
+there are 99 of them against 793 articles. Confusion matrix in `benchmark/train/README.md`.
+
+Routing worth, measured with **out-of-fold** predictions (each page routed by a model that
+never saw it), policy = grouping on for listing/collection/service/docs, off otherwise:
+
+```
+                shipped   routed-oof   routed-truth (perfect router, ceiling)
+overall          0.810      0.817        0.821
+listing          0.558      0.606        0.649
+service          0.777      0.795        0.798
+collection       0.555      0.572        0.574
+documentation    0.906      0.912        0.922
+article          0.920      0.919        0.920
+product          0.589      0.587        0.589
+forum            0.733      0.733        0.733
+```
+
++0.007 honest, of a +0.011 ceiling. The router gets most of the value the one-knob policy
+has; the remaining structural gap (listing 0.65 vs 0.71, collection 0.57 vs 0.72, product
+0.59 vs 0.64) needs a better per-type selector, which is what the block classifier is for.
+
+### D102 -- The trained per-block model is built, measured, and NOT the default
+
+I shipped it as the default, then a benchmark took it back out. `select_content` still ends
+with `select_main_content`'s contiguous boundary; `model=SHIPPED_MODEL` asks for the
+classifier. The reversal is the finding, so it is written up in full below.
+
+**The honest WCXB dev number is out of fold, and I recomputed it myself rather than trusting
+the trainer.** `benchmark/train/blockmodel_oof.py` reads the fold probabilities, applies the
+production threshold (0.4) and fail-open guard (2% of page words), takes the ground truth
+from the corpus and imports the corpus's own `word_f1`. It reproduces the trainer's claim
+exactly: **0.810 -> 0.839**, every page type at or above the boundary step except
+documentation at -0.002, listings +0.125, precision 0.815 -> 0.835, recall 0.864 -> 0.898.
+23 pages fail open.
+
+**Three things that would have made the whole exercise worthless, found and fixed:**
+
+1. `benchmark/wcxb/run.py`'s `content` variant called `select_content(blocks)`. The moment
+   the model became the default, that variant scored a model trained on all of dev against
+   dev. Every runner that compares the boundary step to the model now passes `model=None`
+   **explicitly**, with a comment saying why, because the failure is silent: two columns
+   quietly become the same system and the table still prints.
+2. I flipped the default *while WCEB and WebMainBench were running*. Their pools are created
+   per dataset, so workers spawned after the edit picked up the new default and their
+   `content` column became the `model` column. Both runs were killed and restarted. **An
+   engine edit during a benchmark run invalidates the run** -- the same lesson as D98 (an
+   experiment measured on top of a bug measures the bug), one level up.
+3. `config=` was silently ignored whenever the model ran, so `routed-oof`/`routed-truth` and
+   any caller's `MainContentConfig` would have collapsed into the model with no warning.
+   `select_content` now treats a `config` as a request for the step it configures, and
+   raises if given a `config` and an explicit `model` together.
+
+**Zyte held**: 0.895 -> 0.897 (P 0.838 -> 0.832, R 0.960 -> 0.973), inside that benchmark's
+own bootstrap error of +/-0.010. Untouched test set, different annotator -- but 181 article
+pages is the model's strongest class, and passing it turned out to prove very little.
+
+**A real parse bug the benchmarks found.** `ValueError: Unicode strings with encoding
+declaration are not supported` -- lxml refuses a `str` carrying `<?xml ... encoding=...?>`,
+which XHTML served as HTML has. Eight WCEB pages lost their *entire* document, not a
+fragment. `parse_html` strips the declaration now; `tests/test_blocks.py` pins it.
+
+**A behaviour change worth stating as a cost.** On a page that is entirely navigation the
+boundary step returned all of it with `changed=False`, so the API emitted no
+`content_markdown` at all. The model keeps most of the links and reports `changed=True`, so
+the API now emits navigation as "content". A regression in kind, not degree.
+
+**What the metric cannot see.** Out of fold, the model keeps the page's *first* heading only
+**0.679** of the times that heading is ground truth, and image alt text **0.119** of the
+time (`kind_image` is its single most important feature). Forcing the first heading in is
+worth **+0.000** overall on WCXB -- a title is a few words against a thousand-word body, so
+word-F1 is blind to it. For a benchmark that is nothing; for the graph this engine exists to
+build, the page title is the node's name. Any fix here must be argued on product grounds,
+because the benchmark will never justify it.
+
+**D102a -- WebMainBench reversed the decision, and why that is the most useful result here.**
+
+WCXB (+0.029) and Zyte (+0.002) both score a bag of `\w+` tokens. WebMainBench's 545-page
+calibrated subset scores Markdown by **edit distance**, with tables and code in their own
+columns. On it the model is worse across the board:
+
+```
+                 boundary   model    delta
+overall            0.6224  0.5861   -0.036
+text_edit          0.7567  0.7249   -0.032
+code_edit          0.8099  0.7436   -0.066
+table_edit         0.3485  0.2456   -0.103
+table_TEDS         0.5558  0.4693   -0.087
+prose-only slice   0.7145  0.6747   -0.040   <- 131 pages with no table, code or formula
+```
+
+The prose-only row kills the obvious explanation. Two repairs, both measured rather than
+argued: re-inserting tables and code into the span the model kept is worth **+0.000**, and
+filling the span completely is worth **-0.045**. It is not about structured content and it
+is not about holes.
+
+Reading pages instead of means: over 120 pages the model is worse on 54 and better on 39,
+and the worst cases are two failures a word bag cannot charge for.
+
+* **It discards most of long documents.** A 13,591-char recipe the boundary step extracts at
+  0.996 comes back as 1,715 chars, scoring 0.109. A 20,789-char Chinese regulation comes
+  back as 5,876.
+* **It keeps comment and navigation furniture** -- "Add your comments...", "User Name
+  Required", "Go to Forum >> 0 Comments", a font-size control. The boundary step excludes
+  them because they are not contiguous with the prose. The model scores each block alone.
+
+Missing words cost a little recall; the chrome the boundary step drops buys precision back.
+On word-F1 the two failures net out *positive*. **WCXB's metric cannot tell an extractor
+that keeps the right run of text from one that keeps a scattered subset of the right
+tokens, and a model trained against it optimises the second.** That is the transferable
+lesson, and it is worth more than the +0.029 was.
+
+Not deleted: the model, the trainer, the OOF verifier and the 47 features are all in tree
+and documented. It is one `model=SHIPPED_MODEL` from being on, and the next attempt should
+train against a structure-aware target rather than a bag of words.
+
+**What the metric could not see, measured anyway.** Out of fold the model keeps the page's
+*first* heading only **0.679** of the times that heading is ground truth, and image alt text
+**0.119** of the time (`kind_image` is its single most important feature). Forcing the first
+heading in is worth **+0.000** on WCXB. For a benchmark that is nothing; for the graph this
+engine exists to build, the page title is the node's name.
+
+**The router ships as a label, not a policy.** `page_type` and `page_type_confidence` are on
+`/api/text` and on every crawl page event. Nothing in extraction branches on the type: the
+model (0.839) already subsumes the routed selector's gain (0.817), so routing the selector
+would be a second mechanism buying nothing.
+
+### D103 -- Firecrawl's scrape-evals, run for the first time, with its pre-registered call honoured
+
+1,000 live fetches on 2026-09-12, static httpx path, no browser and no proxy. Ranked by the
+published Quality F1 column the engine lands **8th of 14**: Coverage 60.0%, Quality 0.4372.
+Firecrawl 0.6758, Exa 0.5268, Tavily 0.5011, Zyte 0.4682, Crawl4AI 0.4533; below us Scrapy
+0.4290, Apify 0.4166, Puppeteer 0.4083, Selenium 0.4046, requests 0.3550, Playwright 0.3387.
+
+**The prediction recorded in the runner before the run was confirmed, and it is worth more
+than the rank.** A previous session wrote into `run.py`'s docstring: if the published spread
+is substantially a *format* effect, `html_asis` must land in **0.33-0.45**, and 0.55+ would
+falsify it. It landed at **0.3518** -- within the band and within 0.004 of the published
+`requests` row (0.3550), which uses that same protocol. On this run's own bytes:
+
+```
+html_asis       0.3518   the protocol 12 of the 13 published engines submit
+md_as_markdown  0.4320   the protocol Firecrawl alone submits
+```
+
+**+0.080 from the submission format on identical fetches.** The harness runs `strip_markdown`
+only when an adapter declares `format="markdown"`, and exactly one of thirteen does.
+
+**Our real gap is fetching, not extracting.** `F1|success` -- quality with failed fetches
+removed -- is **0.7114**. 253 of 1,000 URLs returned 4xx against an identifiable bot UA from
+one IP. Seven of the thirteen published engines fetch through commercial anti-bot fleets, and
+Firecrawl's Coverage includes their closed hosted browser. Scaling our md_as_markdown quality
+to their coverage puts us near 0.53 against their 0.676, so roughly half the remaining gap is
+the fetch path and half is extraction or ten months of web drift.
+
+**A structural penalty nobody has reported.** Of 684 good HTTP-200 bodies, **171 (25.0%)**
+contain one of nine block-page needles that `is_block_page` greps for in the *unstripped*
+submission -- and **119 of those have over 80% of the ground-truth text present**. Pages that
+loaded perfectly, scored as blocked. That costs the twelve HTML-submitting engines and not
+the one Markdown-submitting engine, and it is worth ~11.9 points of our Coverage.
+
+**What this benchmark can see that the others cannot**: the noise leak, which its own scorer
+does not compute. Mean `lie_text` leak, raw 0.541 -> landmarks 0.286, fully-leaked pages
+15.7% -> 5.9%. `strip_landmarks` halves chrome leakage and no published column rewards it.
+
+**The action this implies** is the browser path: this run used static httpx only, while the
+engine has a rendered Playwright fetch it did not use here. Coverage is the lever, not the
+extractor.
+
+### D104 -- WCEB complete: 0.843, third of seven, and first on one corpus
+
+3,985 pages, eight corpora, ROUGE-LSum, against the authors' own published per-page CSVs.
+
+```
+              F1   median
+boundary   0.843    0.931   <- the shipped default
+main       0.840    0.929
+model      0.812    0.899   <- the trained classifier
+raw        0.689    0.741
+
+trafilatura   0.867   readability 0.855   boilerpipe 0.825
+resiliparse   0.819   justext     0.806   bs4         0.692
+```
+
+**Third of seven**, ahead of boilerpipe, resiliparse, justext and bs4; behind trafilatura and
+readability. Up from 0.833 before this session.
+
+**First on cetd, ahead of every published system.** 700 pages: us 0.925, trafilatura 0.907,
+readability 0.897, resiliparse 0.881, justext 0.863, boilerpipe 0.850, bs4 0.759. That is the
+first corpus anywhere on which this engine is the best number in the table.
+
+Second on dragnet (1,379 pages): 0.828 against trafilatura's 0.840, but ahead of readability
+0.806, justext 0.785, boilerpipe 0.773 and resiliparse 0.724.
+
+Weakest on cleanportaleval (0.782 against readability's 0.931) and cleaneval (0.836 against
+justext's 0.881) -- both portal and newswire corpora, both precision-bound: cleanportaleval
+runs recall 0.965 at precision 0.689.
+
+**The XHTML parse fix is visible here**: parse failures 8 -> 1 across the corpus, and
+cleaneval moved 0.805 -> 0.836 on 738 pages. A one-line bug fix outscored the entire trained
+classifier, which is worth remembering the next time a model looks like the answer.
+
+**Third independent confirmation that the model should not be the default.** It is behind the
+boundary step on six of eight corpora and 0.031 behind overall. WCXB (+0.029) is now the only
+corpus of eleven on which it wins.
+
+### D105 -- The layout-table rule threw away real data tables, and `<p>` was the reason
+
+`is_layout_table` decides whether a `<table>` holds data or lays out a page. It counted a
+cell as layout evidence if the cell contained any block-level tag, and the list included
+`<p>` and `<div>` -- the two most common ways a CMS wraps an ordinary value. `<td><p>12.4</p>
+</td>` is the most normal data cell on the web and the rule read it as proof of the opposite.
+
+Measured on WebMainBench: a 17-row, 111-cell table of numbers, headers carried by `rowspan`
+with no `<th>` anywhere, was classified as layout and flattened. That page yielded **zero
+tables and 294 loose blocks**; it now yields two tables, spans resolved, and 100 blocks.
+
+The replacement signal is how much the cell holds, not which tag it uses: a nested table, a
+form, a section, a heading, two or more paragraphs, or over `LONG_CELL_CHARS` (200) of prose.
+A layout cell holds an article; a data cell holds a number. Tag identity cannot separate
+those because both use `<p>`; length can. The Hacker News protection that motivated the rule
+still holds -- `tests/test_markdown.py` pins both directions.
+
+**Measured on WebMainBench 545** (boundary variant): table_edit 0.3485 -> 0.3589, table_TEDS
+0.5558 -> 0.5816, code_edit 0.8099 -> 0.8303, overall 0.6224 -> 0.6255. Pages scored for
+tables 149 -> 157. Real, and about a point: **the bug was not the 0.32 gap to MinerU-HTML.**
+
+### D106 -- Competitor architecture: nobody else unions, and the benchmarks cannot see fetching
+
+Researched Firecrawl (at a pinned SHA), Crawl4AI, Trafilatura, Zyte API, Scrapy 2.19, and the
+browser-as-a-service tier.
+
+**Nothing in the field does what `resolve.py` does.** Every system picks one representation.
+Firecrawl is browser-first and has *deleted* plain HTTP from its waterfall when fire-engine is
+present, with a source comment saying it would rather fail a scrape than degrade to HTTP.
+Crawl4AI hardcodes the Playwright strategy and has no content-based escalation at all.
+Trafilatura is HTTP-only and its docs tell the caller to render it themselves. Zyte rejects a
+request asking for both representations with a 422. All of them assume rendering is a strict
+upgrade -- the assumption D-era measurement refuted with bbc.co.uk (19,908 chars static,
+9,279 rendered, consent wall).
+
+**Every extraction benchmark hands every engine the same saved HTML**, so fetching is factored
+out of the measurement entirely. Zyte's corpus was captured with JavaScript explicitly
+disabled; WebMainBench is raw unrendered Common Crawl. Trafilatura "getting away with" having
+no browser is not a finding about the web.
+
+**MinerU-HTML is "Dripper"** (arXiv 2511.23119): DOM simplification, then a 0.5-0.6B language
+model emitting one keep/drop bit per semantic block. Not generative -- **the output is a
+precise subset of the original DOM**, produced by masking a preserved copy of the markup. That
+is why it wins on tables: it returns the source `<table>` verbatim where we re-emit Markdown
+and the scorer converts ours back into a flatter tree than the one it is compared against.
+
+**The gap is format fidelity, not boundary detection**, corroborated three ways: on WCEB's
+plain-text ground truth its lead over Trafilatura collapses from +23.8 to +3.2 (-87%); on the
+545-page `text_edit` column it leads Trafilatura by 0.08 while leading by 0.42 overall; and
+Resiliparse scores **0.0000** on tables purely because it emits plain text.
+
+Two caveats to keep attached: WebMainBench was built by the team that also built its first and
+second place systems, and on the independent WCXB, MinerU *loses* to plain heuristics on
+collection (0.506 vs 0.713) and product (0.619 vs 0.670) pages.
+
+### D107 -- table2rules (PebbleRoad): evaluated hands-on, and this one works
+
+Unlike `table-stitcher` (D77), which could not accept HTML at all, `table2rules` 0.6.4 takes
+it directly: `process_table(table_html: str) -> list[LogicRule]`. Dependency tree is
+beautifulsoup4, soupsieve and typing-extensions -- nothing that would weigh on this engine.
+Fail-open by default; `strict=True` re-raises.
+
+Tested on the hardest real table in reach: the WebMainBench page from D105, 17 rows, three
+levels of column header carried by `colspan`, a row-header column carried by `rowspan`, no
+`<th>` anywhere. It produced **84 rules** and resolved the full header path correctly:
+
+```
+Number of enterprises in the group | Groups of enterprises by the share of revenue
+  from the sale of milk … , % > I > Up to 5.0: 20
+```
+
+Row-header path, column-header path, value. That is a *fact*, not a cell -- which is exactly
+what the graph needs, because a cell on its own means nothing and a cell with its header path
+is something an entity can carry. It reads structural signals (`th`, `thead`, `scope`,
+`rowspan`, `colspan`) rather than cell text, so it is language-independent by construction.
+
+**Where it belongs: the graph/LLM path, not the extraction path.** WebMainBench rewards
+preserving table *structure*; this flattens structure into facts. The two are opposite
+directions and both are wanted, at different stages. Adopt it after the extraction work, for
+the notes/entities/relationships step, not as part of the table-fidelity fix.
+
+### D108 -- The formula gap was currency, not mathematics
+
+WebMainBench's formula column read 0.3074 against MinerU-HTML's 0.9399, and the obvious
+diagnosis was wrong. A census of the corpus first: **only 16 of 545 pages carry `<math>` at
+all**, while 355 carry raw `$...$` in the HTML. So the MathML converter that was going to be
+the fix addresses 3% of the corpus.
+
+Splitting the formula pages by case over 200 samples settled it:
+
+```
+both sides have formulas        6 pages   mean 0.848
+only the ground truth has them  1 page    0.000
+only WE have them               18 pages  0.000   <- three times the true positives
+neither                        175 pages  excluded
+```
+
+What we were "emitting" was money: *"spends $29.8 billion. This includes a surplus of $344
+million"*. The metric finds formulas with `(?<!\\)\$(.*?)(?<!\\)\$`, so two prices in one
+paragraph pair up and everything between them becomes a formula. The ground truth escapes
+these -- 1,249 times across 165 pages -- and the lookbehind then skips them.
+
+**Escaping every `$` fixed the false positives and broke the true ones**: formula N fell
+282 -> 130 and the mean fell 0.3074 -> 0.1962, because real mathematics was escaped out of
+existence too. The corpus says which to escape: an escaped dollar is followed by a digit 953
+times of 1,221, while a bare one is followed by a space (2,743), a backslash opening a LaTeX
+command (1,189) or another `$` opening display maths (921). **Money is `$29.8`; mathematics
+is `$\frac…`, `$ x` or `$$`.** So the rule is a digit lookahead, `(?<!\\)\$(?=\d)`.
+
+```
+                 before   escape-all   digit rule
+formula_edit     0.3074     0.1962       0.4705
+overall          0.6255     0.6626       0.6912
+```
+
+Comparable column mean against MinerU's published 0.8256: **0.5665 -> 0.5992**.
+
+Applied in three places, two of which bypassed the first: ordinary text, the rich text
+carrying link syntax, and table cells. Plain-text output is untouched -- it is not Markdown
+and nothing in it is a delimiter. MathML -> LaTeX is still worth doing, because `math` is in
+`SKIP_TAGS` and every equation on every page is currently deleted, but it is a product fix
+for 16 pages here rather than the headline.
+
+### D109 -- Published baselines understate current systems by ~0.02, and it cost us two claimed positions
+
+Asked whether the leaderboard positions are genuinely reproducible. They were not, and the
+way to find out was not to reason about it but to **run a published system through this
+repository's own harness and see whether it reaches its published score**.
+
+`benchmark/wcxb/validate.py` and `benchmark/wceb/validate.py` do exactly that.
+
+```
+                              measured here   published   drift
+trafilatura 2.2.0, WCXB dev       0.813         0.791      +0.022
+trafilatura 2.2.0, WCEB/cetd      0.928         0.907      +0.021   (40-page sample)
+```
+
+Two independent corpora, two independent metrics, the same offset. **A published baseline is
+frozen at the version its authors tested; this engine is current. Comparing the two flatters
+whoever ran more recently**, and that was us.
+
+**WCXB: the claimed third place was wrong.** On this harness, run the same day: trafilatura
+**0.813**, webgraph **0.811**. Trafilatura is *ahead*, not 0.019 behind as the published
+table implied. The per-type breakdown names the cause -- our trafilatura run matches the
+paper on articles (0.928 vs 0.926) and diverges on forums (0.689 vs 0.585), because a later
+release learned to read Discourse threads out of `div#data-preloaded`.
+
+**WCEB/cetd: the "first anywhere" claim SURVIVES, and the alarm was my own sampling error.**
+The 40-page sample read 0.928 (+0.021); the full 700 pages read **0.911 (+0.004)**. We score
+**0.925** and current trafilatura scores **0.911**, so first place on that corpus is real and
+measured the same day. *A 40-page sample was not enough to raise an alarm on, and raising one
+was a mistake worth remembering.*
+
+**So the drift is corpus-specific, not a flat offset -- the second correction.** +0.022 on
+WCXB, +0.004 on WCEB/cetd. On WCXB it concentrates in forum pages (0.689 vs 0.585) and
+product pages, which is consistent with the Discourse handling a later trafilatura gained.
+cetd has no forum pages, so it shows almost none. **Two points was never a universal
+constant, and treating it as one was over-generalising from two numbers.**
+
+**The two boards that survive this, and why.**
+* **Zyte is the strongest comparison in the repository** and always was: every competing
+  number comes from running the corpus's own `evaluate.py` over the outputs those projects
+  *committed to the repository*, in the same command that scored this engine. Same inputs,
+  same scorer, same day, no version drift possible in either direction.
+* **Firecrawl scrape-evals is not a comparison at all.** Their figures are November 2025 and
+  ours September 2026, over 1,000 *live* URLs of which 90 now 404 for anybody. The columns
+  describe two different webs.
+
+Every board on the benchmarks page now carries a `Trust` level -- `same-inputs`,
+`same-corpus`, `not-compared` -- so a reader is told what a side-by-side is worth instead of
+having to find out by reading source. **A ranking whose rows were produced years apart is not
+a ranking, and printing one is the thing not to do.**
+
+### D110 -- Tables, equations and a fix that was removed for solving nothing
+
+WebMainBench 545, `boundary` variant, across the day:
+
+```
+                 start    layout    currency   tables+   maths span
+                           table     escape     maths     protected
+overall         0.6224    0.6255    0.6912     0.7113     0.7201
+table_edit      0.3485    0.3589    0.3589     0.4249     0.4249
+table_TEDS      0.5558    0.5816    0.5816     0.6004     0.6004
+formula_edit    0.3074    0.3074    0.4705     0.5169     0.6009
+code_edit       0.8099    0.8303    0.8303     0.8458     0.8458
+text_edit       0.7567    0.7545    0.7537     0.7673     0.7673
+```
+
+Column mean, comparable to MinerU-HTML's published 0.8256: **0.5665 -> 0.6479**.
+
+**Tables: splitting the column found the real term.** Of the pages scored, 74 have a table on
+both sides and score **0.605**; 38 had a table only from *us*, each scoring 0.0 and joining the
+average. Suppressing those alone is worth 0.367 -> 0.533. Inspecting them settled bug vs
+convention: a 1x1 cell reading "Home", a 1x2 "Rate this" widget, a 1x4 auto-refresh strip, a
+6x1 list of tool names. **A table cross-references a row against a column; one row or one
+column has nothing to cross-reference.** With that plus preserving complex tables' own markup,
+the column moved 0.359 -> 0.425 and its page count 157 -> 122.
+
+**Equations: the digit lookahead was too blunt, and the corpus said so.** `$0.07^{7}$` is
+mathematics that begins with a digit. Escaping its opening delimiter left the closing one to
+pair with something far away, and a page whose ground truth is the single formula `0.07` came
+back as a formula containing the sentence before it. A span containing a backslash, caret,
+underscore or brace is LaTeX; prices contain none of them. Protecting those spans: 0.517 ->
+0.601.
+
+**D110a -- a fix removed for solving a problem that does not exist.** A diagnostic reported
+"25 code blocks carrying a line-number gutter" and a `strip_line_numbers` was built, guarded
+and tested for it. It then fired on **0 of 493** code blocks in the corpus, and on **0 of 94**
+across django, php.net and the Arch wiki. The original count was my own regex matching code
+that merely *begins* with a digit. Modern highlighters render line numbers with CSS counters
+or a separate column, so they never reach `text_content()` at all.
+
+The code was correct, guarded and tested, and it was deleted anyway, because its docstring
+claimed a measurement that was false and **guarded dead code carrying a false claim is worse
+than no code**. The rule this session has been run on applies to my own work: do not add code
+for a problem that has not been reproduced.
+
+### D111 -- Hacker News, checked against the live page, found a link loss the tests could not
+
+Validated the engine against `news.ycombinator.com` by reading the real page in a browser and
+comparing field by field. The text was **perfect**: 30 of 30 stories with title, domain, point
+count, author, age and comment count, including the one whose title begins with `Λ`. The
+"More" pagination link was kept; navigation, footer and search box were correctly absent from
+the *content view* and all still present in `document.text`.
+
+**And every link was gone.** 211 of them. `_TABLE_ATTRS` kept only `colspan` and `rowspan`, so
+preserving a complex table's markup stripped every `<a>` in it. On HN the destination of each
+row is the single most important fact on the page, so the output read perfectly and was
+useless to anything that wanted the articles.
+
+`a` and `href` are now kept, and targets are absolutised, because a preserved table travels
+without the page it came from and a bare `item?id=123` points nowhere. An `<a>` with no
+destination becomes a span -- an anchor is not a link.
+
+**The lesson is about what the test suite could see.** Every table test used a synthetic
+fixture of bare text cells, so no test had a link in a table and none of them failed. A real
+page found it in one run. *Synthetic fixtures test the shape you thought of.*
+
+**Also confirmed working on a real page**: the router labelled HN `listing` at 0.81
+confidence, the reading order came back `geometric-xy-cut` rather than DOM fallback, and the
+union reported static and rendered identical at 4,226 characters -- HN genuinely needs no
+browser, and the engine measured that rather than assuming it.
+
+### D112 -- Hacker News, checked as a reader would: two bugs, the second worse than the first
+
+Asked to preview the extracted Markdown rather than read the numbers. The output was one HTML
+table whose columns were a rank, an empty cell, and a title. Faithful to the markup, and
+useless to read.
+
+**First bug: HN's story list is not a data table.** `is_complex_table` saw `colspan="2"` and
+preserved the markup. Measured on the real page: **92 rows, 31 of them entirely empty**, no
+header anywhere, row widths of 0, 2 and 3. *A table of data does not have a third of its rows
+blank.* Those are spacer rows -- how a gap was made before CSS. `MAX_EMPTY_ROW_SHARE` now
+catches it, and HN goes from 4 blocks to 94 with every story a proper Markdown link.
+
+**Second bug, exposed by fixing the first: `select_content` returned the FOOTER.** 1 block of
+94, zero stories. The selector looks for the densest run of prose and HN has none -- thirty
+short links read as navigation, and the footer was the longest continuous text on the page.
+
+**The fix existed and had never been wired up.** The router calls HN `listing` at **0.87**, and
+`policy_for(listing)` scores repeated cards as units: 92 of 94 blocks, all 30 stories. Routing
+is now applied in `site._content_of` and `/api/text`.
+
+**Measured on WCXB: exactly neutral.** `content` 0.810, `routed-oof` 0.810, identical on every
+one of the seven page types. The gain is bounded by the router, not the policy: `routed-truth`
+(a perfect router) reads listing **0.653 vs 0.552**, +0.101, but the shipped router's listing
+recall is **0.343**, so on that corpus it rarely fires. No loss anywhere, a large gain where it
+does fire.
+
+**The decision this reverses is D-era "ship the router as a label, not a policy".** That was
+taken because the WCXB average moved +0.007, which looked negligible. *The average hid the
+failure mode completely* -- on a listing page it is the difference between the items and the
+footer, and returning a footer is not a small error. **An average across page types is the
+wrong instrument for deciding whether a per-type policy ships.**
+
+### D113 -- Listing recall: the features were noise, the class imbalance was the cause
+
+Asked to improve the router's listing recall (0.343, the weakest class by far, with 33 of 99
+listings called articles).
+
+**The six features I reasoned my way to were worthless.** `linked_heading_share`,
+`log_distinct_links`, `group_count`, `dated_group_share`, `median_block_words`,
+`group_to_longest_ratio` -- all measuring *arrangement*, on the theory that an article is one
+run of prose and a listing is many short linked items. Recall went **0.343 -> 0.323** and not
+one of them reached the top fifteen by permutation importance. An ablation under identical
+folds put them at +0.002 accuracy, +0.020 listing, **-0.034 collection**: noise in both
+directions.
+
+**The actual cause was class imbalance.** 793 articles against 99 listings, so a model
+maximising plain accuracy is simply right more often by calling a doubtful listing an article.
+`class_weight="balanced"`:
+
+```
+              recall before   after
+listing            0.323      0.434
+documentation      0.758      0.813
+forum              0.885      0.903
+product            0.866      0.882
+article            0.961      0.927   <- what pays for it
+accuracy           0.839      0.838
+```
+
+**And recall was not the thing to decide on.** A listing called an article and an article
+called a listing cost different things, so the routed *extraction* score settled it, not the
+confusion matrix: **0.810 -> 0.819**, with listing 0.552 -> 0.628 and **article unchanged at
+0.920**. The 10 articles now misclassified as listings cost nothing measurable. A perfect
+router reaches 0.822, so this takes three quarters of what is available.
+
+**A mistake worth recording: I trained the balanced model and never exported it.** For a
+stretch the *shipped* router was the 68-feature unbalanced one -- 0.323 listing recall, worse
+than the 0.343 the day started with. Training a model and shipping a model are two actions and
+only one of them had been done. Found by checking what was actually in the file rather than
+what I remembered doing.
+
+### D114 -- Everything a crawl reports should answer "and how do you know"
+
+A run reported that two pages failed and nothing more. The next questions are always the
+same -- what linked to them, what was tried, how long it took -- and none of it survived the
+stream being consumed.
+
+**Citations.** `Frontier.origin` now holds a `Discovery` per address: `via`
+(`seed`/`sitemap`/`link`), `found_on`, `anchor`, `depth`. The anchor is what makes it a
+citation rather than a reference: *the words a reader would have clicked* are the only part
+of a link a person can recognise. Anchors key on the **raw** href because that is what the
+page contained; the frontier stores the normalised form, and the two differ by exactly the
+tracking parameters normalisation removes. Kept for the *first* acceptance -- a URL linked
+from twenty pages is one page, and the citation that matters is the one that brought it in.
+
+Verified on Hacker News: `/newest via=link, on /, link text "new"`. And on a site with a
+sitemap: `via=sitemap, found_on <root>`. The root itself records `via=seed`, so every page in
+a crawl has a citation including the one nothing pointed at.
+
+**Traces.** `webgraph.trace` writes one JSON object per event with a run id, a sequence
+number and seconds since the run began. A pass-through generator, so recording cannot change
+what a consumer sees, and *its own failures are swallowed*: a crawl that dies because its
+trace could not be written has been made worse by the thing meant to help it. Page Markdown
+is stripped -- a trace carrying the whole corpus twice is not a trace. The API writes one per
+crawl under `$WEBGRAPH_TRACE_DIR`.
+
+**And a render timeout is not an empty page.** `wait_until="load"` waits for every advert and
+tracker; on an ad-heavy retail page that event may never fire while the document finished long
+before. The document is now read as it stands. *With a guard, because the first version made
+things worse*: reliancedigital.in answers a 288-character document whose entire body is the
+words "stream timeout", and salvaging it produced somebody else's error as the page. A
+salvaged timeout must hold a real page, not an error wearing one's clothes.

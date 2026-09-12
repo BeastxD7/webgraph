@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Benchmark Runs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --ground: #f7f6f3;
+  --panel: #ffffff;
+  --panel-sunk: #f1efea;
+  --line: #ddd9d0;
+  --line-soft: #eae7e0;
+  --ink: #1b1a17;
+  --ink-soft: #55514a;
+  --ink-faint: #8b857b;
+  --accent: #0d6e6e;
+  --accent-soft: #d3e8e6;
+  --live: #1f8f4e;
+  --wait: #b8860b;
+  --rest: #9a948a;
+  --bar-track: #e6e2da;
+  --radius: 3px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #14150f;
+    --panel: #1c1e17;
+    --panel-sunk: #232519;
+    --line: #33362a;
+    --line-soft: #282b20;
+    --ink: #ecebe4;
+    --ink-soft: #b3b0a4;
+    --ink-faint: #7d7a6e;
+    --accent: #4fd1c5;
+    --accent-soft: #1d3b38;
+    --live: #52d67f;
+    --wait: #e0b344;
+    --rest: #6d6a60;
+    --bar-track: #2a2d21;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #14150f;
+  --panel: #1c1e17;
+  --panel-sunk: #232519;
+  --line: #33362a;
+  --line-soft: #282b20;
+  --ink: #ecebe4;
+  --ink-soft: #b3b0a4;
+  --ink-faint: #7d7a6e;
+  --accent: #4fd1c5;
+  --accent-soft: #1d3b38;
+  --live: #52d67f;
+  --wait: #e0b344;
+  --rest: #6d6a60;
+  --bar-track: #2a2d21;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 940px; margin: 0 auto; padding-inline: 20px; padding-block: 36px 64px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px 20px; margin-bottom: 6px; }
+h1 {
+  font-size: 26px; font-weight: 700; letter-spacing: -0.015em;
+  margin: 0; text-wrap: balance;
+}
+.sub { color: var(--ink-soft); margin: 0 0 30px; max-width: 62ch; }
+
+.pulse {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; color: var(--ink-faint); letter-spacing: 0.04em; text-transform: uppercase;
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--live); }
+@media (prefers-reduced-motion: no-preference) {
+  .dot { animation: beat 1.9s ease-in-out infinite; }
+}
+@keyframes beat { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.runs { display: flex; flex-direction: column; gap: 18px; }
+
+.run {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px 16px;
+}
+.run.rest { opacity: 0.72; }
+
+.run-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.run h2 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.state {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+}
+.state.live { color: var(--live); background: color-mix(in srgb, var(--live) 12%, transparent); }
+.state.wait { color: var(--wait); background: color-mix(in srgb, var(--wait) 14%, transparent); }
+.state.live::before {
+  content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; margin-right: 6px; vertical-align: 1px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .state.live::before { animation: beat 1.9s ease-in-out infinite; }
+}
+.state.rest { color: var(--rest); background: color-mix(in srgb, var(--rest) 14%, transparent); }
+.what { color: var(--ink-faint); font-size: 13px; margin: 2px 0 14px; max-width: 64ch; }
+
+.meter { display: flex; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+.phase { font-size: 13px; color: var(--ink-soft); }
+.count {
+  margin-left: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px; color: var(--ink-soft);
+}
+.bar { height: 5px; background: var(--bar-track); border-radius: 99px; overflow: hidden; }
+.fill {
+  height: 100%; background: var(--accent); border-radius: 99px;
+  transition: width 700ms cubic-bezier(.22,.61,.36,1);
+}
+.fill.rest { background: var(--rest); }
+
+.table-scroll { overflow-x: auto; margin-top: 16px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td {
+  text-align: right; padding: 5px 10px;
+  border-bottom: 1px solid var(--line-soft); white-space: nowrap;
+}
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+th {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-faint); border-bottom-color: var(--line);
+}
+td { font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", ui-monospace, monospace; }
+td.name { font-family: "IBM Plex Sans", sans-serif; color: var(--ink-soft); }
+td.best { color: var(--accent); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+
+details { margin-top: 14px; }
+summary {
+  cursor: pointer; font-size: 12px; color: var(--ink-faint);
+  font-family: "IBM Plex Mono", ui-monospace, monospace; letter-spacing: 0.04em;
+}
+summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+pre {
+  margin: 10px 0 0; padding: 11px 13px; background: var(--panel-sunk);
+  border-radius: 2px; overflow-x: auto;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px; line-height: 1.65; color: var(--ink-soft);
+}
+.empty { color: var(--ink-faint); padding: 40px 0; }
+footer {
+  margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--line);
+  color: var(--ink-faint); font-size: 12.5px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Benchmark runs</h1>
+    <span class="pulse"><span class="dot" id="dot"></span><span id="tick">connecting</span></span>
+  </header>
+  <p class="sub">Live view of the extraction benchmarks running on this machine. Scores appear
+  as each corpus finishes, so a run that takes hours reports all the way through instead of
+  only at the end.</p>
+  <div class="runs" id="runs"><p class="empty">Reading logs…</p></div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const runsEl = document.getElementById("runs");
+const tickEl = document.getElementById("tick");
+const dotEl = document.getElementById("dot");
+const footEl = document.getElementById("foot");
+
+const fmt = n => n.toLocaleString("en-US");
+
+function ago(seconds) {
+  if (seconds < 60) return Math.round(seconds) + "s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + "m ago";
+  return (seconds / 3600).toFixed(1) + "h ago";
+}
+
+function columns(rows) {
+  const seen = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row.scores)) {
+      if (!seen.includes(key)) seen.push(key);
+    }
+  }
+  return seen;
+}
+
+function table(rows) {
+  const cols = columns(rows);
+  if (!cols.length) return "";
+  const head = `<tr><th>corpus</th>${cols.map(c => `<th>${c}</th>`).join("")}</tr>`;
+  const body = rows.map(row => {
+    const values = cols.map(c => row.scores[c]);
+    const best = Math.max(...values.filter(v => typeof v === "number"));
+    const cells = cols.map(c => {
+      const v = row.scores[c];
+      if (typeof v !== "number") return "<td>·</td>";
+      return `<td class="${v === best ? "best" : ""}">${v.toFixed(3)}</td>`;
+    }).join("");
+    return `<tr><td class="name">${row.name}</td>${cells}</tr>`;
+  }).join("");
+  return `<div class="table-scroll"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+// A run is in progress until it prints its final table. These runners are silent for ten
+// minutes at a stretch while scoring, so silence is not idleness -- treating it that way
+// reported two working benchmarks as "idle". Only a very long silence means stalled.
+const STALLED_AFTER = 30 * 60;
+
+function card(run) {
+  const stalled = !run.finished && run.stale > STALLED_AFTER;
+  const state = run.finished ? "rest" : stalled ? "wait" : "live";
+  const label = run.finished ? "done" : stalled ? "stalled " + ago(run.stale) : "running";
+  const pct = run.total ? Math.min(100, (run.done / run.total) * 100) : (run.finished ? 100 : 0);
+  const counted = run.total
+    ? `${fmt(run.done)} / ${fmt(run.total)} ${run.unit}`
+    : "";
+  return `
+    <section class="run ${run.finished ? "rest" : ""}">
+      <div class="run-head">
+        <h2>${run.title}</h2>
+        <span class="state ${state}">${label}</span>
+      </div>
+      <p class="what">${run.what || ""}</p>
+      <div class="meter">
+        <span class="phase">${run.phase}${run.corpora ? ` · ${run.corpora}` : ""}</span>
+        <span class="count">${counted}${counted && !run.finished ? ` · ${ago(run.stale)}` : ""}</span>
+      </div>
+      <div class="bar"><div class="fill ${run.finished ? "rest" : ""}" style="width:${pct}%"></div></div>
+      ${run.rows.length ? table(run.rows) : ""}
+      <details>
+        <summary>log tail</summary>
+        <pre>${run.tail.map(t => t.replace(/[<&]/g, c => c === "<" ? "&lt;" : "&amp;")).join("\n")}</pre>
+      </details>
+    </section>`;
+}
+
+async function poll() {
+  try {
+    const res = await fetch("/api/state", { cache: "no-store" });
+    const data = await res.json();
+    runsEl.innerHTML = data.runs.length
+      ? data.runs.map(card).join("")
+      : '<p class="empty">No benchmark logs in that directory yet.</p>';
+    const live = data.runs.filter(r => !r.finished && r.stale <= STALLED_AFTER).length;
+    tickEl.textContent = live ? `${live} running` : "idle";
+    dotEl.style.background = live ? "var(--live)" : "var(--rest)";
+    footEl.textContent =
+      `${data.runs.length} run${data.runs.length === 1 ? "" : "s"} tracked · `
+      + `refreshed ${new Date().toLocaleTimeString("en-US")}`;
+  } catch {
+    tickEl.textContent = "server stopped";
+    dotEl.style.background = "var(--wait)";
+  }
+}
+
+poll();
+setInterval(poll, 1500);
+</script>
+</body>
+</html>

@@ -34,11 +34,18 @@ from webgraph.crawl.discovery import (
     extract_links,
     load_robots,
 )
-from webgraph.crawl.frontier import CrawlScope, Frontier, normalize_url, reconcile_scheme
+from webgraph.crawl.frontier import (
+    CrawlScope,
+    Discovery,
+    Frontier,
+    normalize_url,
+    reconcile_scheme,
+)
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
+from webgraph.pagetype import default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
@@ -199,8 +206,21 @@ class PageExtraction:
     substitute for `markdown`, always an addition to it."""
 
     content_methods: tuple[str, ...] = ()
-    """Which steps produced `content_markdown`: any of `landmarks`, `site-chrome`,
-    `main-content`. Empty when it is empty."""
+    """Which steps produced `content_markdown`: any of `landmarks`, `main-landmark`,
+    `site-chrome`, `block-model`, `main-content`. Empty when it is empty."""
+
+    page_type: str = "unknown"
+    """What kind of page this is, from `webgraph.pagetype`. Reported so a consumer can group
+    a crawl by page type; nothing in extraction branches on it."""
+
+    page_type_confidence: float = 0.0
+
+    page_type_reasons: tuple[tuple[str, float], ...] = ()
+    """Why that type, strongest first: `(what it says, how much it was worth)`. Measured by
+    withholding each signal from the model, not narrated."""
+
+    page_type_runner_up: tuple[str, float] = ("", 0.0)
+    """The type it nearly chose. Most of what "how sure" means is what came second."""
 
     images: tuple[str, ...] = ()
     tables: int = 0
@@ -473,6 +493,9 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         "",
     )
 
+    router = default_router()
+    routing = router.route(document, explain=True) if router is not None else None
+
     return PageExtraction(
         url=document.url,
         document=document,
@@ -483,6 +506,14 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         images=images,
         tables=tables,
         title=heading,
+        page_type=str(routing.page_type) if routing else "unknown",
+        page_type_confidence=round(routing.confidence, 4) if routing else 0.0,
+        page_type_reasons=(
+            tuple((r.says, round(r.weight, 4)) for r in routing.reasons) if routing else ()
+        ),
+        page_type_runner_up=(
+            (routing.runner_up[0], round(routing.runner_up[1], 4)) if routing else ("", 0.0)
+        ),
     )
 
 
@@ -523,8 +554,15 @@ def _content_of(
     """`content_markdown` for one page, and the selection that produced it."""
     if not config.remove_chrome or page.document is None:
         return "", None
+    # The page's own type decides how the boundary is drawn. On a listing this is the whole
+    # result rather than a refinement: Hacker News's front page returns its *footer* under the
+    # prose boundary (1 block of 94, no stories) and all 30 stories under the listing policy,
+    # because a page whose content is links reads as navigation to a prose-seeking selector.
     selection = select_content(
-        page.document.blocks, chrome=chrome, main_content=config.main_content
+        page.document.blocks,
+        chrome=chrome,
+        main_content=config.main_content,
+        config=policy_for(page.page_type),
     )
     if not selection.changed:
         return "", selection
@@ -690,7 +728,7 @@ def stream_site(
     With `max_pages = 0` the crawl is unbounded: it runs until the frontier is exhausted.
     Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
 
-    Events carry a `type`: `stage`, `analysis`, `frontier`, `page`, `warning`, `done`,
+    Events carry a `type`: `stage`, `analysis`, `frontier`, `fetching`, `page`, `warning`, `done`,
     `error`.
 
     `builder`, when supplied, is filled in as pages arrive. It belongs to the caller rather
@@ -756,7 +794,17 @@ def stream_site(
     scope = CrawlScope(root=normalized_root, max_depth=config.discovery_depth)
     frontier = Frontier(scope=scope)
     frontier.mark_seen(normalized_root)
-    seeded = frontier.extend(list(probe.sitemap_pages), 1)
+    # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
+    # citation, including the one the crawl began from.
+    frontier.origin.setdefault(
+        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
+    )
+    # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
+    # citation, including the one the crawl began from.
+    frontier.origin.setdefault(
+        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
+    )
+    seeded = frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
     yield {
         "type": "frontier",
@@ -827,6 +875,17 @@ def stream_site(
                     batch.append(item)
                 if not batch:
                     break
+                # Say what is going out *before* it goes, so a consumer can show work in
+                # flight rather than only work finished. Without this the only observable
+                # events are completions, and a live view can show a history and nothing
+                # else -- there is no way to know a page is being fetched right now.
+                yield {
+                    "type": "fetching",
+                    "urls": [url for url, _ in batch],
+                    "queued": len(frontier),
+                    "extracted": extracted,
+                    "failed": failed,
+                }
                 results = pool.map(work, batch)
 
             for fetched in results:
@@ -859,7 +918,15 @@ def stream_site(
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
                 discovered_here = frontier.extend(
-                    fetched.links, depth + 1, base=fetched.canonical or page.url
+                    fetched.links,
+                    depth + 1,
+                    base=fetched.canonical or page.url,
+                    found_on=page.url,
+                    via="link",
+                    # The words a reader would have clicked. Often the only human-readable
+                    # reason a link was followed, and the difference between "we crawled this
+                    # because something pointed at it" and a citation.
+                    anchors=dict(fetched.anchored),
                 )
 
                 # Chrome is knowable only once several pages exist. Compute it the first
@@ -897,6 +964,15 @@ def stream_site(
                     "type": "page",
                     "index": extracted + failed,
                     "url": page.url,
+                    # How this address entered the crawl: which page, by what method, and
+                    # through which link text. "Could not fetch X" is not actionable without
+                    # it -- the next question is always what pointed at X, and only the
+                    # frontier ever knew.
+                    "citation": (
+                        citation.as_dict()
+                        if (citation := frontier.citation(fetched.requested)) is not None
+                        else None
+                    ),
                     "title": page.title,
                     "ok": page.ok,
                     "error": page.error,
@@ -906,6 +982,15 @@ def stream_site(
                     "content_markdown": content_md,
                     "content_blocks": selection.kept if selection is not None else None,
                     "content_methods": list(selection.methods) if selection is not None else [],
+                    "page_type": page.page_type,
+                    "page_type_confidence": page.page_type_confidence,
+                    "page_type_reasons": [
+                        {"says": says, "weight": weight} for says, weight in page.page_type_reasons
+                    ],
+                    "page_type_runner_up": {
+                        "type": page.page_type_runner_up[0],
+                        "confidence": page.page_type_runner_up[1],
+                    },
                     "blocks": len(page.document.blocks) if page.document is not None else 0,
                     "images": list(page.images),
                     "tables": page.tables,

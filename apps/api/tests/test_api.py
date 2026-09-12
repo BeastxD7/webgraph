@@ -138,6 +138,24 @@ class TestText:
         assert "ld+json" not in body["text"]
         assert "@context" not in body["text"]
 
+    def test_the_page_type_is_reported(self, client: TestClient, server: str) -> None:
+        """The router labels the page; it does not change what is extracted from it."""
+        body = client.post("/api/text", json={"url": f"{server}/ecommerce_jsonld.html"}).json()
+        assert body["page_type"] in {
+            "article", "documentation", "service", "forum",
+            "collection", "listing", "product", "unknown",
+        }
+        assert 0.0 <= body["page_type_confidence"] <= 1.0
+
+    def test_content_selection_names_the_step_that_drew_the_line(
+        self, client: TestClient, server: str
+    ) -> None:
+        body = client.post("/api/text", json={"url": f"{server}/docs_static.html"}).json()
+        methods = body["content_methods"]
+        assert "main-content" not in methods or "block-model" not in methods
+        if methods:
+            assert body["content_blocks"] <= body["page"]["blocks"]
+
 
 class TestErrorHandling:
     def test_unreachable_host_is_502(self, client: TestClient) -> None:
@@ -162,3 +180,63 @@ class TestErrorHandling:
 
     def test_missing_body_field_rejected(self, client: TestClient) -> None:
         assert client.post("/api/extract", json={"url": "https://example.com"}).status_code == 422
+
+
+class TestTextStream:
+    """The streaming single-page endpoint.
+
+    Once the first byte is sent an HTTP status can no longer say anything, so a failure has
+    to arrive as an event. These check that it does, rather than escaping as a 500 halfway
+    through a response nobody can parse.
+    """
+
+    @staticmethod
+    def events(client: TestClient, url: str) -> list[dict]:
+        import json
+
+        with client.stream("POST", "/api/text/stream", json={"url": url}) as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            return [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+
+    def test_a_real_page_streams_stages_then_done(self, client: TestClient, server: str) -> None:
+        got = self.events(client, f"{server}/docs_static.html")
+        assert got[-1]["type"] == "done"
+        stages = [event["stage"] for event in got]
+        for stage in ("resolve", "parse", "classify", "select"):
+            assert stage in stages
+
+    def test_the_done_event_carries_the_page(self, client: TestClient, server: str) -> None:
+        done = self.events(client, f"{server}/docs_static.html")[-1]
+        assert "Configuring retries" in done["text"]
+        assert done["markdown"]
+
+    def test_a_missing_page_arrives_as_an_error_event(self, client: TestClient, server: str) -> None:
+        got = self.events(client, f"{server}/absent.html")
+        assert got[-1]["type"] == "error"
+        assert got[-1]["message"]
+        assert not any(event["type"] == "done" for event in got)
+
+    def test_an_unreachable_host_arrives_as_an_error_event(self, client: TestClient) -> None:
+        got = self.events(client, "http://127.0.0.1:9/nope")
+        assert got[-1]["type"] == "error"
+
+    def test_a_refused_scheme_is_rejected_before_streaming_starts(self, client: TestClient) -> None:
+        """This one *can* be a status code: nothing has been sent yet."""
+        response = client.post("/api/text/stream", json={"url": "file:///etc/passwd"})
+        assert response.status_code in (400, 422)
+
+    def test_the_classifier_reports_whether_it_was_available(
+        self, client: TestClient, server: str
+    ) -> None:
+        classify = next(
+            event
+            for event in self.events(client, f"{server}/docs_static.html")
+            if event["type"] == "classify"
+        )
+        assert isinstance(classify["available"], bool)
+        assert 0.0 <= classify["confidence"] <= 1.0

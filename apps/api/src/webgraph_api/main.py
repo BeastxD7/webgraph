@@ -17,13 +17,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import tempfile
 import threading
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Final, Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,10 +43,13 @@ from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
+from webgraph.page import stream_page
+from webgraph.pagetype import default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
 from webgraph.site import SiteConfig, stream_site
+from webgraph.trace import trace_events
 from webgraph.types import BlockKind, Document, Rect
 
 
@@ -239,10 +246,21 @@ class TextResponse(BaseModel):
     content_methods: list[str] = Field(
         default_factory=list,
         description="Steps that removed something to produce `content_markdown`, in order: "
-        "any of `landmarks`, `main-content`.",
+        "any of `landmarks`, `main-landmark`, `block-model`, `main-content`.",
     )
     content_blocks: int = Field(
         default=0, description="Blocks kept in `content_markdown`, out of `page.blocks`."
+    )
+    page_type: str = Field(
+        default="unknown",
+        description="What kind of page this is, from a trained classifier over URL, payload "
+        "and structure signals: one of `article`, `documentation`, `service`, `forum`, "
+        "`collection`, `listing`, `product`, or `unknown` when no type is confident enough. "
+        "Reported, not acted on -- content selection does not branch on it.",
+    )
+    page_type_confidence: float = Field(
+        default=0.0,
+        description="Probability the classifier assigned to `page_type`, 0.0 when unknown.",
     )
     images: list[str] = Field(default_factory=list, description="Absolute image URLs found")
     tables: int = Field(default=0, description="Tables extracted with their rows intact")
@@ -377,7 +395,13 @@ async def get_text(request: TextRequest) -> TextResponse:
 
     # The same reduction the crawl applies, minus cross-page chrome, which one page cannot
     # know. One function decides what "content" means -- see `webgraph.content`.
-    selection = select_content(document.blocks)
+    router = default_router()
+    routing = router.route(document) if router is not None else None
+    # See `webgraph.site._content_of`: on a listing the page type is the difference between
+    # returning the items and returning the footer.
+    selection = select_content(
+        document.blocks, config=policy_for(routing.page_type if routing else None)
+    )
     content = (
         to_markdown(
             document.model_copy(update={"blocks": tuple(selection.blocks)}),
@@ -394,6 +418,8 @@ async def get_text(request: TextRequest) -> TextResponse:
         content_markdown=content,
         content_methods=list(selection.methods),
         content_blocks=selection.kept,
+        page_type=str(routing.page_type) if routing else "unknown",
+        page_type_confidence=round(routing.confidence, 4) if routing else 0.0,
         images=images,
         tables=tables,
     )
@@ -647,6 +673,75 @@ def _effective_max_pages(requested: int) -> int:
     return PAGE_CAP if requested == 0 else min(requested, PAGE_CAP)
 
 
+TRACE_DIR: Final[Path] = Path(
+    os.environ.get("WEBGRAPH_TRACE_DIR", tempfile.gettempdir())
+) / "webgraph-runs"
+"""Where run traces are written. A temp directory by default: a trace is diagnostic, and a
+server that fills a disk with them by default has replaced one problem with another. Point
+`$WEBGRAPH_TRACE_DIR` somewhere durable to keep them."""
+
+
+def _trace_path(url: str) -> Path:
+    """One file per run, named so it can be found by host and time without an index."""
+    host = re.sub(r"[^a-z0-9.-]+", "-", urlsplit(url).netloc.lower()) or "site"
+    return TRACE_DIR / f"{host}-{time.strftime('%Y%m%dT%H%M%S')}.jsonl"
+
+
+@app.post("/api/text/stream")
+async def text_stream(request: TextRequest) -> StreamingResponse:
+    """One page, streamed stage by stage.
+
+    The same pipeline `/api/text` runs, reported as it happens. Behind a browser render a
+    single page can take ten seconds, and a request that says nothing until it finishes is
+    indistinguishable from one that has hung -- which is why the whole-site crawl has always
+    streamed and this, until now, did not.
+
+    Every failure arrives as an `error` event and closes the stream. Nothing here raises
+    into a half-written response: once the first byte is sent an HTTP status can no longer
+    say anything, so the status is not where failure is reported.
+    """
+    # Checked before a single byte is sent, because after that a status code can no longer
+    # say anything. Everything that can only be discovered *during* the run reports as an
+    # event instead.
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="url must be http or https")
+    guard.check_url(request.url)
+
+    strategy = Strategy.UNION if request.render else Strategy.STATIC_ONLY
+
+    async def generate() -> AsyncIterator[str]:
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+        def produce() -> None:
+            try:
+                for event in trace_events(
+                    stream_page(request.url, strategy=strategy), _trace_path(request.url)
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, dict(event))
+            except Exception as exc:
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    {"type": "error", "stage": "unknown", "message": f"{type(exc).__name__}: {exc}"},
+                )
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        loop.run_in_executor(_crawl_pool, produce)
+
+        while True:
+            event = await queue.get()
+            if event is None:
+                return
+            yield _sse(event)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 def _effective_concurrency(requested: int) -> int:
     """Apply the host's concurrency cap. Unlike pages, 0 is not a meaningful request here."""
     return min(requested, CONCURRENCY_CAP) if CONCURRENCY_CAP else requested
@@ -697,11 +792,19 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
 
             def produce() -> None:
                 try:
-                    for event in stream_site(
-                        request.url,
-                        config=config,
-                        should_stop=stop.is_set,
-                        builder=builder,
+                    # Every run leaves a file behind. The stream is consumed and dropped, so
+                    # without this the only evidence a crawl ever happened is whatever a
+                    # human was looking at -- and the questions that come afterwards ("which
+                    # page linked to the one that failed?") are exactly the ones nobody can
+                    # answer from memory.
+                    for event in trace_events(
+                        stream_site(
+                            request.url,
+                            config=config,
+                            should_stop=stop.is_set,
+                            builder=builder,
+                        ),
+                        _trace_path(request.url),
                     ):
                         if stop.is_set():
                             return

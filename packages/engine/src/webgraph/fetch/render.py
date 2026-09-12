@@ -26,6 +26,7 @@ the contract between the two runtimes is written down exactly once, in `webgraph
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
@@ -55,11 +56,15 @@ __all__ = [
 ]
 
 try:  # pragma: no cover - import guard depends on optional extra
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
 
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:  # pragma: no cover
     PLAYWRIGHT_AVAILABLE = False
+
+    class PlaywrightTimeoutError(Exception):  # type: ignore[no-redef]
+        """Stand-in so the navigation handler below type-checks without the extra."""
 
 
 @cache
@@ -211,6 +216,11 @@ class RenderResult:
     the caller is entitled to know the measured page required a click to exist."""
 
     gate_note: str | None = None
+
+    navigation_note: str | None = None
+    """Set when navigation timed out and the document was read as it stood. The render is
+    still `ok`: a page whose adverts never finished loading is a page, and reporting it as a
+    failure loses it over something that was never the content."""
     """What was observed, when a gate was suspected -- whether or not it opened."""
 
 
@@ -287,6 +297,41 @@ def _open_gate(page: Any) -> tuple[bool, str | None]:
     )
 
 
+class DownloadedInsteadOfPageError(Exception):
+    """The address served a file, not a document.
+
+    Its own type rather than a string match at the call site: a caller deciding whether to
+    retry, escalate or give up needs to tell "this is not a web page" from "the browser
+    broke", and those want opposite responses."""
+
+
+def _is_download(exc: Exception) -> bool:
+    """Whether Playwright refused a navigation because it became a download."""
+    return "download is starting" in str(exc).lower()
+
+
+MIN_SALVAGED_TEXT: Final[int] = 200
+"""Visible characters a timed-out document must hold to count as a page.
+
+Not a tuning knob so much as the line between "slow" and "nothing". A real page that merely
+lost its adverts still has its article; a server error rendered as a document has a sentence.
+"""
+
+
+def _looks_empty(html: str) -> bool:
+    """Whether a salvaged document is a page or an error wearing one's clothes."""
+    body = re.sub(r"<[^>]+>", " ", html)
+    return len(re.sub(r"\s+", " ", body).strip()) < MIN_SALVAGED_TEXT
+
+
+def _timeout_note(exc: Exception, config: RenderConfig) -> str:
+    """One line saying what timed out, for the result rather than for a log nobody reads."""
+    return (
+        f"navigation timed out after {config.timeout_ms} ms waiting for "
+        f"'{config.wait_until}'; read the document as it stood ({type(exc).__name__})"
+    )
+
+
 def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult:
     """Load `url` in a headless browser and measure every visible element."""
     if not PLAYWRIGHT_AVAILABLE:
@@ -337,12 +382,42 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                     ),
                 )
 
-            response = page.goto(url, timeout=config.timeout_ms, wait_until=config.wait_until)
+            navigation_note: str | None = None
+            try:
+                response = page.goto(
+                    url, timeout=config.timeout_ms, wait_until=config.wait_until
+                )
+            except PlaywrightTimeoutError as exc:
+                # A navigation timeout is not an empty page. `wait_until="load"` waits for
+                # every image, advert and tracker a commercial page pulls in, and on an
+                # ad-heavy retail site that event may never fire -- while the document
+                # itself finished long before. Discarding what the browser already has
+                # because a third-party pixel is slow throws away the page over something
+                # that was never the page.
+                #
+                # So the timeout is recorded and the content is read anyway. If the
+                # document really is empty, the emptiness checks below catch it on its own
+                # merits rather than on the timeout's say-so.
+                response = None
+                navigation_note = _timeout_note(exc, config)
+            except Exception as exc:
+                if not _is_download(exc):
+                    raise
+                # The navigation produced a file, not a page. There is nothing to render and
+                # nothing to wait for, so the browser's own message ("Download is starting")
+                # is reported as what it means instead of surfacing a driver error. Seen on
+                # amazon.in, which answers some requests with an attachment.
+                raise DownloadedInsteadOfPageError(
+                    "the server returned a file download rather than a page"
+                ) from exc
             # The browser follows redirects itself, so the address that was checked above
             # is not necessarily the one that answered. Raising here is caught by the
             # handler at the bottom and reported as a failed render.
             if response is not None:
                 guard.check_url(str(response.url))
+            elif navigation_note is not None:
+                # The address may have moved before the timeout; re-check what we landed on.
+                guard.check_url(page.url)
             if config.settle_ms:
                 page.wait_for_timeout(config.settle_ms)
 
@@ -368,6 +443,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             payload = dict(page.evaluate(_script("collect"), marker_arguments()))
             payload["gate_dismissed"] = gate_dismissed
             payload["gate_note"] = gate_note
+            payload["navigation_note"] = navigation_note
             payload["requests"] = requests
             # From the jar, not from the document's own `Set-Cookie`: a cookie written by a
             # third-party script never appears in the main response headers.
@@ -395,6 +471,20 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                 finally:
                     browser.close()
 
+        # A salvaged timeout is only worth keeping if something was salvaged. Measured on
+        # reliancedigital.in, whose server answers a 288-character document whose entire body
+        # is the words "stream timeout": without this the salvage turns that failure into a
+        # success carrying somebody else's error message as the page.
+        salvaged_html = str(payload["html"])
+        if payload.get("navigation_note") and _looks_empty(salvaged_html):
+            return RenderResult(
+                url=url,
+                html="",
+                rects={},
+                ok=False,
+                error=str(payload["navigation_note"]),
+            )
+
         rects = {
             key: Rect(
                 x=float(value["x"]),
@@ -407,7 +497,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
         raw_globals = payload.get("globals") or {}
         return RenderResult(
             url=url,
-            html=str(payload["html"]),
+            html=salvaged_html,
             rects=rects,
             ok=True,
             globals={str(k): str(v) for k, v in raw_globals.items()},
@@ -419,7 +509,13 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             shadow_roots=int(payload.get("shadowRoots") or 0),
             gate_dismissed=bool(payload.get("gate_dismissed")),
             gate_note=payload.get("gate_note") or None,
+            navigation_note=payload.get("navigation_note") or None,
         )
+
+    except DownloadedInsteadOfPageError as exc:
+        # Our own diagnosis, so it is reported as a sentence rather than decorated with a
+        # class name the reader has no use for.
+        return RenderResult(url=url, html="", rects={}, ok=False, error=str(exc))
 
     except Exception as exc:
         return RenderResult(

@@ -44,16 +44,35 @@ BLOCK_TAGS: Final[frozenset[str]] = frozenset({
 stays one block instead of three."""
 
 SKIP_TAGS: Final[tuple[str, ...]] = (
-    "script", "style", "noscript", "template", "svg", "math",
+    "script", "style", "noscript", "template", "svg",
     "iframe", "object", "embed", "audio", "video", "source", "track", "param",
+    "select", "datalist", "textarea",
 )
 """Stripped from the tree before extraction. Their text is never page content -- leaving a
 `<script>` in place makes an ancestor's `text_content()` return JavaScript source.
 
+`select`, `datalist` and `textarea` are form controls whose text is the *choices* a control
+offers, not something the page says. Measured on WCXB dev: 12,985 words of `<option>` text
+across 26 article pages -- a country selector listing 200 countries and currencies, a
+WordPress archive dropdown of every month since 2010, a Google Translate widget naming 100
+languages. Each is a long run of unlinked words, which is precisely what a content selector
+scores highest, so on glossier.com the selector returned the country list *instead of* the
+article (recall 0.06 against a 1.00 ceiling). `<button>` is kept: its label is one or two
+words and occasionally the only text an interstitial has.
+
+`noscript` is stripped here but see `unwrap_noscript_shell`, which runs first and rescues
+the case where it is the *only* place the content exists.
+
 `canvas` is deliberately *not* stripped: it has no readable text either way, but its
-presence is a signal the profiler uses to flag that a vision path is required."""
+presence is a signal the profiler uses to flag that a vision path is required.
+
+`math` used to be here, which meant **every equation on every page was deleted before
+extraction began**. Stripped MathML does not degrade a scientific page, it removes the thing
+the page is about. `replace_math_with_latex` now runs first and rewrites each `<math>` into
+delimited LaTeX, so by the time extraction sees the tree there is no MathML left to strip."""
 
 _WHITESPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
+_WORD: Final[re.Pattern[str]] = re.compile(r"\w+")
 
 
 def normalize_text(value: str | None) -> str:
@@ -72,6 +91,20 @@ unlimited nesting depth.
 """
 
 
+_XML_DECLARATION: Final = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.IGNORECASE)
+
+
+def _without_xml_declaration(html: str) -> str:
+    """Drop a leading `<?xml … encoding="utf-8"?>`.
+
+    XHTML pages served as HTML carry one, and lxml refuses to parse a `str` that declares an
+    encoding -- `ValueError: Unicode strings with encoding declaration are not supported`.
+    The declaration is meaningless here: the text is already decoded. Three WCEB pages died
+    on this, losing the whole document rather than a fragment of it.
+    """
+    return _XML_DECLARATION.sub("", html, count=1)
+
+
 def parse_html(html: str, *, max_bytes: int = MAX_DOCUMENT_BYTES) -> HtmlElement:
     """Parse a document, tolerating the malformed markup that real pages ship.
 
@@ -88,12 +121,133 @@ def parse_html(html: str, *, max_bytes: int = MAX_DOCUMENT_BYTES) -> HtmlElement
         raise ValueError(f"document is {size} bytes, exceeding the {max_bytes} byte limit")
 
     parser = lxml_html.HTMLParser(huge_tree=True, recover=True)
-    root = lxml_html.document_fromstring(html, parser=parser)
+    root = lxml_html.document_fromstring(_without_xml_declaration(html), parser=parser)
     # Shadow content arrives as `<template shadowrootmode>` and must be unwrapped before
     # anything strips `<template>`. Every consumer of a parsed page wants this, so it
     # happens here rather than at each call site.
     flatten_shadow_roots(root)
+    # Likewise a page whose only content is inside `<noscript>` must be unwrapped before
+    # anything strips `<noscript>`.
+    unwrap_noscript_shell(root)
+    # And every `<math>` becomes its LaTeX source before anything can drop it. Order matters
+    # for the same reason: an equation removed here is not recoverable downstream.
+    replace_math_with_latex(root)
     return root
+
+
+def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
+    """Move an element's trailing text onto whatever will still be there once it is gone."""
+    tail = element.tail
+    if not tail:
+        return
+    previous = element.getprevious()
+    if previous is not None:
+        previous.tail = (previous.tail or "") + tail
+    else:
+        parent.text = (parent.text or "") + tail
+
+
+def replace_math_with_latex(root: HtmlElement) -> int:
+    """Rewrite every `<math>` element in place as delimited LaTeX. Returns how many.
+
+    An inline equation becomes a `<span>`, so it travels with the sentence it belongs to:
+    `<p>where <math>…</math> is the input</p>` stays one paragraph reading
+    `where $x_i$ is the input`, which is how a reader meets it and how every corpus in this
+    field annotates it. A `display="block"` equation becomes a `<p>`, and therefore a block of
+    its own, because that is what it is on the page.
+
+    Replacing the element rather than merging its text into a neighbour is deliberate. An
+    earlier version appended the LaTeX to the previous sibling's tail, and a display equation
+    standing alone between two paragraphs vanished, because tail text in that position belongs
+    to no block. A `<math>` nothing could be recovered from is dropped, exactly as before.
+    """
+    from webgraph.dom.math import math_elements, render_math
+
+    replaced = 0
+    for element in math_elements(root):
+        parent = element.getparent()
+        if parent is None:
+            continue
+        latex = render_math(element)
+        if not latex:
+            # Dropping the element must not drop the rest of the sentence with it. lxml keeps
+            # the text that *follows* an element on that element, so removing `<math></math>`
+            # from "Plain <math></math> sentence." silently deleted " sentence." too.
+            _carry_tail(parent, element)
+            parent.remove(element)
+            continue
+        display = (element.get("display") or "").lower() == "block"
+        holder = parent.makeelement("p" if display else "span", {})
+        holder.text = latex
+        holder.tail = element.tail
+        parent.replace(element, holder)
+        replaced += 1
+    return replaced
+
+
+NOSCRIPT_SHELL_MAX_WORDS: Final[int] = 150
+"""A page with fewer visible words than this outside `<noscript>` is a shell."""
+
+NOSCRIPT_CONTENT_MIN_WORDS: Final[int] = 100
+"""And its `<noscript>` must hold at least this many words to count as the content."""
+
+
+def unwrap_noscript_shell(root: HtmlElement) -> int:
+    """Promote `<noscript>` content to ordinary markup when it is all the page has. Returns
+    the number of `<noscript>` elements unwrapped.
+
+    Discourse -- which runs community.openai.com, forum.obsidian.md, users.rust-lang.org,
+    community.home-assistant.io and thousands more -- serves a JavaScript shell whose entire
+    topic, every post, sits inside `<noscript>` for crawlers. `noscript` is in `SKIP_TAGS`
+    because on an ordinary page it holds "please enable JavaScript" and a tracking pixel.
+    Stripping it here stripped the forum: measured on WCXB dev, **19 of 112 forum pages
+    parsed to zero blocks**, each with 1,000-5,600 words of ground truth sitting in the
+    `<noscript>` we had just deleted, and the recall of that text against the ground truth
+    was 1.00 on every one of them.
+
+    The guard is the asymmetry. Unwrapping is only done when the visible page is a shell
+    (under `NOSCRIPT_SHELL_MAX_WORDS`) *and* the `<noscript>` is substantial (over
+    `NOSCRIPT_CONTENT_MIN_WORDS`). On a normal page the visible text is large and the
+    noscript is a sentence, so nothing changes; a page that fails both tests has no content
+    either way.
+    """
+    noscripts = list(root.iter("noscript"))
+    if not noscripts:
+        return 0
+    noscript_words = sum(len(_WORD.findall(n.text_content())) for n in noscripts)
+    if noscript_words < NOSCRIPT_CONTENT_MIN_WORDS:
+        return 0
+    # Visible words: the whole document minus the script, style and noscript subtrees
+    # (outermost only, so a script inside a noscript is not subtracted twice).
+    hidden = root.xpath(
+        "//*[self::script or self::style or self::noscript]"
+        "[not(ancestor::script or ancestor::style or ancestor::noscript)]"
+    )
+    visible = len(_WORD.findall(root.text_content())) - sum(
+        len(_WORD.findall(node.text_content())) for node in hidden
+    )
+    if visible >= NOSCRIPT_SHELL_MAX_WORDS:
+        return 0
+    unwrapped = 0
+    for noscript in noscripts:
+        parent = noscript.getparent()
+        if parent is None:
+            continue
+        # libxml2 parses the *contents* of noscript as markup, so the children are real
+        # elements; where it kept them as text (inside <head>), reparse that text.
+        children = list(noscript)
+        if not children and (noscript.text or "").strip():
+            try:
+                fragment = lxml_html.fragment_fromstring(noscript.text, create_parent="div")
+            except Exception:
+                continue
+            children = [fragment]
+        index = parent.index(noscript)
+        for offset, child in enumerate(children):
+            parent.insert(index + offset, child)
+        parent.remove(noscript)
+        unwrapped += 1
+    return unwrapped
 
 
 SHADOW_TEMPLATE_ATTRIBUTE: Final[str] = "shadowrootmode"

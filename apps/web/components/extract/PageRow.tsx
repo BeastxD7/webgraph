@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 
 import type { PageEvent } from "@/lib/api";
 import { compact } from "@/lib/format";
+import CopyButton from "@/components/ui/CopyButton";
+import { renderMarkdown } from "@/lib/markdown";
+import Citation from "@/components/ui/Citation";
 
 function Highlight({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
@@ -36,6 +39,9 @@ export default function PageRow({
 
   const hasCleanView = Boolean(page.content_markdown);
   const [clean, setClean] = useState(contentOnly);
+  // Two orthogonal questions: *what* to show, and *how*. Kept as separate controls
+  // rather than one four-way switch, because they are not alternatives to each other.
+  const [preview, setPreview] = useState(true);
   const shown = clean && hasCleanView ? page.content_markdown : page.markdown;
   const removed = hasCleanView
     ? 1 - page.content_markdown.length / Math.max(page.markdown.length, 1)
@@ -101,20 +107,75 @@ export default function PageRow({
         </p>
       )}
 
+      {open && !page.ok && (
+        <div className="border-t border-line bg-haze px-4 py-4">
+          {/* A failure is where provenance earns its place. The collapsed row can only fit a
+              truncated message, and the two things needed to act on it -- what went wrong in
+              full, and which page sent the crawl here -- both live below the fold. */}
+          <p className="font-mono text-[12px] break-words text-flag-bad">{page.error}</p>
+          <Citation citation={page.citation} className="mt-2 block" />
+          <a
+            href={page.url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block font-mono text-[11.5px] text-ink-soft underline underline-offset-2 hover:text-ink"
+          >
+            open {page.url.replace(/^https?:\/\//, "")}
+          </a>
+        </div>
+      )}
+
       {open && page.ok && (
         <div className="border-t border-line bg-haze px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <a
-              href={page.url}
-              target="_blank"
-              rel="noreferrer"
-              className="truncate font-mono text-[12px] text-ink-soft underline underline-offset-2 hover:text-ink"
-            >
-              {page.url}
-            </a>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <a
+                href={page.url}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate font-mono text-[12px] text-ink-soft underline underline-offset-2 hover:text-ink"
+              >
+                {page.url}
+              </a>
+              {/* Where this came from. On a failure it is the only actionable fact. */}
+              <Citation citation={page.citation} className="truncate" />
+            </span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {page.page_type && page.page_type !== "unknown" && (
+                <span
+                  className="rounded-full bg-sunk px-2.5 py-1 font-mono text-[11px] text-ink-soft"
+                  title={`Classifier confidence ${Math.round(page.page_type_confidence * 100)}%`}
+                >
+                  {page.page_type}
+                </span>
+              )}
+              {/* Copies exactly what is on screen: switching the toggle changes what you get,
+                  which is the only behaviour that is not surprising. */}
+              <CopyButton text={shown} label={clean && hasCleanView ? "Copy content" : "Copy page"} />
+              <div role="group" aria-label="How to show it" className="flex rounded-full bg-sunk p-0.5">
+                {[
+                  { id: true, label: "Preview" },
+                  { id: false, label: "Markdown" },
+                ].map((option) => (
+                  <button
+                    key={String(option.id)}
+                    type="button"
+                    aria-pressed={preview === option.id}
+                    onClick={() => setPreview(option.id)}
+                    className={
+                      preview === option.id
+                        ? "rounded-full bg-surface px-3 py-1 text-[12px] font-bold shadow-sm"
+                        : "rounded-full px-3 py-1 text-[12px] font-semibold text-ink-soft"
+                    }
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
 
             {hasCleanView && (
-              <div role="group" aria-label="Markdown view" className="flex rounded-full bg-sunk p-0.5">
+              <div role="group" aria-label="What to show" className="flex rounded-full bg-sunk p-0.5">
                 {[
                   { id: true, label: "Content only" },
                   { id: false, label: "Full page" },
@@ -135,6 +196,7 @@ export default function PageRow({
                 ))}
               </div>
             )}
+            </div>
           </div>
 
           {page.images.length > 0 && (
@@ -153,9 +215,15 @@ export default function PageRow({
             </div>
           )}
 
-          <pre className="mt-3 max-h-96 overflow-auto rounded-xl border border-line bg-surface p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
-            {shown}
-          </pre>
+          {preview ? (
+            <div className="mt-3 max-h-96 overflow-auto rounded-xl border border-line bg-surface px-4 py-3 text-[14px]">
+              {renderMarkdown(shown)}
+            </div>
+          ) : (
+            <pre className="mt-3 max-h-96 overflow-auto rounded-xl border border-line bg-surface p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">
+              {shown}
+            </pre>
+          )}
         </div>
       )}
     </li>

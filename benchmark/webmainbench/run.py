@@ -151,6 +151,7 @@ from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 from urllib.parse import urlsplit
@@ -318,6 +319,53 @@ def main_content_selector() -> Any:
     return select_main_content
 
 
+@lru_cache(maxsize=1)
+def _model() -> Any:
+    """The shipped block model, or None if this tree ships none."""
+    try:
+        from webgraph.blockmodel import BlockModel
+    except ImportError:
+        return None
+    return BlockModel.load()
+
+
+_STRUCT: Final[frozenset[str]] = frozenset({"table", "code"})
+"""Kinds worth re-inserting into the model's span: content whose value is its structure and
+whose word count is small, so a bag-of-words metric can see neither its loss nor its return."""
+
+
+def _reduced(blocks: list[Any]) -> list[Any]:
+    """The block list the model scores: `select_content`'s steps up to the last one."""
+    from webgraph.boilerplate import scope_to_main, strip_landmarks
+
+    return scope_to_main(strip_landmarks(list(blocks)))
+
+
+def _filled(blocks: list[Any], model: Any, kinds: frozenset[str] | None) -> list[Any]:
+    """The model's keeps, plus the blocks it skipped *inside* the span it kept.
+
+    `kinds=None` fills every skipped block (the contiguous hull); a set of kind names fills
+    only those. Nothing outside the span is added, so this cannot resurrect a footer. Same
+    fail-open guard as `select_by_model`: too little kept and the whole list comes back.
+    """
+    from webgraph.main_content import word_count
+
+    if not blocks:
+        return []
+    probabilities = model.score(blocks)
+    keep = {i for i, p in enumerate(probabilities) if p >= model.threshold}
+    if not keep:
+        return list(blocks)
+    lo, hi = min(keep), max(keep)
+    keep |= {
+        i for i in range(lo, hi + 1) if kinds is None or blocks[i].kind.value in kinds
+    }
+    total = sum(word_count(b.text) for b in blocks)
+    if total and sum(word_count(blocks[i].text) for i in keep) < total * model.min_share:
+        return list(blocks)
+    return [blocks[i] for i in sorted(keep)]
+
+
 def extract(record: dict, *, links: bool = False) -> PageOutcome:
     """Parse one cached page and derive every variant from the single parse."""
     from webgraph.boilerplate import strip_landmarks
@@ -326,7 +374,12 @@ def extract(record: dict, *, links: bool = False) -> PageOutcome:
     track_id = record["track_id"]
     host = urlsplit(record.get("url") or "").netloc
     select = main_content_selector()
+    model = _model()
     names = (*VARIANTS, "main-content") if select else VARIANTS
+    if select:
+        names = (*names, "boundary") + (
+            ("model", "model+struct", "model+fill") if model is not None else ()
+        )
     empty = dict.fromkeys(names, "")
     try:
         document = build_document(record["html"], record.get("url") or "https://example.invalid/")
@@ -347,6 +400,34 @@ def extract(record: dict, *, links: bool = False) -> PageOutcome:
         # tuned as on Zyte. Running the selector over the raw list makes it re-derive
         # nav/footer removal from link density alone, which is a different system.
         texts["main-content"] = markdown(document, select(kept), links=links)
+        # The production path with each of its two possible last steps. `model=None` asks
+        # for the contiguous boundary explicitly, which matters because `select_content`
+        # defaults to the model: without the argument both columns would be the model.
+        from webgraph.content import select_content
+
+        texts["boundary"] = markdown(
+            document, select_content(blocks, model=None).blocks, links=links
+        )
+        if model is not None:
+            texts["model"] = markdown(
+                document, select_content(blocks, model=model).blocks, links=links
+            )
+            # Two candidate repairs for what this benchmark says the model gets wrong.
+            #
+            # The model keeps blocks one at a time and so leaves *holes*: about 10% of the
+            # blocks that are ground truth get dropped, scattered through the page. A
+            # bag-of-words metric barely notices -- the missing words cost a little recall
+            # and the dropped noise buys precision back. An edit distance notices every one,
+            # because a gap in the middle of an article is an alignment penalty. That is the
+            # shape of the loss here, and it is present on prose-only pages too, so it is
+            # not a story about tables.
+            #
+            # `model+fill` is the contiguous hull: everything between the first and last
+            # block the model kept. `model+struct` fills only tables and code, which on WCXB
+            # dev out of fold costs nothing (0.839 -> 0.840) where the full hull costs 0.024.
+            scored = _reduced(blocks)
+            texts["model+struct"] = markdown(document, _filled(scored, model, _STRUCT), links=links)
+            texts["model+fill"] = markdown(document, _filled(scored, model, None), links=links)
     return PageOutcome(
         track_id=track_id,
         texts=texts,
@@ -787,7 +868,7 @@ def rouge_full(corpus: Path, dataset: Path, *, limit: int | None, stride: int) -
     from webmainbench.metrics.text_metrics import TextRougeNgramMetric
 
     metric = TextRougeNgramMetric("rouge_n", {"ngram": 5})
-    scores: dict[str, list[float]] = {name: [] for name in VARIANTS}
+    scores: dict[str, list[float]] = {}
     by_level: dict[str, list[float]] = {}
     seen = 0
     with dataset.open(encoding="utf-8") as handle:
@@ -799,9 +880,12 @@ def rouge_full(corpus: Path, dataset: Path, *, limit: int | None, stride: int) -
             if not truth.strip():
                 continue
             outcome = extract(record)
-            for name in VARIANTS:
-                scores[name].append(
-                    metric.calculate(predicted=outcome.texts[name], groundtruth=truth).score
+            # Every variant the extractor produced, not just the three base ones: scoring
+            # `VARIANTS` here meant `main-content` -- the engine's strongest variant by far
+            # on every other corpus -- was silently absent from the full-set table.
+            for name, text in outcome.texts.items():
+                scores.setdefault(name, []).append(
+                    metric.calculate(predicted=text, groundtruth=truth).score
                 )
             level = record.get("meta", {}).get("level", "?")
             by_level.setdefault(level, []).append(scores["landmarks"][-1])
@@ -819,8 +903,8 @@ def rouge_full(corpus: Path, dataset: Path, *, limit: int | None, stride: int) -
     print("A DIFFERENT metric and a different ground-truth field from the 545 table above.")
     print("Metric imported from the corpus; pipeline NOT identical to the paper's (no")
     print("html2text normalisation, which the published eval_baselines.py applies).\n")
-    for name in VARIANTS:
-        print(f"  webgraph {name:<12} {mean(scores[name]):.4f}")
+    for name, values in scores.items():
+        print(f"  webgraph {name:<14} {mean(values):.4f}")
     print("\n  by annotator difficulty (landmarks variant)")
     for level, values in sorted(by_level.items()):
         print(f"  {level:<12} {len(values):>5}  {mean(values):.4f}")
