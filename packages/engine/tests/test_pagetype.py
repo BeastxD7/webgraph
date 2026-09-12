@@ -74,7 +74,8 @@ class TestPolicy:
             assert policy_for(kind).group_repeats == "all"
         for kind in (PageType.ARTICLE, PageType.FORUM, PageType.UNKNOWN, None):
             assert policy_for(kind) == MainContentConfig()
-        assert policy_for(PageType.PRODUCT) == MainContentConfig(product_sheet=True)
+        assert policy_for(PageType.PRODUCT) == MainContentConfig(product_sheet=True, min_run_share=0.25)
+        assert policy_for(PageType.COLLECTION).min_run_share == 0.25
 
     def test_string_types_are_accepted(self) -> None:
         assert policy_for("listing").group_repeats == "all"

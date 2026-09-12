@@ -786,6 +786,14 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     forum           off          0.733 -> 0.713
     ```
 
+    Product and collection pages also refuse a run under a quarter of the page's words
+    (`min_run_share` 0.25 against the default 0.02) and return everything that survived
+    the structural steps instead: a spec sheet or a grid of short lines never forms a run
+    the boundary can believe in, and on lttlabs.com the boundary kept three blocks of a
+    308-word review. Measured: product 0.6135 -> 0.6228, collection 0.6852 -> 0.6909,
+    listing unchanged; on articles the same setting gains 0.0008 on WCXB and loses 0.004
+    on Zyte, so it stays type-specific.
+
     Product pages get `product_sheet` instead (D103): the sections about *other* things --
     reviews, "you may also like", Q&A -- are dropped by their headings, related-product
     grids and review lists by their shape, and `Label: value` specification lines are kept
@@ -793,8 +801,10 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     (0.597 without the spec floor, 0.598 without the group prune).
     """
     kind = PageType(page_type) if page_type else PageType.UNKNOWN
-    if kind in (PageType.LISTING, PageType.COLLECTION, PageType.SERVICE, PageType.DOCUMENTATION):
+    if kind is PageType.COLLECTION:
+        return MainContentConfig(group_repeats="all", group_min_share=0.3, min_run_share=0.25)
+    if kind in (PageType.LISTING, PageType.SERVICE, PageType.DOCUMENTATION):
         return MainContentConfig(group_repeats="all", group_min_share=0.3)
     if kind is PageType.PRODUCT:
-        return MainContentConfig(product_sheet=True)
+        return MainContentConfig(product_sheet=True, min_run_share=0.25)
     return MainContentConfig()
