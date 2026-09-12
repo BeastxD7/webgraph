@@ -708,6 +708,17 @@ class PageTypeRouter:
         best = max(probabilities, key=lambda c: probabilities[c])
         confidence = probabilities[best]
         page_type = PageType(best) if confidence >= self.min_confidence else PageType.UNKNOWN
+
+        stated = platform_page_type(document)
+        if stated is not None:
+            # The platform's own word outranks a statistical guess about it.
+            page_type, reason = stated
+            return Routing(
+                page_type=page_type,
+                confidence=max(confidence, PLATFORM_CONFIDENCE),
+                probabilities=probabilities,
+                reasons=(Reason(feature="platform", says=reason, weight=1.0),) if explain else (),
+            )
         return Routing(
             page_type=page_type,
             confidence=confidence,
@@ -716,6 +727,35 @@ class PageTypeRouter:
             # for a type it declined to commit to, which is worse than none.
             reasons=self.explain(features, best) if explain and page_type is not PageType.UNKNOWN else (),
         )
+
+
+PLATFORM_CONFIDENCE: Final[float] = 0.9
+"""What a platform's own statement of a page's kind is worth. Not 1.0: the statement is
+about the namespace, not the page, and a wiki's main namespace also holds disambiguation
+pages and redirects."""
+
+
+def platform_page_type(document: Document) -> tuple[PageType, str] | None:
+    """The page type the platform itself states in its markup, or None.
+
+    The router is trained on WCXB, whose "article" is news and blog posts. An encyclopedia
+    article -- long, table-heavy, dense with internal links, a contents list at the top --
+    looks like nothing in that corpus, and the router answered `unknown` for
+    en.wikipedia's "Computer" and `listing` for the Hebrew and Arabic versions. MediaWiki
+    writes the namespace on the body (`ns-0` is content; `ns-14` is a category, `ns-2` a
+    user page) and names itself in `<meta name="generator">`, and that runs across every
+    Wikipedia, Wiktionary and Fandom wiki: hundreds of millions of pages that say what
+    they are. Read the statement.
+    """
+    markup = document.markup
+    generator = markup.generator.lower()
+    classes = set(markup.body_classes)
+    if generator.startswith("mediawiki"):
+        if "ns-0" in classes:
+            return PageType.ARTICLE, "a MediaWiki page in the main namespace is an article"
+        if "ns-14" in classes:
+            return PageType.LISTING, "a MediaWiki category page lists its members"
+    return None
 
 
 @lru_cache(maxsize=1)

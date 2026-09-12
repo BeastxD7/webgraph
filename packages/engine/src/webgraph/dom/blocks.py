@@ -25,6 +25,7 @@ NOSCRIPT_CONTENT_MIN_WORDS = config.NOSCRIPT_CONTENT_MIN_WORDS
 
 __all__ = [
     "BLOCK_TAGS",
+    "HEADING_CONTROL_CLASSES",
     "PERMALINK_CLASSES",
     "RTL_LANGUAGES",
     "RTL_SCRIPTS",
@@ -349,24 +350,37 @@ heading would also mutilate the ones that legitimately end in one.
 """
 
 
+HEADING_CONTROL_CLASSES: Final[tuple[str, ...]] = ("mw-editsection",)
+"""Class names of the control strip beside a heading that is not an anchor.
+
+MediaWiki puts `<span class="mw-editsection">[edit | edit source]</span>` beside every
+section heading of every Wikipedia, Wiktionary and Fandom page. Two links and two
+brackets, and once per section: measured on ar.wikipedia's "حاسوب", 49 of them, each a
+paragraph of its own in the Markdown right before the heading it belongs to.
+"""
+
+
 def strip_permalinks(root: HtmlElement) -> None:
-    """Drop the permalink anchors documentation generators attach to headings."""
+    """Drop the permalink anchors documentation generators attach to headings, and the
+    edit-section controls a wiki does."""
     permalinks = set(PERMALINK_CLASSES)
-    for anchor in root.xpath(".//a[@class]"):
-        if not set((anchor.get("class") or "").lower().split()) & permalinks:
+    controls = set(HEADING_CONTROL_CLASSES)
+    for element in root.xpath(".//*[@class]"):
+        classes = set((element.get("class") or "").lower().split())
+        if not ((element.tag == "a" and classes & permalinks) or classes & controls):
             continue
-        parent = anchor.getparent()
+        parent = element.getparent()
         if parent is None:
             continue
         # Keep the tail: a permalink is often followed by whitespace separating the heading
         # from what comes after it.
-        if anchor.tail:
-            previous = anchor.getprevious()
+        if element.tail:
+            previous = element.getprevious()
             if previous is not None:
-                previous.tail = (previous.tail or "") + anchor.tail
+                previous.tail = (previous.tail or "") + element.tail
             else:
-                parent.text = (parent.text or "") + anchor.tail
-        parent.remove(anchor)
+                parent.text = (parent.text or "") + element.tail
+        parent.remove(element)
 
 
 RTL_LANGUAGES: Final[frozenset[str]] = frozenset({

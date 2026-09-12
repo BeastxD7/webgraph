@@ -152,3 +152,48 @@ class TestConfidenceFloor:
         router = PageTypeRouter(self.flat_model(), min_confidence=0.0)
         routing = router.route(build_document("<html><body><p>x</p></body></html>", "https://x.test/"))
         assert routing.page_type is not PageType.UNKNOWN
+
+
+class TestPlatformStatement:
+    """A platform that writes the page's kind into its markup outranks the statistical guess.
+    en.wikipedia's "Computer" routed `unknown` (0.23) and the Hebrew and Arabic versions
+    `listing` (0.60, 0.69): WCXB's articles are news and blogs, and an encyclopedia article
+    looks like none of them."""
+
+    @staticmethod
+    def wiki(namespace: int, rows: int = 40) -> str:
+        table = "".join(f"<tr><td>Country {i}</td><td>{i * 1000}</td></tr>" for i in range(rows))
+        return (
+            '<html><head><meta name="generator" content="MediaWiki 1.45.0-wmf.20"></head>'
+            f'<body class="skin-vector ns-{namespace} ns-subject mw-editable"><main>'
+            f"<h1>Computer</h1><p>{PROSE}1.</p><table>{table}</table></main></body></html>"
+        )
+
+    def test_main_namespace_is_an_article(self) -> None:
+        from webgraph.pagetype import PLATFORM_CONFIDENCE, platform_page_type
+
+        document = build_document(self.wiki(0), "https://en.wikipedia.org/wiki/Computer")
+        assert document.markup.generator.startswith("MediaWiki")
+        assert "ns-0" in document.markup.body_classes
+        stated = platform_page_type(document)
+        assert stated is not None and stated[0] is PageType.ARTICLE
+        router = PageTypeRouter.load()
+        if router is None:
+            return
+        routed = router.route(document, explain=True)
+        assert routed.page_type is PageType.ARTICLE
+        assert routed.confidence >= PLATFORM_CONFIDENCE
+        assert routed.reasons and routed.reasons[0].feature == "platform"
+
+    def test_category_namespace_is_a_listing(self) -> None:
+        from webgraph.pagetype import platform_page_type
+
+        document = build_document(self.wiki(14), "https://en.wikipedia.org/wiki/Category:Computers")
+        stated = platform_page_type(document)
+        assert stated is not None and stated[0] is PageType.LISTING
+
+    def test_other_platforms_say_nothing(self) -> None:
+        from webgraph.pagetype import platform_page_type
+
+        html = '<html><head><meta name="generator" content="WordPress 6.6"></head><body class="single-post"><p>x</p></body></html>'
+        assert platform_page_type(build_document(html, "https://example.test/")) is None

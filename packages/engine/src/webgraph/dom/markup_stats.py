@@ -51,6 +51,10 @@ _SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_]+|(?<=[a-z])(?=[A-Z])|-+")
 Hyphenated compounds are also kept whole where a bucket names them (`add-to-cart`)."""
 
 
+_MAX_GENERATOR_CHARS: Final[int] = 80
+_MAX_BODY_CLASSES: Final[int] = 40
+
+
 def markup_stats(root: HtmlElement) -> MarkupStats:
     """Count the tree once. Linear in the number of elements; no XPath, no allocation per node
     beyond the token split."""
@@ -61,6 +65,9 @@ def markup_stats(root: HtmlElement) -> MarkupStats:
     itemprops = 0
     rel_next = False
 
+    generator = ""
+    body_classes: tuple[str, ...] = ()
+
     for element in root.iter():
         tag = element.tag
         if not isinstance(tag, str):
@@ -69,6 +76,10 @@ def markup_stats(root: HtmlElement) -> MarkupStats:
         tags[tag] += 1
         attrib = element.attrib
         classes = attrib.get("class")
+        if tag == "meta" and (attrib.get("name") or "").lower() == "generator":
+            generator = (attrib.get("content") or "").strip()[:_MAX_GENERATOR_CHARS]
+        elif tag == "body" and classes and not body_classes:
+            body_classes = tuple(classes.lower().split()[:_MAX_BODY_CLASSES])
         if classes:
             lowered = classes.lower()
             for token in _SPLIT.split(lowered):
@@ -97,4 +108,6 @@ def markup_stats(root: HtmlElement) -> MarkupStats:
         rel_next=rel_next,
         itemprop_count=itemprops,
         data_attr_share=round(with_data * per_100, 4),
+        generator=generator,
+        body_classes=body_classes,
     )

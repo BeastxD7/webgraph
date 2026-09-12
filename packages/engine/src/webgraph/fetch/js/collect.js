@@ -2,6 +2,7 @@
   const MARKER = markers.marker;
   const BREAK = markers.brk;
   const HIDDEN = markers.hidden;
+  const FLOAT = markers.float;
   const rects = {};
   let counter = 0;
 
@@ -57,6 +58,10 @@
     // and a control the reader cannot see (a copy button shown on hover) from one they can.
     // The value says how it is hidden; opacity 0 is kept apart because content faded in by
     // a scroll animation also starts there and must not be treated as absent.
+    // A float is beside the flow, not in it; the parser keeps what is inside one together.
+    const floated = style.cssFloat || style.float;
+    if (floated === 'left' || floated === 'right') el.setAttribute(FLOAT, floated);
+
     if (style.display === 'none') { el.setAttribute(HIDDEN, 'display'); continue; }
     if (style.visibility === 'hidden') { el.setAttribute(HIDDEN, 'visibility'); continue; }
     if (style.opacity === '0') { el.setAttribute(HIDDEN, 'opacity'); continue; }

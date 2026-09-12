@@ -17,6 +17,7 @@ from typing import Final
 
 __all__ = [
     "BREAK_ATTRIBUTE",
+    "FLOAT_ATTRIBUTE",
     "GATE_ATTRIBUTE",
     "HIDDEN_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
@@ -38,6 +39,14 @@ markup. Absent on a static fetch, where `flowed_text` then behaves exactly as `t
 did: a page nobody rendered gets no layout claims. Stamped by `fetch/js/collect.js`."""
 
 GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
+
+FLOAT_ATTRIBUTE: Final[str] = "data-wg-float"
+"""Stamped by the renderer on elements the browser floats, with the value `left` or `right`.
+
+A float is taken out of the flow and text wraps around it, so the blocks inside one -- an
+image and its caption, an infobox and its rows -- sit *beside* the paragraphs rather than
+between them. Geometry alone then zips them with the paragraphs. The mark says which
+blocks belong to a float, so they can be read as one thing."""
 
 HIDDEN_ATTRIBUTE: Final[str] = "data-wg-hidden"
 """Stamped by the renderer on elements the browser is not showing.
@@ -65,4 +74,5 @@ def marker_arguments() -> dict[str, str]:
         "brk": BREAK_ATTRIBUTE,
         "gate": GATE_ATTRIBUTE,
         "hidden": HIDDEN_ATTRIBUTE,
+        "float": FLOAT_ATTRIBUTE,
     }

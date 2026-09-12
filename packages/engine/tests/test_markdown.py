@@ -235,6 +235,19 @@ class TestPermalinkAnchors:
     def test_a_heading_that_really_ends_in_a_hash_survives(self) -> None:
         assert "# The C# language" in md("<h1>The C# language</h1>")
 
+    def test_mediawiki_edit_section_removed(self) -> None:
+        out = md(
+            '<div class="mw-heading mw-heading2"><h2 id="History">History</h2>'
+            '<span class="mw-editsection"><span class="mw-editsection-bracket">[</span>'
+            '<a href="/w/index.php?action=edit&section=1">edit</a>'
+            '<span class="mw-editsection-divider"> | </span>'
+            '<a href="/w/index.php?action=edit&section=1">edit source</a>'
+            '<span class="mw-editsection-bracket">]</span></span></div>'
+            "<p>The first computers were people who computed.</p>"
+        )
+        assert "## History" in out
+        assert "edit source" not in out
+
     def test_ordinary_links_in_headings_are_untouched(self) -> None:
         out = md('<h2><a href="/a">Section</a></h2>')
         assert "[Section](https://example.com/a)" in out
