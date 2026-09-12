@@ -98,6 +98,9 @@ def _script(name: str) -> str:
 @dataclass(frozen=True, slots=True)
 class RenderResult:
     url: str
+    """The address the browser ended on, after redirects. Relative links resolve against
+    this, and a crawl's scope is judged against its host."""
+
     html: str
     """Serialised *after* marker attributes were stamped, so the markers are present."""
 
@@ -383,6 +386,12 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                     page.wait_for_timeout(config.settle_ms or 500)
 
             payload = dict(page.evaluate(_script("collect"), marker_arguments()))
+            # The address the browser *landed on*, not the one it was given. A short link
+            # (amzn.in/d/...) redirects to the real host, and every relative link on the page
+            # resolves against the real host. Reporting the requested address resolved them
+            # all against the short-link domain, the crawl's scope rejected every one as
+            # off-site, and a whole-site crawl of Amazon discovered exactly one page.
+            payload["landed_url"] = page.url if page.url.startswith(("http://", "https://")) else url
             payload["gate_dismissed"] = gate_dismissed
             payload["gate_note"] = gate_note
             payload["navigation_note"] = navigation_note
@@ -438,7 +447,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
         }
         raw_globals = payload.get("globals") or {}
         return RenderResult(
-            url=url,
+            url=str(payload.get("landed_url") or url),
             html=salvaged_html,
             rects=rects,
             ok=True,

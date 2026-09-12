@@ -195,3 +195,40 @@ class TestRenderFailure:
         assert result.error is not None
         assert "about" not in result.error.lower() or "never started" in result.error
         assert "never started" in result.error
+
+    def test_the_result_reports_where_the_browser_landed(self) -> None:
+        """A short link redirects to the real host, and every relative link on the page
+        resolves against the real host. Reporting the requested address resolved them all
+        against the short-link domain, the crawl's scope rejected every one, and a whole-site
+        crawl of Amazon through amzn.in discovered exactly one page."""
+        import http.server
+        import threading
+
+        class Redirecting(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                if self.path == "/short":
+                    self.send_response(302)
+                    self.send_header("Location", "/real/page")
+                    self.end_headers()
+                    return
+                body = b"<html><body><h1>Landed</h1><a href='/other'>other</a></body></html>"
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:  # noqa: ARG002
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirecting)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            result = render_page(f"{base}/short", config=RenderConfig(timeout_ms=10_000))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        assert result.ok
+        assert result.url == f"{base}/real/page"
