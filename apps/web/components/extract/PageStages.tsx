@@ -80,11 +80,7 @@ export default function PageStages({ run }: { run: PageRun }) {
       title: copy.title,
       description: copy.does,
       state: failed ? "failed" : finished ? "done" : "running",
-      status: failed
-        ? "Failed"
-        : finished
-          ? `Completed in ${duration}`
-          : `In progress · ${duration}`,
+      duration,
       children: (
         <>
           {stage === "resolve" && run.resolve && (
@@ -196,7 +192,6 @@ export default function PageStages({ run }: { run: PageRun }) {
     steps.push({
       id: "transport",
       title: "The request did not complete",
-      status: "Failed before the engine could say where",
       state: "failed",
       children: (
         <p className="mt-2 rounded-md bg-flag-bad/8 px-3 py-2 font-mono text-[12px] leading-relaxed break-words text-flag-bad">
