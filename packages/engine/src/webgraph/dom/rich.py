@@ -925,6 +925,26 @@ def _is_control(button: HtmlElement) -> bool:
     return button.get(HIDDEN_ATTRIBUTE) is not None
 
 
+_MAX_CODE_HEADER_WORDS: Final[int] = 4
+
+
+def _is_code_header(element: HtmlElement, text: str) -> bool:
+    """Whether this is the strip above a code block: a language label and a copy button.
+
+    MDN renders every example as `<div class="example-header"><span>js</span>
+    <button>Copy</button></div><pre>...`, and "js Copy" arrived as a paragraph before each
+    of the eleven examples on Array.prototype.reduce(). The strip is the element directly
+    before a `<pre>` with no more than a few words in it; a caption or a sentence
+    introducing the code is longer, and stays.
+    """
+    if not 0 < len(text.split()) <= _MAX_CODE_HEADER_WORDS:
+        return False
+    following = element.getnext()
+    while following is not None and not isinstance(following.tag, str):
+        following = following.getnext()
+    return following is not None and following.tag == "pre"
+
+
 def _last_descendant(element: HtmlElement) -> HtmlElement:
     """The element `root.iter()` visits last inside `element` -- `element` itself if none."""
     last = element
@@ -1091,6 +1111,11 @@ def extract_rich_blocks(
                 )
 
         elif tag in _TEXT_CONTAINERS:
+            if _is_code_header(element, normalize_text(flowed_text(element))):
+                # The strip above a code block -- language label, copy button -- with
+                # everything in it, however the button is nested.
+                consumed.update(element.iterdescendants())
+                continue
             # Innermost rule: only emit when no descendant is itself a block, so a wrapper
             # div never swallows a whole column.
             has_block_descendant = any(
