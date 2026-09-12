@@ -24,7 +24,7 @@ from lxml.html import HtmlElement
 
 from webgraph import config
 from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
-from webgraph.markers import BREAK_ATTRIBUTE, HIDDEN_ATTRIBUTE
+from webgraph.markers import BREAK_ATTRIBUTE, FLOAT_ATTRIBUTE, HIDDEN_ATTRIBUTE
 from webgraph.types import Block, BlockKind
 
 LONG_CELL_CHARS = config.LONG_CELL_CHARS
@@ -950,6 +950,7 @@ def extract_rich_blocks(
     index = 0
     consumed: set[HtmlElement] = set()
     landmark_cache: dict[HtmlElement, tuple[str | None, bool]] = {}
+    float_cache: dict[HtmlElement, HtmlElement | None] = {}
     # A container's own text, held until the walk reaches the child block it precedes (or
     # the container's last descendant, for text after every child), so the block lands
     # where the reader meets it. See `_orphan_runs`.
@@ -963,6 +964,9 @@ def extract_rich_blocks(
         region, in_main = _landmarks_of(element, landmark_cache)
         if region is not None or in_main:
             block = block.model_copy(update={"region": region, "in_main": in_main})
+        floated = _float_of(element, float_cache)
+        if floated is not None:
+            block = block.model_copy(update={"float_of": tree.getpath(floated)})
         blocks.append(block)
         index += 1
 
@@ -1149,6 +1153,23 @@ def _landmark_of_element(element: HtmlElement) -> str | None:
     if role in _LANDMARK_ROLES:
         return _LANDMARK_ROLES[role]
     return _LANDMARK_TAGS.get(tag)
+
+
+def _float_of(
+    element: HtmlElement, cache: dict[HtmlElement, HtmlElement | None]
+) -> HtmlElement | None:
+    """The outermost floated ancestor-or-self, memoised; None when nothing above floats.
+
+    Outermost, so that a float inside a float -- an image floated within a floated
+    infobox -- is one thing, not two. Absent on a static fetch, where nothing is marked."""
+    if element in cache:
+        return cache[element]
+    parent = element.getparent()
+    above = _float_of(parent, cache) if parent is not None else None
+    own = element if element.get(FLOAT_ATTRIBUTE) is not None else None
+    result = above if above is not None else own
+    cache[element] = result
+    return result
 
 
 def _landmarks_of(

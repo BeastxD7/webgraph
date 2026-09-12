@@ -413,3 +413,27 @@ class TestGutterRail:
         assert _line_unit([]) == 16.0
         assert _line_unit([24.0] * 6 + [51.0] * 10) == 24.0
         assert _line_unit([17.0, 17.0, 17.0, 17.0]) == 17.0
+
+
+class TestFloats:
+    """en.wikipedia "Computer": a right-floated gallery -- five images and a caption list --
+    beside the lead paragraphs. Geometry alone dealt its pieces out between the paragraphs;
+    the renderer's float mark says they are one thing."""
+
+    @staticmethod
+    def page() -> list[Block]:
+        blocks = []
+        for i in range(4):
+            blocks.append(block(f"para{i}", 0, 100 + i * 120, w=900, h=100, dom_index=i))
+        for j in range(3):
+            b = block(f"gallery{j}", 650, 110 + j * 130, w=240, h=110, dom_index=4 + j)
+            blocks.append(b.model_copy(update={"float_of": "/html/body/div[9]"}))
+        return blocks
+
+    def test_float_members_stay_together(self) -> None:
+        ordered, _ = order_blocks(self.page())
+        names = texts(ordered)
+        where = [names.index(f"gallery{j}") for j in range(3)]
+        assert where == list(range(where[0], where[0] + 3)), names
+        paras = [n for n in names if n.startswith("para")]
+        assert paras == [f"para{i}" for i in range(4)]

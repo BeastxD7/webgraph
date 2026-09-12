@@ -284,7 +284,17 @@ def _cut_with_cards(
     cards: dict[str, list[Block]] = {}
     loose: list[Block] = []
     for b in blocks:
-        card = _card_of(b.xpath, siblings, sizes, limit) if b.rect is not None else None
+        if b.rect is None:
+            card = None
+        elif b.float_of is not None:
+            # The browser said this sits in a float: beside the flow, with text wrapping
+            # around it. A thumbnail and its caption, or an infobox and its rows, are one
+            # thing however the paragraphs beside them fall. Measured on en.wikipedia's
+            # "Computer": a right-floated gallery of five images and their caption list
+            # was dealt out one piece at a time between the lead's paragraphs.
+            card = b.float_of
+        else:
+            card = _card_of(b.xpath, siblings, sizes, limit)
         if card is None:
             loose.append(b)
         else:

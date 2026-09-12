@@ -209,6 +209,11 @@ class Block(BaseModel):
     content that way and no other. The page's own statement of what is what is the
     strongest structural signal there is, and it was being read from the tag name only."""
 
+    float_of: str | None = None
+    """XPath of the outermost floated ancestor, when the renderer measured one. Everything
+    sharing a value sits in one float -- a thumbnail and its caption, an infobox -- and is
+    read as one thing rather than zipped line by line with the text wrapping around it."""
+
     in_main: bool = False
     """Whether any ancestor is a `main` landmark. Distinct from `region`, because a `<nav>`
     inside `<main>` -- an in-page table of contents -- is both inside the main content and
@@ -305,6 +310,14 @@ class MarkupStats(BaseModel):
     itemprop_count: int = 0
     data_attr_share: float = 0.0
     """Elements carrying any `data-*` attribute, per 100 elements."""
+
+    generator: str = ""
+    """`<meta name="generator">`, as written: "MediaWiki 1.45.0-wmf.20", "WordPress 6.6".
+    The platform saying what it is, which is a better witness than any statistic."""
+
+    body_classes: tuple[str, ...] = ()
+    """The `<body>` element's class tokens, lowercased, first 40. Platforms state the page's
+    kind here -- MediaWiki's `ns-0` is the main namespace, WordPress's `single-post`."""
 
 
 class StackProfile(BaseModel):
