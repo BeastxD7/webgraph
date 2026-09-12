@@ -38,3 +38,9 @@ out/
 # `make bench-union-fetch`. The scores in results-*.json are the durable artifact.
 /benchmark/union_adjacency/cache/
 *.warc
+# Per-page benchmark score caches (WebMainBench `--scores-dir`): derived, and rewritten by
+# the run that reads them.
+/.scores/
+# Benchmark corpora cloned next to their runners. Each is somebody else's dataset on
+# somebody else's release cadence; the runners take a --corpus path instead.
+/benchmark/*/corpus/
