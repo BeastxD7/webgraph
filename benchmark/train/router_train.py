@@ -29,7 +29,6 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
-
 from webgraph.pagetype import FEATURE_NAMES, TYPES, PageTypeRouter, page_features
 from webgraph.pipeline import build_document
 
@@ -43,7 +42,7 @@ def _one(args: tuple[Path, str, str, str]) -> tuple[str, str, list[float]] | Non
         with gzip.open(path, "rt", encoding="utf-8", errors="replace") as handle:
             html = handle.read()
         document = build_document(html, url or "https://example.invalid/")
-    except Exception:
+    except Exception:  # noqa: BLE001 - one bad page is a skipped row, not a stop
         return None
     return file_id, page_type, page_features(document, url)
 
@@ -73,7 +72,15 @@ def load(corpus: Path, jobs: int) -> tuple[list[str], list[str], np.ndarray]:
     return ids, labels, np.array(rows, dtype=float)
 
 
-def make_model(seed: int = 0):  # type: ignore[no-untyped-def]
+def make_model(seed: int = 0, class_weight: str | None = None):  # type: ignore[no-untyped-def]
+    """`class_weight="balanced"` trades overall accuracy for recall on the rare classes.
+
+    Worth trying because the corpus is 793 articles against 99 listings, and a model
+    maximising plain accuracy is right more often by calling a doubtful listing an article.
+    Whether that trade is *worth* making is not a question the confusion matrix can answer --
+    a listing wrongly called an article and an article wrongly called a listing cost different
+    things downstream -- so the routed WCXB score decides it, not the recall.
+    """
     from sklearn.ensemble import HistGradientBoostingClassifier
 
     return HistGradientBoostingClassifier(
@@ -83,6 +90,7 @@ def make_model(seed: int = 0):  # type: ignore[no-untyped-def]
         max_leaf_nodes=15,
         min_samples_leaf=10,
         l2_regularization=1.0,
+        class_weight=class_weight,
         random_state=seed,
     )
 
@@ -127,6 +135,8 @@ def main() -> int:
     parser.add_argument("--export", type=Path, default=None, help="write the final model JSON here")
     parser.add_argument("--jobs", type=int, default=5)
     parser.add_argument("--folds", type=int, default=5)
+    parser.add_argument("--class-weight", default=None, choices=["balanced"],
+                        help="weight classes inversely to their frequency")
     args = parser.parse_args()
 
     from sklearn.model_selection import StratifiedKFold
@@ -140,7 +150,7 @@ def main() -> int:
     correct = 0
     skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=0)
     for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
-        model = make_model(fold)
+        model = make_model(fold, args.class_weight)
         model.fit(X[train_idx], y[train_idx])
         proba = model.predict_proba(X[test_idx])
         for row, p in zip(test_idx, proba, strict=True):
@@ -162,7 +172,7 @@ def main() -> int:
     print(f"\nout-of-fold predictions -> {args.oof}")
 
     if args.export:
-        final = make_model(0)
+        final = make_model(0, args.class_weight)
         final.fit(X, y)
         payload = export(final, FEATURE_NAMES)
         args.export.parent.mkdir(parents=True, exist_ok=True)

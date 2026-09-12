@@ -338,6 +338,20 @@ export interface FrontierEvent {
   new_urls: string[];
 }
 
+/**
+ * A batch about to be fetched, announced before the work starts.
+ *
+ * Completion events alone can only ever describe the past. This is what lets a live view show
+ * the pages being fetched *now*, and remove each one as its result arrives.
+ */
+export interface FetchingEvent {
+  type: "fetching";
+  urls: string[];
+  queued: number;
+  extracted: number;
+  failed: number;
+}
+
 export interface PageEvent {
   type: "page";
   index: number;
@@ -356,6 +370,12 @@ export interface PageEvent {
   content_methods: string[];
   /** Blocks in the complete document. */
   blocks: number;
+  /** What kind of page a trained classifier judged this to be: "article", "listing",
+   *  "product", "forum", "collection", "documentation", "service", or "unknown" when no type
+   *  was confident enough. Reported, and used to choose how the content boundary is drawn. */
+  page_type: string;
+  /** Probability the classifier assigned to `page_type`; 0 when unknown. */
+  page_type_confidence: number;
   images: string[];
   tables: number;
   strategy: string | null;
@@ -414,6 +434,7 @@ export type SiteEvent =
   | AnalysisEvent
   | InventoryEvent
   | FrontierEvent
+  | FetchingEvent
   | PageEvent
   | DoneEvent
   | ErrorEvent;

@@ -709,7 +709,7 @@ def stream_site(
     With `max_pages = 0` the crawl is unbounded: it runs until the frontier is exhausted.
     Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
 
-    Events carry a `type`: `stage`, `analysis`, `frontier`, `page`, `warning`, `done`,
+    Events carry a `type`: `stage`, `analysis`, `frontier`, `fetching`, `page`, `warning`, `done`,
     `error`.
 
     `builder`, when supplied, is filled in as pages arrive. It belongs to the caller rather
@@ -846,6 +846,17 @@ def stream_site(
                     batch.append(item)
                 if not batch:
                     break
+                # Say what is going out *before* it goes, so a consumer can show work in
+                # flight rather than only work finished. Without this the only observable
+                # events are completions, and a live view can show a history and nothing
+                # else -- there is no way to know a page is being fetched right now.
+                yield {
+                    "type": "fetching",
+                    "urls": [url for url, _ in batch],
+                    "queued": len(frontier),
+                    "extracted": extracted,
+                    "failed": failed,
+                }
                 results = pool.map(work, batch)
 
             for fetched in results:

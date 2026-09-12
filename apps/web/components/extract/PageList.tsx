@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import PageRow from "./PageRow";
+import CopyButton from "@/components/ui/CopyButton";
 import type { PageEvent } from "@/lib/api";
 
 export default function PageList({
@@ -43,26 +44,31 @@ export default function PageList({
     return new Set([...counts].filter(([, count]) => count > 1).map(([title]) => title));
   }, [pages]);
 
-  const download = useCallback(() => {
-    const body = pages
-      .filter((page) => page.ok)
-      .slice()
-      .reverse()
-      .map((page) => {
-        const content =
-          contentOnly && page.content_markdown ? page.content_markdown : page.markdown;
-        return `<!-- ${page.url} -->\n\n${content}`;
-      })
-      .join("\n\n---\n\n");
+  /** Every successful page as one document, in crawl order, each headed by its URL. */
+  const everything = useMemo(
+    () =>
+      pages
+        .filter((page) => page.ok)
+        .slice()
+        .reverse()
+        .map((page) => {
+          const content =
+            contentOnly && page.content_markdown ? page.content_markdown : page.markdown;
+          return `<!-- ${page.url} -->\n\n${content}`;
+        })
+        .join("\n\n---\n\n"),
+    [pages, contentOnly],
+  );
 
-    const blob = new Blob([body], { type: "text/markdown" });
+  const download = useCallback(() => {
+    const blob = new Blob([everything], { type: "text/markdown" });
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = href;
     anchor.download = `${new URL(siteUrl).hostname}.md`;
     anchor.click();
     URL.revokeObjectURL(href);
-  }, [pages, siteUrl, contentOnly]);
+  }, [everything, siteUrl]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
@@ -99,6 +105,9 @@ export default function PageList({
             />
             content only
           </label>
+          {/* Copy and download hand over exactly the same document, and both follow the
+              "content only" checkbox -- the one behaviour that is not surprising. */}
+          <CopyButton text={everything} label="Copy all" />
           <button
             type="button"
             onClick={download}

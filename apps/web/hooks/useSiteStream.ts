@@ -51,12 +51,22 @@ const NO_COUNTS: Live = {
   tables: 0,
 };
 
+/** When each phase began and ended, so the pipeline view can show real durations. */
+export interface PhaseTiming {
+  startedAt: number;
+  endedAt: number | null;
+}
+
 interface RunState {
   phase: Phase;
+  /** Insertion-ordered: the phases that have actually started, in the order they started. */
+  timings: Partial<Record<Phase, PhaseTiming>>;
   analysis: AnalysisEvent | null;
   pages: PageEvent[];
   /** Every URL the crawl has accepted, in discovery order, rebuilt from `new_urls` deltas. */
   discoveredUrls: string[];
+  /** URLs dispatched and not yet returned: what is being fetched at this moment. */
+  inFlight: string[];
   live: Live;
   summary: DoneEvent | null;
   error: string | null;
@@ -64,13 +74,30 @@ interface RunState {
 
 const INITIAL: RunState = {
   phase: "analyzing",
+  timings: { analyzing: { startedAt: Date.now(), endedAt: null } },
   analysis: null,
   pages: [],
   discoveredUrls: [],
+  inFlight: [],
   live: NO_COUNTS,
   summary: null,
   error: null,
 };
+
+/** Stamp the current phase as finished and the next one as started. */
+function closeAndOpen(state: RunState, next: Phase): Pick<RunState, "timings"> {
+  const now = Date.now();
+  const current = state.timings[state.phase];
+  return {
+    timings: {
+      ...state.timings,
+      ...(current && current.endedAt === null
+        ? { [state.phase]: { ...current, endedAt: now } }
+        : {}),
+      [next]: state.timings[next] ?? { startedAt: now, endedAt: null },
+    },
+  };
+}
 
 type Action =
   | { kind: "event"; event: SiteEvent }
@@ -92,7 +119,7 @@ function reduce(state: RunState, action: Action): RunState {
           : event.stage === "enumerate"
             ? "enumerating"
             : "extracting";
-      return { ...state, phase };
+      return phase === state.phase ? state : { ...state, phase, ...closeAndOpen(state, phase) };
     }
     case "analysis":
       return { ...state, analysis: event };
@@ -102,11 +129,16 @@ function reduce(state: RunState, action: Action): RunState {
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: { ...state.live, discovered: event.discovered, queued: event.queued },
       };
+    case "fetching":
+      // Replaces rather than appends: one batch is in flight at a time, and anything left
+      // over from the previous one has already been accounted for by its `page` event.
+      return { ...state, inFlight: event.urls };
     case "page":
       // Newest first: on a long crawl the interesting thing is what just landed.
       return {
         ...state,
         pages: [event, ...state.pages],
+        inFlight: state.inFlight.filter((url) => url !== event.url),
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: {
           discovered: event.discovered,
@@ -121,9 +153,20 @@ function reduce(state: RunState, action: Action): RunState {
         },
       };
     case "done":
-      return { ...state, summary: event, phase: "done" };
+      return {
+        ...state,
+        summary: event,
+        phase: "done",
+        inFlight: [],
+        ...closeAndOpen(state, "done"),
+      };
     case "error":
-      return { ...state, phase: "failed", error: event.message };
+      return {
+        ...state,
+        phase: "failed",
+        error: event.message,
+        ...closeAndOpen(state, "failed"),
+      };
     default:
       return state;
   }

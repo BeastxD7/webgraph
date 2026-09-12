@@ -138,6 +138,9 @@ _OG_TYPES: Final[tuple[str, ...]] = ("article", "website", "product", "product.g
 _PRICE: Final[re.Pattern[str]] = re.compile(
     r"(?:[$€£¥₹]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|INR|CAD|AUD))"
 )
+_HREF: Final[re.Pattern[str]] = re.compile(r"\]\(([^)\s]+)")
+"""Link targets inside a block's inline Markdown."""
+
 _DATE_LIKE: Final[re.Pattern[str]] = re.compile(
     r"\b(?:\d{1,2}:\d{2}|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2})\b",
     re.I,
@@ -184,6 +187,11 @@ FEATURE_NAMES: Final[tuple[str, ...]] = (
     "image_count", "price_hits_per_100w", "date_hits_per_100w", "forum_hits_per_100w",
     "commerce_hits_per_100w", "cta_hits_per_100w", "doc_hits_per_100w",
     "longest_block_share", "share_words_first_half",
+    # Listing signals, added after the router's listing recall measured 0.343 -- the weakest
+    # class by a wide margin, with 33 of 99 listings called articles. Appended rather than
+    # inserted: the exported model is keyed on this order.
+    "linked_heading_share", "log_distinct_links", "group_count", "dated_group_share",
+    "median_block_words", "group_to_longest_ratio",
 )
 
 
@@ -278,6 +286,38 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
         len(_DOC_WORDS.findall(text)) * per_100w,
         (max(words) / total) if words else 0.0,
         first_half / total,
+    ])
+
+    # -- listing signals ---------------------------------------------------------------
+    #
+    # What separates a listing from an article is not how much text there is but how it is
+    # *arranged*. An article is one long run of prose under plain headings. A listing is many
+    # short, similar, linked items, each pointing somewhere else. The features above measure
+    # size and vocabulary; these measure arrangement.
+    headings = [b for b in blocks if b.kind is BlockKind.HEADING]
+    linked_headings = sum(1 for b in headings if link_density(b) >= 0.5)
+    targets = {m for b in blocks for m in _HREF.findall(b.rich_text or "")}
+    largest_group = max(group_words, key=lambda g: group_words[g], default=None)
+    dated = 0
+    if largest_group is not None:
+        member_text = [
+            b.text for b, g in zip(blocks, groups, strict=True) if g == largest_group
+        ]
+        dated = sum(1 for t in member_text if _DATE_LIKE.search(t))
+    ordered = sorted(words)
+    median_words = float(ordered[len(ordered) // 2]) if ordered else 0.0
+    features.extend([
+        # A listing's item titles *are* links; an article's headings are not.
+        (linked_headings / len(headings)) if headings else 0.0,
+        # How many places the page sends you. A listing is a directory of siblings.
+        math.log1p(len(targets)),
+        float(len(group_sizes)),
+        # A news listing carries a timestamp per card. An article carries one, at the top.
+        (dated / group_sizes[largest_group]) if largest_group is not None else 0.0,
+        median_words,
+        # The contrast that names the difference: a listing's repeated group holds more of
+        # the page than its single longest block does; an article is the other way round.
+        (max(group_words.values()) / max(words)) if group_words and max(words) else 0.0,
     ])
     assert len(features) == len(FEATURE_NAMES), (len(features), len(FEATURE_NAMES))
     return features

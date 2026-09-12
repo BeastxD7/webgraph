@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import AskPanel from "./AskPanel";
 import GraphPanel from "./GraphPanel";
 import PageList from "./PageList";
+import LivePipeline from "./LivePipeline";
 import ProgressRail from "./ProgressRail";
 import RunSummary from "./RunSummary";
 import RunTabs, { type RunTab } from "./RunTabs";
@@ -77,6 +78,22 @@ export default function SiteRun({
       </div>
 
       <ProgressRail live={run.live} active={run.running} />
+
+      {/* The stages themselves, filling in what each one found. A progress bar says how far
+          along a run is; this says what the engine is actually doing and what it learned. */}
+      <LivePipeline
+        phase={run.phase}
+        timings={run.timings}
+        analysis={run.analysis}
+        pages={run.pages}
+        queued={run.live.queued}
+        discovered={run.live.discovered}
+        extracted={run.live.extracted}
+        failed={run.live.failed}
+        rate={run.live.rate}
+        elapsed={run.elapsed}
+        inFlight={run.inFlight}
+      />
 
       {run.error && (
         <p

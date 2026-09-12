@@ -3209,3 +3209,42 @@ taken because the WCXB average moved +0.007, which looked negligible. *The avera
 failure mode completely* -- on a listing page it is the difference between the items and the
 footer, and returning a footer is not a small error. **An average across page types is the
 wrong instrument for deciding whether a per-type policy ships.**
+
+### D113 -- Listing recall: the features were noise, the class imbalance was the cause
+
+Asked to improve the router's listing recall (0.343, the weakest class by far, with 33 of 99
+listings called articles).
+
+**The six features I reasoned my way to were worthless.** `linked_heading_share`,
+`log_distinct_links`, `group_count`, `dated_group_share`, `median_block_words`,
+`group_to_longest_ratio` -- all measuring *arrangement*, on the theory that an article is one
+run of prose and a listing is many short linked items. Recall went **0.343 -> 0.323** and not
+one of them reached the top fifteen by permutation importance. An ablation under identical
+folds put them at +0.002 accuracy, +0.020 listing, **-0.034 collection**: noise in both
+directions.
+
+**The actual cause was class imbalance.** 793 articles against 99 listings, so a model
+maximising plain accuracy is simply right more often by calling a doubtful listing an article.
+`class_weight="balanced"`:
+
+```
+              recall before   after
+listing            0.323      0.434
+documentation      0.758      0.813
+forum              0.885      0.903
+product            0.866      0.882
+article            0.961      0.927   <- what pays for it
+accuracy           0.839      0.838
+```
+
+**And recall was not the thing to decide on.** A listing called an article and an article
+called a listing cost different things, so the routed *extraction* score settled it, not the
+confusion matrix: **0.810 -> 0.819**, with listing 0.552 -> 0.628 and **article unchanged at
+0.920**. The 10 articles now misclassified as listings cost nothing measurable. A perfect
+router reaches 0.822, so this takes three quarters of what is available.
+
+**A mistake worth recording: I trained the balanced model and never exported it.** For a
+stretch the *shipped* router was the 68-feature unbalanced one -- 0.323 listing recall, worse
+than the 0.343 the day started with. Training a model and shipping a model are two actions and
+only one of them had been done. Found by checking what was actually in the file rather than
+what I remembered doing.
