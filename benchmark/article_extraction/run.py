@@ -85,6 +85,7 @@ import json
 import sys
 import time
 from collections.abc import Iterable, Sequence
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -143,8 +144,26 @@ def variants(blocks: Sequence[Block]) -> dict[str, str]:
         # The production path: what `/api/text`, `webgraph text --content` and every crawl
         # page's `content_markdown` actually ship. Scored so the leaderboard number is the
         # product's number, not a benchmark-only composition.
-        "webgraph_content": join(select_content(blocks).blocks),
+        "webgraph_content": join(select_content(blocks, model=None).blocks),
+        # `webgraph_content` above passes `model=None` on purpose: it is the contiguous
+        # boundary step, and `select_content` now defaults to the model, so leaving the
+        # argument off would score the same system twice under two names.
+        #
+        # The trained per-block model in place of the contiguous boundary step. This corpus
+        # is an untouched test set for it: the model saw WCXB dev only, and a different
+        # annotator drew these article bodies. A number that holds here is evidence the
+        # model learned content; a number that drops is evidence it learned WCXB's
+        # conventions. Skipped when no model ships.
+        **({"webgraph_model": join(select_content(blocks, model=_model()).blocks)}
+           if _model() is not None else {}),
     }
+
+
+@lru_cache(maxsize=1)
+def _model():  # type: ignore[no-untyped-def]
+    from webgraph.blockmodel import BlockModel
+
+    return BlockModel.load()
 
 
 def _metric(corpus: Path):

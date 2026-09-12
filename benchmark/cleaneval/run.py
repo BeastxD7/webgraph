@@ -82,10 +82,11 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
 
-VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "main")
+VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "main", "boundary", "model")
 """The four ways to turn a parsed document into text, in increasing order of how much they
 throw away. See `benchmark/wceb/run.py` for the full argument; the short version is that
 they form a precision/recall ladder and only the spread says whether the engine's problem is
@@ -236,9 +237,18 @@ _TEXT_WRAPPER: Final[re.Pattern[str]] = re.compile(
 )
 
 
+@lru_cache(maxsize=1)
+def _model():  # type: ignore[no-untyped-def]
+    """The shipped block model, or None when no model JSON ships."""
+    from webgraph.blockmodel import BlockModel
+
+    return BlockModel.load()
+
+
 def extract(corpus: Path, page_id: str) -> PageOutcome:
     """Parse one input page and derive all four variants from the single parse."""
     from webgraph.boilerplate import strip_landmarks
+    from webgraph.content import select_content
     from webgraph.main_content import select_main_content
     from webgraph.pipeline import build_document
 
@@ -259,11 +269,19 @@ def extract(corpus: Path, page_id: str) -> PageOutcome:
     blocks = list(document.blocks)
     landmarks = strip_landmarks(blocks)
     main = select_main_content(landmarks)
+    model = _model()
     selections = {
         "raw": blocks,
         "landmarks": landmarks,
         "prose": [b for b in blocks if str(b.kind) in PROSE_KINDS],
         "main": main,
+        # The two last steps of the production path against each other. `model=None` is
+        # load-bearing -- `select_content` defaults to the model now, so omitting it would
+        # make `boundary` and `model` the same system under two names. CleanEval is an
+        # untouched test set for the model: 2008 gold standards, annotators who never saw
+        # WCXB, so a drop here means it learned WCXB's conventions rather than content.
+        "boundary": list(select_content(blocks, model=None).blocks),
+        "model": list(select_content(blocks, model=model).blocks) if model else main,
     }
     return PageOutcome(
         page_id=page_id,

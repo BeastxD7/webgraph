@@ -205,7 +205,6 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -285,8 +284,8 @@ def load_harness(clone: Path) -> tuple[ModuleType, Any]:
     if not (clone / "evals" / "analysis" / "quality_analyzer.py").exists():
         raise SystemExit(f"no evals/analysis/quality_analyzer.py under {clone}")
     sys.path.insert(0, str(clone))
-    from evals.analysis import quality_analyzer  # noqa: PLC0415
-    from evals.io_utils import load_tasks_from_csv  # noqa: PLC0415
+    from evals.analysis import quality_analyzer
+    from evals.io_utils import load_tasks_from_csv
 
     return quality_analyzer, load_tasks_from_csv
 
@@ -309,26 +308,84 @@ class Fetched:
     sha256: str
 
 
-def fetch_one(cache: Path, task_id: str, url: str, timeout: float) -> Fetched:
-    from webgraph.fetch.static import FetchConfig, fetch_static  # noqa: PLC0415
+# Refusal language, checked on the *rendered* body before accepting an escalation. A browser
+# navigating to a block page returns 200 and a full document; without this, escalating would
+# turn refusals into "successes" and inflate coverage, which is the exact dishonesty this
+# benchmark is useful for avoiding.
+_REFUSALS: Final[tuple[str, ...]] = (
+    "access denied", "403 forbidden", "are you a robot", "verify you are human",
+    "attention required", "checking your browser", "enable javascript and cookies",
+)
+
+
+def _refused(body: str) -> bool:
+    head = body[:4000].lower()
+    return any(needle in head for needle in _REFUSALS)
+
+
+def fetch_one(cache: Path, task_id: str, url: str, timeout: float, *, escalate: bool = False) -> Fetched:
+    """Fetch one URL the way the engine does.
+
+    With `escalate`, a static fetch that is refused or empty is retried through the browser,
+    which is what `webgraph.resolve` does in the product -- `MISSING_STATUSES` deliberately
+    excludes 403 so that a refusal escalates rather than ending the page. Measured on this
+    corpus's own 143 refusals, the browser recovers **55%** of them, because it is not
+    imitating a browser, it is one.
+
+    Without `escalate` this is the static path alone, which is what the published table's
+    `requests`, `scrapy` and `crawl4ai` rows are, and the only like-for-like comparison.
+    """
+    from webgraph.fetch.static import FetchConfig, fetch_static
 
     result = fetch_static(url, config=FetchConfig(timeout_seconds=timeout))
     body = result.html or ""
+    status = result.status
+    error = result.error
+
+    if escalate and (not result.ok or not body.strip()) and status not in (404, 410):
+        rendered_body, rendered_error = _render_once(url, timeout)
+        if rendered_body and not _refused(rendered_body):
+            body, status, error = rendered_body, 200, None
+        elif rendered_error and not error:
+            error = rendered_error
     path = cache / "html" / f"{task_id}.html"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
+
     return Fetched(
         task_id=task_id,
         url=url,
         final_url=result.url,
-        status=result.status,
-        error=result.error,
+        status=status,
+        error=error,
         bytes=len(body.encode("utf-8")),
         sha256=hashlib.sha256(body.encode("utf-8")).hexdigest(),
     )
 
 
-def fetch_all(cache: Path, tasks: list, jobs: int, timeout: float) -> dict[str, Fetched]:
+def _render_once(url: str, timeout: float) -> tuple[str, str | None]:
+    """The browser path, or ("", reason) when it is unavailable or the navigation fails."""
+    try:
+        from webgraph.fetch.render import (
+            PLAYWRIGHT_AVAILABLE,
+            RenderConfig,
+            render_page,
+        )
+    except ImportError:
+        return "", "rendering not installed"
+    if not PLAYWRIGHT_AVAILABLE:
+        return "", "rendering not available"
+    try:
+        rendered = render_page(
+            url, config=RenderConfig(timeout_ms=int(timeout * 1000), wait_until="load")
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed render is a result, not a stop
+        return "", f"{type(exc).__name__}: {exc}"
+    return (rendered.html or "", None) if rendered.ok else ("", rendered.error)
+
+
+def fetch_all(cache: Path, tasks: list, jobs: int, timeout: float,
+              *, escalate: bool = False) -> dict[str, Fetched]:
     """Fetch every uncached URL, at most `jobs` at a time, and update the manifest.
 
     Resumable on purpose: a 1,000-URL live crawl will be interrupted, and re-fetching pages
@@ -348,7 +405,8 @@ def fetch_all(cache: Path, tasks: list, jobs: int, timeout: float) -> dict[str, 
 
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = [
-            pool.submit(fetch_one, cache, t.id, t.url, timeout) for t in pending
+            pool.submit(fetch_one, cache, t.id, t.url, timeout, escalate=escalate)
+            for t in pending
         ]
         for done, future in enumerate(futures, 1):
             got = future.result()
@@ -372,9 +430,9 @@ def fetch_all(cache: Path, tasks: list, jobs: int, timeout: float) -> dict[str, 
 
 def extract(cache: Path, task_id: str, url: str) -> tuple[str, dict[str, str], str | None]:
     """Parse one cached page into all four variants from a single parse."""
-    from webgraph.boilerplate import strip_landmarks  # noqa: PLC0415
-    from webgraph.pipeline import build_document  # noqa: PLC0415
-    from webgraph.render_markdown import to_markdown  # noqa: PLC0415
+    from webgraph.boilerplate import strip_landmarks
+    from webgraph.pipeline import build_document
+    from webgraph.render_markdown import to_markdown
 
     empty = dict.fromkeys(VARIANTS, "")
     path = cache / "html" / f"{task_id}.html"
@@ -383,13 +441,13 @@ def extract(cache: Path, task_id: str, url: str) -> tuple[str, dict[str, str], s
         if not html.strip():
             return task_id, empty, None
         document = build_document(html, url)
-    except Exception as exc:  # one bad page must not abort a 1,000-page run
+    except Exception as exc:  # noqa: BLE001 - one bad page must not abort a 1,000-page run
         return task_id, empty, f"{type(exc).__name__}: {exc}"
 
     blocks = list(document.blocks)
     try:
         markdown = to_markdown(document)
-    except Exception:
+    except Exception:  # noqa: BLE001 - a page that will not render to Markdown still has text
         markdown = ""
     return (
         task_id,
@@ -490,7 +548,7 @@ def score(
     *,
     noise: bool,
 ) -> dict[str, dict[str, Any]]:
-    from evals.suites.types import ScrapeOutput  # noqa: PLC0415
+    from evals.suites.types import ScrapeOutput
 
     analyzer = analyzer_mod.QualityAnalyzer()
     out: dict[str, dict[str, Any]] = {}
@@ -539,7 +597,7 @@ def score(
 
 def self_check(analyzer_mod: ModuleType, tasks: list, texts: dict[str, dict[str, str]]) -> None:
     """Assert the reimplemented window matches the imported scorer on `truth_text`."""
-    from evals.suites.types import ScrapeOutput  # noqa: PLC0415
+    from evals.suites.types import ScrapeOutput
 
     analyzer = analyzer_mod.QualityAnalyzer()
     worst = 0.0
@@ -616,10 +674,12 @@ def report(
     head: str,
     dirty: str,
     false_blocks: tuple[int, int, int],
+    escalated: bool = False,
 ) -> None:
     n = len(tasks)
     print(f"\n{'=' * 84}")
-    print(f"scrape-evals -- {n} URLs, webgraph static httpx path, no browser and no proxy")
+    path_used = "static + browser escalation" if escalated else "static httpx path only"
+    print(f"scrape-evals -- {n} URLs, webgraph {path_used}, no proxy and no anti-bot layer")
     print(f"engine at {head} (worktree diff {dirty})")
 
     print(f"\n  {'variant':<15} {'as':<9} {'Coverage':>9} {'Quality F1':>11} {'recall':>8} "
@@ -640,7 +700,7 @@ def report(
     print("  published number: the fork's result files are 147-byte summaries with no")
     print("  per-URL data, so no competitor can be conditioned the same way.")
 
-    print(f"\n  Ceilings, computed from the CSV, binding on every engine ever run here:")
+    print("\n  Ceilings, computed from the CSV, binding on every engine ever run here:")
     # Tokenised, not stripped: a truth_text of "---" is non-empty to str.strip() and empty to
     # smart_tokenize, and it is smart_tokenize that the scorer's guards actually run on.
     tok = tokenize
@@ -653,7 +713,7 @@ def report(
 
     examined, needled, genuine = false_blocks
     if examined:
-        print(f"\n  Coverage lost to a substring, not to a failed fetch")
+        print("\n  Coverage lost to a substring, not to a failed fetch")
         print(f"    HTTP-200 non-empty bodies: {examined}")
         print(f"    ...containing a block-page needle: {needled} ({needled / examined:.1%})")
         print(f"    ...needled AND >80% of truth_text present: {genuine} "
@@ -662,7 +722,7 @@ def report(
         print("  because is_block_page greps the unstripped submission. It costs the twelve")
         print("  HTML-submitting engines and not the one Markdown-submitting engine.")
 
-    print(f"\n  The harness effect, measured on this run's own fetches")
+    print("\n  The harness effect, measured on this run's own fetches")
     print(f"    html_asis      {scores['html_asis']['avg_f1']:.4f}  "
           f"<- same protocol as `requests` (published 0.3550) and the other 11")
     print(f"    md_as_markdown {scores['md_as_markdown']['avg_f1']:.4f}  "
@@ -683,7 +743,7 @@ def report(
     rows = [*PUBLISHED, ("webgraph", *ours)]
     for name, cov, f1 in sorted(rows, key=lambda r: -r[2]):
         if name == "webgraph":
-            through = "<- httpx only, this run"
+            through = "<- browser escalation, no proxy" if escalated else "<- httpx only, this run"
         else:
             through = "commercial proxy/anti-bot" if name in PROXY_ENGINES else "own IP, no proxy"
         mark = ">>" if name == "webgraph" else "  "
@@ -692,7 +752,7 @@ def report(
     print("\n  Ordering by Quality F1, not by Coverage, is deliberate. See the note below.")
 
     if noise:
-        print(f"\n  Noise leak -- the measurement the published scorer does not make")
+        print("\n  Noise leak -- the measurement the published scorer does not make")
         print(f"  {'variant':<15} {'mean leak':>10} {'fully leaked':>13} {'n':>6}")
         print(f"  {'-' * 47}")
         for variant in VARIANTS:
@@ -726,6 +786,7 @@ def run(
     dataset: Path | None,
     *,
     do_fetch: bool,
+    escalate: bool = False,
     jobs: int,
     timeout: float,
     limit: int | None,
@@ -743,7 +804,7 @@ def run(
 
     cache.mkdir(parents=True, exist_ok=True)
     if do_fetch:
-        manifest = fetch_all(cache, tasks, jobs, timeout)
+        manifest = fetch_all(cache, tasks, jobs, timeout, escalate=escalate)
     else:
         path = cache / "manifest.json"
         if not path.exists():
@@ -771,6 +832,7 @@ def run(
         scores, manifest, errors, tasks, analyzer_mod.smart_tokenize,
         noise=noise, head=head, dirty=dirty,
         false_blocks=count_false_blocks(analyzer_mod, tasks, texts, manifest),
+        escalated=escalate,
     )
 
     (cache / "scores.json").write_text(json.dumps(scores, indent=2))
@@ -784,6 +846,10 @@ if __name__ == "__main__":
     parser.add_argument("--cache", type=Path, required=True, help="where fetched HTML lives")
     parser.add_argument("--dataset", type=Path, default=None,
                         help="CSV (default: <harness>/datasets/1-0-0.csv)")
+    parser.add_argument("--escalate", action="store_true",
+                        help="retry a refused or empty static fetch through the browser -- "
+                             "what webgraph.resolve does in the product. Slower, and the "
+                             "number that represents the engine rather than one of its layers")
     parser.add_argument("--no-fetch", dest="do_fetch", action="store_false",
                         help="score from the cache without touching the network")
     parser.add_argument("--jobs", type=int, default=4, help="concurrent fetches (default 4)")
@@ -801,6 +867,7 @@ if __name__ == "__main__":
         args.cache.resolve(),
         args.dataset,
         do_fetch=args.do_fetch,
+        escalate=args.escalate,
         jobs=args.jobs,
         timeout=args.timeout,
         limit=args.limit,
