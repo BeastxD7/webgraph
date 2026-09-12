@@ -3151,3 +3151,29 @@ The code was correct, guarded and tested, and it was deleted anyway, because its
 claimed a measurement that was false and **guarded dead code carrying a false claim is worse
 than no code**. The rule this session has been run on applies to my own work: do not add code
 for a problem that has not been reproduced.
+
+### D111 -- Hacker News, checked against the live page, found a link loss the tests could not
+
+Validated the engine against `news.ycombinator.com` by reading the real page in a browser and
+comparing field by field. The text was **perfect**: 30 of 30 stories with title, domain, point
+count, author, age and comment count, including the one whose title begins with `Λ`. The
+"More" pagination link was kept; navigation, footer and search box were correctly absent from
+the *content view* and all still present in `document.text`.
+
+**And every link was gone.** 211 of them. `_TABLE_ATTRS` kept only `colspan` and `rowspan`, so
+preserving a complex table's markup stripped every `<a>` in it. On HN the destination of each
+row is the single most important fact on the page, so the output read perfectly and was
+useless to anything that wanted the articles.
+
+`a` and `href` are now kept, and targets are absolutised, because a preserved table travels
+without the page it came from and a bare `item?id=123` points nowhere. An `<a>` with no
+destination becomes a span -- an anchor is not a link.
+
+**The lesson is about what the test suite could see.** Every table test used a synthetic
+fixture of bare text cells, so no test had a link in a table and none of them failed. A real
+page found it in one run. *Synthetic fixtures test the shape you thought of.*
+
+**Also confirmed working on a real page**: the router labelled HN `listing` at 0.81
+confidence, the reading order came back `geometric-xy-cut` rather than DOM fallback, and the
+union reported static and rendered identical at 4,226 characters -- HN genuinely needs no
+browser, and the engine measured that rather than assuming it.

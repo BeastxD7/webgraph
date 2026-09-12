@@ -756,3 +756,53 @@ class TestComplexTablesKeepTheirMarkup:
         assert table.table_html is not None
         assert table.rows
         assert "Region" in table.text
+
+
+class TestLinksInsideAPreservedTable:
+    """A cell's link target is often the point of the cell, and nothing else can carry it.
+
+    Verified against Hacker News, whose front page is a table of 30 rows where the
+    destination of each row is the single most important fact on the page. Preserving the
+    table's markup without `<a href>` returned all 30 stories and **zero links** -- text that
+    reads correctly and is useless to anything that wanted the articles.
+    """
+
+    HN = (
+        '<table><tbody>'
+        '<tr><td>1.</td><td><a href="/vote?id=1">up</a></td>'
+        '<td><a href="https://example.org/post">A story</a> '
+        '(<a href="/from?site=example.org">example.org</a>)</td></tr>'
+        '<tr><td colspan="2"></td>'
+        '<td>244 points by <a href="/user?id=alice">alice</a> | '
+        '<a href="/item?id=1">40 comments</a></td></tr>'
+        "</tbody></table>"
+    )
+
+    def test_the_markup_is_preserved_because_of_the_colspan(self) -> None:
+        assert "<table" in md(self.HN)
+
+    def test_link_targets_survive(self) -> None:
+        out = md(self.HN)
+        assert 'href="https://example.org/post"' in out
+        assert "A story" in out
+
+    def test_relative_targets_are_made_absolute(self) -> None:
+        """A preserved table travels without the page it came from, so `/user?id=alice`
+        in it points nowhere."""
+        out = md(self.HN)
+        assert f'href="{BASE.rsplit("/", 1)[0]}/user?id=alice"' in out or "example.com/user?id=alice" in out
+
+    def test_noise_attributes_still_go(self) -> None:
+        out = md('<table><tr><td colspan="2" class="x" style="color:red">'
+                 '<a href="/a" class="storylink" onclick="x()">t</a></td></tr>'
+                 "<tr><td>a</td><td>b</td></tr></table>")
+        assert 'colspan="2"' in out
+        assert "href=" in out
+        for noise in ("class=", "style=", "onclick="):
+            assert noise not in out, noise
+
+    def test_an_anchor_with_no_destination_is_not_a_link(self) -> None:
+        out = md('<table><tr><td colspan="2"><a name="top">x</a></td></tr>'
+                 "<tr><td>a</td><td>b</td></tr></table>")
+        assert "<a" not in out
+        assert "x" in out

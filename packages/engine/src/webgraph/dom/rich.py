@@ -529,15 +529,21 @@ def _collapse_header(grid: list[list[str]], depth: int) -> list[tuple[str, ...]]
 
 
 _TABLE_TAGS: Final[frozenset[str]] = frozenset(
-    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup"}
+    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup", "a"}
 )
-"""Tags kept when preserving a table's own markup. `sub` and `sup` are here because a
-chemical formula or a footnote marker inside a cell is content, not presentation."""
+"""Tags kept when preserving a table's own markup.
 
-_TABLE_ATTRS: Final[frozenset[str]] = frozenset({"colspan", "rowspan"})
-"""Attributes kept. These two carry meaning no other representation can hold; everything
-else -- styles, widths, tracking ids, translation-tool bookkeeping -- is noise that would
-otherwise be emitted verbatim into the output."""
+`sub` and `sup` because a chemical formula or a footnote marker in a cell is content, not
+presentation. `a` because a link in a cell is often the *point* of the cell: verified on
+Hacker News, whose front page is a table of 30 rows in which the destination of each row is
+the single most important fact, and which came back with all 30 stories and **zero links**
+before this. A cell's link target is not something any other field can carry."""
+
+_TABLE_ATTRS: Final[frozenset[str]] = frozenset({"colspan", "rowspan", "href"})
+"""Attributes kept: the two that carry a merge, and the one that carries a destination.
+
+Everything else -- styles, widths, tracking ids, translation-tool bookkeeping -- is noise
+that would otherwise be emitted verbatim into the output."""
 
 _MAX_PRESERVED_TABLE_BYTES: Final[int] = 200_000
 """Refuse to inline a table larger than this. Untrusted input, and a runaway table would
@@ -563,17 +569,28 @@ def is_complex_table(element: HtmlElement) -> bool:
     return False
 
 
-def preserved_table_html(element: HtmlElement) -> str | None:
-    """The table's own markup with everything but structure removed, or None if too large."""
+def preserved_table_html(element: HtmlElement, base_url: str = "") -> str | None:
+    """The table's own markup with everything but structure removed, or None if too large.
+
+    Link targets are made absolute here. A preserved table travels without the page it came
+    from, so a bare `item?id=123` in it points nowhere.
+    """
     copied = copy.deepcopy(element)
     for node in copied.iter():
         if not isinstance(node.tag, str):
             continue
         if node.tag not in _TABLE_TAGS and node is not copied:
             node.tag = "span"  # unwrapped below by `strip_tags`, keeping the text
+        href = node.get("href") if node.tag == "a" else None
         for name in list(node.attrib):
             if name not in _TABLE_ATTRS:
                 del node.attrib[name]
+        if href is not None:
+            if base_url:
+                node.set("href", urljoin(base_url, href))
+        elif node.tag == "a":
+            # An anchor with no destination is a span wearing a link's clothes.
+            node.tag = "span"
     etree.strip_tags(copied, "span")
     markup = etree.tostring(copied, encoding="unicode", method="html").strip()
     markup = _COLLAPSE_SPACE.sub(" ", markup)
@@ -583,7 +600,9 @@ def preserved_table_html(element: HtmlElement) -> str | None:
 _COLLAPSE_SPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
 
 
-def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None:
+def _table_block(
+    element: HtmlElement, index: int, tree: object, base_url: str = ""
+) -> Block | None:
     """Build a table block preserving its rows.
 
     A table flattened into text loses the association between a value and its column, which
@@ -597,7 +616,7 @@ def _table_block(element: HtmlElement, index: int, tree: object) -> Block | None
 
     caption = element.xpath("./caption")
     summary = normalize_text(flowed_text(caption[0])) if caption else ""
-    preserved = preserved_table_html(element) if is_complex_table(element) else None
+    preserved = preserved_table_html(element, base_url) if is_complex_table(element) else None
 
     # Every row, not a preview, and the caption in addition to them rather than instead.
     #
@@ -752,7 +771,7 @@ def extract_rich_blocks(
                 # Not a table of data but a page built out of one. Fall through and treat it
                 # as an ordinary container so its real content is extracted.
                 continue
-            block = _table_block(element, index, tree)
+            block = _table_block(element, index, tree, base_url)
             # Consume this table's own descendants, but leave any nested table -- and
             # everything under it -- for its own turn in this loop. A nested data table is a
             # table, and emitting it separately is how its rows survive; `_cell_text` has
