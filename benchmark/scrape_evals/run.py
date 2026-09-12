@@ -213,6 +213,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Final
 
+from webgraph.types import blocks_text
+
 VARIANTS: Final[tuple[str, ...]] = (
     "raw",
     "landmarks",
@@ -465,7 +467,7 @@ def extract(cache: Path, task_id: str, url: str) -> tuple[str, dict[str, str], s
 
 
 def _join(blocks) -> str:
-    return "\n\n".join(b.text for b in blocks if b.text.strip())
+    return blocks_text(blocks)
 
 
 def _extract_star(args: tuple[Path, str, str]):

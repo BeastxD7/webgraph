@@ -89,6 +89,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
+from webgraph.types import blocks_text
+
 if TYPE_CHECKING:
     from webgraph.types import Block
 
@@ -121,7 +123,7 @@ README says what the right one is.
 
 def join(blocks: Iterable[Block]) -> str:
     """The same join `Document.text` uses, so variants differ only by which blocks survive."""
-    return "\n\n".join(b.text for b in blocks if b.text.strip())
+    return blocks_text(blocks)
 
 
 def variants(blocks: Sequence[Block]) -> dict[str, str]:

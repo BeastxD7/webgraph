@@ -999,3 +999,35 @@ class TestButtons:
             "How long does shipping take to reach me?",
             "Three to five days.",
         ]
+
+
+class TestScreenReaderOnly:
+    """ikea.com: every variant swatch carries `<span class="sr-only">Option: BILLY, Bookcase,
+    dark brown oak effect...</span>` -- 1,214 words on one category page that no sighted
+    reader sees. Measured on WCXB dev, stripping them: collection +0.017, product +0.003."""
+
+    def test_sr_only_labels_are_stripped(self) -> None:
+        html = (
+            '<main><p><a href="/p/1"><span class="sr-only">Option: BILLY, Bookcase, white</span>'
+            '<img src="/b.jpg" alt="A tall white bookcase"></a> <span>$59.99</span></p>'
+            '<p><span class="visually-hidden">Skip to main content</span>Real sentence here.</p></main>'
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://shop.test/")
+        texts = [b.text for b in blocks if b.kind is not BlockKind.IMAGE]
+        assert texts == ["$59.99", "Real sentence here."]
+
+    def test_a_screen_reader_only_headline_is_kept(self) -> None:
+        html = '<main><h1 class="sr-only">The complete guide to shelving units</h1><p>Body text of the guide.</p></main>'
+        blocks = extract_rich_blocks(parse_html(html), "https://shop.test/")
+        assert [b.text for b in blocks] == ["The complete guide to shelving units", "Body text of the guide."]
+
+
+class TestDocumentText:
+    def test_alt_text_and_placeholders_are_not_text(self) -> None:
+        html = (
+            '<main><p>First sentence of the page.</p><img src="/a.jpg" alt="A tall white bookcase with shelves">'
+            '<iframe src="https://example.com/embed"></iframe><p>Second sentence.</p></main>'
+        )
+        document = build_document(html, "https://shop.test/")
+        assert document.text == "First sentence of the page.\n\nSecond sentence."
+        assert any(b.kind is BlockKind.IMAGE for b in document.blocks), "the image is still a block"
