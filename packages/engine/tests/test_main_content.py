@@ -345,17 +345,56 @@ class TestProductSheet:
         assert any("Review number" in b.text for b in kept), "without the policy, prose wins"
 
     def test_write_a_review_is_not_a_section(self) -> None:
-        from webgraph.main_content import _prune_other_sections
+        from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
         blocks = [
             Block(text="Write a Review", tag="h3", xpath="/html/body/h3[1]", dom_index=0, kind=BlockKind.HEADING, level=3),
             Block(text=PROSE, tag="p", xpath="/html/body/p[1]", dom_index=1),
         ]
-        assert [b.text for b in _prune_other_sections(blocks)] == ["Write a Review", PROSE]
+        assert [b.text for b in _prune_other_sections(blocks, _OTHER_SECTION)] == ["Write a Review", PROSE]
 
     def test_an_unbounded_tail_is_not_dropped(self) -> None:
-        from webgraph.main_content import _prune_other_sections
+        from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
         blocks = [Block(text="Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
         blocks += [Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(80)]
-        assert len(_prune_other_sections(blocks)) == 81
+        assert len(_prune_other_sections(blocks, _OTHER_SECTION)) == 81
+
+
+class TestRivers:
+    """cbsnews.com: a "Trending News" box dropped between the third and fourth paragraphs,
+    and a "More World" river of teasers under the article. The box is teasers until the
+    prose resumes; the river runs to the next heading."""
+
+    @staticmethod
+    def article() -> list[Block]:
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
+            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+
+        blocks = [b("Video shows dramatic rescue", 0, kind=BlockKind.HEADING, level=1)]
+        blocks += [b(f"{PROSE} Paragraph {i}.", 1 + i) for i in range(3)]
+        blocks.append(b("Trending News", 4, kind=BlockKind.HEADING, level=2))
+        blocks.append(b("White teen accused of plotting deadly attack", 5, kind=BlockKind.LIST_ITEM))
+        blocks.append(b("Woman risks her life to save a koala", 6, kind=BlockKind.LIST_ITEM))
+        blocks += [b(f"{PROSE} Paragraph {i}.", 7 + i) for i in range(3, 6)]
+        blocks.append(b("Most Read", 10, kind=BlockKind.HEADING, level=2))
+        for i in range(4):
+            blocks.append(b(f"Teaser headline {i}", 11 + 2 * i, kind=BlockKind.HEADING, level=3))
+            blocks.append(b(f"A one-sentence blurb about teaser {i} that reads like news.", 12 + 2 * i))
+        return blocks
+
+    def test_inline_box_ends_where_the_prose_resumes(self) -> None:
+        kept = select_main_content(self.article(), config=MainContentConfig(prune_rivers=True))
+        texts = [b.text for b in kept]
+        assert sum(1 for t in texts if t.startswith(PROSE)) == 6, "all six paragraphs survive"
+        assert "Trending News" not in texts and not any("koala" in t for t in texts)
+        assert not any("Teaser headline" in t for t in texts)
+
+    def test_the_pruner_alone_keeps_every_paragraph(self) -> None:
+        from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
+
+        pruned = _prune_other_sections(self.article(), _RIVER_SECTION)
+        texts = [b.text for b in pruned]
+        assert sum(1 for t in texts if t.startswith(PROSE)) == 6
+        assert "Most Read" not in texts and "Trending News" not in texts
+        assert texts[0] == "Video shows dramatic rescue"

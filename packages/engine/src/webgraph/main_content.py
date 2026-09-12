@@ -315,6 +315,10 @@ class MainContentConfig:
     chosen, and keep the specification blocks (tables, `label: value` lines) inside `main`
     however short they are. Measured on WCXB dev; see `_prune_product`."""
 
+    prune_rivers: bool = config.CONTENT_PRUNE_RIVERS
+    """Drop the river of other stories under an article by its heading -- "More from
+    World", "Trending News", "Top Stories" -- before the run is chosen. See `_RIVER_SECTION`."""
+
     product_keep_all: bool = False
     """With `product_sheet`: after pruning, keep everything rather than choosing a run."""
 
@@ -472,8 +476,12 @@ def select_main_content(
 
     if config.product_sheet:
         blocks = _prune_product(blocks, config)
-        blocks = _prune_other_sections(blocks)
+        blocks = _prune_other_sections(blocks, _OTHER_SECTION)
         if len(blocks) < 2 or config.product_keep_all:
+            return list(blocks)
+    elif config.prune_rivers:
+        blocks = _prune_other_sections(blocks, _RIVER_SECTION)
+        if len(blocks) < 2:
             return list(blocks)
 
     values = [content_value(block, config) for block in blocks]
@@ -640,7 +648,21 @@ _OTHER_SECTION: Final[re.Pattern[str]] = re.compile(
 )
 
 
-def _prune_other_sections(blocks: Sequence[Block]) -> list[Block]:
+_RIVER_SECTION: Final[re.Pattern[str]] = re.compile(
+    # Anchored: the heading must be the label. The river of other stories under an article
+    # -- and nothing an article's own sections are called (FAQ, Q&A, Related, Comments are
+    # counted as content by WCXB's annotators; measured, pruning them cost articles 0.001,
+    # forums 0.015 and services 0.011).
+    r"^(?:more (?:from|in|on)(?: [\w'&. -]{1,30})?|more (?:stories|news|headlines|videos)|"
+    r"trending(?: (?:news|now|stories|videos))?|top stories|most (?:read|popular|viewed|shared)(?: [\w ]{1,20})?|"
+    r"latest (?:news|stories|headlines|videos)|popular (?:now|stories|articles|videos)|editor'?s'? picks?|"
+    r"up next|in case you missed it|from our partners|around the web|sponsored(?: (?:content|stories|links))?|"
+    r"promoted(?: (?:content|stories))?|advertisement|paid content|recommended for you|you may also like)$",
+    re.I,
+)
+
+
+def _prune_other_sections(blocks: Sequence[Block], vocabulary: re.Pattern[str]) -> list[Block]:
     """Drop the sections of a product page that are about other things.
 
     A product page is sections under headings, and the headings say what they are:
@@ -658,7 +680,11 @@ def _prune_other_sections(blocks: Sequence[Block]) -> list[Block]:
         if (
             block.kind is BlockKind.HEADING
             and word_count(block.text) <= 8
-            and _OTHER_SECTION.search(block.text)
+            and (
+                vocabulary.match(block.text.strip().rstrip(":").strip())
+                if vocabulary is _RIVER_SECTION
+                else vocabulary.search(block.text)
+            )
             and not _WRITE.match(block.text)
         ):
             level = block.level or 6
@@ -666,6 +692,11 @@ def _prune_other_sections(blocks: Sequence[Block]) -> list[Block]:
             while end < n and not (
                 blocks[end].kind is BlockKind.HEADING and (blocks[end].level or 6) <= level
             ):
+                # A river is teasers: headlines, blurbs, images, timestamps. A paragraph of
+                # prose is the article resuming -- cbsnews.com drops a "Trending News" box
+                # between the third and fourth paragraphs -- and ends the river there.
+                if vocabulary is _RIVER_SECTION and _is_prose(blocks[end]):
+                    break
                 end += 1
             if end - index <= _MAX_SECTION_BLOCKS:
                 drop.update(range(index, end))
@@ -676,5 +707,14 @@ def _prune_other_sections(blocks: Sequence[Block]) -> list[Block]:
     return out if out else list(blocks)
 
 
+def _is_prose(block: Block) -> bool:
+    return (
+        block.kind is BlockKind.PARAGRAPH
+        and word_count(block.text) >= _PROSE_WORDS
+        and link_density(block) < 0.5
+    )
+
+
+_PROSE_WORDS: Final[int] = 30
 _MAX_SECTION_BLOCKS: Final[int] = 60
 _WRITE: Final[re.Pattern[str]] = re.compile(r"^\s*(?:write|leave|add|submit|post)\b", re.I)
