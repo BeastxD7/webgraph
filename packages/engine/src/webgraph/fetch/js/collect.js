@@ -52,13 +52,14 @@
       el.setAttribute(BREAK, '1');
     }
 
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      // Marked, not just skipped: the parser can then tell a hidden twin -- the mobile copy
-      // of a badge beside its desktop copy -- from an inline sibling that is really there.
-      el.setAttribute(HIDDEN, '1');
-      continue;
-    }
-    if (style.opacity === '0') continue;
+    // Marked, not just skipped: the parser can then tell a hidden twin -- the mobile copy
+    // of a badge beside its desktop copy -- from an inline sibling that is really there,
+    // and a control the reader cannot see (a copy button shown on hover) from one they can.
+    // The value says how it is hidden; opacity 0 is kept apart because content faded in by
+    // a scroll animation also starts there and must not be treated as absent.
+    if (style.display === 'none') { el.setAttribute(HIDDEN, 'display'); continue; }
+    if (style.visibility === 'hidden') { el.setAttribute(HIDDEN, 'visibility'); continue; }
+    if (style.opacity === '0') { el.setAttribute(HIDDEN, 'opacity'); continue; }
     const box = el.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) continue;
 

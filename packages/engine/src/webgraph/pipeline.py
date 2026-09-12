@@ -221,8 +221,14 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             seen[key] = len(kept)
             kept.append(block)
         elif block.rect is not None and earlier.rect is None:
-            # A later copy that was measured replaces an earlier one that was not.
-            kept[previous] = block
+            # A later copy that was measured wins over an earlier one that was not -- and
+            # it wins *where it was drawn*. Moving it up into the unmeasured copy's slot
+            # put python.org's whole footer column ("Applications", "Quotes", "Help")
+            # inside the header, because the header's hidden dropdown lists the same
+            # links; the reader meets those words at the foot of the page, not the top.
+            kept[previous] = None
+            seen[key] = len(kept)
+            kept.append(block)
 
     return [block for block in kept if block is not None]
 

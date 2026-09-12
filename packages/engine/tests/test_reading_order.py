@@ -381,3 +381,35 @@ class TestBridgedColumns:
         names = texts(order_blocks(blocks)[0])
         # Position order: each row's left then right, top to bottom.
         assert names[:4] == ["p0", "r0", "p1", "r1"]
+
+
+class TestGutterRail:
+    """docs.python.org: a 12px-wide, 900px-tall sidebar handle standing in the 36px gutter
+    between the sidebar and the article. Measured, it splits the gutter into two gaps too
+    narrow to cut and bridges every row; the sidebar was then zipped with the article."""
+
+    @staticmethod
+    def page() -> list[Block]:
+        blocks = []
+        # Sidebar: short items, no vertical gaps. Article: two-line paragraphs, so the
+        # median block height is 51 -- larger than the gutter.
+        for i in range(6):
+            blocks.append(block(f"side{i}", 26, 100 + i * 30, w=323, h=24, dom_index=i))
+        blocks.append(block("rail", 354, 100, w=12, h=900, dom_index=6))
+        for i in range(10):
+            blocks.append(block(f"para{i}", 385, 100 + i * 60, w=800, h=51, dom_index=7 + i))
+        return blocks
+
+    def test_sidebar_then_article(self) -> None:
+        ordered, method = order_blocks(self.page())
+        names = texts(ordered)
+        assert method is ReadingOrderMethod.GEOMETRIC_ANCHORED, "the rail is anchored, not measured"
+        assert names[:6] == [f"side{i}" for i in range(6)]
+        assert names[-10:] == [f"para{i}" for i in range(10)]
+
+    def test_line_unit_is_the_one_liners(self) -> None:
+        from webgraph.dom.reading_order import _line_unit
+
+        assert _line_unit([]) == 16.0
+        assert _line_unit([24.0] * 6 + [51.0] * 10) == 24.0
+        assert _line_unit([17.0, 17.0, 17.0, 17.0]) == 17.0
