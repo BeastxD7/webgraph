@@ -3177,3 +3177,35 @@ page found it in one run. *Synthetic fixtures test the shape you thought of.*
 confidence, the reading order came back `geometric-xy-cut` rather than DOM fallback, and the
 union reported static and rendered identical at 4,226 characters -- HN genuinely needs no
 browser, and the engine measured that rather than assuming it.
+
+### D112 -- Hacker News, checked as a reader would: two bugs, the second worse than the first
+
+Asked to preview the extracted Markdown rather than read the numbers. The output was one HTML
+table whose columns were a rank, an empty cell, and a title. Faithful to the markup, and
+useless to read.
+
+**First bug: HN's story list is not a data table.** `is_complex_table` saw `colspan="2"` and
+preserved the markup. Measured on the real page: **92 rows, 31 of them entirely empty**, no
+header anywhere, row widths of 0, 2 and 3. *A table of data does not have a third of its rows
+blank.* Those are spacer rows -- how a gap was made before CSS. `MAX_EMPTY_ROW_SHARE` now
+catches it, and HN goes from 4 blocks to 94 with every story a proper Markdown link.
+
+**Second bug, exposed by fixing the first: `select_content` returned the FOOTER.** 1 block of
+94, zero stories. The selector looks for the densest run of prose and HN has none -- thirty
+short links read as navigation, and the footer was the longest continuous text on the page.
+
+**The fix existed and had never been wired up.** The router calls HN `listing` at **0.87**, and
+`policy_for(listing)` scores repeated cards as units: 92 of 94 blocks, all 30 stories. Routing
+is now applied in `site._content_of` and `/api/text`.
+
+**Measured on WCXB: exactly neutral.** `content` 0.810, `routed-oof` 0.810, identical on every
+one of the seven page types. The gain is bounded by the router, not the policy: `routed-truth`
+(a perfect router) reads listing **0.653 vs 0.552**, +0.101, but the shipped router's listing
+recall is **0.343**, so on that corpus it rarely fires. No loss anywhere, a large gain where it
+does fire.
+
+**The decision this reverses is D-era "ship the router as a label, not a policy".** That was
+taken because the WCXB average moved +0.007, which looked negligible. *The average hid the
+failure mode completely* -- on a listing page it is the difference between the items and the
+footer, and returning a footer is not a small error. **An average across page types is the
+wrong instrument for deciding whether a per-type policy ships.**

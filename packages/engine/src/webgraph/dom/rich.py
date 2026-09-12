@@ -305,9 +305,11 @@ def is_layout_table(element: HtmlElement) -> bool:
       `LONG_CELL_CHARS` of prose. A pricing table holds numbers; a layout table holds an
       article. Note what is **not** a signal: a `<p>` or a `<div>` wrapping a value, which is
       how most content management systems emit an ordinary data cell.
-    - a shape that cannot hold data: one row, one column, or a grid whose cells are mostly
-      empty. A table exists to cross-reference a row against a column, and there is nothing
-      to cross-reference in a single line of cells.
+    - a shape that cannot hold data: one row, one column, blank rows used as spacing, or a
+      grid whose cells are mostly empty. A table exists to cross-reference a row against a
+      column, and there is nothing to cross-reference in a single line of cells -- nor in a
+      record separated from the next by an empty `<tr>`, which is how gaps were made before
+      CSS and is never how data is written.
     - the absence of every marker a data table normally carries -- `<th>`, `<thead>`,
       `<caption>` -- combined with enough rows that its author would have used one.
 
@@ -348,6 +350,15 @@ MIN_FILLED_SHARE: Final[float] = 0.4
 """And enough of its cells must hold something. A 5x3 grid with two non-empty cells is a
 layout scaffold, not a sparse dataset."""
 
+MAX_EMPTY_ROW_SHARE: Final[float] = 0.2
+"""Above this share of entirely empty rows, the table is being used for spacing.
+
+The clearest signal of the lot, and the one that catches the tables the others miss. A table
+of data does not have blank rows *between its records*; a page laid out in table markup does,
+because an empty `<tr>` was how you made a gap before CSS. Measured on the Hacker News front
+page: 92 rows, **31 of them entirely empty**, no header anywhere, row widths of 0, 2 and 3.
+Every other test here passed it as data, and it is a list of 30 stories."""
+
 
 def _is_degenerate(element: HtmlElement) -> bool:
     """Whether this table's *shape* rules out its being a table of data."""
@@ -357,6 +368,10 @@ def _is_degenerate(element: HtmlElement) -> bool:
     widths = [len(row.xpath("./td|./th")) for row in rows]
     if max(widths, default=0) < MIN_GRID:
         return True
+    blank = sum(1 for row in rows if not normalize_text(row.text_content()))
+    if blank > len(rows) * MAX_EMPTY_ROW_SHARE:
+        return True
+
     total = sum(widths)
     filled = sum(
         1

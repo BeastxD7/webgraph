@@ -39,7 +39,7 @@ from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
-from webgraph.pagetype import default_router
+from webgraph.pagetype import default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
@@ -389,9 +389,13 @@ async def get_text(request: TextRequest) -> TextResponse:
 
     # The same reduction the crawl applies, minus cross-page chrome, which one page cannot
     # know. One function decides what "content" means -- see `webgraph.content`.
-    selection = select_content(document.blocks)
     router = default_router()
     routing = router.route(document) if router is not None else None
+    # See `webgraph.site._content_of`: on a listing the page type is the difference between
+    # returning the items and returning the footer.
+    selection = select_content(
+        document.blocks, config=policy_for(routing.page_type if routing else None)
+    )
     content = (
         to_markdown(
             document.model_copy(update={"blocks": tuple(selection.blocks)}),

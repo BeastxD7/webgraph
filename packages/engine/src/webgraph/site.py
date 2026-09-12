@@ -39,7 +39,7 @@ from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
-from webgraph.pagetype import default_router
+from webgraph.pagetype import default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
@@ -535,8 +535,15 @@ def _content_of(
     """`content_markdown` for one page, and the selection that produced it."""
     if not config.remove_chrome or page.document is None:
         return "", None
+    # The page's own type decides how the boundary is drawn. On a listing this is the whole
+    # result rather than a refinement: Hacker News's front page returns its *footer* under the
+    # prose boundary (1 block of 94, no stories) and all 30 stories under the listing policy,
+    # because a page whose content is links reads as navigation to a prose-seeking selector.
     selection = select_content(
-        page.document.blocks, chrome=chrome, main_content=config.main_content
+        page.document.blocks,
+        chrome=chrome,
+        main_content=config.main_content,
+        config=policy_for(page.page_type),
     )
     if not selection.changed:
         return "", selection
