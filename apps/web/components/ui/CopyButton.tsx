@@ -16,7 +16,14 @@ export default function CopyButton({
   label = "Copy",
   className = "",
 }: {
-  text: string;
+  /**
+   * The text, or a function returning it.
+   *
+   * A function for anything expensive to build. A run log is assembled from thousands of
+   * events, and a string prop would rebuild it on every frame of a live crawl to serve a
+   * button nobody has pressed. Given a function, nothing is built until the click.
+   */
+  text: string | (() => string);
   label?: string;
   className?: string;
 }) {
@@ -30,7 +37,7 @@ export default function CopyButton({
   const copy = useCallback(async () => {
     if (timer.current) clearTimeout(timer.current);
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(typeof text === "function" ? text() : text);
       setState("copied");
     } catch {
       setState("failed");
@@ -38,13 +45,15 @@ export default function CopyButton({
     timer.current = setTimeout(() => setState("idle"), 2200);
   }, [text]);
 
-  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  // Only for a string: counting words means building the text, which is the work the
+  // function form exists to defer.
+  const words = typeof text === "string" && text.trim() ? text.trim().split(/\s+/).length : 0;
 
   return (
     <button
       type="button"
       onClick={copy}
-      disabled={!text}
+      disabled={text === ""}
       // `aria-live` on the label, not the button: a screen reader should hear the outcome,
       // not the whole control again.
       className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${

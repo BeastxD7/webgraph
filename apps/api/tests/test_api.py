@@ -206,7 +206,7 @@ class TestTextStream:
     def test_a_real_page_streams_stages_then_done(self, client: TestClient, server: str) -> None:
         got = self.events(client, f"{server}/docs_static.html")
         assert got[-1]["type"] == "done"
-        stages = [event["stage"] for event in got]
+        stages = [event.get("stage") for event in got]
         for stage in ("resolve", "parse", "classify", "select"):
             assert stage in stages
 
@@ -240,3 +240,124 @@ class TestTextStream:
         )
         assert isinstance(classify["available"], bool)
         assert 0.0 <= classify["confidence"] <= 1.0
+
+
+class TestRunHeader:
+    """The first frame of a stream, and the file it names.
+
+    This is the join between what a reader copies out of the browser and what the server
+    kept. If the two cannot be put side by side, neither is evidence of anything.
+    """
+
+    @staticmethod
+    def stream(client: TestClient, url: str) -> list[dict]:
+        import json
+
+        with client.stream("POST", "/api/text/stream", json={"url": url}) as response:
+            return [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+
+    def test_the_first_frame_names_the_run_and_its_trace(
+        self, client: TestClient, server: str
+    ) -> None:
+        first = self.stream(client, f"{server}/docs_static.html")[0]
+        assert first["type"] == "run"
+        assert first["run"] and first["trace"]
+        assert first["url"].endswith("/docs_static.html")
+        assert first["mode"] == "page"
+        assert first["engine"]
+
+    def test_the_trace_is_named_not_located(self, client: TestClient, server: str) -> None:
+        """A file name is useful to whoever has the server; a path is the server's business.
+
+        Also keeps a copied log from carrying a temp directory into a bug report.
+        """
+        first = self.stream(client, f"{server}/docs_static.html")[0]
+        assert "/" not in first["trace"] and "\\" not in first["trace"]
+        assert first["run"] in first["trace"]
+
+    def test_a_failed_run_still_gets_a_header(self, client: TestClient, server: str) -> None:
+        """The run that went wrong is the one whose id someone will need."""
+        got = self.stream(client, f"{server}/absent.html")
+        assert got[0]["type"] == "run"
+        assert got[-1]["type"] == "error"
+
+    def test_two_runs_of_the_same_page_get_separate_traces(
+        self, client: TestClient, server: str
+    ) -> None:
+        """Host plus a second-granularity timestamp is not unique.
+
+        Two tabs pointed at one site within the same second used to open the same path in
+        "w" mode, and the second silently erased the first.
+        """
+        one = self.stream(client, f"{server}/docs_static.html")[0]
+        two = self.stream(client, f"{server}/docs_static.html")[0]
+        assert one["run"] != two["run"]
+        assert one["trace"] != two["trace"]
+
+    def test_the_trace_file_records_the_run_and_its_failure(
+        self, client: TestClient, server: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """What is on disk is the same run, ending with the reason it ended.
+
+        A trace closed by the tracer's own `finally` would be shut before the handler's
+        `except` ran, and the failure -- the single line worth keeping -- would be the one
+        line missing.
+        """
+        import json
+
+        import webgraph_api.main as api
+
+        monkeypatch.setattr(api, "TRACE_DIR", tmp_path)
+        header = self.stream(client, f"{server}/absent.html")[0]
+
+        written = tmp_path / header["trace"]
+        records = [json.loads(line) for line in written.read_text(encoding="utf-8").splitlines()]
+        assert records[0]["type"] == "run" and records[0]["seq"] == 1
+        assert all(record["run"] == header["run"] for record in records)
+        assert any(record["type"] == "error" for record in records)
+        assert records[-1]["type"] == "trace-closed"
+
+    def test_an_unwritable_trace_directory_does_not_fail_the_run(
+        self, client: TestClient, server: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Observability that can take the product down is not observability.
+
+        The header is still emitted: the run id is real whether or not anything could be
+        written under it, and a client that branched on its absence would break here.
+        """
+        import webgraph_api.main as api
+
+        blocked = tmp_path / "not-a-directory"
+        blocked.write_text("", encoding="utf-8")
+        monkeypatch.setattr(api, "TRACE_DIR", blocked / "runs")
+
+        got = self.stream(client, f"{server}/docs_static.html")
+        assert got[0]["type"] == "run" and got[0]["run"]
+        assert got[-1]["type"] == "done"
+
+    def test_the_site_header_reports_the_caps_that_were_applied(
+        self, client: TestClient, server: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Asking for 500 pages on a host capped at 3 is a run of 3, and the log says 3."""
+        import json
+
+        import webgraph_api.main as api
+
+        monkeypatch.setattr(api, "PAGE_CAP", 3)
+        with client.stream(
+            "POST",
+            "/api/site/stream",
+            json={"url": f"{server}/docs_static.html", "max_pages": 500, "concurrency": 2},
+        ) as response:
+            first = next(
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ") and '"run"' in line
+            )
+        assert first["type"] == "run"
+        assert first["mode"] == "site"
+        assert first["max_pages"] == 3

@@ -65,7 +65,15 @@ def stream_page(
         "type": "stage",
         "stage": "resolve",
         "state": "running",
-        "message": "Fetching as plain HTTP and through a browser, then merging",
+        # Says what this run is doing, not what the engine can do. Announcing a browser
+        # fetch on a static-only run is the kind of small untruth that makes a reader
+        # distrust the rest of the log.
+        # Unset means complete, the same as UNION -- see `resolve_page`.
+        "message": (
+            "Fetching as plain HTTP"
+            if strategy is Strategy.STATIC_ONLY
+            else "Fetching as plain HTTP and through a browser, then merging"
+        ),
     }
     try:
         resolved = resolve_page(

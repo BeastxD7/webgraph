@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import PageStages from "./PageStages";
+import RunLog from "./RunLog";
 import { usePageStream } from "@/hooks/usePageStream";
 import { useCallback, useMemo, useState } from "react";
 
@@ -15,6 +16,7 @@ import {
 } from "@/lib/api";
 import { compact, percent } from "@/lib/format";
 import { renderMarkdown } from "@/lib/markdown";
+import type { RunMeta } from "@/lib/runlog";
 import CopyButton from "@/components/ui/CopyButton";
 
 function Meta({ page }: { page: TextResponse["page"] }) {
@@ -118,6 +120,25 @@ export default function SinglePageRun({ url }: { url: string }) {
       ? 1 - text.content_markdown.length / Math.max(text.markdown.length, 1)
       : 0;
 
+  /**
+   * The header of the copied log.
+   *
+   * `endedAt` is derived from the run's own elapsed clock rather than read from
+   * `Date.now()` here: reading a clock during render is not idempotent, and React is free
+   * to render this twice.
+   */
+  const logMeta: RunMeta = {
+    url,
+    mode: "single page",
+    request: { render: true },
+    header: (run.log.entries.current[0]?.event.type === "run"
+      ? run.log.entries.current[0]?.event
+      : null) as Record<string, unknown> | null,
+    startedAt: run.log.startedAt.current,
+    endedAt: run.running ? null : run.log.startedAt.current + run.elapsed * 1000,
+    outcome: run.running ? "running" : error ? `failed: ${error}` : "completed",
+  };
+
   const mapSchema = useCallback(async () => {
     const preset = SCHEMA_PRESETS[presetIndex];
     if (!preset) return;
@@ -150,6 +171,10 @@ export default function SinglePageRun({ url }: { url: string }) {
       {/* Always visible, running or not: while the run is going it is the only thing
           happening, and once it has finished or failed it is the record of what was done. */}
       <PageStages run={run} />
+
+      {/* Outside the `text &&` block below on purpose: a run that produced no page is
+          exactly the run whose log someone needs. */}
+      <RunLog log={run.log} meta={logMeta} />
 
       {error && (
         <div

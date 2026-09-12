@@ -9,6 +9,7 @@ import {
   type SiteEvent,
   streamSite,
 } from "@/lib/api";
+import { type RunLog, useRunLog } from "./useRunLog";
 
 export type Phase =
   | "analyzing"
@@ -182,6 +183,8 @@ export interface SiteStream extends RunState {
   running: boolean;
   elapsed: number;
   stop: () => void;
+  /** Every frame this run received, for the reader who needs the whole thing. */
+  log: RunLog;
 }
 
 /**
@@ -195,6 +198,7 @@ export interface SiteStream extends RunState {
 export function useSiteStream(request: SiteStreamRequest): SiteStream {
   const [state, dispatch] = useReducer(reduce, INITIAL);
   const [elapsed, setElapsed] = useState(0);
+  const log = useRunLog();
   const controllerRef = useRef<AbortController | null>(null);
   // Written from the effect, never during render: a wall-clock read while rendering is
   // not idempotent.
@@ -218,11 +222,20 @@ export function useSiteStream(request: SiteStreamRequest): SiteStream {
       try {
         await streamSite(
           { url, max_pages: maxPages, concurrency: 6, complete },
-          (event) => dispatch({ kind: "event", event }),
+          (event) => {
+            log.record(event);
+            dispatch({ kind: "event", event });
+          },
           controller.signal,
         );
       } catch (cause) {
         if (controller.signal.aborted) return;
+        // The request failed rather than the crawl, so no `error` frame exists to record.
+        log.note({
+          type: "error",
+          stage: "transport",
+          message: cause instanceof Error ? cause.message : "The stream failed.",
+        });
         dispatch({
           kind: "failed",
           message: cause instanceof Error ? cause.message : "The stream failed.",
@@ -231,6 +244,8 @@ export function useSiteStream(request: SiteStreamRequest): SiteStream {
     })();
 
     return () => controller.abort();
+    // `log` is stable: every member is a ref or a `useCallback` with no dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, complete, maxPages]);
 
   // Elapsed ticks locally rather than waiting on events: the analyze stage can take several
@@ -244,9 +259,12 @@ export function useSiteStream(request: SiteStreamRequest): SiteStream {
   }, [running]);
 
   const stop = useCallback(() => {
+    // Recorded before the abort: a crawl that was stopped at page 40 and one that finished
+    // at page 40 produce the same events and mean opposite things.
+    log.note({ type: "stopped", at_pages: state.pages.length });
     controllerRef.current?.abort();
     dispatch({ kind: "stopped" });
-  }, []);
+  }, [log, state.pages.length]);
 
-  return { ...state, running, elapsed, stop };
+  return { ...state, running, elapsed, stop, log };
 }

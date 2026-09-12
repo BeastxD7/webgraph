@@ -98,7 +98,7 @@ class RunTrace:
 
 
 def trace_events[E: Mapping[str, Any]](
-    events: Iterator[E], path: Path | str | None = None
+    events: Iterator[E], path: Path | str | RunTrace | None = None
 ) -> Iterator[E]:
     """Pass an event stream through unchanged, writing each event to a trace on the way.
 
@@ -114,7 +114,20 @@ def trace_events[E: Mapping[str, Any]](
 
     With no path and no `WEBGRAPH_TRACE` in the environment it is a straight pass-through,
     so wrapping a stream is always safe.
+
+    **Lifetime.** Given a path, this owns the trace and closes it when the stream ends.
+    Given a `RunTrace`, the caller owns it and this closes nothing -- which is the only way
+    a run can record its own death. An exception raised by the stream runs this generator's
+    `finally` *before* the caller's `except` block sees it, so a tracer that closed the file
+    there would guarantee that the one event worth having, the failure, is the one event
+    never written down.
     """
+    if isinstance(path, RunTrace):
+        for event in events:
+            path.write(event)
+            yield event
+        return
+
     target = path or os.environ.get("WEBGRAPH_TRACE")
     if not target:
         yield from events

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type PageStageEvent, streamPage } from "@/lib/api";
+import { type RunLog, useRunLog } from "./useRunLog";
 
 /**
  * One page's extraction, as it happens.
@@ -56,16 +57,19 @@ const EMPTY: PageRun = {
 
 export function usePageStream({ url, render }: { url: string; render: boolean }): PageRun & {
   retry: () => void;
+  log: RunLog;
 } {
   const [run, setRun] = useState<PageRun>(EMPTY);
   const [attempt, setAttempt] = useState(0);
   const startedAt = useRef(Date.now());
+  const log = useRunLog();
 
   const retry = useCallback(() => {
     startedAt.current = Date.now();
+    log.reset();
     setRun(EMPTY);
     setAttempt((n) => n + 1);
-  }, []);
+  }, [log]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,6 +78,7 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
     void (async () => {
       try {
         await streamPage({ url, render }, (event) => {
+          log.record(event);
           setRun((state) => {
             switch (event.type) {
               case "stage":
@@ -103,6 +108,13 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
         }, controller.signal);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        // Never arrives as a frame -- the request itself failed, so the server said nothing.
+        // Without this the log simply stops, which reads like the run is still going.
+        log.note({
+          type: "error",
+          stage: "transport",
+          message: error instanceof Error ? error.message : String(error),
+        });
         setRun((state) => ({
           ...state,
           running: false,
@@ -116,6 +128,8 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
     })();
 
     return () => controller.abort();
+    // `log` is stable: every member is a ref or a `useCallback` with no dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, render, attempt]);
 
   // Ticks locally rather than waiting on events: a render can take ten seconds, and a
@@ -129,5 +143,5 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
     return () => window.clearInterval(ticker);
   }, [run.running]);
 
-  return { ...run, retry };
+  return { ...run, retry, log };
 }
