@@ -75,10 +75,26 @@ export default function PageStages({ run }: { run: PageRun }) {
         ? `${Math.max(0, run.elapsed - (previous ?? 0)).toFixed(1)}s`
         : undefined;
 
+    // What the collapsed line says: the one fact worth a glance per stage.
+    const summary =
+      stage === "resolve" && run.resolve
+        ? `${run.resolve.strategy} · ${run.resolve.union_chars.toLocaleString("en-US")} chars`
+        : stage === "parse" && run.parse
+          ? `${run.parse.blocks.toLocaleString("en-US")} blocks · ${run.parse.words.toLocaleString("en-US")} words · ${run.parse.reading_order}`
+          : stage === "classify" && run.classify
+            ? run.classify.page_type === "unknown"
+              ? "not confident — default policy"
+              : `${run.classify.page_type} (${Math.round(run.classify.confidence * 100)}%)`
+            : stage === "select" && run.select
+              ? `kept ${run.select.kept} of ${run.select.total} blocks`
+              : stage === "done" && run.done
+                ? `${run.done.markdown.length.toLocaleString("en-US")} chars of Markdown · ${run.done.images.length} images`
+                : undefined;
     steps.push({
       id: stage,
       title: copy.title,
       description: copy.does,
+      summary,
       state: failed ? "failed" : finished ? "done" : "running",
       duration,
       children: (
