@@ -58,6 +58,19 @@
   50% { transform: translateY(-6px); }
 }
 
+/* A timeline step arriving: it slides up into place rather than popping, so the eye is led
+   to the new bottom of the list. Reduced-motion collapses it to nothing, below. */
+@keyframes reveal {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* The running step's dot: a soft ring that breathes, in place of a spinner. */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(63 133 39 / 0.35); }
+  50% { box-shadow: 0 0 0 6px rgb(63 133 39 / 0); }
+}
+
 @layer base {
   :root {
     color-scheme: light;
