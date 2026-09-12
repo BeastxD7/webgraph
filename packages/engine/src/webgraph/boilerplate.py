@@ -81,14 +81,27 @@ Measured over 13 pages against a majority vote of trafilatura, readability and j
 | also without `aside` and `header` | 0.736 | 0.986 | 0.815 |
 
 `nav` and `footer` only: seven points of F for **no recall at all**. Adding `aside` and
-`header` buys 0.4 more points of F and costs 0.4 of recall, the wrong trade for an engine
-whose stated job is not to lose content -- plenty of sites put real material in an `<aside>`.
+`header` bought 0.4 more points of F and cost 0.4 of recall on those thirteen pages, and
+`aside` was left in on the grounds that sites put real material in one.
 
 On MDN alone: precision 0.066 -> 0.584, recall unchanged at 1.000.
+
+**`aside` is stripped now, re-measured on 1,497 labelled pages (WCXB dev) instead of
+thirteen.** mspoweruser.com puts its "Deals" river -- twenty teaser headlines and blurbs --
+in an `<aside>` inside `<main>`, and the boundary step kept it, because a teaser blurb is a
+sentence and scores like one. Per type, F1 with `aside` kept -> stripped:
+
+    article 0.9180 -> 0.9188   forum 0.7431 -> 0.7559   service 0.7994 -> 0.7998
+    documentation 0.9237 (same)   collection 0.5845 -> 0.5857   listing 0.6607 -> 0.6632
+    product 0.6015 -> 0.5972
+
+The one loss is one page (gymshark.com, a size guide whose removal moved the run), and
+every other type gains. `header` stays: a page's `<header>` carries its own title and
+byline, and `_restore_title` depends on finding them.
 """
 
 def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
-    """Drop blocks inside `<nav>` and `<footer>`.
+    """Drop blocks inside `<nav>`, `<footer>` and `<aside>`, and inside named panels.
 
     Unlike cross-page detection this needs a single page, so it applies from the first result
     of a crawl rather than the sixth.
@@ -108,12 +121,15 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
     return kept
 
 
-STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer"})
+STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer", "aside"})
+"""Landmark regions `strip_landmarks` removes: the two `LANDMARK_XPATH` names, reached also
+through `role="navigation"` and `role="contentinfo"` which the XPath cannot see, and
+`aside` / `role="complementary"` -- see the module docstring for the measurement."""
+
 STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent"})
 """Named panels `strip_landmarks` removes with the landmarks: a faceted-search filter is
-navigation over the catalogue, whatever element it is built from. See `Block.widget`."""
-"""Landmark regions `strip_landmarks` removes -- the same two as `LANDMARK_XPATH`, now also
-reached through `role="navigation"` and `role="contentinfo"`, which the XPath cannot see."""
+navigation over the catalogue and a cookie dialog is nobody's content, whatever element
+either is built from. See `Block.widget`."""
 
 def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
     """Keep only blocks inside the page's `main` landmark, when the page has a trustworthy one.
