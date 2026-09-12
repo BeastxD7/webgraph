@@ -3107,3 +3107,47 @@ Every board on the benchmarks page now carries a `Trust` level -- `same-inputs`,
 `same-corpus`, `not-compared` -- so a reader is told what a side-by-side is worth instead of
 having to find out by reading source. **A ranking whose rows were produced years apart is not
 a ranking, and printing one is the thing not to do.**
+
+### D110 -- Tables, equations and a fix that was removed for solving nothing
+
+WebMainBench 545, `boundary` variant, across the day:
+
+```
+                 start    layout    currency   tables+   maths span
+                           table     escape     maths     protected
+overall         0.6224    0.6255    0.6912     0.7113     0.7201
+table_edit      0.3485    0.3589    0.3589     0.4249     0.4249
+table_TEDS      0.5558    0.5816    0.5816     0.6004     0.6004
+formula_edit    0.3074    0.3074    0.4705     0.5169     0.6009
+code_edit       0.8099    0.8303    0.8303     0.8458     0.8458
+text_edit       0.7567    0.7545    0.7537     0.7673     0.7673
+```
+
+Column mean, comparable to MinerU-HTML's published 0.8256: **0.5665 -> 0.6479**.
+
+**Tables: splitting the column found the real term.** Of the pages scored, 74 have a table on
+both sides and score **0.605**; 38 had a table only from *us*, each scoring 0.0 and joining the
+average. Suppressing those alone is worth 0.367 -> 0.533. Inspecting them settled bug vs
+convention: a 1x1 cell reading "Home", a 1x2 "Rate this" widget, a 1x4 auto-refresh strip, a
+6x1 list of tool names. **A table cross-references a row against a column; one row or one
+column has nothing to cross-reference.** With that plus preserving complex tables' own markup,
+the column moved 0.359 -> 0.425 and its page count 157 -> 122.
+
+**Equations: the digit lookahead was too blunt, and the corpus said so.** `$0.07^{7}$` is
+mathematics that begins with a digit. Escaping its opening delimiter left the closing one to
+pair with something far away, and a page whose ground truth is the single formula `0.07` came
+back as a formula containing the sentence before it. A span containing a backslash, caret,
+underscore or brace is LaTeX; prices contain none of them. Protecting those spans: 0.517 ->
+0.601.
+
+**D110a -- a fix removed for solving a problem that does not exist.** A diagnostic reported
+"25 code blocks carrying a line-number gutter" and a `strip_line_numbers` was built, guarded
+and tested for it. It then fired on **0 of 493** code blocks in the corpus, and on **0 of 94**
+across django, php.net and the Arch wiki. The original count was my own regex matching code
+that merely *begins* with a digit. Modern highlighters render line numbers with CSS counters
+or a separate column, so they never reach `text_content()` at all.
+
+The code was correct, guarded and tested, and it was deleted anyway, because its docstring
+claimed a measurement that was false and **guarded dead code carrying a false claim is worse
+than no code**. The rule this session has been run on applies to my own work: do not add code
+for a problem that has not been reproduced.

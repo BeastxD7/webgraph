@@ -4,7 +4,7 @@ import type { Route } from "next";
 const REPO = "https://github.com/BeastxD7/webgraph";
 
 const LINKS: ReadonlyArray<{ label: string; href: Route }> = [
-  { label: "How it works", href: "/#pipeline" },
+  { label: "How it works", href: "/how-it-works" },
   { label: "Capabilities", href: "/#capabilities" },
   { label: "Evidence", href: "/#evidence" },
   { label: "Benchmarks", href: "/benchmarks" },

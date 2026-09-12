@@ -121,12 +121,12 @@ export default function ColumnGap() {
       </div>
 
       <figcaption className="mt-4 text-[12.5px] leading-relaxed text-ink-faint">
-        Equations were the widest gap and half of it turned out to be currency: an unescaped
-        dollar amount reads as a maths delimiter, so two prices in one paragraph scored as a
-        formula wrapping the prose between them. Escaping those moved this column from 0.307
-        to 0.470. Tables are now the widest, and the reason is representation rather than
-        parsing -- a merged-cell table cannot be written in Markdown pipe syntax without
-        losing the merges, and the leader returns the source markup unchanged instead.
+        Equations started the day at 0.307 and half the gap was currency: an unescaped dollar
+        amount reads as a maths delimiter, so two prices in one paragraph scored as a formula
+        wrapping the prose between them. The rest was MathML, which the engine deleted before
+        extraction began. Tables started at 0.349; a merged-cell table cannot be written in
+        Markdown pipe syntax without losing the merges, so those now keep their own markup,
+        and tables that were really navigation widgets are no longer emitted as tables at all.
       </figcaption>
     </figure>
   );

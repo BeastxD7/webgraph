@@ -129,7 +129,7 @@ export const BOARDS: readonly Board[] = [
     max: 1,
     entries: [
       { name: "MinerU-HTML", score: 0.826 },
-      { name: "webgraph", score: 0.599, self: true, note: "column mean, comparable to the published rows" },
+      { name: "webgraph", score: 0.631, self: true, note: "column mean, comparable to the published rows" },
       { name: "magic-html", score: 0.5 },
       { name: "trafilatura (md)", score: 0.401 },
       { name: "trafilatura (txt)", score: 0.372 },
@@ -243,11 +243,11 @@ export type Column = {
 };
 
 export const COLUMNS: readonly Column[] = [
-  { key: "text", label: "Prose", pages: 545, us: 0.755, best: 0.862, bestName: "MinerU-HTML" },
-  { key: "code", label: "Code blocks", pages: 91, us: 0.83, best: 0.909, bestName: "MinerU-HTML" },
-  { key: "table", label: "Tables", pages: 157, us: 0.359, best: 0.678, bestName: "MinerU-HTML" },
-  { key: "teds", label: "Table structure", pages: 157, us: 0.582, best: 0.739, bestName: "MinerU-HTML" },
-  { key: "formula", label: "Equations", pages: 143, us: 0.47, best: 0.94, bestName: "MinerU-HTML" },
+  { key: "text", label: "Prose", pages: 545, us: 0.767, best: 0.862, bestName: "MinerU-HTML" },
+  { key: "code", label: "Code blocks", pages: 91, us: 0.846, best: 0.909, bestName: "MinerU-HTML" },
+  { key: "table", label: "Tables", pages: 122, us: 0.425, best: 0.678, bestName: "MinerU-HTML" },
+  { key: "teds", label: "Table structure", pages: 122, us: 0.6, best: 0.739, bestName: "MinerU-HTML" },
+  { key: "formula", label: "Equations", pages: 146, us: 0.517, best: 0.94, bestName: "MinerU-HTML" },
 ];
 
 /** WCXB across this session, each step a diagnosed extraction bug rather than a tuned constant. */

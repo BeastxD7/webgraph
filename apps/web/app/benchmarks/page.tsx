@@ -7,6 +7,23 @@ import ScatterPlane from "@/components/benchmarks/ScatterPlane";
 import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
 import { BOARDS } from "@/lib/benchmarks";
+import type { Trust } from "@/lib/benchmarks";
+
+/** What a side-by-side on this board is worth, said out loud rather than left in the data. */
+const TRUST: Record<Trust, { label: string; tone: string }> = {
+  "same-inputs": {
+    label: "Directly comparable",
+    tone: "bg-leaf-100 text-leaf-700",
+  },
+  "same-corpus": {
+    label: "Same corpus, published rivals",
+    tone: "bg-sunk text-ink-soft",
+  },
+  "not-compared": {
+    label: "Not a ranking",
+    tone: "bg-clay/15 text-clay",
+  },
+};
 
 export const metadata: Metadata = {
   title: "Benchmarks",
@@ -69,15 +86,34 @@ export default function BenchmarksPage() {
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h2 className="font-display text-[1.5rem] leading-tight">{board.name}</h2>
                 <span className="font-mono text-[11.5px] text-ink-faint">{board.pages}</span>
+                <span
+                  className={`ml-auto rounded-full px-2.5 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] ${
+                    TRUST[board.trust].tone
+                  }`}
+                >
+                  {TRUST[board.trust].label}
+                </span>
               </div>
               <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">{board.asks}</p>
               <p className="mt-1 font-mono text-[11.5px] text-ink-faint">{board.metric}</p>
-              <div className="mt-6">
+              {board.trust === "not-compared" ? (
+                <p className="mt-4 rounded-md bg-clay/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-clay">
+                  <strong className="font-bold">Read the order as nothing.</strong>{" "}
+                  {board.comparability}
+                </p>
+              ) : null}
+              <div className={`mt-6 ${board.trust === "not-compared" ? "opacity-70" : ""}`}>
                 <RankChart board={board} />
               </div>
               <p className="mt-5 border-l-2 border-clay/40 pl-3 text-[12.5px] leading-relaxed text-ink-faint">
                 {board.caveat}
               </p>
+              {board.trust !== "not-compared" ? (
+                <p className="mt-2 pl-3 text-[12px] leading-relaxed text-ink-faint">
+                  <span className="font-semibold">How the rows were produced.</span>{" "}
+                  {board.comparability}
+                </p>
+              ) : null}
             </article>
           ))}
         </section>

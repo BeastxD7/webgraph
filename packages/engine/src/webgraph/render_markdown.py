@@ -42,6 +42,40 @@ maths (921). Money is written `$29.8`; mathematics is written `$\frac…`, `$ x`
 The engine's plain-text output is left alone: it is not Markdown and nothing there is a
 delimiter."""
 
+_MATH_SPAN: Final[re.Pattern[str]] = re.compile(r"(?<!\\)\$([^$\n]{1,200})(?<!\\)\$")
+"""A candidate `$...$` on one line: what the rest of the toolchain would read as mathematics."""
+
+_MATH_SIGNAL: Final[re.Pattern[str]] = re.compile(r"[\\^_{}]")
+"""What separates `$0.07^{7}$` from `$0.07`.
+
+The digit lookahead alone is not enough, because mathematics may also begin with a digit.
+Measured: 275 of the ground truth's bare dollars are followed by one. Escaping those broke
+real equations -- a page whose ground truth is the single formula `0.07` came back from this
+engine as a formula containing the sentence in front of it, because the opening delimiter of
+`$0.07^{7}$` had been escaped and the closing one then paired with something far away.
+
+A backslash, a caret, an underscore or a brace inside the span is LaTeX and nothing else.
+Prices do not contain them."""
+
+
+def _escape_currency(text: str) -> str:
+    """Escape dollars that begin an amount of money, leaving mathematics intact.
+
+    Spans that read as LaTeX are located first and passed through untouched; escaping runs
+    only on the text between them.
+    """
+    spans = [m.span() for m in _MATH_SPAN.finditer(text) if _MATH_SIGNAL.search(m.group(1))]
+    if not spans:
+        return _CURRENCY_DOLLAR.sub(r"\\$", text)
+    out: list[str] = []
+    cursor = 0
+    for start, end in spans:
+        out.append(_CURRENCY_DOLLAR.sub(r"\\$", text[cursor:start]))
+        out.append(text[start:end])
+        cursor = end
+    out.append(_CURRENCY_DOLLAR.sub(r"\\$", text[cursor:]))
+    return "".join(out)
+
 
 class MarkdownOptions:
     """Rendering switches.
@@ -70,7 +104,7 @@ class MarkdownOptions:
 
 def _text(value: str, options: MarkdownOptions) -> str:
     escaped = _ESCAPE.sub(r"\\\1", value) if options.escape_text else value
-    return _CURRENCY_DOLLAR.sub(r"\\$", escaped)
+    return _escape_currency(escaped)
 
 
 def _body(block: Block, options: MarkdownOptions) -> str:
@@ -82,7 +116,7 @@ def _body(block: Block, options: MarkdownOptions) -> str:
     if block.rich_text and options.include_links:
         # Still escape `$`: the rich form carries deliberate *link* syntax, never deliberate
         # math delimiters, so a dollar in it is currency and has to say so.
-        return _CURRENCY_DOLLAR.sub(r"\\$", block.rich_text)
+        return _escape_currency(block.rich_text)
     return _text(block.text, options)
 
 
@@ -113,7 +147,7 @@ def _render_table(block: Block) -> str:
     padded = [list(row) + [""] * (width - len(row)) for row in block.rows]
 
     def line(cells: list[str]) -> str:
-        cleaned = (_CURRENCY_DOLLAR.sub(r"\\$", _TABLE_PIPE.sub(r"\\|", c)) for c in cells)
+        cleaned = (_escape_currency(_TABLE_PIPE.sub(r"\\|", c)) for c in cells)
         return "| " + " | ".join(cleaned) + " |"
 
     header, *body = padded

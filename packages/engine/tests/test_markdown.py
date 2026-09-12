@@ -668,6 +668,27 @@ class TestDollarEscaping:
         document = build_document("<html><body><p>It costs $5</p></body></html>", BASE)
         assert document.text == "It costs $5"
 
+    def test_mathematics_may_also_begin_with_a_digit(self) -> None:
+        r"""The cost of the digit lookahead, and the reason it is not the whole rule.
+
+        `$0.07^{7}$` is mathematics. Escaping its opening delimiter left the closing one to
+        pair with something far away, and a page whose ground truth is the single formula
+        `0.07` came back as a formula containing the sentence in front of it. A backslash,
+        caret, underscore or brace inside the span is LaTeX; prices have none of them.
+        """
+        assert "$0.07^{7}$" in md("<p>then $0.07^{7}$ follows</p>")
+        assert r"$lpha_1$" in md(r"<p>and $lpha_1$ too</p>")
+
+    def test_a_price_and_an_equation_in_one_sentence(self) -> None:
+        out = md(r"<p>costs $5 when $lpha$ is small</p>")
+        assert r"\$5" in out
+        assert r"$lpha$" in out
+
+    def test_a_span_with_no_latex_in_it_is_still_money(self) -> None:
+        """Two prices in a sentence have nothing mathematical between them, so both escape."""
+        out = md("<p>spends $29.8 billion and $344 million more</p>")
+        assert out.count(r"\$") == 2
+
 
 class TestComplexTablesKeepTheirMarkup:
     """Pipe syntax cannot express a merged cell, so a table that merges keeps its own markup.
