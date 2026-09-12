@@ -48,7 +48,7 @@ import lxml.html
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.pageschema import schema_for
 from webgraph.extract.schema import extract_facts, merge_facts
-from webgraph.pagetype import PageType, default_router, page_features
+from webgraph.pagetype import DEFAULT_MIN_CONFIDENCE, PageType, default_router, page_features
 from webgraph.pipeline import build_document
 from webgraph.structured.payloads import extract_payloads
 
@@ -176,9 +176,11 @@ def main() -> None:
             # Gated by what our router says, which is what a user gets. Out of fold when
             # those predictions were supplied: a router asked about a page it was trained on
             # is not answering, it is recalling.
-            predicted = oof.get(file_id, {}).get("type") if oof else None
-            if predicted is not None:
-                routed = PageType(predicted)
+            record_oof = oof.get(file_id) if oof else None
+            if record_oof is not None:
+                # The same floor the shipped router applies: below it, `unknown`.
+                confident = float(record_oof.get("confidence", 1.0)) >= DEFAULT_MIN_CONFIDENCE
+                routed = PageType(record_oof["type"]) if confident else PageType.UNKNOWN
             else:
                 try:
                     document = build_document(url or "http://localhost/", html)

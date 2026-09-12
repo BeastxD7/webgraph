@@ -47,6 +47,9 @@ _DEFAULT_PORTS: Final[dict[str, str]] = {"http": "80", "https": "443"}
 _INDEX_FILE: Final[re.Pattern[str]] = re.compile(r"/index\.(html?|php|aspx?)$", re.IGNORECASE)
 
 
+_JS_HOLE: Final[re.Pattern[str]] = re.compile(r"/(?:undefined|null|NaN|\[object Object\])(?:/|$)")
+
+
 def normalize_url(url: str, *, base: str | None = None) -> str | None:
     """Canonicalise a URL, or return None when it is not a crawlable page.
 
@@ -67,6 +70,10 @@ def normalize_url(url: str, *, base: str | None = None) -> str | None:
     if parts.scheme not in {"http", "https"}:
         return None
     if not parts.hostname:
+        return None
+    # `/undefined` and `/null` are a template interpolating a missing value, not addresses.
+    # Every crawl of a Vue or React storefront finds one, and fetching it costs a render.
+    if _JS_HOLE.search(parts.path):
         return None
 
     host = parts.hostname.lower()

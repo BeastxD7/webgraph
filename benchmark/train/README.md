@@ -15,35 +15,85 @@ page on two hosts yields an identical vector.
 
 ```
 uv run --package webgraph python benchmark/train/router_train.py \
-    --corpus <wcxb clone> --oof <scratch>/router_oof.json \
-    --export packages/engine/src/webgraph/models/router_gbdt.json
+    --corpus <wcxb clone> --oof benchmark/train/artifacts/router_oof.json \
+    --export packages/engine/src/webgraph/models/router_gbdt.json --class-weight balanced
+uv run --package webgraph python benchmark/train/router_eval.py --corpus <wcxb clone>
 ```
 
-HistGradientBoosting, 120 iterations, depth 4, 62 features. Exported 971 KB; pure-Python
-inference reproduces sklearn's probabilities to `0.00e+00`; 0.76 ms per page.
+HistGradientBoosting, 120 iterations, depth 4, class-weighted, **126 features**. Exported
+994 KB; pure-Python inference reproduces sklearn's probabilities to `0.00e+00`; 0.76 ms per
+page. The out-of-fold predictions it was scored on are committed beside it, so the schema
+benchmark can route with them.
 
-**5-fold CV accuracy 0.838** (rs-trafilatura reports 0.866 for its XGBoost router).
+### How it is scored, and why that changed
 
-| truth | N | recall | predicted as |
+Folds are grouped by **domain**. The corpus has 1,497 pages over 1,300 domains, and a page
+must never be judged by a model that trained on its sibling. Ungrouped folds were tolerable
+while every feature was a shape signal; they stopped being tolerable the day a `<title>`
+became a feature, because a title carries the site's name and an ungrouped fold lets the
+model learn *site → type* -- the fingerprint this router refuses to be. Under the grouped
+protocol the previously shipped model scores 0.825, not the 0.838 the old README claimed.
+Both numbers below are grouped.
+
+Below 0.5 confidence the router says `unknown`. Measured on the out-of-fold predictions it
+is right 86% of the time above that line and **44%** below it.
+
+### Results
+
+| | accuracy | macro-F1 | listing recall | service recall |
+|---|---:|---:|---:|---:|
+| previous (68 features), dev, grouped 5-fold | 0.825 | 0.746 | 0.44 | 0.67 |
+| **this model** (126 features), dev, grouped 5-fold | **0.858** | **0.799** | 0.50 | 0.73 |
+| previous, **test split**, once | 0.865 | 0.817 | 0.48 | 0.71 |
+| **this model, test split, once** | **0.871** | **0.819** | 0.40 | 0.73 |
+
+The dev gain is +3.3 points of accuracy and +5.3 of macro-F1, stable to ±0.1 across seeds.
+**The test gain is +0.6 and +0.2, which on 511 pages is inside the noise**, and listing
+recall on test went *down* (19 → 16 of 40). Both rows are here because reading only the
+first would be the kind of claim this project does not make.
+
+Two things make the test split a different distribution from dev, and neither favours the
+new model: the archiver stripped every `<script>` from those files, so the JSON-LD features
+are zero on all of them; and the class-name and title features were chosen against dev,
+which is the only place their vocabulary was ever tuned. The honest summary is that the new
+features help clearly on the distribution they were built on and slightly, at most, on a
+held-out one. A second corpus would settle it.
+
+| truth | N | recall | predicted as (dev, out of fold) |
 |---|---:|---:|---|
-| article | 793 | 0.947 | article 751, service 23, listing 6, collection 4 |
-| forum | 113 | 0.894 | forum 101, article 10, service 2 |
-| product | 119 | 0.849 | product 101, article 7, service 7, listing 2 |
-| documentation | 91 | 0.791 | documentation 72, article 14, service 5 |
-| collection | 117 | 0.709 | collection 83, service 14, listing 7, product 6 |
-| service | 165 | 0.679 | service 112, article 32, listing 8, product 5 |
-| listing | 99 | 0.343 | listing 34, article 33, collection 16, service 11 |
+| article | 793 | 0.942 | article 747, service 16, listing 14, documentation 6 |
+| forum | 113 | 0.920 | forum 104, article 7, service 1, listing 1 |
+| product | 119 | 0.849 | product 101, collection 11, service 3, article 3 |
+| documentation | 91 | 0.846 | documentation 77, article 9, service 5 |
+| collection | 117 | 0.744 | collection 87, listing 11, product 8, service 7 |
+| service | 165 | 0.727 | service 120, article 29, listing 7, collection 4 |
+| listing | 99 | 0.495 | listing 49, article 22, collection 12, service 11 |
 
-Listing is the weak class: a news section front and a category page look alike in URL and
-structure, and the corpus has 99 of them against 793 articles. Top features by permutation
-importance: `doc_hits_per_100w`, `url_forum`, `url_slug_words`, `url_article`,
-`cta_hits_per_100w`, `forum_hits_per_100w`, `url_product`, `link_density`,
-`price_hits_per_100w`, `og_product`.
+### What the new features are, and what did not work
 
-The router's *worth* is measured downstream, not by its accuracy: `benchmark/wcxb/run.py`
-has a `routed-oof` variant that applies `policy_for(type)` using the out-of-fold prediction
-for each page, and a `routed-truth` diagnostic that uses the annotated type -- the ceiling a
-perfect router could reach. See MEMORY.md for the measured rows.
+Three families, each kept only because it moved the grouped CV:
+
+- **Arrangement, from block XPaths** -- how many `<section>`/`<article>` containers hold
+  text, how spread the words are across top-level containers, facet/paging/pricing/Q&A
+  vocabulary. Free: every block already carries its XPath.
+- **Markup statistics, counted at build time** -- class-name buckets (`card`, `price`,
+  `comment`, `pricing`...), element counts, `rel="next"`, `itemprop`, `data-*` share.
+  Stored on the `Document` because the crawl drops the HTML.
+- **The page's own words about itself** -- `<title>`, meta description, `og:title` and the
+  first `<h1>`, with the site's name stripped via `og:site_name`, scored against seven
+  hand-picked vocabularies.
+
+Rejected: a 100-term TF-IDF over the same head text. It scored 0.4 points higher and its
+top terms were *coffee, gym, headphones, insurance, cybersecurity* -- a model of what the
+corpus happened to be about. Also a null result worth recording: the corpus defines
+*service* pages by "content across multiple `<section>` elements", and `<section>` counts
+alone do not separate them. Sites use `<div>` for everything.
+
+The router's *worth* is measured downstream, not by its accuracy: `benchmark/schema/run.py`
+routes with the out-of-fold predictions and reports how often an auto-selected schema
+produces a wrong value. With this model and the 0.5 floor: 64.7% correct, 12.7% wrong
+(lenient) and 49.4% / 28.0% (strict) on 869 pages -- against 58.7% / 23.4% and
+44.2% / 37.9% for no routing at all.
 
 ## Per-block content classifier (`webgraph/blockmodel.py`, `models/block_gbdt.json`)
 

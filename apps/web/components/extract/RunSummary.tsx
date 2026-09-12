@@ -19,7 +19,9 @@ export default function RunSummary({ summary }: { summary: DoneEvent }) {
         )}
         {summary.exhausted
           ? "every reachable page crawled"
-          : `${summary.remaining_queued} still queued`}{" "}
+          : summary.stopped
+            ? `stopped by you · ${summary.remaining_queued.toLocaleString("en-US")} still queued`
+            : `stopped at the page cap · ${summary.remaining_queued.toLocaleString("en-US")} more pages are known and were not crawled`}{" "}
         · {duration(summary.duration_seconds)}
       </p>
     </div>

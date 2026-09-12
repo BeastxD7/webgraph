@@ -3,9 +3,11 @@ r"""Train the page-type router on WCXB dev, honestly, and export it for pure-Pyt
 Discipline
 ----------
 - Reads the **dev** split only. Never opens `test/`.
-- Reports 5-fold cross-validated accuracy with folds grouped by page (a page is in exactly
-  one fold), and writes the **out-of-fold** predicted type for every dev page to
-  `--oof <path>`. The WCXB runner can then apply per-type policies using those predictions,
+- Reports 5-fold cross-validated accuracy with folds grouped by **domain** -- 1,497 pages
+  over 1,300 domains, and a page must never be judged by a model that saw its sibling. The
+  title features made this mandatory: a `<title>` carries the site's name, and ungrouped
+  folds let the model learn site -> type, which is the fingerprint this router refuses to
+  be. Writes the **out-of-fold** predicted type for every dev page to `--oof <path>`. The WCXB runner can then apply per-type policies using those predictions,
   so the routed WCXB dev number is one the router never trained on.
 - The shipped model (`--export`) is trained on all of dev; its number is the CV number
   above, not its training accuracy.
@@ -35,6 +37,12 @@ from webgraph.pipeline import build_document
 CLASSES = [t.value for t in TYPES]
 
 
+def _domain(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return urlsplit(url).netloc.lower().removeprefix("www.")
+
+
 def _one(args: tuple[Path, str, str, str]) -> tuple[str, str, list[float]] | None:
     corpus, file_id, url, page_type = args
     path = corpus / "dev" / "html" / f"{file_id}.html.gz"
@@ -47,7 +55,7 @@ def _one(args: tuple[Path, str, str, str]) -> tuple[str, str, list[float]] | Non
     return file_id, page_type, page_features(document, url)
 
 
-def load(corpus: Path, jobs: int) -> tuple[list[str], list[str], np.ndarray]:
+def load(corpus: Path, jobs: int) -> tuple[list[str], list[str], list[str], np.ndarray]:
     tasks = []
     for gt_path in sorted((corpus / "dev" / "ground-truth").glob("*.json")):
         data = json.loads(gt_path.read_text(encoding="utf-8"))
@@ -58,7 +66,9 @@ def load(corpus: Path, jobs: int) -> tuple[list[str], list[str], np.ndarray]:
         tasks.append((corpus, file_id, data.get("url", ""), page_type))
     ids: list[str] = []
     labels: list[str] = []
+    domains: list[str] = []
     rows: list[list[float]] = []
+    by_id = {file_id: url for _, file_id, url, _ in tasks}
     with ProcessPoolExecutor(max_workers=jobs) as pool:
         for done, result in enumerate(pool.map(_one, tasks, chunksize=8), 1):
             if result is None:
@@ -66,10 +76,11 @@ def load(corpus: Path, jobs: int) -> tuple[list[str], list[str], np.ndarray]:
             file_id, page_type, features = result
             ids.append(file_id)
             labels.append(page_type)
+            domains.append(_domain(by_id[file_id]) or file_id)
             rows.append(features)
             if done % 200 == 0:
                 print(f"  featurised {done}/{len(tasks)}", file=sys.stderr)
-    return ids, labels, np.array(rows, dtype=float)
+    return ids, labels, domains, np.array(rows, dtype=float)
 
 
 def make_model(seed: int = 0, class_weight: str | None = None):  # type: ignore[no-untyped-def]
@@ -139,17 +150,23 @@ def main() -> int:
                         help="weight classes inversely to their frequency")
     args = parser.parse_args()
 
-    from sklearn.model_selection import StratifiedKFold
+    from sklearn.metrics import f1_score
+    from sklearn.model_selection import StratifiedGroupKFold
 
-    ids, labels, X = load(args.corpus, args.jobs)
+    ids, labels, domains, X = load(args.corpus, args.jobs)
     y = np.array(labels)
-    print(f"{len(ids)} pages, {X.shape[1]} features; classes {dict(Counter(labels))}")
+    groups = np.array(domains)
+    print(
+        f"{len(ids)} pages over {len(set(domains))} domains, {X.shape[1]} features; "
+        f"classes {dict(Counter(labels))}"
+    )
 
     oof: dict[str, dict[str, object]] = {}
     per_type: dict[str, Counter[str]] = defaultdict(Counter)
     correct = 0
-    skf = StratifiedKFold(n_splits=args.folds, shuffle=True, random_state=0)
-    for fold, (train_idx, test_idx) in enumerate(skf.split(X, y)):
+    skf = StratifiedGroupKFold(n_splits=args.folds, shuffle=True, random_state=0)
+    predicted_all = np.empty(len(y), dtype=object)
+    for fold, (train_idx, test_idx) in enumerate(skf.split(X, y, groups)):
         model = make_model(fold, args.class_weight)
         model.fit(X[train_idx], y[train_idx])
         proba = model.predict_proba(X[test_idx])
@@ -159,8 +176,10 @@ def main() -> int:
             oof[ids[row]] = {"type": predicted, "confidence": probs[predicted], "truth": labels[row]}
             per_type[labels[row]][predicted] += 1
             correct += predicted == labels[row]
+            predicted_all[row] = predicted
     accuracy = correct / len(ids)
-    print(f"\n5-fold CV accuracy: {accuracy:.3f}\n")
+    macro_f1 = f1_score(y, predicted_all, average="macro")
+    print(f"\n5-fold domain-grouped CV accuracy: {accuracy:.3f}  macro-F1: {macro_f1:.3f}\n")
     print(f"{'truth':<14}{'N':>5}{'recall':>8}  predicted as")
     for truth in CLASSES:
         row = per_type[truth]

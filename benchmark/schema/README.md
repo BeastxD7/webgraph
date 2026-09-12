@@ -94,8 +94,14 @@ uv run --package webgraph python benchmark/schema/run.py \
 ```
 
 `--oof` takes the out-of-fold router predictions written by
-`benchmark/train/router_train.py`. Without it the routed column asks the shipped router
-about pages it was trained on, which measures its memory rather than its judgement.
+`benchmark/train/router_train.py`; the ones for the shipped router are committed at
+`benchmark/train/artifacts/router_oof.json`. Without it the routed column asks the shipped
+router about pages it was trained on, which measures its memory rather than its judgement.
+The runner applies the router's 0.5 confidence floor to those predictions, exactly as the
+shipped router does.
+
+With the current router (126 features, domain-grouped folds) the routed row reads
+64.7% correct / 12.7% wrong / 22.7% missing lenient, and 49.4% / 28.0% / 22.7% strict.
 
 ## Two things about the corpus, both load-bearing
 

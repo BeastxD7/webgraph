@@ -45,6 +45,7 @@ from importlib.resources import files
 from typing import Any, Final
 from urllib.parse import urlsplit
 
+from webgraph.dom.markup_stats import CLASS_BUCKETS, COUNTED_TAGS
 from webgraph.main_content import MainContentConfig, _repeat_groups, link_density, word_count
 from webgraph.types import Block, BlockKind, Document, PayloadSource
 
@@ -177,6 +178,59 @@ _DOC_WORDS: Final[re.Pattern[str]] = re.compile(
     re.I,
 )
 
+_FACET_WORDS: Final[re.Pattern[str]] = re.compile(
+    r"\b(filter|filters|sort by|sorting|refine|narrow by|price range|in stock|availability"
+    r"|clear all|apply filters)\b", re.I)
+_PAGING_WORDS: Final[re.Pattern[str]] = re.compile(
+    r"\b(next page|previous page|load more|show more|showing \d+|\d+ results|results found"
+    r"|page \d+|view all)\b", re.I)
+_PLAN_WORDS: Final[re.Pattern[str]] = re.compile(
+    r"\b(pricing|per month|per user|free trial|book a demo|get started|contact sales"
+    r"|testimonial|trusted by|case study|our team|why choose|we help|our services)\b", re.I)
+_QA_WORDS: Final[re.Pattern[str]] = re.compile(
+    r"\b(replies|reply|posted by|quote|thread|upvote|answered|asked|comments?)\b", re.I)
+
+_HEAD_BUCKETS: Final[dict[str, re.Pattern[str]]] = {
+    "head_product": re.compile(r"\b(buy|shop|price|sale|order|cart|review|reviews|specs|specifications|sku|in stock)\b", re.I),
+    "head_forum": re.compile(r"\b(forum|forums|thread|discussion|community|reply|replies|answers?|question|asked|topic)\b", re.I),
+    "head_docs": re.compile(r"\b(docs|documentation|api|reference|guide|tutorial|manual|install|installation|configure|configuration|getting started|sdk|cli|readme|changelog)\b", re.I),
+    "head_article": re.compile(r"\b(blog|news|opinion|how to|why|what is|tips|analysis|story|column|editorial|published|min read)\b", re.I),
+    "head_service": re.compile(r"\b(services?|solutions?|agency|pricing|plans?|platform|software|company|about us|your business|trusted|enterprise|demo|consulting)\b", re.I),
+    "head_collection": re.compile(r"\b(collections?|category|categories|shop all|all products|browse|catalog|catalogue|women|men|kids)\b", re.I),
+    "head_listing": re.compile(r"\b(best|top \d+|\d+ best|list|lists|listings|directory|results|search|archive|archives|courses|jobs|events|index|recipes|rankings|standings|page \d+)\b", re.I),
+}
+"""What a page says about itself in its `<title>`, meta description and first heading.
+
+"Dinner Recipes", "NBA Standings", "QS World University Rankings": the title said *list*
+on page after page whose DOM shape said *article*, and nothing in the feature set could
+hear it. Hand-picked buckets rather than a learned vocabulary -- see `dom/markup_stats.py`
+for why -- and the site's own name is stripped first, so that "| Hacker News" is not a
+forum signal on every page of a site."""
+
+_SITE_SEPARATORS: Final[tuple[str, ...]] = (" | ", " - ", " \u2013 ", " \u2014 ", " :: ", " \u00b7 ")
+
+
+def _without_site(text: str, site: str) -> str:
+    """`"What is Cloud Computing? | Google Cloud"` with `og:site_name` = "Google Cloud"."""
+    if not site or not text:
+        return text
+    for separator in _SITE_SEPARATORS:
+        if text.endswith(separator + site):
+            return text[: -len(separator + site)]
+        if text.startswith(site + separator):
+            return text[len(site + separator):]
+    return text
+
+
+def _ancestor(xpath: str, tag: str) -> str | None:
+    """The xpath prefix ending at the last `tag` step, or None when there is none."""
+    index = xpath.rfind(f"/{tag}")
+    if index < 0:
+        return None
+    step_end = xpath.find("/", index + 1)
+    return xpath[:step_end] if step_end > 0 else xpath
+
+
 _BLOCK_KINDS: Final[tuple[BlockKind, ...]] = (
     BlockKind.PARAGRAPH, BlockKind.HEADING, BlockKind.LIST_ITEM, BlockKind.TABLE,
     BlockKind.IMAGE, BlockKind.CODE, BlockKind.QUOTE,
@@ -204,6 +258,19 @@ FEATURE_NAMES: Final[tuple[str, ...]] = (
     # inserted: the exported model is keyed on this order.
     "linked_heading_share", "log_distinct_links", "group_count", "dated_group_share",
     "median_block_words", "group_to_longest_ratio",
+    # arrangement, from block xpaths
+    "log_sections", "section_words_share", "sections_over_5pct", "log_article_elements",
+    "article_words_share", "log_forms", "containers_over_5pct", "largest_container_share",
+    "facet_hits_per_100w", "paging_hits_per_100w", "plan_hits_per_100w", "qa_hits_per_100w",
+    "share_li_blocks", "mean_xpath_depth", "heading_word_mean", "link_targets_per_block",
+    # markup, counted at build time
+    *tuple(f"cls_{name}" for name in CLASS_BUCKETS),
+    *tuple(f"n_{tag}" for tag in COUNTED_TAGS),
+    "log_elements", "a_per_element", "distinct_class_tokens", "rel_next", "itemprop_count",
+    "data_attr_share",
+    # the page's own words about itself
+    *tuple(_HEAD_BUCKETS),
+    "head_words",
 )
 
 
@@ -331,6 +398,81 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
         # the page than its single longest block does; an article is the other way round.
         (max(group_words.values()) / max(words)) if group_words and max(words) else 0.0,
     ])
+    # -- arrangement, from block xpaths ---------------------------------------------------
+    #
+    # Where the words sit in the tree. A marketing page spreads its text across many
+    # top-level containers; an article concentrates it in one. Read from the xpaths every
+    # block already carries, so it costs nothing and survives a crawl.
+    section_words: dict[str, int] = {}
+    article_words: dict[str, int] = {}
+    forms: set[str] = set()
+    container_words: dict[str, int] = {}
+    depth_total = 0
+    for b, w in zip(blocks, words, strict=True):
+        for tag, bag in (("section", section_words), ("article", article_words)):
+            key = _ancestor(b.xpath, f"{tag}[") or _ancestor(b.xpath, f"{tag}/")
+            if key:
+                bag[key] = bag.get(key, 0) + w
+        if "/form" in b.xpath:
+            forms.add(_ancestor(b.xpath, "form[") or _ancestor(b.xpath, "form/") or b.xpath)
+        top = "/".join(b.xpath.split("/")[:5])
+        container_words[top] = container_words.get(top, 0) + w
+        depth_total += b.xpath.count("/")
+    heading_words = [word_count(b.text) for b in headings]
+    features.extend([
+        math.log1p(len(section_words)),
+        sum(section_words.values()) / total,
+        float(sum(1 for w in section_words.values() if w >= 0.05 * total)),
+        math.log1p(len(article_words)),
+        sum(article_words.values()) / total,
+        math.log1p(len(forms)),
+        float(sum(1 for w in container_words.values() if w >= 0.05 * total)),
+        (max(container_words.values()) / total) if container_words else 0.0,
+        len(_FACET_WORDS.findall(text)) * per_100w,
+        len(_PAGING_WORDS.findall(text)) * per_100w,
+        len(_PLAN_WORDS.findall(text)) * per_100w,
+        len(_QA_WORDS.findall(text)) * per_100w,
+        sum(1 for b in blocks if b.tag == "li") / n,
+        depth_total / n,
+        (sum(heading_words) / len(heading_words)) if heading_words else 0.0,
+        len({b.href for b in blocks if b.href}) / n,
+    ])
+
+    # -- markup, counted at build time ----------------------------------------------------
+    markup = document.markup
+    per_element = 100.0 / max(1, markup.elements)
+    features.extend(markup.class_hits.get(name, 0.0) for name in CLASS_BUCKETS)
+    features.extend(math.log1p(markup.tag_counts.get(tag, 0)) for tag in COUNTED_TAGS)
+    features.extend([
+        math.log1p(markup.elements),
+        markup.tag_counts.get("a", 0) * per_element,
+        math.log1p(markup.class_tokens),
+        float(markup.rel_next),
+        math.log1p(markup.itemprop_count),
+        markup.data_attr_share,
+    ])
+
+    # -- the page's own words about itself -------------------------------------------------
+    og_title = ""
+    site_name = ""
+    for payload in document.structured_data:
+        if payload.source is PayloadSource.OPEN_GRAPH and isinstance(payload.data, dict):
+            og_title = str(payload.data.get("og:title") or "")
+            site_name = str(payload.data.get("og:site_name") or "").strip()
+            break
+    first_h1 = next((b.text for b in headings if b.level == 1), "")
+    head = " ".join(
+        part for part in (
+            _without_site(document.title, site_name),
+            _without_site(og_title, site_name),
+            document.description,
+            first_h1,
+        ) if part
+    )
+    head_words = max(1, len(head.split()))
+    features.extend(len(rx.findall(head)) / head_words * 10 for rx in _HEAD_BUCKETS.values())
+    features.append(math.log1p(head_words))
+
     assert len(features) == len(FEATURE_NAMES), (len(features), len(FEATURE_NAMES))
     return features
 
@@ -403,6 +545,67 @@ _PHRASING: Final[dict[str, str]] = {
     "url_has_query": "the address carries a query string",
     "url_numeric_segment": "the address contains a number",
     "url_html_ext": "the address ends in .html",
+    # arrangement
+    "log_sections": "how many <section> containers hold text",
+    "section_words_share": "how much of the text sits inside <section> containers",
+    "sections_over_5pct": "how many sections each hold a real share of the text",
+    "log_article_elements": "how many <article> containers there are",
+    "article_words_share": "how much of the text sits inside <article> containers",
+    "log_forms": "the forms on the page",
+    "containers_over_5pct": "how many top-level containers each hold a real share of the text",
+    "largest_container_share": "how much of the text one container holds",
+    "facet_hits_per_100w": "filter and sort controls like refine and price range",
+    "paging_hits_per_100w": "paging words like next page and results found",
+    "plan_hits_per_100w": "marketing words like pricing, free trial and book a demo",
+    "qa_hits_per_100w": "discussion words like replies, asked and answered",
+    "share_li_blocks": "the share of blocks that are list items",
+    "mean_xpath_depth": "how deeply nested the text is",
+    "heading_word_mean": "how long the headings are",
+    "link_targets_per_block": "how many distinct places it links to, per block",
+    # markup
+    "cls_card": "class names like card, tile and item",
+    "cls_grid": "class names like grid, row and column",
+    "cls_product": "class names like product, price and cart",
+    "cls_post": "class names like post, article and byline",
+    "cls_service": "class names like hero, pricing and testimonial",
+    "cls_forum": "class names like comment, reply and thread",
+    "cls_docs": "class names like sidebar, toc and api",
+    "cls_filter": "class names like filter, facet and pagination",
+    "cls_nav": "class names like nav, menu and breadcrumb",
+    "n_input": "the number of input fields",
+    "n_select": "the number of dropdowns",
+    "n_button": "the number of buttons",
+    "n_form": "the number of forms",
+    "n_time": "the number of timestamps in the markup",
+    "n_article": "the number of <article> elements",
+    "n_section": "the number of <section> elements",
+    "n_table": "the number of tables",
+    "n_img": "the number of images",
+    "n_a": "the number of links",
+    "n_li": "the number of list items",
+    "n_h2": "the number of second-level headings",
+    "n_h3": "the number of third-level headings",
+    "n_iframe": "embedded frames",
+    "n_video": "embedded video",
+    "n_pre": "preformatted code blocks",
+    "n_blockquote": "quoted passages",
+    "n_label": "form labels",
+    "n_option": "dropdown options",
+    "log_elements": "how many elements the page has",
+    "a_per_element": "how much of the markup is links",
+    "distinct_class_tokens": "how varied the class names are",
+    "rel_next": "a rel=\"next\" link to a following page",
+    "itemprop_count": "how much microdata it carries",
+    "data_attr_share": "how much of the markup carries data-* attributes",
+    # the page's own words
+    "head_product": "its title or description says buy, price or reviews",
+    "head_forum": "its title or description says forum, thread or replies",
+    "head_docs": "its title or description says docs, API or reference",
+    "head_article": "its title or description says blog, news or how to",
+    "head_service": "its title or description says services, pricing or platform",
+    "head_collection": "its title or description says collection, category or catalog",
+    "head_listing": "its title or description says list, results, courses or recipes",
+    "head_words": "how long its title and description are",
 }
 """Human phrasing for the signals worth naming. A feature absent from this map is named by
 its own identifier rather than guessed at -- an invented explanation is worse than a raw one."""
