@@ -239,6 +239,34 @@ export default function SinglePageRun({ url }: { url: string }) {
               </p>
             )}
 
+            {facts?.schema_choice && (
+              <div className="mt-4 rounded-xl border border-line bg-haze px-4 py-3 text-[12.5px]">
+                <p className="text-ink-soft">
+                  Read as a{" "}
+                  <strong className="font-bold text-ink">{facts.schema_choice.page_type}</strong>{" "}
+                  page ({percent(facts.schema_choice.confidence)} confident), so the fields are{" "}
+                  {facts.schema_choice.fields.join(", ")}.
+                </p>
+                <p className="mt-1 text-ink-faint">
+                  {facts.schema_choice.payloads_used === 0 ? (
+                    <>
+                      Of {facts.schema_choice.payloads_considered} structured-data blocks on this
+                      page, none describes the page itself — they describe the site, its
+                      breadcrumbs or its navigation. Nothing is reported rather than reporting
+                      the site&rsquo;s details as the page&rsquo;s.
+                    </>
+                  ) : (
+                    <>
+                      Read {facts.schema_choice.payloads_used} of{" "}
+                      {facts.schema_choice.payloads_considered} structured-data blocks:{" "}
+                      {facts.schema_choice.subject_types.join(", ")}. The rest describe the site
+                      rather than this page.
+                    </>
+                  )}
+                </p>
+              </div>
+            )}
+
             {facts && (
               <div className="mt-4 overflow-x-auto">
                 {Object.keys(facts.facts).length === 0 ? (

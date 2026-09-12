@@ -35,6 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from webgraph.content import select_content
+from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch import guard
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, geometry_by_xpath, render_page
@@ -45,7 +46,7 @@ from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
 from webgraph.page import stream_page
-from webgraph.pagetype import default_router, policy_for
+from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
@@ -178,8 +179,11 @@ long-running crawls parked in it starve ordinary requests for the life of the pr
 
 class ExtractRequest(BaseModel):
     url: str = Field(description="Page URL to extract from")
-    schema_: dict[str, Any] = Field(
-        alias="schema", description="JSON Schema describing the fields to extract"
+    schema_: dict[str, Any] | None = Field(
+        default=None,
+        alias="schema",
+        description="JSON Schema describing the fields to extract. Omit it and the engine "
+        "classifies the page and uses the schema for that page type.",
     )
     render: bool = Field(
         default=False,
@@ -225,9 +229,39 @@ class PageInfo(BaseModel):
     payloads: list[str]
 
 
+class SchemaChoice(BaseModel):
+    """Why these fields and not others -- shown whenever the engine picked the schema.
+
+    A caller who supplied their own schema knows what they asked for. A caller who did not
+    is owed the reasoning, because "no price" means something different when the page was
+    typed as an article than when it was typed as a product and the price was genuinely
+    absent.
+    """
+
+    page_type: str
+    confidence: float
+    fields: list[str]
+    subject_types: list[str] = Field(
+        default_factory=list,
+        description="The @type of each structured-data node accepted as describing this "
+        "page. Empty means the page shipped structured data about its site or its "
+        "breadcrumbs but nothing about itself, which is the common case on category pages.",
+    )
+    payloads_considered: int = 0
+    payloads_used: int = 0
+    filled_from_fallback: list[str] = Field(
+        default_factory=list,
+        description="Fields no node about the page supplied, taken from the page's own "
+        "wrapper or its social-preview tags. Each such fact's source says which.",
+    )
+
+
 class ExtractResponse(BaseModel):
     page: PageInfo
     facts: dict[str, FactOut]
+    schema_choice: SchemaChoice | None = Field(
+        default=None, description="Present when the engine chose the schema itself."
+    )
 
 
 class TextResponse(BaseModel):
@@ -428,18 +462,52 @@ async def get_text(request: TextRequest) -> TextResponse:
 
 @app.post("/api/extract", response_model=ExtractResponse)
 async def extract(request: ExtractRequest) -> ExtractResponse:
-    """Extract facts matching a JSON Schema, each with its provenance."""
-    if not isinstance(request.schema_, dict) or "properties" not in request.schema_:
+    """Extract facts matching a JSON Schema, each with its provenance.
+
+    With no schema the engine classifies the page and uses the schema for that type, and
+    reads only the structured-data node that describes the page -- not the site's
+    `Organization`, not its breadcrumbs. Without that gate, a category page reports the
+    shop's name as its own 46% of the time.
+    """
+    if request.schema_ is not None and (
+        not isinstance(request.schema_, dict) or "properties" not in request.schema_
+    ):
         raise HTTPException(
             status_code=422, detail="schema must be a JSON Schema object with 'properties'"
         )
 
     html, geometry, url = await _load(request.url, request.render)
     document = build_document(html, url, geometry=geometry, rtl=request.rtl)
-    merged = merge_facts(extract_facts(document.structured_data, request.schema_, url))
+
+    choice: SchemaChoice | None = None
+    if request.schema_ is not None:
+        merged = merge_facts(
+            extract_facts(list(document.structured_data), request.schema_, url)
+        )
+    else:
+        # No router means no page type, which means no schema to choose. Degrading to a
+        # default schema would be picking a vocabulary at random.
+        router = default_router()
+        routing = router.route(document, url) if router else None
+        page_type = routing.page_type if routing else PageType.UNKNOWN
+        # The gate runs only on an auto-chosen schema. A caller who wrote their own schema
+        # may well be reaching for the site's `Organization` on purpose, and narrowing their
+        # payloads without being asked would be this endpoint deciding what they meant.
+        page = facts_for_page(document.structured_data, page_type, url)
+        merged = page.facts
+        choice = SchemaChoice(
+            page_type=page_type.value,
+            confidence=round(routing.confidence, 4) if routing else 0.0,
+            fields=sorted(page.schema.get("properties", {})),
+            subject_types=list(page.subject_types),
+            payloads_considered=page.payloads_considered,
+            payloads_used=page.payloads_used,
+            filled_from_fallback=list(page.filled_from_generic),
+        )
 
     return ExtractResponse(
         page=_page_info(document, bool(geometry)),
+        schema_choice=choice,
         facts={
             path: FactOut(
                 value=fact.value,

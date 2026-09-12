@@ -178,8 +178,56 @@ class TestErrorHandling:
         )
         assert response.status_code == 422
 
-    def test_missing_body_field_rejected(self, client: TestClient) -> None:
-        assert client.post("/api/extract", json={"url": "https://example.com"}).status_code == 422
+    def test_a_missing_url_is_still_rejected(self, client: TestClient) -> None:
+        assert client.post("/api/extract", json={}).status_code == 422
+
+
+class TestAutoSchema:
+    """Extraction with no schema supplied: the engine picks one from the page type.
+
+    The schema is only half of it. The other half is which structured-data node gets read --
+    a product page from a WordPress shop ships `Organization`, `WebSite`, `WebPage`,
+    `BreadcrumbList` and `Product`, all with a `name`, and reading them all reports the
+    shop's name as the product's on a measured 15% of product pages and 46% of category
+    pages.
+    """
+
+    def test_no_schema_means_the_engine_chooses_one(self, client: TestClient, server: str) -> None:
+        body = client.post(
+            "/api/extract", json={"url": f"{server}/ecommerce_jsonld.html"}
+        ).json()
+        assert body["schema_choice"] is not None
+        assert body["schema_choice"]["page_type"]
+        assert body["schema_choice"]["fields"]
+
+    def test_the_choice_says_which_nodes_it_read(self, client: TestClient, server: str) -> None:
+        """A caller who did not write the schema is owed the reasoning: "no price" means
+        something different when the page was typed as an article."""
+        choice = client.post(
+            "/api/extract", json={"url": f"{server}/ecommerce_jsonld.html"}
+        ).json()["schema_choice"]
+        assert choice["payloads_considered"] >= choice["payloads_used"]
+        if choice["payloads_used"]:
+            assert choice["subject_types"]
+
+    def test_a_supplied_schema_is_left_alone(self, client: TestClient, server: str) -> None:
+        """The gate narrows payloads only when the engine chose the vocabulary. A caller
+        asking for the site's `Organization` by hand may mean exactly that."""
+        body = client.post(
+            "/api/extract",
+            json={
+                "url": f"{server}/ecommerce_jsonld.html",
+                "schema": {"type": "object", "properties": {"name": {"type": "string"}}},
+            },
+        ).json()
+        assert body["schema_choice"] is None
+
+    def test_a_malformed_schema_is_still_rejected(self, client: TestClient, server: str) -> None:
+        """Omitting the schema is now a request; sending a broken one is still an error."""
+        response = client.post(
+            "/api/extract", json={"url": f"{server}/docs_static.html", "schema": {"type": "object"}}
+        )
+        assert response.status_code == 422
 
 
 class TestTextStream:
