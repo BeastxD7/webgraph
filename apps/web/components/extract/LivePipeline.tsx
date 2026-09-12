@@ -127,16 +127,7 @@ export default function LivePipeline({
     return { url: shortUrl(latest.url), detail: `${kept} · ${steps}`, ok: true };
   }, [latest]);
 
-  /** Running tally of what the classifier has decided, across every page so far. */
-  const types = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const page of pages) {
-      if (!page.ok) continue;
-      const type = page.page_type || "unknown";
-      counts[type] = (counts[type] ?? 0) + 1;
-    }
-    return counts;
-  }, [pages]);
+
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
@@ -248,7 +239,7 @@ export default function LivePipeline({
                       )}
                     </dl>
 
-                    <PageTypes types={types} total={extracted} />
+                    <PageTypes pages={pages} total={extracted} />
 
                     {inFlight.length > 0 && (
                       <div className="mt-3 rounded-lg border border-line bg-sunk p-2.5">

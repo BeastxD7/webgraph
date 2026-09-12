@@ -106,17 +106,71 @@ export default function PageRow({
         </p>
       )}
 
+      {open && !page.ok && (
+        <div className="border-t border-line bg-haze px-4 py-4">
+          {/* A failure is where provenance earns its place. The collapsed row can only fit a
+              truncated message, and the two things needed to act on it -- what went wrong in
+              full, and which page sent the crawl here -- both live below the fold. */}
+          <p className="font-mono text-[12px] break-words text-flag-bad">{page.error}</p>
+          <p className="mt-2 font-mono text-[11.5px] text-ink-faint">
+            {page.found_on ? (
+              <>
+                linked from{" "}
+                <a
+                  href={page.found_on}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2 hover:text-ink-soft"
+                >
+                  {page.found_on.replace(/^https?:\/\//, "")}
+                </a>
+              </>
+            ) : (
+              "a starting point for this crawl, not discovered from another page"
+            )}
+          </p>
+          <a
+            href={page.url}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block font-mono text-[11.5px] text-ink-soft underline underline-offset-2 hover:text-ink"
+          >
+            open {page.url.replace(/^https?:\/\//, "")}
+          </a>
+        </div>
+      )}
+
       {open && page.ok && (
         <div className="border-t border-line bg-haze px-4 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <a
-              href={page.url}
-              target="_blank"
-              rel="noreferrer"
-              className="truncate font-mono text-[12px] text-ink-soft underline underline-offset-2 hover:text-ink"
-            >
-              {page.url}
-            </a>
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <a
+                href={page.url}
+                target="_blank"
+                rel="noreferrer"
+                className="truncate font-mono text-[12px] text-ink-soft underline underline-offset-2 hover:text-ink"
+              >
+                {page.url}
+              </a>
+              {/* Where this came from. On a failure it is the only actionable fact. */}
+              <span className="truncate font-mono text-[11px] text-ink-faint">
+                {page.found_on ? (
+                  <>
+                    found on{" "}
+                    <a
+                      href={page.found_on}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2 hover:text-ink-soft"
+                    >
+                      {page.found_on.replace(/^https?:\/\//, "")}
+                    </a>
+                  </>
+                ) : (
+                  "a starting point for this crawl"
+                )}
+              </span>
+            </span>
 
             <div className="flex flex-wrap items-center gap-2">
               {page.page_type && page.page_type !== "unknown" && (

@@ -356,6 +356,9 @@ export interface PageEvent {
   type: "page";
   index: number;
   url: string;
+  /** The page this address was first found on, or null for a seed. "Could not fetch X" is
+   *  not actionable without it: the next question is always which page linked to X. */
+  found_on: string | null;
   title: string;
   ok: boolean;
   error: string | null;
@@ -376,6 +379,11 @@ export interface PageEvent {
   page_type: string;
   /** Probability the classifier assigned to `page_type`; 0 when unknown. */
   page_type_confidence: number;
+  /** Why that type, strongest first. Each signal's weight is the probability the chosen type
+   *  loses when the model is not allowed to see it -- measured, not narrated. */
+  page_type_reasons: Array<{ says: string; weight: number }>;
+  /** The type it nearly chose. Most of what "how sure" means is what came second. */
+  page_type_runner_up: { type: string; confidence: number };
   images: string[];
   tables: number;
   strategy: string | null;

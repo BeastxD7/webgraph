@@ -17,13 +17,17 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+import tempfile
 import threading
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Final, Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,6 +48,7 @@ from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
 from webgraph.site import SiteConfig, stream_site
+from webgraph.trace import trace_events
 from webgraph.types import BlockKind, Document, Rect
 
 
@@ -667,6 +672,20 @@ def _effective_max_pages(requested: int) -> int:
     return PAGE_CAP if requested == 0 else min(requested, PAGE_CAP)
 
 
+TRACE_DIR: Final[Path] = Path(
+    os.environ.get("WEBGRAPH_TRACE_DIR", tempfile.gettempdir())
+) / "webgraph-runs"
+"""Where run traces are written. A temp directory by default: a trace is diagnostic, and a
+server that fills a disk with them by default has replaced one problem with another. Point
+`$WEBGRAPH_TRACE_DIR` somewhere durable to keep them."""
+
+
+def _trace_path(url: str) -> Path:
+    """One file per run, named so it can be found by host and time without an index."""
+    host = re.sub(r"[^a-z0-9.-]+", "-", urlsplit(url).netloc.lower()) or "site"
+    return TRACE_DIR / f"{host}-{time.strftime('%Y%m%dT%H%M%S')}.jsonl"
+
+
 def _effective_concurrency(requested: int) -> int:
     """Apply the host's concurrency cap. Unlike pages, 0 is not a meaningful request here."""
     return min(requested, CONCURRENCY_CAP) if CONCURRENCY_CAP else requested
@@ -717,11 +736,19 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
 
             def produce() -> None:
                 try:
-                    for event in stream_site(
-                        request.url,
-                        config=config,
-                        should_stop=stop.is_set,
-                        builder=builder,
+                    # Every run leaves a file behind. The stream is consumed and dropped, so
+                    # without this the only evidence a crawl ever happened is whatever a
+                    # human was looking at -- and the questions that come afterwards ("which
+                    # page linked to the one that failed?") are exactly the ones nobody can
+                    # answer from memory.
+                    for event in trace_events(
+                        stream_site(
+                            request.url,
+                            config=config,
+                            should_stop=stop.is_set,
+                            builder=builder,
+                        ),
+                        _trace_path(request.url),
                     ):
                         if stop.is_set():
                             return

@@ -208,6 +208,11 @@ class Frontier:
     _queue: deque[tuple[str, int]] = field(default_factory=deque)
     _seen: set[str] = field(default_factory=set)
 
+    origin: dict[str, str] = field(default_factory=dict)
+    """Where each address was first found. Public, because the crawl reports it and a failed
+    page is not actionable without it -- "could not fetch X" leaves you hunting for which page
+    linked to X, and only the frontier ever knew."""
+
     def add(self, url: str, depth: int, *, base: str | None = None) -> bool:
         """Queue a URL. Returns whether it was newly accepted.
 
@@ -226,20 +231,38 @@ class Frontier:
         self._queue.append((normalized, depth))
         return True
 
-    def extend(self, urls: list[str], depth: int, *, base: str | None = None) -> list[str]:
+    def extend(
+        self,
+        urls: list[str],
+        depth: int,
+        *,
+        base: str | None = None,
+        found_on: str | None = None,
+    ) -> list[str]:
         """Queue several URLs, returning the ones newly accepted.
 
         Callers that only need the count use `add_many`. The list matters to the streaming
         API, which reports discovery incrementally: sending the whole frontier on every
         event would be quadratic, while sending each event's *new* URLs lets a client
         rebuild the same set for a fraction of the bytes.
+
+        `found_on` records which page an address came from, kept in `origin` for whoever
+        accepted it first. When a crawl reports that a URL could not be fetched, the next
+        question is always where it came from, and without this nobody can answer it: the
+        frontier is a set of strings and the page that produced them is long gone.
         """
         accepted: list[str] = []
         for url in urls:
             normalized = normalize_url(url, base=base)
             if normalized is not None and self.add(normalized, depth):
                 accepted.append(normalized)
+                if found_on is not None:
+                    self.origin.setdefault(normalized, found_on)
         return accepted
+
+    def discovered_on(self, url: str) -> str | None:
+        """The page this address was first seen on, or None for a seed."""
+        return self.origin.get(url)
 
     def add_many(self, urls: list[str], depth: int, *, base: str | None = None) -> int:
         return len(self.extend(urls, depth, base=base))

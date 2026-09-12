@@ -324,6 +324,20 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
 
 
 @dataclass(frozen=True, slots=True)
+class Reason:
+    """One signal that moved the decision, and by how much."""
+
+    feature: str
+    """The feature's name in `FEATURE_NAMES`."""
+
+    says: str
+    """What it means, in words a reader who has never seen the model can act on."""
+
+    weight: float
+    """Probability the chosen type loses when this signal is withheld. Higher moved it more."""
+
+
+@dataclass(frozen=True, slots=True)
 class Routing:
     page_type: PageType
     confidence: float
@@ -331,6 +345,69 @@ class Routing:
     answers `UNKNOWN`, which every consumer treats as "use the default"."""
 
     probabilities: dict[str, float]
+
+    reasons: tuple[Reason, ...] = ()
+    """Why, strongest first. Empty unless `route(..., explain=True)` asked for it."""
+
+    @property
+    def runner_up(self) -> tuple[str, float]:
+        """The type it *nearly* chose, which is most of what "how sure" means."""
+        ranked = sorted(self.probabilities.items(), key=lambda kv: -kv[1])
+        return ranked[1] if len(ranked) > 1 else ("", 0.0)
+
+
+_PHRASING: Final[dict[str, str]] = {
+    "max_group_share": "a repeated block of items holds most of the page",
+    "max_group_size": "many items repeat the same structure",
+    "groups_over_5": "several groups of five or more repeated items",
+    "group_count": "the page is built from repeated groups",
+    "group_to_longest_ratio": "the repeated items hold more text than any single block",
+    "linked_heading_share": "the headings are themselves links",
+    "log_distinct_links": "it points at many different pages",
+    "share_linked_blocks": "most blocks are mostly link text",
+    "link_density": "a high share of the words sit inside links",
+    "share_short_blocks": "the blocks are short",
+    "median_block_words": "the blocks are a uniform length",
+    "dated_group_share": "the repeated items each carry a date",
+    "longest_block_share": "one block holds most of the text",
+    "log_words": "how much text there is",
+    "log_blocks": "how many blocks there are",
+    "mean_words": "the average block length",
+    "h1_count": "its top-level headings",
+    "heading_count": "how many headings there are",
+    "share_in_main": "what sits inside the main landmark",
+    "price_hits_per_100w": "prices appear throughout",
+    "date_hits_per_100w": "dates appear throughout",
+    "forum_hits_per_100w": "forum words like reply and posted",
+    "commerce_hits_per_100w": "shop words like cart and checkout",
+    "cta_hits_per_100w": "calls to action like sign up and get started",
+    "doc_hits_per_100w": "documentation words like parameters and returns",
+    "table_count": "the tables on the page",
+    "code_count": "the code blocks on the page",
+    "image_count": "the images on the page",
+    "url_depth": "how deep the address is",
+    "url_slug_words": "the words in the last part of the address",
+    "url_is_root": "it is the site root",
+    "url_has_query": "the address carries a query string",
+    "url_numeric_segment": "the address contains a number",
+    "url_html_ext": "the address ends in .html",
+}
+"""Human phrasing for the signals worth naming. A feature absent from this map is named by
+its own identifier rather than guessed at -- an invented explanation is worse than a raw one."""
+
+
+def _phrase(name: str) -> str:
+    if name in _PHRASING:
+        return _PHRASING[name]
+    if name.startswith("url_"):
+        return f"the address looks like a {name[4:].replace('_', ' ')} page"
+    if name.startswith("ld_"):
+        return f"its structured data declares {name[3:].replace('_', ' ')}"
+    if name.startswith("og_"):
+        return f"its Open Graph type is {name[3:].replace('_', ' ')}"
+    if name.startswith("share_"):
+        return f"the share of {name[6:].replace('_', ' ')} blocks"
+    return name
 
 
 class PageTypeRouter:
@@ -384,16 +461,53 @@ class PageTypeRouter:
                 raw[index] += self._tree_value(tree, x)
         return raw
 
-    def route(self, document: Document, url: str | None = None) -> Routing:
-        raw = self.scores(page_features(document, url))
+    def _probabilities(self, features: list[float]) -> dict[str, float]:
+        raw = self.scores(features)
         peak = max(raw)
         exps = [math.exp(v - peak) for v in raw]
         total = sum(exps)
-        probabilities = {c: e / total for c, e in zip(self.classes, exps, strict=True)}
+        return {c: e / total for c, e in zip(self.classes, exps, strict=True)}
+
+    def explain(self, features: list[float], chosen: str, limit: int = 4) -> tuple[Reason, ...]:
+        """Which signals moved this page to `chosen`, strongest first.
+
+        Measured, not narrated: each feature is withheld in turn -- set to NaN, which this
+        model already has a defined path for -- and the drop in the chosen type's probability
+        is that feature's weight. It is the model's own answer to "what if you had not known
+        this", which is the question a person means by "why".
+
+        Only features the page actually carries a value for are tried, so the cost is a few
+        dozen forward passes rather than one per feature, and a signal the page does not have
+        can never be offered as a reason it was chosen.
+        """
+        baseline = self._probabilities(features)[chosen]
+        weights: list[Reason] = []
+        for index, value in enumerate(features):
+            if value == 0.0 or value != value:  # absent, or already missing
+                continue
+            probed = list(features)
+            probed[index] = float("nan")
+            drop = baseline - self._probabilities(probed)[chosen]
+            if drop > 0.001:
+                name = self.features[index]
+                weights.append(Reason(feature=name, says=_phrase(name), weight=drop))
+        weights.sort(key=lambda r: -r.weight)
+        return tuple(weights[:limit])
+
+    def route(self, document: Document, url: str | None = None, *, explain: bool = False) -> Routing:
+        features = page_features(document, url)
+        probabilities = self._probabilities(features)
         best = max(probabilities, key=lambda c: probabilities[c])
         confidence = probabilities[best]
         page_type = PageType(best) if confidence >= self.min_confidence else PageType.UNKNOWN
-        return Routing(page_type=page_type, confidence=confidence, probabilities=probabilities)
+        return Routing(
+            page_type=page_type,
+            confidence=confidence,
+            probabilities=probabilities,
+            # Explained against what it actually chose. On an `unknown` the reasons would be
+            # for a type it declined to commit to, which is worse than none.
+            reasons=self.explain(features, best) if explain and page_type is not PageType.UNKNOWN else (),
+        )
 
 
 @lru_cache(maxsize=1)

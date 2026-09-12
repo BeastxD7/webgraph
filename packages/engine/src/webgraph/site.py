@@ -209,6 +209,13 @@ class PageExtraction:
 
     page_type_confidence: float = 0.0
 
+    page_type_reasons: tuple[tuple[str, float], ...] = ()
+    """Why that type, strongest first: `(what it says, how much it was worth)`. Measured by
+    withholding each signal from the model, not narrated."""
+
+    page_type_runner_up: tuple[str, float] = ("", 0.0)
+    """The type it nearly chose. Most of what "how sure" means is what came second."""
+
     images: tuple[str, ...] = ()
     tables: int = 0
     title: str = ""
@@ -481,7 +488,7 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
     )
 
     router = default_router()
-    routing = router.route(document) if router is not None else None
+    routing = router.route(document, explain=True) if router is not None else None
 
     return PageExtraction(
         url=document.url,
@@ -495,6 +502,12 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         title=heading,
         page_type=str(routing.page_type) if routing else "unknown",
         page_type_confidence=round(routing.confidence, 4) if routing else 0.0,
+        page_type_reasons=(
+            tuple((r.says, round(r.weight, 4)) for r in routing.reasons) if routing else ()
+        ),
+        page_type_runner_up=(
+            (routing.runner_up[0], round(routing.runner_up[1], 4)) if routing else ("", 0.0)
+        ),
     )
 
 
@@ -889,7 +902,10 @@ def stream_site(
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
                 discovered_here = frontier.extend(
-                    fetched.links, depth + 1, base=fetched.canonical or page.url
+                    fetched.links,
+                    depth + 1,
+                    base=fetched.canonical or page.url,
+                    found_on=page.url,
                 )
 
                 # Chrome is knowable only once several pages exist. Compute it the first
@@ -927,6 +943,10 @@ def stream_site(
                     "type": "page",
                     "index": extracted + failed,
                     "url": page.url,
+                    # Where this address was first seen. "Could not fetch X" is not
+                    # actionable without it: the next question is always which page linked
+                    # to X, and only the frontier ever knew.
+                    "found_on": frontier.discovered_on(fetched.requested),
                     "title": page.title,
                     "ok": page.ok,
                     "error": page.error,
@@ -938,6 +958,13 @@ def stream_site(
                     "content_methods": list(selection.methods) if selection is not None else [],
                     "page_type": page.page_type,
                     "page_type_confidence": page.page_type_confidence,
+                    "page_type_reasons": [
+                        {"says": says, "weight": weight} for says, weight in page.page_type_reasons
+                    ],
+                    "page_type_runner_up": {
+                        "type": page.page_type_runner_up[0],
+                        "confidence": page.page_type_runner_up[1],
+                    },
                     "blocks": len(page.document.blocks) if page.document is not None else 0,
                     "images": list(page.images),
                     "tables": page.tables,
