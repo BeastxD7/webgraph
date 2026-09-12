@@ -78,7 +78,9 @@ export default function SiteRun({
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-[13.5px] font-semibold">
           <span aria-hidden className={`size-2 rounded-full ${PHASE_DOT[run.phase]}`} />
-          {PHASE_LABEL[run.phase]}
+          {run.phase === "done" && run.summary && !run.summary.exhausted
+            ? `Reached the page cap · ${run.summary.remaining_queued.toLocaleString("en-US")} pages not crawled`
+            : PHASE_LABEL[run.phase]}
         </span>
 
         <div className="ml-auto flex items-center gap-2">

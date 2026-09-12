@@ -239,3 +239,19 @@ class TestMarkSeen:
         frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
         assert frontier.mark_seen("not a url") is False
         assert frontier.seen_count == 0
+
+
+class TestScriptHoles:
+    """`/undefined` is a template interpolating a missing value, not an address."""
+
+    def test_undefined_and_null_paths_are_refused(self) -> None:
+        from webgraph.crawl.frontier import normalize_url
+
+        for path in ("/undefined", "/null", "/brand/undefined", "/null/", "/NaN"):
+            assert normalize_url(f"https://x.test{path}") is None, path
+
+    def test_words_that_merely_contain_them_survive(self) -> None:
+        from webgraph.crawl.frontier import normalize_url
+
+        assert normalize_url("https://x.test/nullable-types") is not None
+        assert normalize_url("https://x.test/undefined-behaviour-in-c") is not None

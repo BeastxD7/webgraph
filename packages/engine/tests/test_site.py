@@ -156,3 +156,51 @@ class TestRedirectScoping:
 
         assert not same_site(link, requested), "fixture no longer reproduces the bug"
         assert same_site(link, landed)
+
+
+class TestPageTitleFallback:
+    def test_a_page_with_no_heading_uses_its_title_without_the_site_name(self) -> None:
+        from webgraph.pipeline import build_document
+        from webgraph.site import _page_title
+
+        html = (
+            "<html><head><title>Privacy Policy | Reliance Digital</title>"
+            '<meta property="og:site_name" content="Reliance Digital"></head>'
+            "<body><p>Text.</p></body></html>"
+        )
+        assert _page_title(build_document(html, "https://x.test/privacy-policy")) == "Privacy Policy"
+
+    def test_without_a_declared_site_name_the_title_is_kept_whole(self) -> None:
+        from webgraph.pipeline import build_document
+        from webgraph.site import _page_title
+
+        html = "<html><head><title>Rust | what the borrow checker does</title></head><body><p>x</p></body></html>"
+        assert _page_title(build_document(html, "https://x.test/p")) == "Rust | what the borrow checker does"
+
+
+class TestEntityAggregation:
+    def test_hydration_state_is_not_an_entity(self) -> None:
+        """Ten pages' `__INITIAL_STATE__` used to be ten entities seen once each."""
+        from webgraph.site import PageExtraction, _aggregate_entities
+        from webgraph.types import PayloadSource, StructuredPayload
+
+        pages = []
+        for n in range(3):
+            html = (
+                '<html><head><script type="application/ld+json">'
+                '{"@type":"Organization","name":"Acme"}</script></head>'
+                f"<body><p>page {n}</p></body></html>"
+            )
+            from webgraph.pipeline import build_document
+
+            document = build_document(html, f"https://x.test/{n}")
+            state = StructuredPayload(source=PayloadSource.INITIAL_STATE, data={"page": n})
+            document = document.model_copy(
+                update={"structured_data": (*document.structured_data, state)}
+            )
+            pages.append(PageExtraction(url=document.url, document=document))
+        entities = _aggregate_entities(pages)
+        types = [e.entity_type for e in entities]
+        assert "initial-state" not in types
+        organisation = next(e for e in entities if e.entity_type == "Organization")
+        assert organisation.page_count == 3

@@ -48,7 +48,7 @@ from webgraph.graph.build import GraphBuilder
 from webgraph.pagetype import default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
-from webgraph.types import BlockKind, Document, Fact
+from webgraph.types import BlockKind, Document, Fact, PayloadSource
 
 IDENTICAL_CONTENT_WARNING: Final[int] = 3
 """Distinct URLs yielding byte-identical extracted text before a warning is raised.
@@ -491,7 +491,7 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
     heading = next(
         (b.text for b in document.blocks if b.kind is BlockKind.HEADING and b.level <= 2),
         "",
-    )
+    ) or _page_title(document)
 
     router = default_router()
     routing = router.route(document, explain=True) if router is not None else None
@@ -584,6 +584,37 @@ def _chrome_for(pages: Iterable[PageExtraction], config: SiteConfig) -> SiteChro
     return detect_site_chrome([d.blocks for d in documents])
 
 
+_ENTITY_SOURCES: Final[frozenset[PayloadSource]] = frozenset(
+    {PayloadSource.JSON_LD, PayloadSource.MICRODATA}
+)
+"""The payload sources whose nodes are entities: schema.org, however it is serialised."""
+
+
+def _page_title(document: Document) -> str:
+    """The `<title>` with the site's own name removed, for a page with no heading.
+
+    Many app-shell pages have no `<h1>` at all, and a row that reads `/privacy-policy` when
+    the page calls itself "Privacy Policy" is a row the reader has to decode. The site name
+    is stripped only where Open Graph states it: guessing at what follows a pipe would
+    mangle any title that contains one.
+    """
+    title = document.title.strip()
+    if not title:
+        return ""
+    site = ""
+    for payload in document.structured_data:
+        if payload.source is PayloadSource.OPEN_GRAPH and isinstance(payload.data, dict):
+            site = str(payload.data.get("og:site_name") or "").strip()
+            break
+    if site:
+        for separator in (" | ", " - ", " \u2013 ", " \u2014 ", " :: ", " \u00b7 "):
+            if title.endswith(separator + site) and len(title) > len(separator + site):
+                return title[: -len(separator + site)].strip()
+            if title.startswith(site + separator) and len(title) > len(site + separator):
+                return title[len(site + separator):].strip()
+    return title
+
+
 def _aggregate_entities(pages: Iterable[PageExtraction]) -> tuple[SiteEntity, ...]:
     """Collapse structured payloads across pages into distinct entities.
 
@@ -599,6 +630,13 @@ def _aggregate_entities(pages: Iterable[PageExtraction]) -> tuple[SiteEntity, ..
             continue
         for payload in page.document.structured_data:
             if not isinstance(payload.data, dict):
+                continue
+            # Only vocabularies that describe *things*. A hydration payload (`__NEXT_DATA__`,
+            # `__INITIAL_STATE__`) is the page's own state and differs on every page, so
+            # keying it by content produced ten "initial-state" entities on ten pages of one
+            # site -- one per page, each seen once, which is the opposite of what a site-level
+            # summary is for. Open Graph is page metadata for the same reason.
+            if payload.source not in _ENTITY_SOURCES:
                 continue
             entity_type = str(payload.data.get("@type") or payload.source.value)
             fingerprint = repr(sorted(payload.data.items()))
