@@ -90,10 +90,17 @@ export interface TextResponse {
   /** The page reduced to its content: `<nav>`/`<footer>` removed, then the main-content
    *  boundary drawn around the densest run of prose. Empty when nothing was removed. */
   content_markdown: string;
-  /** Steps that removed something, in order: "landmarks", "main-content". */
+  /** Steps that removed something, in order: "landmarks", "main-landmark", "block-model"
+   *  or "main-content". */
   content_methods: string[];
   /** Blocks kept in `content_markdown`, out of `page.blocks`. */
   content_blocks: number;
+  /** What kind of page this is, from a trained classifier: "article", "documentation",
+   *  "service", "forum", "collection", "listing", "product", or "unknown". Reported only --
+   *  content selection does not branch on it. */
+  page_type: string;
+  /** Probability assigned to `page_type`; 0 when unknown. */
+  page_type_confidence: number;
   images: string[];
   tables: number;
 }

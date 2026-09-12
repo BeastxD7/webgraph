@@ -39,6 +39,7 @@ from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
 from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
+from webgraph.pagetype import default_router
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import Strategy
@@ -239,10 +240,21 @@ class TextResponse(BaseModel):
     content_methods: list[str] = Field(
         default_factory=list,
         description="Steps that removed something to produce `content_markdown`, in order: "
-        "any of `landmarks`, `main-content`.",
+        "any of `landmarks`, `main-landmark`, `block-model`, `main-content`.",
     )
     content_blocks: int = Field(
         default=0, description="Blocks kept in `content_markdown`, out of `page.blocks`."
+    )
+    page_type: str = Field(
+        default="unknown",
+        description="What kind of page this is, from a trained classifier over URL, payload "
+        "and structure signals: one of `article`, `documentation`, `service`, `forum`, "
+        "`collection`, `listing`, `product`, or `unknown` when no type is confident enough. "
+        "Reported, not acted on -- content selection does not branch on it.",
+    )
+    page_type_confidence: float = Field(
+        default=0.0,
+        description="Probability the classifier assigned to `page_type`, 0.0 when unknown.",
     )
     images: list[str] = Field(default_factory=list, description="Absolute image URLs found")
     tables: int = Field(default=0, description="Tables extracted with their rows intact")
@@ -378,6 +390,8 @@ async def get_text(request: TextRequest) -> TextResponse:
     # The same reduction the crawl applies, minus cross-page chrome, which one page cannot
     # know. One function decides what "content" means -- see `webgraph.content`.
     selection = select_content(document.blocks)
+    router = default_router()
+    routing = router.route(document) if router is not None else None
     content = (
         to_markdown(
             document.model_copy(update={"blocks": tuple(selection.blocks)}),
@@ -394,6 +408,8 @@ async def get_text(request: TextRequest) -> TextResponse:
         content_markdown=content,
         content_methods=list(selection.methods),
         content_blocks=selection.kept,
+        page_type=str(routing.page_type) if routing else "unknown",
+        page_type_confidence=round(routing.confidence, 4) if routing else 0.0,
         images=images,
         tables=tables,
     )

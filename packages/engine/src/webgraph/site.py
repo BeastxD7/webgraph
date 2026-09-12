@@ -39,6 +39,7 @@ from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
+from webgraph.pagetype import default_router
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact
@@ -199,8 +200,14 @@ class PageExtraction:
     substitute for `markdown`, always an addition to it."""
 
     content_methods: tuple[str, ...] = ()
-    """Which steps produced `content_markdown`: any of `landmarks`, `site-chrome`,
-    `main-content`. Empty when it is empty."""
+    """Which steps produced `content_markdown`: any of `landmarks`, `main-landmark`,
+    `site-chrome`, `block-model`, `main-content`. Empty when it is empty."""
+
+    page_type: str = "unknown"
+    """What kind of page this is, from `webgraph.pagetype`. Reported so a consumer can group
+    a crawl by page type; nothing in extraction branches on it."""
+
+    page_type_confidence: float = 0.0
 
     images: tuple[str, ...] = ()
     tables: int = 0
@@ -473,6 +480,9 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         "",
     )
 
+    router = default_router()
+    routing = router.route(document) if router is not None else None
+
     return PageExtraction(
         url=document.url,
         document=document,
@@ -483,6 +493,8 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         images=images,
         tables=tables,
         title=heading,
+        page_type=str(routing.page_type) if routing else "unknown",
+        page_type_confidence=round(routing.confidence, 4) if routing else 0.0,
     )
 
 
@@ -906,6 +918,8 @@ def stream_site(
                     "content_markdown": content_md,
                     "content_blocks": selection.kept if selection is not None else None,
                     "content_methods": list(selection.methods) if selection is not None else [],
+                    "page_type": page.page_type,
+                    "page_type_confidence": page.page_type_confidence,
                     "blocks": len(page.document.blocks) if page.document is not None else 0,
                     "images": list(page.images),
                     "tables": page.tables,

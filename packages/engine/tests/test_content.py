@@ -7,12 +7,20 @@ part of its site came back different, and the finished precision work was not sh
 
 These tests pin the composition: the order the steps run in, that each step is reported,
 and that the whole thing fails open rather than returning a fragment.
+
+The last step is the contiguous boundary of `select_main_content` by default;
+`model=SHIPPED_MODEL` asks for the trained per-block classifier instead. Both are exercised
+here, because both ship. The boundary step is the default despite scoring lower on WCXB:
+see `select_content`'s docstring for the WebMainBench result that decided it.
 """
 
 from __future__ import annotations
 
+import pytest
+
 from webgraph.boilerplate import MIN_PAGES, detect_site_chrome
-from webgraph.content import select_content
+from webgraph.content import SHIPPED_MODEL, select_content
+from webgraph.main_content import MainContentConfig
 from webgraph.types import Block, BlockKind
 
 PROSE = (
@@ -64,13 +72,22 @@ class TestComposition:
         assert selection.landmarks_removed == 2
         assert selection.methods == ("landmarks",)
 
-    def test_main_content_runs_after_landmarks(self) -> None:
+    def test_the_boundary_step_runs_after_landmarks_and_is_the_default(self) -> None:
         selection = select_content(page("a"))
         texts = [b.text for b in selection.blocks]
         assert sum(1 for t in texts if t.startswith(PROSE)) == 5
         assert not any(t.startswith("Share Tweet Email") for t in texts)
         assert selection.main_content_removed > 0
         assert selection.methods == ("landmarks", "main-content")
+
+    def test_the_model_runs_after_landmarks_when_asked_for(self) -> None:
+        selection = select_content(page("a"), model=SHIPPED_MODEL)
+        texts = [b.text for b in selection.blocks]
+        assert sum(1 for t in texts if t.startswith(PROSE)) == 5
+        assert not any(t.startswith("Share Tweet Email") for t in texts)
+        assert selection.block_model_removed > 0
+        assert selection.main_content_removed == 0
+        assert selection.methods == ("landmarks", "block-model")
 
     def test_site_chrome_is_applied_when_supplied(self) -> None:
         pages = [page(str(i)) for i in range(MIN_PAGES)]
@@ -85,35 +102,74 @@ class TestComposition:
     def test_method_order_is_the_run_order(self) -> None:
         pages = [page(str(i)) for i in range(MIN_PAGES)]
         chrome = detect_site_chrome(pages)
-        selection = select_content(pages[0], chrome=chrome)
-        assert selection.methods == ("landmarks", "site-chrome", "main-content")
+        assert select_content(pages[0], chrome=chrome).methods == (
+            "landmarks", "site-chrome", "main-content",
+        )
+        assert select_content(pages[0], chrome=chrome, model=SHIPPED_MODEL).methods == (
+            "landmarks", "site-chrome", "block-model",
+        )
+
+    def test_a_config_selects_the_boundary_step_it_configures(self) -> None:
+        """`config` is `select_main_content`'s. Defaulting to the model while accepting one
+        would make the argument a silent no-op -- a caller's tuning quietly discarded."""
+        selection = select_content(page("a"), config=MainContentConfig(group_repeats="all"))
+        assert selection.methods == ("landmarks", "main-content")
+        assert selection.block_model_removed == 0
+
+    def test_asking_for_both_is_a_contradiction(self) -> None:
+        with pytest.raises(ValueError, match="one or the other"):
+            select_content(page("a"), model=SHIPPED_MODEL, config=MainContentConfig())
+
+    def test_the_two_last_steps_are_mutually_exclusive(self) -> None:
+        """Whichever draws the line, exactly one of them does, and the other reports zero."""
+        for kw in ({}, {"model": SHIPPED_MODEL}):
+            selection = select_content(page("a"), **kw)  # type: ignore[arg-type]
+            assert bool(selection.block_model_removed) != bool(selection.main_content_removed)
 
     def test_kept_and_total_account_for_every_block(self) -> None:
         blocks = page("a")
-        selection = select_content(blocks)
-        assert selection.total == len(blocks)
-        removed = (
-            selection.landmarks_removed
-            + selection.chrome_removed
-            + selection.main_content_removed
-        )
-        assert selection.kept + removed == selection.total
-        assert selection.changed
+        for kw in ({}, {"model": SHIPPED_MODEL}):
+            selection = select_content(blocks, **kw)  # type: ignore[arg-type]
+            assert selection.total == len(blocks)
+            removed = (
+                selection.landmarks_removed
+                + selection.chrome_removed
+                + selection.main_content_removed
+                + selection.block_model_removed
+            )
+            assert selection.kept + removed == selection.total
+            assert selection.changed
 
 
 class TestFailsOpen:
     """Every step returns what it was given when it would return nothing useful."""
 
-    def test_an_all_navigation_page_comes_back_whole(self) -> None:
-        blocks = [
+    @staticmethod
+    def _all_navigation() -> list[Block]:
+        return [
             block(f"Section {i}", xpath=f"/html/body/div/a[{i}]", index=i,
                   rich=f"[Section {i}](/s{i})")
             for i in range(20)
         ]
-        selection = select_content(blocks)
-        assert selection.kept == len(blocks)
+
+    def test_the_boundary_step_returns_an_all_navigation_page_whole(self) -> None:
+        """Nothing on the page is prose, so there is no run to draw a boundary around."""
+        selection = select_content(self._all_navigation())
+        assert selection.kept == 20
         assert not selection.changed
         assert selection.methods == ()
+
+    def test_the_model_keeps_most_of_an_all_navigation_page(self) -> None:
+        """The model scores each link on its own and is less sure than the boundary step is.
+
+        Worth stating rather than hiding: on a page with no content at all the two disagree.
+        The guarantee both keep is the one that matters -- a non-empty input never comes back
+        empty or as a sliver, and no block is invented or reordered.
+        """
+        blocks = self._all_navigation()
+        selection = select_content(blocks, model=SHIPPED_MODEL)
+        assert selection.kept >= 15
+        assert all(b in blocks for b in selection.blocks)
 
     def test_empty_input(self) -> None:
         selection = select_content([])
@@ -123,10 +179,17 @@ class TestFailsOpen:
 
     def test_nothing_is_invented(self) -> None:
         blocks = page("a")
-        selection = select_content(blocks)
-        assert all(b in blocks for b in selection.blocks)
+        for kw in ({}, {"model": SHIPPED_MODEL}):
+            selection = select_content(blocks, **kw)  # type: ignore[arg-type]
+            assert all(b in blocks for b in selection.blocks)
 
     def test_order_is_preserved(self) -> None:
-        selection = select_content(page("a"))
-        indices = [b.dom_index for b in selection.blocks]
-        assert indices == sorted(indices)
+        for kw in ({}, {"model": SHIPPED_MODEL}):
+            selection = select_content(page("a"), **kw)  # type: ignore[arg-type]
+            indices = [b.dom_index for b in selection.blocks]
+            assert indices == sorted(indices)
+
+    def test_a_non_empty_page_never_comes_back_empty(self) -> None:
+        for blocks in (page("a"), self._all_navigation(), [block("Hi", xpath="/p", index=0)]):
+            assert select_content(blocks).blocks
+            assert select_content(blocks, model=SHIPPED_MODEL).blocks

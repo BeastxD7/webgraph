@@ -138,6 +138,24 @@ class TestText:
         assert "ld+json" not in body["text"]
         assert "@context" not in body["text"]
 
+    def test_the_page_type_is_reported(self, client: TestClient, server: str) -> None:
+        """The router labels the page; it does not change what is extracted from it."""
+        body = client.post("/api/text", json={"url": f"{server}/ecommerce_jsonld.html"}).json()
+        assert body["page_type"] in {
+            "article", "documentation", "service", "forum",
+            "collection", "listing", "product", "unknown",
+        }
+        assert 0.0 <= body["page_type_confidence"] <= 1.0
+
+    def test_content_selection_names_the_step_that_drew_the_line(
+        self, client: TestClient, server: str
+    ) -> None:
+        body = client.post("/api/text", json={"url": f"{server}/docs_static.html"}).json()
+        methods = body["content_methods"]
+        assert "main-content" not in methods or "block-model" not in methods
+        if methods:
+            assert body["content_blocks"] <= body["page"]["blocks"]
+
 
 class TestErrorHandling:
     def test_unreachable_host_is_502(self, client: TestClient) -> None:
