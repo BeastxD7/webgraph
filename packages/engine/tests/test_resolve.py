@@ -7,6 +7,8 @@ sites, so a regression reproduces a real-world data loss rather than a hypotheti
 
 from __future__ import annotations
 
+import pytest
+
 from webgraph.pipeline import build_document
 from webgraph.resolve import Strategy, union_documents
 from webgraph.types import Rect
@@ -201,3 +203,149 @@ class TestMissingPagesAreNeverExtracted:
         assert error.status == 404
         assert error.url == "https://example.com/gone"
         assert "404" in str(error)
+
+
+class TestBlockPages:
+    """A wall served with a 200 is a failure, not a short page.
+
+    Reddit's "You've been blocked by network security" used to come back as three blocks,
+    typed `listing` at 86% confidence, with a green tick. Nothing downstream can tell a
+    block page from a page once it has been accepted as one.
+    """
+
+    def test_a_short_page_saying_blocked_is_evidence(self) -> None:
+        from webgraph.resolve import block_page_evidence
+
+        text = (
+            "You've been blocked by network security. If you think you've been blocked by "
+            "mistake, file a ticket below and we'll look into it. File a ticket"
+        )
+        evidence = block_page_evidence(text)
+        assert evidence is not None
+        assert "blocked by network security" in evidence
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Just a moment... Enable JavaScript and cookies to continue",
+            "Attention Required! | Cloudflare. Please complete the security check to access",
+            "Access Denied. You don't have permission to access this resource. Ray ID: 8a1",
+            "Pardon Our Interruption. As you were browsing something about your browser made us think you were a bot.",
+        ],
+    )
+    def test_the_common_walls(self, text: str) -> None:
+        from webgraph.resolve import block_page_evidence
+
+        assert block_page_evidence(text) is not None
+
+    def test_a_long_page_that_mentions_a_captcha_is_a_page(self) -> None:
+        """An article about bot detection is thousands of characters long."""
+        from webgraph.resolve import block_page_evidence
+
+        article = ("How CAPTCHA and bot detection work. " * 60) + "Access denied is what users see."
+        assert len(article) > 1_500
+        assert block_page_evidence(article) is None
+
+    def test_a_short_page_that_says_nothing_of_the_sort_is_a_page(self) -> None:
+        from webgraph.resolve import block_page_evidence
+
+        assert block_page_evidence("About Us. Coming soon.") is None
+        assert block_page_evidence("") is None
+
+    def test_resolve_raises_rather_than_returning_a_wall(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """End to end through `resolve_page`, with the fetch stubbed to serve a wall."""
+        from webgraph import resolve as module
+        from webgraph.fetch.static import FetchResult
+        from webgraph.resolve import PageBlockedError, Strategy
+
+        html = (
+            "<html><head><title>Blocked</title></head><body><h1>You've been blocked by "
+            "network security.</h1><p>If you think you've been blocked by mistake, file a "
+            "ticket.</p></body></html>"
+        )
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=200,
+                html=html,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=True,
+            ),
+        )
+        with pytest.raises(PageBlockedError) as caught:
+            module.resolve_page("https://www.reddit.com/r/x/", strategy=Strategy.STATIC_ONLY)
+        assert "block page" in str(caught.value)
+        assert "network security" in str(caught.value)
+
+
+class TestChallengesAndEmptyPages:
+    """A page that produced nothing is not a page that was extracted.
+
+    Amazon's home page answers a plain fetch with HTTP 202 and two kilobytes of
+    `window.awsWafCookie` -- a JavaScript challenge with no visible words. It came back as a
+    successful extraction of zero blocks, typed `service` at 75% confidence, and the crawl
+    reported "1 page ok" and stopped.
+    """
+
+    @staticmethod
+    def stub(monkeypatch: pytest.MonkeyPatch, html: str, status: int = 200) -> None:
+        from webgraph import resolve as module
+        from webgraph.fetch.static import FetchResult
+
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=status,
+                html=html,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=True,
+            ),
+        )
+
+    def test_an_aws_waf_challenge_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.resolve import PageBlockedError, Strategy, resolve_page
+
+        html = (
+            '<!DOCTYPE html><html><head><title></title><script type="text/javascript">'
+            "window.awsWafCookieDomainList = []; window.gokuProps = {};</script></head>"
+            "<body></body></html>"
+        )
+        self.stub(monkeypatch, html, status=202)
+        with pytest.raises(PageBlockedError) as caught:
+            resolve_page("https://www.amazon.in/", strategy=Strategy.STATIC_ONLY)
+        assert "AWS WAF" in str(caught.value)
+
+    def test_an_empty_response_is_refused_with_its_size(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.resolve import Strategy, resolve_page
+
+        self.stub(monkeypatch, "<html><head></head><body><div></div></body></html>", status=202)
+        with pytest.raises(ValueError, match="no readable text") as caught:
+            resolve_page("https://x.test/empty", strategy=Strategy.STATIC_ONLY)
+        assert "HTTP 202" in str(caught.value)
+
+    def test_an_image_only_page_is_still_a_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No words is not the same as nothing: a gallery page is its pictures."""
+        from webgraph.resolve import Strategy, resolve_page
+
+        html = (
+            '<html><body><img src="https://x.test/a.jpg" alt="" width="800" height="600">'
+            '<img src="https://x.test/b.jpg" alt="" width="800" height="600"></body></html>'
+        )
+        self.stub(monkeypatch, html)
+        resolved = resolve_page("https://x.test/gallery", strategy=Strategy.STATIC_ONLY)
+        assert len(resolved.document.blocks) == 2
+
+    def test_challenge_vendors_are_recognised(self) -> None:
+        from webgraph.resolve import challenge_vendor
+
+        assert challenge_vendor("<script src='/cdn-cgi/challenge-platform/h/b'></script>") == "Cloudflare"
+        assert challenge_vendor("<script>var _pxhd='x'</script>") == "PerimeterX"
+        assert challenge_vendor("<p>Hello</p>") is None

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+from typing import TYPE_CHECKING
 
 from webgraph.dom.blocks import is_rtl_document, parse_html
 from webgraph.dom.reading_order import OrderingConfig, order_blocks
@@ -31,6 +32,9 @@ from webgraph.profile.fingerprint import profile_page
 from webgraph.profile.technology import RuntimeEvidence
 from webgraph.structured.payloads import extract_payloads
 from webgraph.types import Block, Document, Rect
+
+if TYPE_CHECKING:
+    from lxml.html import HtmlElement
 
 __all__ = ["build_document", "content_hash_of"]
 
@@ -98,15 +102,44 @@ def build_document(
         url=url,
     )
 
+    title, description = _head_text(payload_tree)
+
     return Document(
         url=url,
         html=html,
+        title=title,
+        description=description,
         blocks=tuple(ordered),
         reading_order_method=method,
         profile=profile,
         structured_data=payloads,
         content_hash=content_hash_of(text),
     )
+
+
+def _head_text(root: HtmlElement) -> tuple[str, str]:
+    """The page's own name and summary, from `<head>`.
+
+    Read before block extraction strips the tree, and folded to single spaces. The
+    description prefers `<meta name="description">` and falls back to Open Graph: the former
+    is written for search results and the latter for share cards, and when both exist the
+    former is the one an author meant as the summary.
+    """
+    title = " ".join(root.xpath("string(//title)").split())
+    description = ""
+    for xpath in (
+        "//meta[@name='description']/@content",
+        "//meta[@property='og:description']/@content",
+        "//meta[@name='twitter:description']/@content",
+    ):
+        for value in root.xpath(xpath):
+            text = " ".join(str(value).split())
+            if text:
+                description = text
+                break
+        if description:
+            break
+    return title, description
 
 
 def _deduplicate(blocks: list[Block]) -> list[Block]:

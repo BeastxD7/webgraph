@@ -5,6 +5,7 @@ import Link from "next/link";
 import PageStages from "./PageStages";
 import RunLog from "./RunLog";
 import { usePageStream } from "@/hooks/usePageStream";
+import { useTabTitle } from "@/hooks/useTabTitle";
 import { useCallback, useMemo, useState } from "react";
 
 import {
@@ -68,6 +69,7 @@ export default function SinglePageRun({ url }: { url: string }) {
   const run = usePageStream({ url, render: true });
   const loading = run.running;
   const error = run.error;
+  useTabTitle(loading ? "running" : error ? "failed" : "done", url.replace(/^https?:\/\//, "").split("/")[0] ?? url);
 
   // Landmarks are declared on the page itself, so a single page gets a content-only view
   // without the whole-site crawl that cross-page chrome detection needs.
@@ -377,11 +379,11 @@ export default function SinglePageRun({ url }: { url: string }) {
 
             {text.images.length > 0 && (
               <div className="flex gap-2 overflow-x-auto border-b border-line px-4 py-3">
-                {text.images.slice(0, 12).map((src) => (
+                {text.images.slice(0, 12).map((src, n) => (
                   // Arbitrary remote hosts, so next/image's optimiser is not usable here.
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    key={src}
+                    key={`${n}-${src}`}
                     src={src}
                     alt=""
                     loading="lazy"

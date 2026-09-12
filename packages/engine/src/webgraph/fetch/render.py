@@ -297,7 +297,19 @@ def _open_gate(page: Any) -> tuple[bool, str | None]:
     )
 
 
-class DownloadedInsteadOfPageError(Exception):
+class RenderDiagnosisError(Exception):
+    """A failure this module diagnosed itself, reported as a sentence rather than a trace.
+
+    The outer handler prints other exceptions with their class name, because for an
+    unexpected failure the class is the best clue there is. For one of these the class is
+    ours and the message already says what happened."""
+
+
+class NavigationNeverStartedError(RenderDiagnosisError):
+    """The server sent nothing before the timeout; the page never left `about:blank`."""
+
+
+class DownloadedInsteadOfPageError(RenderDiagnosisError):
     """The address served a file, not a document.
 
     Its own type rather than a string match at the call site: a caller deciding whether to
@@ -417,6 +429,16 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                 guard.check_url(str(response.url))
             elif navigation_note is not None:
                 # The address may have moved before the timeout; re-check what we landed on.
+                # Unless it never left: a navigation that timed out before the server sent a
+                # first byte leaves the page on `about:blank`, and checking *that* against
+                # the host policy reported a genuine timeout as "refusing non-HTTP scheme:
+                # about" -- a security refusal that never happened. Seen on every
+                # reliancedigital.in brand page, whose edge takes 30 s to answer 504.
+                if page.url.startswith("about:"):
+                    raise NavigationNeverStartedError(
+                        f"the server sent nothing within {config.timeout_ms / 1000:.0f}s; "
+                        "the navigation never started"
+                    )
                 guard.check_url(page.url)
             if config.settle_ms:
                 page.wait_for_timeout(config.settle_ms)
@@ -512,7 +534,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             navigation_note=payload.get("navigation_note") or None,
         )
 
-    except DownloadedInsteadOfPageError as exc:
+    except RenderDiagnosisError as exc:
         # Our own diagnosis, so it is reported as a sentence rather than decorated with a
         # class name the reader has no use for.
         return RenderResult(url=url, html="", rects={}, ok=False, error=str(exc))

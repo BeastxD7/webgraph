@@ -806,3 +806,73 @@ class TestLinksInsideAPreservedTable:
                  "<tr><td>a</td><td>b</td></tr></table>")
         assert "<a" not in out
         assert "x" in out
+
+
+class TestBlockBoundaries:
+    """Words on either side of a block boundary stay two words.
+
+    Every fixture here is a shape found on a live page during a hands-on test of the
+    product, not an invented one. The common cause was rendering a container's rich text
+    from its whole subtree while its plain text correctly skipped the block children -- so
+    the Markdown carried every child glued together, and then carried each child again.
+    """
+
+    def test_a_heading_with_a_block_child_keeps_the_space(self) -> None:
+        """react.dev: `<h4><div>Example 1 of 5<span>: </span></div>Connecting ...</h4>`.
+
+        The separating space lived at the end of the span, and normalising each child on its
+        own deleted it before the parent ever saw it.
+        """
+        out = md('<h4><div>Example 1 of 5<span>: </span></div>Connecting to a chat server</h4>')
+        assert "Example 1 of 5: Connecting to a chat server" in out
+        assert "5:Connecting" not in out
+
+    def test_paragraphs_inside_a_container_are_not_fused(self) -> None:
+        """Hacker News: a comment is bare text followed by `<p>` siblings in one div."""
+        out = md(
+            '<div class="commtext">worth around $5trn.<p>Note that the Fed has more.</p>'
+            "<p>The real comparison is different.</p></div>"
+        )
+        assert "trn.Note" not in out
+        assert "more.The" not in out
+
+    def test_a_container_does_not_repeat_its_children(self) -> None:
+        """Hacker News post body: emitted once fused, then once per paragraph."""
+        out = md(
+            '<div class="toptext">Hey community!<p>But here is the twist.</p>'
+            "<p>I believe in open source.</p></div>"
+        )
+        assert out.count("But here is the twist") == 1
+        assert out.count("I believe in open source") == 1
+        assert "Hey community!" in out
+
+    def test_a_nested_list_is_not_crammed_into_its_parent_item(self) -> None:
+        """react.dev table of contents: the last item had sub-items, and they arrived glued
+        onto it as `[Troubleshooting](#t)[My Effect runs twice](#a)[...]`, then again as
+        their own items."""
+        out = md(
+            '<ul><li><a href="#t">Troubleshooting</a><ul>'
+            '<li><a href="#a">My Effect runs twice</a></li>'
+            '<li><a href="#b">My Effect runs after every render</a></li>'
+            "</ul></li></ul>"
+        )
+        assert "Troubleshooting](https://example.com/page#t)[My Effect" not in out
+        assert out.count("My Effect runs twice") == 1
+
+    def test_default_block_tags_separate_even_without_a_render(self) -> None:
+        """On a static fetch no browser has marked the line boxes, so the tag has to."""
+        out = md("<div><div>First line</div><div>Second line</div></div>")
+        assert "First line" in out and "Second line" in out
+        assert "lineSecond" not in out
+
+    def test_inline_siblings_still_run_together(self) -> None:
+        """`<b>bold</b><i>italic</i>` genuinely renders as one word; that must not change."""
+        out = md("<p>ab<b>cd</b><i>ef</i>gh</p>")
+        assert "ab**cd***ef*gh" in out
+
+    def test_a_javascript_link_keeps_its_text_and_loses_its_target(self) -> None:
+        """`[[-]](javascript:void(0))` on every Hacker News comment is a toggle, not a link."""
+        out = md('<p><a href="javascript:void(0)">[-]</a> Real <a href="/x">link</a></p>')
+        assert "javascript:" not in out
+        assert "[-]" in out
+        assert "[link](https://example.com/x)" in out

@@ -85,11 +85,16 @@ class TestStaticOnly:
         assert "hydration added" not in resolved.document.text
 
     def test_not_even_for_a_shell(self, browser: dict[str, Any]) -> None:
-        """Explicit is explicit. The caller chose budget; the profile says what it cost."""
+        """Explicit is explicit: the caller chose budget, so no browser runs. But an empty
+        shell is not a page, and it used to be returned as one -- zero blocks, `ok`. Now the
+        failure says exactly what happened and what would fix it."""
+        import pytest
+
         browser["static_html"] = SHELL
-        resolved = resolve_page(URL, strategy=Strategy.STATIC_ONLY)
+        with pytest.raises(ValueError, match="JavaScript shell") as caught:
+            resolve_page(URL, strategy=Strategy.STATIC_ONLY)
         assert browser["renders"] == 0
-        assert resolved.document.profile.requires_render
+        assert "rendering was not used" in str(caught.value)
 
 
 class TestRenderedOnly:

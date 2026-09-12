@@ -164,3 +164,34 @@ class TestRenderFailure:
 
         assert result.ok is False
         assert result.error == "the server returned a file download rather than a page"
+
+    def test_a_server_that_never_answers_is_reported_as_a_timeout_not_a_refusal(self) -> None:
+        """A navigation that times out before the first byte leaves the page on
+        `about:blank`. Checking that against the host policy reported every such timeout as
+        "refusing non-HTTP scheme: about" -- a security refusal that never happened.
+        """
+        import http.server
+        import threading
+        import time
+
+        class Silent(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                time.sleep(4)  # longer than the render timeout below; never answers in time
+
+            def log_message(self, *args: object) -> None:  # noqa: ARG002
+                return
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Silent)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/slow"
+            result = render_page(url, config=RenderConfig(timeout_ms=1500))
+        finally:
+            server.shutdown()
+            server.server_close()
+
+        assert result.ok is False
+        assert result.error is not None
+        assert "about" not in result.error.lower() or "never started" in result.error
+        assert "never started" in result.error

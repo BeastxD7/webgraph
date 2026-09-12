@@ -99,7 +99,7 @@ def _cmd_text(args: argparse.Namespace) -> int:
     if args.content:
         # The same reduction the crawl applies -- landmarks, then the main-content boundary.
         # A single page has no cross-page chrome profile, and says so via the method list.
-        selection = select_content(document.blocks)
+        selection = select_content(document.blocks, title=document.title)
         document = document.model_copy(update={"blocks": tuple(selection.blocks)})
         if not args.quiet:
             print(

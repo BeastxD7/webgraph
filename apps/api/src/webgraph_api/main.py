@@ -30,9 +30,9 @@ from pathlib import Path
 from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
@@ -435,7 +435,9 @@ async def get_text(request: TextRequest) -> TextResponse:
     # See `webgraph.site._content_of`: on a listing the page type is the difference between
     # returning the items and returning the footer.
     selection = select_content(
-        document.blocks, config=policy_for(routing.page_type if routing else None)
+        document.blocks,
+        config=policy_for(routing.page_type if routing else None),
+        title=document.title,
     )
     content = (
         to_markdown(
@@ -520,6 +522,19 @@ async def extract(request: ExtractRequest) -> ExtractResponse:
             for path, fact in sorted(merged.items())
         },
     )
+
+
+@app.exception_handler(guard.BlockedHostError)
+async def _blocked_host(_request: Request, exc: guard.BlockedHostError) -> JSONResponse:
+    """A refused address is a 403 with the reason, not a 500 with none.
+
+    `guard.check_url` raises before a stream sends its first byte, and an unhandled
+    exception there produced a bare 500 *without CORS headers* -- so the browser reported
+    "Cannot reach the API. Is it running?" for a request the API had deliberately refused.
+    The one message that could not have been less true. Routed through a JSONResponse so
+    the CORS middleware decorates it like any other answer.
+    """
+    return JSONResponse(status_code=403, content={"detail": f"refused: {exc}"})
 
 
 def _sse(event: dict[str, Any]) -> str:

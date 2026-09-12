@@ -69,6 +69,8 @@ class ContentSelection:
     chrome_removed: int = 0
     main_content_removed: int = 0
     block_model_removed: int = 0
+    title_restored: bool = False
+    """Whether the boundary step cut the page's own title and it was put back."""
     """Blocks the trained per-block model dropped, when `select_content` was given one.
     Mutually exclusive with `main_content_removed`: the model replaces the boundary step."""
 
@@ -107,6 +109,7 @@ def select_content(
     main_content: bool = True,
     config: MainContentConfig | None = None,
     model: BlockModel | _ShippedModel | None = None,
+    title: str = "",
 ) -> ContentSelection:
     """Reduce a complete block list to the page's content.
 
@@ -142,6 +145,13 @@ def select_content(
     something to put in front of every user by default. `benchmark/train/README.md` has the
     numbers on both sides.
 
+    `title` is the document's `<title>`. When given, the block that carries it is never
+    removed by the last step. The boundary is drawn around prose density, and a page's title
+    line is often the least prose-like thing on it -- on a Hacker News thread it is a link
+    followed by "143 points by ...", and the boundary started at the first comment, cutting
+    the one line that says what the thread is about. The structural steps are unaffected:
+    a title inside a `<nav>` is the site's name, not the page's.
+
     Never returns an empty list for a non-empty input: each step falls open to what it was
     given when it would remove everything, and `select_main_content` refuses to return a
     fragment (see `MainContentConfig.min_run_share`).
@@ -172,6 +182,8 @@ def select_content(
 
     main_content_removed = 0
     block_model_removed = 0
+    title_restored = False
+    structural = kept
     if resolved is not None and main_content:
         before = len(kept)
         kept = select_by_model(kept, resolved)
@@ -180,6 +192,13 @@ def select_content(
         before = len(kept)
         kept = select_main_content(kept, config=config)
         main_content_removed = before - len(kept)
+    if main_content and title:
+        kept, title_restored = _restore_title(structural, kept, title)
+        if title_restored:
+            if resolved is not None:
+                block_model_removed -= 1
+            else:
+                main_content_removed -= 1
 
     return ContentSelection(
         blocks=kept,
@@ -189,4 +208,54 @@ def select_content(
         chrome_removed=chrome_removed,
         main_content_removed=main_content_removed,
         block_model_removed=block_model_removed,
+        title_restored=title_restored,
     )
+
+
+def _fold(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def _restore_title(
+    candidates: list[Block], kept: list[Block], title: str
+) -> tuple[list[Block], bool]:
+    """Put the page's title block back if the last step cut it, keeping document order.
+
+    The title block is the first candidate whose text the `<title>` contains, or which
+    contains the `<title>` with its site suffix removed. Both directions, because a
+    `<title>` is usually "Page title | Site" and the block is usually just "Page title" --
+    but on some sites the block is the longer of the two.
+    """
+    wanted = _fold(title)
+    # "Nvidia is the central bank of AI | Hacker News": the part before the separator is
+    # the page's name; the part after is the site's. The block on the page carries the
+    # former, usually with something else attached ("(economist.com)"), so the comparison
+    # is against the core, not the whole.
+    core = wanted
+    for separator in (" | ", " - ", " \u2013 ", " \u2014 ", " :: ", " \u00b7 "):
+        if separator in core:
+            head, _, tail = core.rpartition(separator)
+            if len(head) >= 8 and len(tail.split()) <= 5:
+                core = head
+            break
+    if len(core) < 8:
+        return kept, False
+
+    def matches(block: Block) -> bool:
+        text = _fold(block.text)
+        return 8 <= len(text) <= 300 and (core in text or text in core)
+
+    # If the content already carries the title, nothing was cut. Restoring a second copy
+    # from a breadcrumb or a "you are here" strip would add the very chrome the earlier
+    # steps removed.
+    if any(matches(block) for block in kept):
+        return kept, False
+    kept_ids = {id(block) for block in kept}
+    cut = next((block for block in candidates if id(block) not in kept_ids and matches(block)), None)
+    if cut is None:
+        return kept, False
+    # Rebuilt from `candidates` so the block lands where it was, in whatever order the
+    # document is in -- geometric or DOM. Sorting by `dom_index` would undo a geometric
+    # ordering for every block, not just this one.
+    kept_ids.add(id(cut))
+    return [block for block in candidates if id(block) in kept_ids], True

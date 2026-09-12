@@ -41,13 +41,16 @@ from webgraph.fetch.render import (
 from webgraph.fetch.static import FetchConfig, FetchResult, fetch_static
 from webgraph.pipeline import build_document
 from webgraph.profile.technology import RuntimeEvidence
-from webgraph.types import Block, Document, ReadingOrderMethod
+from webgraph.types import Block, BlockKind, Document, ReadingOrderMethod
 
 __all__ = [
     "MISSING_STATUSES",
+    "PageBlockedError",
     "PageMissingError",
     "ResolvedPage",
     "Strategy",
+    "block_page_evidence",
+    "challenge_vendor",
     "resolve_page",
     "union_documents",
 ]
@@ -71,6 +74,99 @@ class PageMissingError(Exception):
         super().__init__(f"HTTP {status}: page does not exist")
         self.url = url
         self.status = status
+
+class PageBlockedError(ValueError):
+    """The server answered, but with a wall instead of the page.
+
+    A subclass of ValueError so that every existing "could not resolve" handler treats it
+    as the failure it is. It exists as its own type because it is the one failure that used
+    to be reported as success: Reddit's "You've been blocked by network security" came back
+    as three blocks, typed `listing` at 86% confidence, with a green tick.
+    """
+
+    def __init__(self, url: str, evidence: str, *, challenge: str | None = None) -> None:
+        if challenge:
+            message = (
+                f"could not resolve {url}: the site answered with a {challenge} bot challenge "
+                "-- a script a browser must run before the page is served -- and no page"
+            )
+        else:
+            message = (
+                f"could not resolve {url}: the site served a block page instead of the "
+                f'content; it said: "{evidence}"'
+            )
+        super().__init__(message)
+        self.url = url
+        self.evidence = evidence
+        self.challenge = challenge
+
+
+_BLOCK_PAGE_PHRASES: Final[re.Pattern[str]] = re.compile(
+    r"(you(?:'ve| have) been blocked|access denied|access to this page has been denied"
+    r"|verify (?:that )?you are (?:not a robot|a human|human)|are you a robot"
+    r"|unusual traffic from your|enable javascript and cookies|just a moment\.\.\."
+    r"|attention required!|blocked by network security|checking your browser"
+    r"|complete the security check|security check to access|bot detection|pardon our interruption"
+    r"|request blocked|automated access to|please enable cookies|ray id:)",
+    re.IGNORECASE,
+)
+"""How CDNs and bot-management products phrase a refusal. Only consulted on a page too short
+to be anything else; a real article *about* Cloudflare is thousands of characters long."""
+
+MAX_BLOCK_PAGE_CHARS: Final[int] = 1_500
+"""A block page is a sentence and a button. Above this a page is presumed to be a page."""
+
+_CHALLENGE_MARKERS: Final[tuple[tuple[str, str], ...]] = (
+    ("awswafcookie", "AWS WAF"),
+    ("awswaf", "AWS WAF"),
+    ("gokuprops", "AWS WAF"),
+    ("cf-chl", "Cloudflare"),
+    ("__cf_chl", "Cloudflare"),
+    ("challenge-platform", "Cloudflare"),
+    ("_incapsula_resource", "Imperva Incapsula"),
+    ("datadome", "DataDome"),
+    ("_pxhd", "PerimeterX"),
+    ("px-captcha", "PerimeterX"),
+    ("distil_r_", "Distil"),
+    ("akam/13", "Akamai Bot Manager"),
+    ("bm-verify", "Akamai Bot Manager"),
+    ("kasada", "Kasada"),
+    ("geo.captcha-delivery", "DataDome"),
+)
+"""Fingerprints of a JavaScript bot challenge, in the markup rather than the text.
+
+A challenge page has no visible words at all -- it is a `<script>` that sets a cookie and
+reloads -- so the phrase test above never fires on it. Amazon's is HTTP 202 with two
+kilobytes of `window.awsWafCookie`, and it used to come back as a successful extraction
+of zero blocks, typed `service` at 75% confidence."""
+
+
+def challenge_vendor(html: str) -> str | None:
+    """Which bot-management product wrote this markup, if one did."""
+    lowered = html.lower()
+    for marker, vendor in _CHALLENGE_MARKERS:
+        if marker in lowered:
+            return vendor
+    return None
+
+
+def block_page_evidence(text: str) -> str | None:
+    """The phrase that gives a block page away, or None for a page that is one.
+
+    Two conditions, both required: the page is short, and it says one of the things a wall
+    says. Either alone is wrong -- short pages exist, and long pages mention captchas -- but
+    a short page whose text is "verify you are human" is not a short page about verifying
+    humans.
+    """
+    flat = _WHITESPACE.sub(" ", text).strip()
+    if not flat or len(flat) > MAX_BLOCK_PAGE_CHARS:
+        return None
+    match = _BLOCK_PAGE_PHRASES.search(flat)
+    if match is None:
+        return None
+    start = max(0, match.start() - 40)
+    return flat[start : match.end() + 60].strip()
+
 
 _WHITESPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
 
@@ -314,6 +410,36 @@ def _server_said(html: str, limit: int = 140) -> str:
     return text[:limit].strip() if len(text) >= 20 else ""
 
 
+def _refuse_block_page(document: Document, *, status: int | None = None) -> None:
+    """Raise rather than return a wall -- or nothing -- as if it were the page.
+
+    Two shapes. A wall with words ("You've been blocked") is caught by its words. A
+    JavaScript challenge has no words: the document is empty, and the only evidence is the
+    vendor's script in the markup. An empty document with no such script is still not a
+    page, and is refused as what it is -- a response that produced no readable text --
+    rather than returned as a success of zero blocks.
+    """
+    evidence = block_page_evidence(document.text)
+    if evidence is not None:
+        raise PageBlockedError(document.url, evidence)
+    if document.text.strip() or any(b.kind is not BlockKind.PARAGRAPH for b in document.blocks):
+        return
+    vendor = challenge_vendor(document.html)
+    if vendor is not None:
+        raise PageBlockedError(document.url, vendor, challenge=vendor)
+    said = f"HTTP {status}, " if status else ""
+    if document.profile.requires_render:
+        raise ValueError(
+            f"could not resolve {document.url}: the page is a JavaScript shell with no "
+            f"readable text until a browser runs it ({said}{len(document.html):,} bytes of "
+            "markup); rendering was not used for this request"
+        )
+    raise ValueError(
+        f"could not resolve {document.url}: the response produced no readable text "
+        f"({said}{len(document.html):,} bytes of markup, none of it visible)"
+    )
+
+
 def _both_failed(url: str, static: FetchResult, render_error: str | None) -> str:
     """One message covering both paths, because both were tried and both have something to say."""
     parts: list[str] = []
@@ -376,6 +502,7 @@ def resolve_page(
     if strategy is Strategy.STATIC_ONLY:
         if static_doc is None:
             raise ValueError(f"static fetch produced no document for {url}: {static_result.error}")
+        _refuse_block_page(static_doc, status=static_result.status)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -394,6 +521,7 @@ def resolve_page(
     if not PLAYWRIGHT_AVAILABLE:
         if static_doc is None:
             raise ValueError(_both_failed(url, static_result, "rendering not installed"))
+        _refuse_block_page(static_doc)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -415,6 +543,7 @@ def resolve_page(
             # only the second leaves a caller unable to tell "the site refused us" from "the
             # browser could not start", which are different problems with different fixes.
             raise ValueError(_both_failed(url, static_result, rendered.error))
+        _refuse_block_page(static_doc)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -439,6 +568,7 @@ def resolve_page(
     )
 
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:
+        _refuse_block_page(rendered_doc)
         chars = len(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
@@ -455,6 +585,7 @@ def resolve_page(
         )
 
     merged, only_static, only_rendered = union_documents(static_doc, rendered_doc)
+    _refuse_block_page(merged)
 
     return ResolvedPage(
         url=merged.url,

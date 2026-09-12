@@ -59,6 +59,18 @@ __all__ = [
 ]
 
 
+DEFAULT_MIN_CONFIDENCE: Final[float] = 0.5
+"""Below this the router says `unknown` rather than guessing.
+
+Measured on its out-of-fold predictions over 1,497 labelled pages, the model is well
+calibrated in the one way that matters here: above 0.5 it is right 86% of the time, and
+below 0.5 it is right **44%** of the time -- a coin toss weighted the wrong way. It used to
+commit at any confidence, which is how a Hacker News page became `documentation` at 24% and
+a Shopify product page became `article` at 39%, each then handed the schema for a type it
+was not. The floor costs 5.5% of pages their type; every consumer already treats `unknown`
+as "use the default", which is the right answer for a page nobody can read confidently."""
+
+
 class PageType(StrEnum):
     ARTICLE = "article"
     DOCUMENTATION = "documentation"
@@ -421,7 +433,9 @@ class PageTypeRouter:
 
     min_confidence: float = 0.0
 
-    def __init__(self, model: dict[str, Any], *, min_confidence: float = 0.0) -> None:
+    def __init__(
+        self, model: dict[str, Any], *, min_confidence: float = DEFAULT_MIN_CONFIDENCE
+    ) -> None:
         self.classes: list[str] = list(model["classes"])
         self.features: list[str] = list(model["features"])
         if tuple(self.features) != FEATURE_NAMES:

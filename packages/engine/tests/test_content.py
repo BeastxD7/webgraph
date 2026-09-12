@@ -193,3 +193,67 @@ class TestFailsOpen:
         for blocks in (page("a"), self._all_navigation(), [block("Hi", xpath="/p", index=0)]):
             assert select_content(blocks).blocks
             assert select_content(blocks, model=SHIPPED_MODEL).blocks
+
+
+class TestTitleProtection:
+    """The boundary step must never cut the block that is the page's title.
+
+    On a Hacker News thread the title line is a link followed by "143 points by ...", the
+    least prose-like thing on the page, and the boundary started at the first comment.
+    """
+
+    @staticmethod
+    def thread() -> list[Block]:
+        from webgraph.pipeline import build_document
+
+        comments = "".join(
+            f'<div class="comment"><p>{"A considered reply about monetary policy and GPUs. " * 6}</p></div>'
+            for _ in range(12)
+        )
+        html = (
+            "<html><head><title>Nvidia is the central bank of AI | Hacker News</title></head><body>"
+            '<table><tr><td><a href="/">Hacker News</a> new | past | comments</td></tr>'
+            '<tr><td><a href="https://e.com/x">Nvidia is the central bank of AI</a> (e.com)</td></tr>'
+            "<tr><td>143 points by someone 2 hours ago | hide | 135 comments</td></tr></table>"
+            f"{comments}</body></html>"
+        )
+        return list(build_document(html, "https://news.ycombinator.com/item?id=1").blocks)
+
+    def test_the_title_survives_the_boundary(self) -> None:
+        blocks = self.thread()
+        without = select_content(blocks)
+        with_title = select_content(blocks, title="Nvidia is the central bank of AI | Hacker News")
+        texts = [b.text for b in with_title.blocks]
+        assert any("Nvidia is the central bank of AI" in t for t in texts)
+        # The protection only does something when the boundary actually cut the title.
+        if not any("Nvidia is the central bank" in b.text for b in without.blocks):
+            assert with_title.title_restored
+
+    def test_it_lands_in_place_not_at_the_end(self) -> None:
+        blocks = self.thread()
+        result = select_content(blocks, title="Nvidia is the central bank of AI | Hacker News")
+        texts = [b.text for b in result.blocks]
+        title_at = next(i for i, t in enumerate(texts) if "central bank" in t)
+        assert title_at == 0
+
+    def test_nothing_is_restored_when_the_title_is_already_kept(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><head><title>On Effects | Blog</title></head><body>"
+            f"<article><h1>On Effects</h1><p>{'Prose about effects. ' * 80}</p></article>"
+            "</body></html>"
+        )
+        blocks = list(build_document(html, "https://x.test/p").blocks)
+        result = select_content(blocks, title="On Effects | Blog")
+        # Whether the boundary kept the heading or cut it and it was put back, there is
+        # exactly one of it -- never a second copy.
+        assert sum(1 for b in result.blocks if b.text == "On Effects") == 1
+        # And once it is in, asking again restores nothing.
+        again = select_content(result.blocks, main_content=False, title="On Effects | Blog")
+        assert again.title_restored is False
+
+    def test_a_short_or_absent_title_does_nothing(self) -> None:
+        blocks = self.thread()
+        assert select_content(blocks, title="").title_restored is False
+        assert select_content(blocks, title="Home").title_restored is False
