@@ -7,7 +7,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "webgraph[render]",
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.34",
+    "uvicorn[standard]>=0.52.4",
     "pydantic>=2.10",
 ]
 
