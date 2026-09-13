@@ -212,6 +212,10 @@ CHROME_MAX_REMOVAL = 0.5
 CHROME_SLOT_PRESENCE = 0.6
 # A <nav>/<footer> landmark shorter than this is trusted as declared and removed.
 CHROME_MIN_LANDMARK_CHARS = 200
+# The comments under a page are stripped only when at least this many words remain outside
+# them -- a story with a thread beneath it. Below it the comments are the page (a Hacker
+# News comment page, a GitHub issue) and stay whatever the page type.
+CHROME_MIN_COMMENT_HOST_WORDS = 250
 # A <main> landmark is trusted only if it holds at least this many words and this share
 # of the page; otherwise it is decoration and ignored.
 CHROME_MAIN_MIN_WORDS = 100

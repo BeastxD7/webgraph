@@ -339,7 +339,8 @@ class TestComments:
 
     @staticmethod
     def story() -> str:
-        body = "".join(f"<p>Paragraph {i} of the story, long enough to read as prose on its own.</p>" for i in range(6))
+        sentence = "long enough to read as prose on its own, with clauses that run on a little further than they need to"
+        body = "".join(f"<p>Paragraph {i} of the story, {sentence}, {sentence}.</p>" for i in range(8))
         comments = "".join(
             f'<li class="comment"><p>Reply {i}: a paragraph of opinion long enough to read like the article itself.</p></li>'
             for i in range(6)
@@ -354,7 +355,22 @@ class TestComments:
         assert sum(1 for b in document.blocks if b.widget == "comments") >= 6
         kept = select_content(list(document.blocks), model=None, title="Story").blocks
         assert not any("Reply" in b.text for b in kept)
-        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 6
+        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
+
+    def test_a_page_that_is_its_comments_keeps_them(self) -> None:
+        """A Hacker News comment page: a login link, two comments, a footer. Without the
+        comments there is nothing, whatever the router called the page."""
+        from webgraph.boilerplate import strip_comments
+        from webgraph.pipeline import build_document
+
+        comments = "".join(
+            f'<tr class="comment"><td><p>Comment {i}: IA works the same way as much of the internet, they allow uploads and answer DMCA claims.</p></td></tr>'
+            for i in range(3)
+        )
+        html = f'<html><body><a href="/login">login</a><table class="comment-tree">{comments}</table><p>Guidelines | FAQ | Lists | API | Security | Legal | Apply to YC | Contact</p></body></html>'
+        document = build_document(html, "https://news.test/item?id=1")
+        assert any(b.widget == "comments" for b in document.blocks)
+        assert len(strip_comments(list(document.blocks))) == len(document.blocks)
 
     def test_forum_policy_keeps_them(self) -> None:
         from webgraph.content import select_content
@@ -362,8 +378,10 @@ class TestComments:
         from webgraph.pipeline import build_document
 
         document = build_document(self.story(), "https://forum.test/t/1")
-        kept = select_content(list(document.blocks), model=None, config=policy_for("forum"), title="Story").blocks
-        assert any("Reply" in b.text for b in kept)
+        forum = select_content(list(document.blocks), model=None, config=policy_for("forum"), main_content=False).blocks
+        article = select_content(list(document.blocks), model=None, config=policy_for("article"), main_content=False).blocks
+        assert any("Reply" in b.text for b in forum)
+        assert not any("Reply" in b.text for b in article)
 
 
 class TestInnermostLandmarkWins:
