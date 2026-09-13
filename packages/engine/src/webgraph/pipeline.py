@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
+from webgraph import config
 from webgraph.dom.blocks import is_rtl_document, parse_html
 from webgraph.dom.markup_stats import markup_stats
 from webgraph.dom.reading_order import OrderingConfig, order_blocks
@@ -92,6 +93,7 @@ def build_document(
 
     ordered, method = order_blocks(list(blocks), rtl=rtl, config=ordering)
     ordered = _deduplicate(ordered)
+    ordered = _drop_restated_wholes(ordered)
 
     text = "\n\n".join(b.text for b in ordered if b.text.strip())
     profile = profile_page(
@@ -231,6 +233,56 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             kept.append(block)
 
     return [block for block in kept if block is not None]
+
+
+_RESTATED_SHINGLE: Final[int] = 6
+
+
+def _drop_restated_wholes(blocks: list[Block]) -> list[Block]:
+    """Drop a long block that restates what several other blocks already say.
+
+    businessinsider.de carries the article twice: as paragraphs, and again as one
+    1,571-word run of text inside a microdata `articleBody` div. Exact-text dedup cannot
+    see it -- the whole is equal to no single paragraph -- so the article was emitted
+    twice and precision halved. A block of `PIPELINE_RESTATED_MIN_WORDS` or more whose six-word
+    shingles are `PIPELINE_RESTATED_SHARE` already present in the *other* blocks is the restated
+    whole, and the paragraphs, which carry the structure, are kept instead.
+
+    The coverage has to be spread: no single other block may supply more than
+    `PIPELINE_RESTATED_SINGLE_MAX` of it. Two blocks that nearly repeat each other are content --
+    react.dev shows the same component three times as the tutorial builds it, stripe.com's
+    API reference shows a request and its response, a pricing page has two plan tables --
+    and only the whole-stitched-from-parts shape is the duplicate.
+    """
+    long_ones = [
+        i for i, b in enumerate(blocks) if len(b.text.split()) >= config.PIPELINE_RESTATED_MIN_WORDS
+    ]
+    if not long_ones:
+        return blocks
+    shingles = [_shingles(b.text) if len(b.text.split()) >= 4 else set() for b in blocks]
+    drop: set[int] = set()
+    for i in long_ones:
+        own = shingles[i]
+        if not own:
+            continue
+        others: set[tuple[str, ...]] = set()
+        single = 0
+        for j, sh in enumerate(shingles):
+            if j != i and j not in drop:
+                others |= sh
+                single = max(single, len(own & sh))
+        if (
+            len(own & others) / len(own) >= config.PIPELINE_RESTATED_SHARE
+            and single / len(own) < config.PIPELINE_RESTATED_SINGLE_MAX
+        ):
+            drop.add(i)
+    return [b for i, b in enumerate(blocks) if i not in drop] if drop else blocks
+
+
+def _shingles(text: str) -> set[tuple[str, ...]]:
+    tokens = text.lower().split()
+    n = _RESTATED_SHINGLE
+    return {tuple(tokens[k : k + n]) for k in range(max(0, len(tokens) - n + 1))}
 
 
 _CHROME_REGIONS: frozenset[str] = frozenset({"nav", "header", "footer", "aside"})

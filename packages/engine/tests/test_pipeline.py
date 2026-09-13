@@ -71,7 +71,10 @@ class TestReadingOrderIntegration:
 
         assert doc.reading_order_method is ReadingOrderMethod.GEOMETRIC_XY_CUT
         assert [b.text for b in doc.blocks] == [
-            "left one", "left two", "right one", "right two",
+            "left one",
+            "left two",
+            "right one",
+            "right two",
         ]
         assert doc.dom_order_differs is True
 
@@ -160,7 +163,9 @@ class TestProfileIntegration:
         assert doc.profile.requires_render is True
 
     def test_content_rich_page_does_not_require_render(self) -> None:
-        body = "".join(f"<p>Paragraph number {i} with a reasonable amount of text.</p>" for i in range(20))
+        body = "".join(
+            f"<p>Paragraph number {i} with a reasonable amount of text.</p>" for i in range(20)
+        )
         doc = build_document(f"<html><body>{body}</body></html>", "https://example.com/")
         assert doc.profile.requires_render is False
 
@@ -191,7 +196,9 @@ class TestDuplicateResolution:
         assert heading[0].tag == "h1"
         # And it sits where the page put it: before its own first paragraph, not in the nav.
         texts = [b.text for b in blocks]
-        assert texts.index(heading[0].text) < texts.index("This module implements a number of iterator building blocks.")
+        assert texts.index(heading[0].text) < texts.index(
+            "This module implements a number of iterator building blocks."
+        )
         assert texts.index("Recipes") < texts.index(heading[0].text)
 
     def test_two_plain_copies_still_keep_the_first(self) -> None:
@@ -225,5 +232,74 @@ class TestDuplicateResolution:
         blocks = build_document(html, "https://python.test/", geometry=geometry).blocks
         texts = [b.text for b in blocks]
         assert texts.count("Applications") == 1
-        assert texts.index("The body of the page, which is long enough to be measured as prose.") < texts.index("Applications")
+        assert texts.index(
+            "The body of the page, which is long enough to be measured as prose."
+        ) < texts.index("Applications")
         assert [b.rect is not None for b in blocks if b.text == "Applications"] == [True]
+
+
+def _sentences(n: int, seed: str) -> list[str]:
+    return [
+        f"{seed} sentence number {i} says something distinct about topic {i * 7 % 11} today."
+        for i in range(n)
+    ]
+
+
+class TestRestatedWholes:
+    """A long block that is the other blocks stitched together is the page repeating
+    itself, not more of the page. Exact dedup cannot see it; the shingle rule can."""
+
+    def test_the_article_body_restated_as_one_block_is_dropped(self) -> None:
+        """businessinsider.de: the article as paragraphs, then again as one 1,571-word run of
+        text in a microdata `articleBody` div. Both were emitted; precision halved."""
+        paragraphs = [" ".join(_sentences(4, f"para{i}")) for i in range(8)]
+        html = (
+            "<html><body><main>"
+            + "".join(f"<p>{p}</p>" for p in paragraphs)
+            + f'<div itemprop="articleBody">{" ".join(paragraphs)}</div>'
+            "</main></body></html>"
+        )
+        blocks = build_document(html, "https://bi.test/story").blocks
+        assert len([b for b in blocks if len(b.text.split()) > 150]) == 0
+        assert [b.text for b in blocks] == paragraphs
+
+    def test_a_quoted_opening_post_is_dropped(self) -> None:
+        """l-camera-forum: reply nine quotes the whole opening post, which was read already
+        as its own paragraphs. The quote is the restated whole; the post stays."""
+        post = [" ".join(_sentences(5, f"op{i}")) for i in range(6)]
+        html = (
+            "<html><body><main>"
+            "<article>" + "".join(f"<p>{p}</p>" for p in post) + "</article>"
+            f"<article><blockquote>{' '.join(post)}</blockquote><p>Get the M11, you will not regret it.</p></article>"
+            "</main></body></html>"
+        )
+        texts = [b.text for b in build_document(html, "https://forum.test/t/1").blocks]
+        assert texts[:6] == post
+        assert texts[-1] == "Get the M11, you will not regret it."
+        assert len(texts) == 7
+
+    def test_two_near_duplicate_code_samples_are_both_content(self) -> None:
+        """react.dev shows the same component three times as the tutorial builds it; a
+        block covered mostly by *one* other block is a revision, not a restatement."""
+        lines = [
+            f"const value{i} = compute(input{i}, options{i}); // step {i} of the sample"
+            for i in range(30)
+        ]
+        first = "\n".join(lines)
+        second = "\n".join(
+            [*lines[:27], "const extra = true; // the tutorial adds a line here", *lines[27:]]
+        )
+        html = (
+            "<html><body><main><p>Start with the component as it stands.</p>"
+            f"<pre><code>{first}</code></pre><p>Then add the state.</p><pre><code>{second}</code></pre>"
+            "</main></body></html>"
+        )
+        blocks = build_document(html, "https://react.test/learn").blocks
+        assert len([b for b in blocks if b.kind.value == "code"]) == 2
+
+    def test_a_long_block_that_is_its_own_text_stays(self) -> None:
+        """Length alone is no reason: a single long paragraph nothing else repeats is kept."""
+        long = " ".join(_sentences(30, "only"))
+        html = f"<html><body><main><p>Short intro.</p><p>{long}</p></main></body></html>"
+        texts = [b.text for b in build_document(html, "https://x.test/").blocks]
+        assert long in texts
