@@ -514,3 +514,44 @@ class TestRails:
         html = '<html><body><main><div class="related-info"><p>The related information here is part of the article itself.</p></div></main></body></html>'
         document = build_document(html, "https://news.test/story")
         assert all(b.widget is None for b in document.blocks)
+
+
+class TestPostFurniture:
+    """forum.nationstates.net (phpBB) and every XenForo board: under each post a signature,
+    beside it a user card -- rank, post count, join date. The annotators keep the post and
+    the byline and leave the furniture; so does the engine now."""
+
+    def test_signature_and_user_card_are_stripped_and_the_post_kept(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        posts = "".join(
+            f'<div class="post"><dl class="postprofile"><dt>User {i}</dt><dd>Senator</dd><dd>Posts: 4032</dd><dd>Founded: Dec 11, 2021</dd></dl>'
+            f'<div class="postbody"><p class="author">by User {i} » Tue Aug 27, 2019</p>'
+            f"<div class=\"content\"><p>Post {i}: the season is one of the wildest in football history, with minnows qualifying everywhere and chaos on the world scene.</p></div>"
+            f'<div class="signature">NS local megafan {i}. This nation does not reflect my politics. Member of The Glitches.</div></div></div>'
+            for i in range(6)
+        )
+        html = f"<html><body><main>{posts}</main></body></html>"
+        document = build_document(html, "https://forum.test/viewtopic.php?t=1")
+        kept = strip_landmarks(list(document.blocks))
+        texts = [b.text for b in kept]
+        assert sum(1 for t in texts if t.startswith("Post ")) == 6
+        assert any(t.startswith("by User 3") for t in texts)
+        assert not any("megafan" in t for t in texts)
+        assert not any(t.startswith("Posts: 4032") for t in texts)
+
+    def test_xenforo_message_body_is_not_furniture(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><main><article class="message"><div class="message-cell message-cell--user"><div class="message-user">'
+            '<h4 class="message-name">alice</h4><div class="message-userExtras"><dl><dt>Messages</dt><dd>1,204</dd></dl></div></div></div>'
+            '<div class="message-cell message-cell--main"><div class="message-userContent"><article class="message-body">'
+            "<div class=\"bbWrapper\">The message body itself, which is the content of the thread and must survive whatever the user cell is called.</div>"
+            "</article></div></div></article></main></body></html>"
+        )
+        document = build_document(html, "https://forum.test/threads/1/")
+        body = [b for b in document.blocks if b.text.startswith("The message body")]
+        assert body and body[0].widget is None
+        assert any(b.widget == "post-furniture" for b in document.blocks if "1,204" in b.text or b.text == "Messages")
