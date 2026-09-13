@@ -1,4 +1,4 @@
-name: Benchmark result
+name: 📊 Benchmark result
 description: You ran one of the benchmark runners and got a number worth recording — better, worse, or different from the published one.
 title: "[benchmark] <benchmark>: <number> on <commit>"
 labels: ["benchmark"]
@@ -15,20 +15,21 @@ body:
         - CleanEval (benchmark/cleaneval)
         - Reading order (benchmark/reading_order)
         - Firecrawl scrape-evals (benchmark/scrape_evals)
-        - Other / new
+        - Other / new (describe below)
     validations:
       required: true
   - type: input
     id: commit
     attributes:
       label: Commit measured
-      placeholder: 0ce4f2f
+      placeholder: 45a1b36
     validations:
       required: true
   - type: textarea
     id: command
     attributes:
       label: Exact command
+      description: Including corpus path, split, flags and environment variables such as WCXB_ROUTER_OOF.
       render: shell
     validations:
       required: true
@@ -41,7 +42,18 @@ body:
     validations:
       required: true
   - type: textarea
+    id: compare
+    attributes:
+      label: Compared with
+      description: The number on the Benchmarks page or in docs/, and the commit it was measured on.
+  - type: textarea
     id: notes
     attributes:
-      label: What differs from the published figure, if anything
-      description: Corpus version, split, machine, runner flags, anything that could explain a gap.
+      label: What might explain a difference
+      description: Corpus version, split, machine, runner flags, a change under test, anything else.
+  - type: textarea
+    id: worst
+    attributes:
+      label: Worst pages (if the runner printed them)
+      description: The `--worst` listing, or the page ids that moved most. This is where the next fix comes from.
+      render: text

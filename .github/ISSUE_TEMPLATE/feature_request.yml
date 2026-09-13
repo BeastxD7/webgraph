@@ -1,4 +1,4 @@
-name: Feature request
+name: ✨ Feature request
 description: A capability the engine, API or web app should have.
 title: "[feature] <short description>"
 labels: ["enhancement", "needs-triage"]
@@ -7,26 +7,51 @@ body:
     id: problem
     attributes:
       label: The problem
-      description: What you are trying to do and where webgraph stops short. Concrete sites or workflows help more than abstractions.
+      description: What you are trying to do and where webgraph stops short. Concrete sites, pages or workflows help more than abstractions.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
       label: Proposed behaviour
-      description: What should happen, from the user's side. If you have an API or CLI shape in mind, sketch it.
+      description: What should happen, from the user's side. Sketch the API shape, CLI flag, config value or screen if you have one in mind.
     validations:
       required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example input and expected output
+      description: A URL or HTML snippet and what webgraph should return for it. Acceptance criteria in the form of a test case.
+      placeholder: |
+        Given: https://example.com/product/42
+        When: POST /api/text with {"url": …}
+        Then: `facts.offers[0].price` is "129.00" and `content_markdown` contains the spec table
+      render: text
   - type: textarea
     id: measurement
     attributes:
       label: How we would know it works
-      description: webgraph does not merge extraction changes without a measurement. Which benchmark, corpus or set of live pages would show the improvement?
+      description: webgraph does not merge extraction changes without a measurement. Which benchmark, corpus or set of live pages would show the improvement, and by how much would it need to move?
   - type: textarea
     id: alternatives
     attributes:
       label: Alternatives considered
-      description: Other ways to get the same result, including ones outside this project.
+      description: Other ways to get the same result, including ones outside this project, and why they fall short.
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Engine — extraction / reading order / Markdown
+        - Engine — crawl / discovery
+        - Engine — facts / schema.org
+        - API
+        - Web app
+        - CLI
+        - Benchmarks
+    validations:
+      required: true
   - type: checkboxes
     id: prior
     attributes:
@@ -34,3 +59,5 @@ body:
       options:
         - label: I searched existing issues and `MEMORY.md` (several obvious ideas have already been measured and rejected there)
           required: true
+        - label: I am willing to help test this on real pages
+          required: false

@@ -1,4 +1,4 @@
-name: Extraction quality report
+name: 🔍 Extraction quality report
 description: A page whose content, reading order, Markdown or extracted facts came out wrong.
 title: "[extraction] <site>: <what went wrong in a few words>"
 labels: ["extraction", "needs-triage"]
@@ -6,13 +6,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you. A wrong page is the most valuable input this project gets: every extraction fix so far started as one.
-        Please include the URL — a report we cannot reproduce cannot be fixed.
+        Thank you — a wrong page is the most valuable input this project gets; every extraction fix so far started as one.
+        The more of this form you fill, the faster it turns into a test and a fix. **The URL is required**; a report we cannot reproduce cannot be fixed.
   - type: input
     id: url
     attributes:
       label: Page URL
-      description: The exact page. If it needs login or is geo-restricted, say so.
+      description: The exact page. If it needs login, a cookie wall, or a region, say so.
       placeholder: https://example.com/article/123
     validations:
       required: true
@@ -23,10 +23,10 @@ body:
       multiple: true
       options:
         - Content missing (recall) — text a reader sees is not in the output
-        - Boilerplate kept (precision) — navigation, ads, related links, comments, cookie dialog in the output
+        - Boilerplate kept (precision) — navigation, ads, related links, comments, cookie dialog, filters in the output
         - Reading order — columns zipped together, sidebar mixed into the article, captions misplaced
         - Markdown structure — tables, code blocks, lists, headings, links, images rendered wrongly
-        - Page type — routed as the wrong type (article / product / forum / listing / ...)
+        - Page type — routed as the wrong type (article / product / forum / listing / …)
         - Extracted facts / schema.org — wrong or missing values
         - Page refused — reported as blocked, a JavaScript shell, or empty when it is not
         - Crawl — pages not discovered, wrong depth, wrong domain scope
@@ -36,18 +36,51 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: What a reader sees on the page
-      description: Paste or describe the part that should have been extracted (or should not have been). A short excerpt is enough.
+      label: Expected — what a reader sees on the page
+      description: Paste the part that should have been extracted (or should not have been). An excerpt is enough; mark the start and end.
+      render: text
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: What webgraph produced
-      description: Paste the relevant part of the Markdown / text / facts. The "Copy run logs" button in the web UI gives everything at once.
+      label: Actual — what webgraph produced
+      description: Paste the relevant part of the Markdown / text / facts. The web UI's **Copy run logs** button gives everything at once, including the block list and the decisions taken.
       render: markdown
     validations:
       required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact command or clicks. Defaults are assumed unless you say otherwise.
+      placeholder: |
+        1. make api
+        2. curl -s -X POST localhost:8000/api/text -H 'content-type: application/json' -d '{"url":"https://…","render":true}' | jq -r .content_markdown
+        3. The third paragraph is missing between "…" and "…"
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: testcase
+    attributes:
+      label: Minimal test case (strongly encouraged)
+      description: |
+        The smallest HTML that shows the problem, plus what the right output is. This becomes the regression test almost verbatim.
+        Copy the relevant element from the page's source (DevTools → right-click → Copy outerHTML) and cut it down until it still misbehaves.
+      placeholder: |
+        HTML:
+        <main><h1>Title</h1><p>First paragraph.</p><aside aria-label="Tip"><p>This tip went missing.</p></aside></main>
+
+        Expected blocks / Markdown:
+        # Title
+        First paragraph.
+        This tip went missing.
+
+        Actual:
+        # Title
+        First paragraph.
+      render: html
   - type: dropdown
     id: how
     attributes:
@@ -60,15 +93,35 @@ body:
         - Python (resolve_page / build_document)
     validations:
       required: true
+  - type: dropdown
+    id: render
+    attributes:
+      label: Rendering
+      options:
+        - Default (static + browser render, merged)
+        - Static only (render off)
+        - Browser only
+        - Don't know
+    validations:
+      required: true
   - type: input
     id: version
     attributes:
       label: Version or commit
-      placeholder: main @ 0ce4f2f
+      placeholder: main @ 45a1b36
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
       label: Anything else
-      description: Settings changed from the defaults, render on/off, the site's platform if you know it (WordPress, Shopify, Discourse, MediaWiki...).
+      description: Settings changed from the defaults, the site's platform if you know it (WordPress, Shopify, Discourse, MediaWiki, Starlight…), whether other extractors get it right.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this site or symptom
+          required: true
+        - label: The page is publicly reachable (or I have described what is needed to reach it)
+          required: true
