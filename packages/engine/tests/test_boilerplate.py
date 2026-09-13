@@ -425,3 +425,64 @@ class TestCalloutAsides:
         kept = strip_landmarks(list(document.blocks))
         assert any("MDX integration" in b.text for b in kept)
         assert not any(b.text == "On this page" for b in kept)
+
+
+class TestMainScopeByScript:
+    """asahi.com: a Japanese article behind a mega-menu. A whitespace split counted every
+    Japanese block as one word, so the <main> held nothing against the menu; and the menu
+    outweighed the article, which a 50% share guard never allowed."""
+
+    def test_a_japanese_main_behind_a_mega_menu_is_scoped(self) -> None:
+        from webgraph.boilerplate import scope_to_main
+        from webgraph.pipeline import build_document
+
+        menu = "".join(f"<li><a href='/s/{i}'>メニュー項目{i}のリンクテキスト</a></li>" for i in range(120))
+        body = "".join(
+            f"<p>第{i}段落。川崎市にある小田急線・柿生駅から徒歩十五分ほどの閑静な住宅街にある分譲マンションは、全十九戸で築三十年ほどを迎える。"
+            "このマンションでは三年前に一度、将来の建て替えを検討したが、費用の試算に住民は驚いた。</p>"
+            for i in range(6)
+        )
+        html = f"<html><body><header><ul>{menu}</ul></header><main><h1>建て替えなんて絶対無理</h1>{body}</main></body></html>"
+        document = build_document(html, "https://news.test/articles/1.html")
+        scoped = scope_to_main(list(document.blocks))
+        assert all(b.in_main for b in scoped)
+        assert not any("メニュー項目" in b.text for b in scoped)
+        assert len(scoped) >= 7
+
+
+class TestCommentsGuardIsProse:
+    """A short news story with a thread under it loses the thread; a page whose only prose
+    is the thread keeps it. Counting every remaining word could not tell them apart -- a
+    nav strip and a footer are words too -- so the guard counts sentences."""
+
+    @staticmethod
+    def page(story_paragraphs: int) -> str:
+        story = "".join(
+            "<p>The council voted on Tuesday to approve the new bridge after a debate that ran late into the evening.</p>"
+            for _ in range(story_paragraphs)
+        )
+        thread = "".join(
+            f'<li class="comment"><p>Reply {i}: a long paragraph of opinion that reads exactly like the article above it does.</p></li>'
+            for i in range(8)
+        )
+        return (
+            "<html><body><p>Home | News | Sport | Weather | Login | Subscribe | Search | Newsletter | Contact | About | Terms | Privacy</p>"
+            f"<main><h1>Council approves bridge</h1>{story}<ol class='comment-list'>{thread}</ol></main>"
+            "<p>Guidelines | FAQ | Lists | API | Security | Legal | Apply | Contact | Search | Jobs | Help | Press</p></body></html>"
+        )
+
+    def test_a_short_story_loses_its_thread(self) -> None:
+        from webgraph.boilerplate import strip_comments
+        from webgraph.pipeline import build_document
+
+        blocks = list(build_document(self.page(story_paragraphs=4), "https://news.test/a").blocks)
+        kept = strip_comments(blocks)
+        assert not any("Reply" in b.text for b in kept)
+
+    def test_a_page_with_no_prose_but_its_thread_keeps_it(self) -> None:
+        from webgraph.boilerplate import strip_comments
+        from webgraph.pipeline import build_document
+
+        blocks = list(build_document(self.page(story_paragraphs=0), "https://news.test/a").blocks)
+        kept = strip_comments(blocks)
+        assert any("Reply" in b.text for b in kept)
