@@ -9,7 +9,7 @@ dependencies = [
     # `http2` pulls in h2. Not decoration: measured on 1,000 live URLs, a client that speaks
     # only HTTP/1.1 and refuses brotli is answered differently by several CDNs than one that
     # negotiates what a browser negotiates. See `webgraph.fetch.static`.
-    "httpx[http2]>=0.28",
+    "httpx[http2]>=0.28.1",
     "brotli>=1.1",
     "lxml>=6.1.3",
     "pydantic>=2.10",
