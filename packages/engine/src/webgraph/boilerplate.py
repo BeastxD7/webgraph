@@ -135,7 +135,7 @@ STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent", "rail"
 navigation over the catalogue and a cookie dialog is nobody's content, whatever element
 either is built from. See `Block.widget`."""
 
-def strip_comments(blocks: Sequence[Block]) -> list[Block]:
+def strip_comments(blocks: Sequence[Block], *, max_share: float = 1.0) -> list[Block]:
     """Drop the comments section (`Block.widget == "comments"`) -- unless the comments are
     the page.
 
@@ -148,6 +148,14 @@ def strip_comments(blocks: Sequence[Block]) -> list[Block]:
     kept = [block for block in blocks if block.widget != "comments"]
     if len(kept) == len(blocks):
         return list(blocks)
+    if max_share < 1.0:
+        # A forum keeps its "comments" when they are the thread and drops them when they
+        # are the asides under the answers: the share of the page's words they hold tells
+        # the two apart (Stack Exchange comments are a tenth; a Reddit thread is most).
+        total = sum(word_count(b.text) for b in blocks) or 1
+        inside = sum(word_count(b.text) for b in blocks if b.widget == "comments")
+        if inside > max_share * total:
+            return list(blocks)
     # Prose outside the comments, not words: what a Hacker News item or a GitHub issue has
     # left is a nav strip, labels and a footer -- link text and one-line metadata -- while
     # even a short news story has a few sentences. Counting every word put the bar at 250

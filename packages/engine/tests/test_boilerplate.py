@@ -377,11 +377,42 @@ class TestComments:
         from webgraph.pagetype import policy_for
         from webgraph.pipeline import build_document
 
-        document = build_document(self.story(), "https://forum.test/t/1")
+        # A thread: a short opening post and a long tail of replies in `.comment`s. Under
+        # the forum policy the replies hold most of the page and are the content; under
+        # the article policy they are the comments under a story and go.
+        replies = "".join(
+            f'<li class="comment"><p>Reply {i}: a paragraph of opinion long enough to read like the article itself, and a little more.</p></li>'
+            for i in range(14)
+        )
+        opening = (
+            "<p>The opening post asks a question at some length, describing the setup, what was tried, and what happened instead.</p>"
+            "<p>It runs to a few sentences because the author wanted to be thorough, which is more than most opening posts manage.</p>"
+            "<p>Still, it is a fraction of the thread beneath it, which is where the answer eventually turns up, several pages down.</p>"
+        )
+        html = f'<html><body><main><article><h1>Thread</h1>{opening}</article><ol class="comment-list">{replies}</ol></main></body></html>'
+        document = build_document(html, "https://forum.test/t/1")
         forum = select_content(list(document.blocks), model=None, config=policy_for("forum"), main_content=False).blocks
         article = select_content(list(document.blocks), model=None, config=policy_for("article"), main_content=False).blocks
         assert any("Reply" in b.text for b in forum)
         assert not any("Reply" in b.text for b in article)
+
+    def test_forum_drops_minor_comments_under_answers(self) -> None:
+        """Stack Exchange: the answers are the content and the one-line comments under each
+        are asides; they hold a small share of the page and go under the forum policy too."""
+        from webgraph.content import select_content
+        from webgraph.pagetype import policy_for
+        from webgraph.pipeline import build_document
+
+        answers = "".join(
+            f"<div class='answer'><p>Answer {i}: You can use AutoHotkey to move the keyboard focus to the file pane; bind a hotkey and send a space to the DirectUIHWND control, which works on every Explorer window.</p>"
+            f"<ul class='comments-list'><li class='comment'><span>Now tell me how you really feel {i}.</span></li></ul></div>"
+            for i in range(5)
+        )
+        html = f"<html><body><main><h1>Keyboard shortcut to focus the file pane?</h1>{answers}</main></body></html>"
+        document = build_document(html, "https://superuser.test/questions/1")
+        kept = select_content(list(document.blocks), model=None, config=policy_for("forum"), main_content=False).blocks
+        assert sum(1 for b in kept if b.text.startswith("Answer ")) == 5
+        assert not any("really feel" in b.text for b in kept)
 
 
 class TestInnermostLandmarkWins:

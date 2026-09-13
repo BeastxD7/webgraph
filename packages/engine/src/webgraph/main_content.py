@@ -328,6 +328,10 @@ class MainContentConfig:
     articles and documentation; off for forums, listings, collections and products, where
     the repeated items are `<article>`s themselves. See `boilerplate.scope_to_article`."""
 
+    comments_max_share: float = 1.0
+    """With `strip_comments`: leave the comments alone when they hold more than this share
+    of the page's words. 1.0 (always strip, subject to the prose guard) except on forums."""
+
     strip_comments: bool = True
     """Drop the comments under the page (`Block.widget == "comments"`) before anything is
     scored. On for every page type but forums, where the comments are the content: on a
