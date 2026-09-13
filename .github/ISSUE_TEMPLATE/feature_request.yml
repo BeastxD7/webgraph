@@ -1,0 +1,36 @@
+name: Feature request
+description: A capability the engine, API or web app should have.
+title: "[feature] <short description>"
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and where webgraph stops short. Concrete sites or workflows help more than abstractions.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should happen, from the user's side. If you have an API or CLI shape in mind, sketch it.
+    validations:
+      required: true
+  - type: textarea
+    id: measurement
+    attributes:
+      label: How we would know it works
+      description: webgraph does not merge extraction changes without a measurement. Which benchmark, corpus or set of live pages would show the improvement?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to get the same result, including ones outside this project.
+  - type: checkboxes
+    id: prior
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and `MEMORY.md` (several obvious ideas have already been measured and rejected there)
+          required: true

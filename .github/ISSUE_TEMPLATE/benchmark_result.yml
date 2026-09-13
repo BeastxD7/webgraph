@@ -1,0 +1,47 @@
+name: Benchmark result
+description: You ran one of the benchmark runners and got a number worth recording — better, worse, or different from the published one.
+title: "[benchmark] <benchmark>: <number> on <commit>"
+labels: ["benchmark"]
+body:
+  - type: dropdown
+    id: benchmark
+    attributes:
+      label: Benchmark
+      options:
+        - WCXB (benchmark/wcxb)
+        - Zyte article-extraction (benchmark/article_extraction)
+        - WCEB (benchmark/wceb)
+        - WebMainBench (benchmark/webmainbench)
+        - CleanEval (benchmark/cleaneval)
+        - Reading order (benchmark/reading_order)
+        - Firecrawl scrape-evals (benchmark/scrape_evals)
+        - Other / new
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit measured
+      placeholder: 0ce4f2f
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: The runner's output
+      description: Paste the summary table as printed. Do not retype numbers.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What differs from the published figure, if anything
+      description: Corpus version, split, machine, runner flags, anything that could explain a gap.

@@ -1,0 +1,74 @@
+name: Extraction quality report
+description: A page whose content, reading order, Markdown or extracted facts came out wrong.
+title: "[extraction] <site>: <what went wrong in a few words>"
+labels: ["extraction", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. A wrong page is the most valuable input this project gets: every extraction fix so far started as one.
+        Please include the URL — a report we cannot reproduce cannot be fixed.
+  - type: input
+    id: url
+    attributes:
+      label: Page URL
+      description: The exact page. If it needs login or is geo-restricted, say so.
+      placeholder: https://example.com/article/123
+    validations:
+      required: true
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: What went wrong
+      multiple: true
+      options:
+        - Content missing (recall) — text a reader sees is not in the output
+        - Boilerplate kept (precision) — navigation, ads, related links, comments, cookie dialog in the output
+        - Reading order — columns zipped together, sidebar mixed into the article, captions misplaced
+        - Markdown structure — tables, code blocks, lists, headings, links, images rendered wrongly
+        - Page type — routed as the wrong type (article / product / forum / listing / ...)
+        - Extracted facts / schema.org — wrong or missing values
+        - Page refused — reported as blocked, a JavaScript shell, or empty when it is not
+        - Crawl — pages not discovered, wrong depth, wrong domain scope
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What a reader sees on the page
+      description: Paste or describe the part that should have been extracted (or should not have been). A short excerpt is enough.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What webgraph produced
+      description: Paste the relevant part of the Markdown / text / facts. The "Copy run logs" button in the web UI gives everything at once.
+      render: markdown
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you ran it
+      options:
+        - Web UI (single page)
+        - Web UI (whole site)
+        - API (/api/text or /api/site)
+        - CLI (webgraph text / site / extract)
+        - Python (resolve_page / build_document)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main @ 0ce4f2f
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Settings changed from the defaults, render on/off, the site's platform if you know it (WordPress, Shopify, Discourse, MediaWiki...).
