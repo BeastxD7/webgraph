@@ -212,14 +212,17 @@ CHROME_MAX_REMOVAL = 0.5
 CHROME_SLOT_PRESENCE = 0.6
 # A <nav>/<footer> landmark shorter than this is trusted as declared and removed.
 CHROME_MIN_LANDMARK_CHARS = 200
-# The comments under a page are stripped only when at least this many words remain outside
-# them -- a story with a thread beneath it. Below it the comments are the page (a Hacker
-# News comment page, a GitHub issue) and stay whatever the page type.
-CHROME_MIN_COMMENT_HOST_WORDS = 250
+# The comments under a page are stripped only when at least this many words of prose
+# (paragraphs of 15+ words that are not mostly links) remain outside them -- a story with a
+# thread beneath it. Below it the comments are the page (a Hacker News comment page, a
+# GitHub issue) and stay whatever the page type.
+CHROME_MIN_COMMENT_HOST_WORDS = 60
 # A <main> landmark is trusted only if it holds at least this many words and this share
-# of the page; otherwise it is decoration and ignored.
+# of the page; otherwise it is decoration and ignored. The share was 0.5; swept on WCXB dev
+# (0.5 / 0.3 / 0.2 / 0.1 -> 0.8503 / 0.8522 / 0.8531 / 0.8532 overall), 0.2 keeps articles
+# at their best and lets a page whose mega-menu outweighs its article still be scoped.
 CHROME_MAIN_MIN_WORDS = 100
-CHROME_MAIN_MIN_SHARE = 0.5
+CHROME_MAIN_MIN_SHARE = 0.2
 
 # ======================================================================================
 # Page type (the router)

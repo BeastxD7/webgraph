@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from webgraph import config
+from webgraph.main_content import link_density, word_count
 from webgraph.types import Block, BlockKind
 
 DEFAULT_THRESHOLD = config.CHROME_THRESHOLD
@@ -147,14 +148,24 @@ def strip_comments(blocks: Sequence[Block]) -> list[Block]:
     kept = [block for block in blocks if block.widget != "comments"]
     if len(kept) == len(blocks):
         return list(blocks)
-    remaining = sum(len(b.text.split()) for b in kept if b.kind not in _NOT_HOST_KINDS)
-    if remaining < MIN_COMMENT_HOST_WORDS:
+    # Prose outside the comments, not words: what a Hacker News item or a GitHub issue has
+    # left is a nav strip, labels and a footer -- link text and one-line metadata -- while
+    # even a short news story has a few sentences. Counting every word put the bar at 250
+    # and cost short articles their precision (Zyte 0.928 -> 0.923); counting prose puts
+    # it at 60 and separates the two cleanly.
+    prose = sum(
+        word_count(b.text)
+        for b in kept
+        if b.kind in _PROSE_KINDS and word_count(b.text) >= _PROSE_BLOCK_WORDS and link_density(b) < 0.5
+    )
+    if prose < MIN_COMMENT_HOST_WORDS:
         return list(blocks)
     return kept
 
 
 MIN_COMMENT_HOST_WORDS: Final[int] = config.CHROME_MIN_COMMENT_HOST_WORDS
-_NOT_HOST_KINDS: Final[frozenset[BlockKind]] = frozenset({BlockKind.IMAGE, BlockKind.MEDIA})
+_PROSE_KINDS: Final[frozenset[BlockKind]] = frozenset({BlockKind.PARAGRAPH, BlockKind.QUOTE})
+_PROSE_BLOCK_WORDS: Final[int] = 15
 
 
 def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
@@ -168,8 +179,10 @@ def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
     inside = [block for block in blocks if block.in_main]
     if not inside:
         return list(blocks)
-    inside_words = sum(len(b.text.split()) for b in inside)
-    total_words = sum(len(b.text.split()) for b in blocks)
+    # `word_count`, not a whitespace split: a Japanese article is one "word" per block to
+    # `split()`, and asahi.com's <main> then held nothing against its mega-menu.
+    inside_words = sum(word_count(b.text) for b in inside)
+    total_words = sum(word_count(b.text) for b in blocks)
     if inside_words < MAIN_MIN_WORDS or inside_words < MAIN_MIN_SHARE * total_words:
         return list(blocks)
     return inside
