@@ -1217,6 +1217,43 @@ _FILTER_TOKENS: Final[frozenset[str]] = frozenset({
     "filterbar", "filternav", "filtersidebar",
 })
 _TOKEN_SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_\-:/.]+")
+_RAIL_COMPOUNDS: Final[frozenset[str]] = frozenset({
+    # Two-part names that are unambiguous as a whole.
+    "breaking-news", "news-ticker", "most-read", "most-popular", "most-viewed", "popular-posts",
+    "related-posts", "related-articles", "related-stories", "related-news", "related-content",
+    "recent-posts", "latest-news", "latest-posts", "trending-now", "trending-posts",
+    "share-bar", "social-share", "share-buttons", "sharing-buttons", "newsletter-signup",
+    "newsletter-form", "ad-slot", "ad-container", "ad-wrapper", "ad-unit", "read-next",
+    "you-may-like", "also-read", "more-stories", "promo-box", "sticky-ad", "top-stories",
+})
+_RAIL_TOKENS: Final[frozenset[str]] = frozenset({
+    # Single tokens that name a rail and nothing else.
+    "ticker", "newsticker", "marquee", "outbrain", "taboola", "sharedaddy", "yarpp",
+    "jp-relatedposts", "crp_related", "breadcrumb", "breadcrumbs", "skyscraper", "adsbygoogle",
+    "mgid", "revcontent", "zergnet", "sharethis", "addthis",
+})
+_RAIL_ATTR_SPLIT: Final[re.Pattern[str]] = re.compile(r"\s+")
+
+
+def _names_rail(element: HtmlElement) -> bool:
+    """Whether this element's class or id names a rail of other things: a news ticker, a
+    most-read list, a share bar, an ad slot, a recommendation widget. The vocabulary is
+    the one boilerplate detectors have used since Readability's `unlikelyCandidates`,
+    kept to names that mean one thing; `sidebar` and `related` on their own are not in it
+    because themes use them for the article column and for content."""
+    names = f"{element.get('class') or ''} {element.get('id') or ''}".lower().strip()
+    if not names:
+        return False
+    for token in _RAIL_ATTR_SPLIT.split(names):
+        if token in _RAIL_TOKENS or token in _RAIL_COMPOUNDS:
+            return True
+        # `sidebar-most-read`, `widget_related-posts`: a compound inside a longer token.
+        for compound in _RAIL_COMPOUNDS:
+            if compound in token and (token == compound or not token.replace(compound, "x").isalnum()):
+                return True
+    return False
+
+
 _CONSENT_MARKERS: Final[re.Pattern[str]] = re.compile(
     # Vendors' own container names, then the generic ones sites hand-roll.
     r"(?:^|[\s_\-])(?:onetrust|ot-sdk|optanon|cybotcookiebotdialog|cookiebot|qc-cmp2|didomi|"
@@ -1301,6 +1338,11 @@ def _widget_of(
     own: str | None = None
     if above is None:
         tag = element.tag if isinstance(element.tag, str) else ""
+        if tag in _RAIL_TAGS and _names_rail(element):
+            words = len(element.text_content().split())
+            if words <= _MAX_WIDGET_SHARE * body_words:
+                cache[element] = "rail"
+                return "rail"
         if tag in _WIDGET_TAGS and _names_consent(element):
             # A cookie-consent dialog. OneTrust's preference centre is 2,000 words of
             # "Strictly Necessary Cookies" and "We and our 644 partners", in the DOM of 12%
@@ -1332,6 +1374,7 @@ def _widget_of(
     return result
 
 
+_RAIL_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "aside", "ul", "ol", "nav", "footer", "header", "table"})
 _COMMENT_TAGS: Final[frozenset[str]] = frozenset(
     {"div", "section", "aside", "article", "ol", "ul", "li", "form", "footer", "table", "tbody", "tr", "td"}
 )

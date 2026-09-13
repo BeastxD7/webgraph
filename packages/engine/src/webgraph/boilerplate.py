@@ -130,7 +130,7 @@ STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer", "aside"})
 through `role="navigation"` and `role="contentinfo"` which the XPath cannot see, and
 `aside` / `role="complementary"` -- see the module docstring for the measurement."""
 
-STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent"})
+STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent", "rail"})
 """Named panels `strip_landmarks` removes with the landmarks: a faceted-search filter is
 navigation over the catalogue and a cookie dialog is nobody's content, whatever element
 either is built from. See `Block.widget`."""

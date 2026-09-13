@@ -486,3 +486,31 @@ class TestCommentsGuardIsProse:
         blocks = list(build_document(self.page(story_paragraphs=0), "https://news.test/a").blocks)
         kept = strip_comments(blocks)
         assert any("Reply" in b.text for b in kept)
+
+
+class TestRails:
+    """indiapost.com: a "Breaking News" ticker of ten headline-plus-blurb items above the
+    article, each long enough to score as prose, and the boundary step ran across them."""
+
+    def test_named_ticker_is_stripped(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        items = "".join(
+            f"<li><a href='/n/{i}'>Headline number {i} about something else</a> CITY: The first sentence of that other story, long enough to look like prose.</li>"
+            for i in range(10)
+        )
+        body = "".join(f"<p>Paragraph {i} of the actual article, long enough to be read as prose on its own, and then some more words.</p>" for i in range(24))
+        html = f'<html><body><div class="breaking-news"><b>Breaking News</b><ul>{items}</ul></div><article><h1>Deportees return home</h1>{body}</article></body></html>'
+        document = build_document(html, "https://news.test/story")
+        assert sum(1 for b in document.blocks if b.widget == "rail") >= 10
+        kept = strip_landmarks(list(document.blocks))
+        assert not any("Headline number" in b.text for b in kept)
+        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 24
+
+    def test_related_alone_is_not_a_rail(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = '<html><body><main><div class="related-info"><p>The related information here is part of the article itself.</p></div></main></body></html>'
+        document = build_document(html, "https://news.test/story")
+        assert all(b.widget is None for b in document.blocks)
