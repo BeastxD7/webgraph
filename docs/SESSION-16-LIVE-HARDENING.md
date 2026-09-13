@@ -9,22 +9,29 @@ the record, including the experiments that were rejected.
 
 WCXB dev (1,497 human-reviewed pages, seven page types, the corpus's own word-level F1),
 production path -- the page-type router's out-of-fold prediction choosing the per-type
-policy -- went **0.820 -> 0.848** (unrouted `content` 0.811 -> 0.821). The published field:
+policy -- went **0.820 -> 0.850** (unrouted `content` 0.811 -> 0.826). The published field:
 rs-trafilatura 0.859 (its author's, tuned on this split), MinerU-HTML 0.827, trafilatura
 2.2.0 0.813 (run here). Second of seven, from fourth.
 
+WCEB (3,985 pages over eight independently built corpora, ROUGE-LSum, the one benchmark
+whose authors have no extractor in the field): **0.843 -> 0.871**, first of seven, from
+third -- trafilatura 0.867, readability 0.855, boilerpipe 0.825, resiliparse 0.819. First on
+cleaneval, cetd and dragnet (2,817 of the pages); behind trafilatura on google-trends and
+readability, boilerpipe on l3s-gn1, resiliparse on scrapinghub, readability on
+cleanportaleval.
+
 | type | N | start | end | best published |
 |---|---:|---:|---:|---:|
-| article | 793 | 0.920 | **0.934** | 0.932 (rs-trafilatura) |
+| article | 793 | 0.920 | **0.937** | 0.932 (rs-trafilatura) |
 | documentation | 91 | 0.923 | 0.925 | 0.931 |
-| service | 165 | 0.794 | 0.823 | 0.843 |
+| service | 165 | 0.794 | 0.831 | 0.843 |
 | forum | 113 | 0.734 | 0.763 | 0.794 (MinerU-HTML) |
-| collection | 117 | 0.569 | 0.673 | 0.713 |
-| listing | 99 | 0.636 | **0.708** | 0.710 (MinerU-HTML) |
-| product | 119 | 0.594 | 0.616 | 0.670 |
+| collection | 117 | 0.569 | 0.680 | 0.713 |
+| listing | 99 | 0.636 | 0.700 | 0.710 (MinerU-HTML) |
+| product | 119 | 0.594 | 0.621 | 0.670 |
 
-WCXB **test** split, opened once at the end and used for no decision: **0.856** routed,
-0.851 unrouted. Zyte article-extraction: **0.895 -> 0.928** (15th -> 11th of 35).
+WCXB **test** split, opened at the end and used for no decision: **0.859** routed,
+0.853 unrouted. Zyte article-extraction: **0.895 -> 0.928** (15th -> 11th of 35).
 WebMainBench 545: 0.631 -> 0.646 column mean (tables 0.425 -> 0.404, not diagnosed).
 Reading-order benchmark, discriminating pairs: **0.505 -> 0.936**.
 
@@ -52,6 +59,8 @@ wrongly, the mechanism found, the fix measured on the corpus before it shipped.
 | #24 | innermost landmark wins over the `/nav/` path | protiviti.com (unclosed `<nav>` swallowed `<main>`) | service +0.005 |
 | #25 | comments kept when they are the page | Hacker News item, GitHub issue (found live) | no corpus change |
 | #26 | callout asides are content | docs.astro.build (found live) | no corpus change |
+| #27 | `<main>` trusted at a fifth of the page, words counted per script; comments guard counts prose | asahi.com (found live) | article 0.932 -> 0.934, service +0.009 |
+| #28 | tests backfilled for #14, #22, #27 | audit | -- |
 
 Two of the largest gains were one line each. #14's dedup line moved a measured block into
 the slot of an earlier unmeasured copy, which put python.org's whole footer inside its
