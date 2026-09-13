@@ -111,7 +111,10 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
         for block in blocks
         if block.region not in STRIPPED_REGIONS
         and block.widget not in STRIPPED_WIDGETS
-        and not LANDMARK_XPATH.search(block.xpath)
+        # The innermost landmark wins over the path. protiviti.com's markup leaves a
+        # <nav> and an <li> unclosed, so the parser nests the whole <main> inside them
+        # and every path on the page runs through `/nav/`; the blocks are still in main.
+        and not (LANDMARK_XPATH.search(block.xpath) and not block.in_main)
     ]
     if not kept:
         return list(blocks)
