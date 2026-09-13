@@ -31,6 +31,37 @@ explicitly allowed, and the approval already sat in the local tree from an earli
 interactive install. Every local check passed the whole time. `make check-clean` reproduces
 what CI actually does.
 
+## The three rules every change follows
+
+1. **Every fix ships with the test that fails without it.** Not a test in the general area:
+   a test of the specific page shape or behaviour that was wrong, named after it. A PR that
+   changes behaviour and adds no test is sent back. (This was audited across fifteen PRs in
+   September 2026 and three had slipped; they were backfilled in #28.)
+2. **A claim is a measurement.** A change to extraction, reading order, routing or discovery
+   carries before-and-after numbers from the runners in `benchmark/` — WCXB dev by page type
+   at minimum, Zyte for anything touching articles, the reading-order benchmark for anything
+   touching `dom/reading_order.py`. The PR template has the table. Neutral-to-negative
+   results are recorded in the commit message as rejected, so the next person does not
+   repeat them.
+3. **One branch: `main`.** Work happens on a short-lived branch, lands through a pull request
+   with green CI, is merged, and the branch is deleted in the same step. Nothing lives on a
+   second long-running branch.
+
+## Branch and pull request flow
+
+```bash
+git checkout -b <type>/<short-name>          # e.g. fix/aside-callouts
+# ... commit with the conventions below ...
+git push -u origin <branch>
+gh pr create                                 # the template asks for what a reviewer needs
+gh pr checks --watch                         # engine, api and web jobs
+gh pr merge --merge --delete-branch
+```
+
+CI runs ruff and mypy (strict) over the engine, the engine and API test suites, a benchmark
+gate over `benchmark/corpus-v0`, and the web app's lint, typecheck and build. Everything CI
+runs is in `make check`; run it before pushing.
+
 ## Commit conventions
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
@@ -82,6 +113,17 @@ Measured on 12 renders of persyn.ai:
   workers=1   8.5 -> 11.6 pages/min
   workers=6  21.9 -> 39.1 pages/min
 ```
+
+## Reporting a page that reads wrongly
+
+The most useful contribution is a URL. Open an
+[extraction quality report](https://github.com/BeastxD7/webgraph/issues/new?template=extraction_quality.yml);
+it asks for the page, what a reader sees, and what webgraph produced. Every extraction fix
+in `docs/SESSION-16-LIVE-HARDENING.md` began as exactly that.
+
+To diagnose one yourself: `uv run webgraph text <url>` prints the blocks in reading order;
+the web UI's "Copy run logs" carries every decision the engine made for that page; and
+`benchmark/wcxb/analyze.py` explains a corpus page block by block.
 
 ## Where decisions are recorded
 

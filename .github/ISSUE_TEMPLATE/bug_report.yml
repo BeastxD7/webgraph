@@ -1,0 +1,59 @@
+name: Bug report
+description: A crash, an error, or behaviour of the API, CLI or web app that is plainly wrong.
+title: "[bug] <short description>"
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a page that extracted *wrongly* rather than failing, use "Extraction quality report" instead — it asks the right questions.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what happened instead. Include the exact error text if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. make api
+        2. curl -X POST localhost:8000/api/text -d '{"url": "..."}'
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or run trace
+      description: API log lines, the CLI's stderr, or the run log copied from the web UI. Redact anything private.
+      render: text
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      multiple: true
+      options:
+        - Engine (packages/engine)
+        - API (apps/api)
+        - Web app (apps/web)
+        - Benchmarks (benchmark/)
+        - Build / install / CI
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main @ 0ce4f2f
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS 15 / Python 3.13 / uv 0.8 / Chromium via Playwright / Node 22
+    validations:
+      required: true
