@@ -72,9 +72,10 @@ class TestPolicy:
     def test_grid_types_group_and_prose_types_do_not(self) -> None:
         for kind in (PageType.LISTING, PageType.COLLECTION, PageType.SERVICE, PageType.DOCUMENTATION):
             assert policy_for(kind).group_repeats == "all"
-        for kind in (PageType.ARTICLE, PageType.FORUM, PageType.UNKNOWN, None):
+        for kind in (PageType.ARTICLE, PageType.UNKNOWN, None):
             assert policy_for(kind) == MainContentConfig()
-        assert policy_for(PageType.PRODUCT) == MainContentConfig(product_sheet=True, min_run_share=0.25)
+        assert policy_for(PageType.FORUM) == MainContentConfig(strip_comments=False)
+        assert policy_for(PageType.PRODUCT) == MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False)
         assert policy_for(PageType.COLLECTION).min_run_share == 0.25
 
     def test_string_types_are_accepted(self) -> None:
