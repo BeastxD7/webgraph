@@ -1,34 +1,48 @@
-name: Bug report
-description: A crash, an error, or behaviour of the API, CLI or web app that is plainly wrong.
+name: 🐛 Bug report
+description: A crash, an error, a hang, or behaviour of the API, CLI or web app that is plainly wrong.
 title: "[bug] <short description>"
 labels: ["bug", "needs-triage"]
 body:
   - type: markdown
     attributes:
       value: |
-        For a page that extracted *wrongly* rather than failing, use "Extraction quality report" instead — it asks the right questions.
+        For a page that extracted *wrongly* rather than failing, use **Extraction quality report** — it asks the right questions.
   - type: textarea
     id: what
     attributes:
       label: What happened
-      description: What you did, what you expected, what happened instead. Include the exact error text if there is one.
+      description: What you did, what you expected, what happened instead. Include the exact error text.
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
       label: Steps to reproduce
+      description: Exact commands or clicks, from a clean start. If it only happens sometimes, say how often.
       placeholder: |
         1. make api
-        2. curl -X POST localhost:8000/api/text -d '{"url": "..."}'
-        3. ...
+        2. curl -X POST localhost:8000/api/text -d '{"url": "…"}'
+        3. Response is 500 with "…"
+      render: shell
     validations:
       required: true
   - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: testcase
+    attributes:
+      label: Minimal test case (if you have one)
+      description: The smallest input that triggers it — a URL, an HTML snippet, a request body, or a failing `pytest` snippet. This becomes the regression test.
+      render: text
+  - type: textarea
     id: logs
     attributes:
-      label: Logs or run trace
-      description: API log lines, the CLI's stderr, or the run log copied from the web UI. Redact anything private.
+      label: Logs, traceback or run trace
+      description: API log lines, the CLI's stderr, the browser console, or the run log copied from the web UI. Redact anything private.
       render: text
   - type: dropdown
     id: component
@@ -39,21 +53,42 @@ body:
         - Engine (packages/engine)
         - API (apps/api)
         - Web app (apps/web)
+        - CLI
         - Benchmarks (benchmark/)
         - Build / install / CI
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Crash or data loss
+        - Wrong result with no error
+        - Degraded (slow, noisy, flaky)
+        - Cosmetic
     validations:
       required: true
   - type: input
     id: version
     attributes:
       label: Version or commit
-      placeholder: main @ 0ce4f2f
+      placeholder: main @ 45a1b36
     validations:
       required: true
   - type: input
     id: environment
     attributes:
       label: Environment
-      placeholder: macOS 15 / Python 3.13 / uv 0.8 / Chromium via Playwright / Node 22
+      placeholder: macOS 15 / Python 3.13 / uv 0.8 / Playwright Chromium 140 / Node 22 / Chrome 140
     validations:
       required: true
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I can reproduce this on the latest `main`
+          required: false
