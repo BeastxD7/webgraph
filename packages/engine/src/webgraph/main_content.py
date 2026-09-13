@@ -779,7 +779,13 @@ def _is_prose(block: Block) -> bool:
 
 
 _PROSE_WORDS: Final[int] = 30
-_MAX_SECTION_BLOCKS: Final[int] = 60
+_MAX_SECTION_BLOCKS: Final[int] = 250
+"""How long a pruned section may run, in blocks. It was 60, set for simplybirkenstock.com's
+"Write a Review" modal that sat above the description with no heading between -- but that
+case is caught by `_WRITE` now, and 60 left rei.com's review section (ninety blocks of
+reviews under one "Customer Reviews" heading) in place. Swept on WCXB dev product: 60 ->
+0.6321, 120 -> 0.6323, 250 and unbounded -> 0.6393; articles, forums, services and
+documentation unchanged, since a river ends at the first paragraph of prose regardless."""
 _WRITE: Final[re.Pattern[str]] = re.compile(r"^\s*(?:write|leave|add|submit|post)\b", re.I)
 
 
