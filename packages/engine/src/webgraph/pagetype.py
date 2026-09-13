@@ -812,5 +812,9 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
         # course's testimonials are named "comments" and were annotated as content.
         return MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False)
     if kind is PageType.FORUM:
-        return MainContentConfig(strip_comments=False, scope_article=False)
+        # A forum's "comments" are the thread on Reddit, Lemmy and Vanilla and the asides
+        # under the answers on Stack Exchange. The share of the page they hold tells the
+        # two apart: swept 0.2 / 0.35 / 0.5 / 0.6 / 0.7 -> 0.7863 / 0.7886 / 0.7905 /
+        # 0.7890 / 0.7796 against 0.7848 with comments always kept.
+        return MainContentConfig(comments_max_share=0.5, scope_article=False)
     return MainContentConfig()

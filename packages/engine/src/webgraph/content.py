@@ -174,7 +174,7 @@ def select_content(
 
     if config is None or config.strip_comments:
         before = len(kept)
-        kept = strip_comments(kept)
+        kept = strip_comments(kept, max_share=config.comments_max_share if config else 1.0)
         landmarks_removed += before - len(kept)
 
     before = len(kept)

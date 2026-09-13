@@ -74,7 +74,7 @@ class TestPolicy:
             assert policy_for(kind).group_repeats == "all"
         for kind in (PageType.ARTICLE, PageType.UNKNOWN, None):
             assert policy_for(kind) == MainContentConfig()
-        assert policy_for(PageType.FORUM) == MainContentConfig(strip_comments=False, scope_article=False)
+        assert policy_for(PageType.FORUM) == MainContentConfig(comments_max_share=0.5, scope_article=False)
         assert policy_for(PageType.PRODUCT) == MainContentConfig(
             product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False
         )
