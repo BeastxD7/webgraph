@@ -1177,12 +1177,39 @@ _LANDMARK_ROLES: Final[dict[str, str]] = {
 
 
 def _landmark_of_element(element: HtmlElement) -> str | None:
-    """The landmark this element *is*, by tag or ARIA role; None if it is neither."""
+    """The landmark this element *is*, by tag or ARIA role; None if it is neither.
+
+    An `<aside>` that is a callout is not a landmark. Starlight (Astro's docs, and the
+    many sites built on it) renders every Note, Tip and Caution as
+    `<aside aria-label="Tip" class="starlight-aside starlight-aside--tip">`, and
+    stripping asides -- right for a sidebar of teasers -- took every tip out of the
+    Astro documentation. A callout says what it is, in its label or its class names.
+    """
     tag = element.tag if isinstance(element.tag, str) else ""
     role = (element.get("role") or "").strip().lower()
     if role in _LANDMARK_ROLES:
         return _LANDMARK_ROLES[role]
+    if tag == "aside" and _is_callout(element):
+        return None
     return _LANDMARK_TAGS.get(tag)
+
+
+_CALLOUT_WORDS: Final[frozenset[str]] = frozenset({
+    "note", "notes", "tip", "tips", "caution", "danger", "warning", "info", "important",
+    "hint", "admonition", "callout", "alert", "success", "example", "aside--note",
+    "aside--tip", "aside--caution", "aside--danger",
+})
+_CALLOUT_LABEL: Final[re.Pattern[str]] = re.compile(
+    r"^(?:note|tip|caution|danger|warning|info|important|hint|example|see also)\b", re.I
+)
+
+
+def _is_callout(aside: HtmlElement) -> bool:
+    label = (aside.get("aria-label") or "").strip()
+    if label and _CALLOUT_LABEL.match(label):
+        return True
+    names = f"{aside.get('class') or ''} {aside.get('id') or ''}".lower()
+    return bool(_CALLOUT_WORDS & set(_TOKEN_SPLIT.split(names)))
 
 
 _FILTER_TOKENS: Final[frozenset[str]] = frozenset({
