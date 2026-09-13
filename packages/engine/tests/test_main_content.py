@@ -353,12 +353,24 @@ class TestProductSheet:
         ]
         assert [b.text for b in _prune_other_sections(blocks, _OTHER_SECTION)] == ["Write a Review", PROSE]
 
+    def test_a_long_review_section_is_dropped_whole(self) -> None:
+        """rei.com: ninety blocks of reviews under one "Customer Reviews" heading. The old
+        60-block bound left them all in place."""
+        from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
+
+        blocks = [Block(text="Customer Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
+        blocks += [Block(text=f"{PROSE} Review {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(90)]
+        blocks.append(Block(text="Specifications", tag="h2", xpath="/html/body/h2[2]", dom_index=100, kind=BlockKind.HEADING, level=2))
+        blocks.append(Block(text="Weight: 1 lb. 13 oz.", tag="p", xpath="/html/body/p[200]", dom_index=101))
+        pruned = _prune_other_sections(blocks, _OTHER_SECTION)
+        assert [b.text for b in pruned] == ["Specifications", "Weight: 1 lb. 13 oz."]
+
     def test_an_unbounded_tail_is_not_dropped(self) -> None:
         from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
         blocks = [Block(text="Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
-        blocks += [Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(80)]
-        assert len(_prune_other_sections(blocks, _OTHER_SECTION)) == 81
+        blocks += [Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(300)]
+        assert len(_prune_other_sections(blocks, _OTHER_SECTION)) == 301
 
 
 class TestRivers:
