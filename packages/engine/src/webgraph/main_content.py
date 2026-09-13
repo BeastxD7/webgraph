@@ -319,6 +319,12 @@ class MainContentConfig:
     """Drop the river of other stories under an article by its heading -- "More from
     World", "Trending News", "Top Stories" -- before the run is chosen. See `_RIVER_SECTION`."""
 
+    strip_comments: bool = True
+    """Drop the comments under the page (`Block.widget == "comments"`) before anything is
+    scored. On for every page type but forums, where the comments are the content: on a
+    Slashdot story the summary is one 412-word paragraph and the thread beneath it is
+    6,000 words of prose the boundary step cannot tell apart from an article."""
+
     product_keep_all: bool = False
     """With `product_sheet`: after pruning, keep everything rather than choosing a run."""
 

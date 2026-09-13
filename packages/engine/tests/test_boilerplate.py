@@ -330,3 +330,37 @@ class TestAsideStripped:
         kept = strip_landmarks(list(document.blocks))
         assert not any("Deal Alert" in b.text for b in kept)
         assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
+
+
+class TestComments:
+    """Slashdot: a 412-word summary and 6,000 words of thread beneath it, annotated as an
+    article whose content is the summary. Comments are stripped for every page type but
+    forums (where they are the content) and products (where the product prune decides)."""
+
+    @staticmethod
+    def story() -> str:
+        body = "".join(f"<p>Paragraph {i} of the story, long enough to read as prose on its own.</p>" for i in range(6))
+        comments = "".join(
+            f'<li class="comment"><p>Reply {i}: a paragraph of opinion long enough to read like the article itself.</p></li>'
+            for i in range(6)
+        )
+        return f'<html><body><main><article><h1>Story</h1>{body}</article><section id="comments"><h2>Comments</h2><ol class="comment-list">{comments}</ol></section></main></body></html>'
+
+    def test_comments_are_marked_and_stripped_for_articles(self) -> None:
+        from webgraph.content import select_content
+        from webgraph.pipeline import build_document
+
+        document = build_document(self.story(), "https://news.test/story")
+        assert sum(1 for b in document.blocks if b.widget == "comments") >= 6
+        kept = select_content(list(document.blocks), model=None, title="Story").blocks
+        assert not any("Reply" in b.text for b in kept)
+        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 6
+
+    def test_forum_policy_keeps_them(self) -> None:
+        from webgraph.content import select_content
+        from webgraph.pagetype import policy_for
+        from webgraph.pipeline import build_document
+
+        document = build_document(self.story(), "https://forum.test/t/1")
+        kept = select_content(list(document.blocks), model=None, config=policy_for("forum"), title="Story").blocks
+        assert any("Reply" in b.text for b in kept)

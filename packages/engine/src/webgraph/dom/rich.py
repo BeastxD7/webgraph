@@ -1201,6 +1201,40 @@ _CONSENT_MARKERS: Final[re.Pattern[str]] = re.compile(
 )
 
 
+_COMMENT_WORDS: Final[frozenset[str]] = frozenset({"comment", "comments"})
+_COMMENT_COMPOUNDS: Final[frozenset[str]] = frozenset({
+    "commentlist", "commentlisting", "commentbox", "commentwrap", "commentsection",
+    "commentsarea", "disqus_thread", "wpdiscuz", "commento", "isso-thread", "remark42",
+})
+_NOT_A_COMMENT_SECTION: Final[frozenset[str]] = frozenset({
+    # Parts that make a token a flag, a count or a piece of one comment rather than the
+    # section: Squarespace stamps `has-comments` on the article itself.
+    "has", "enabled", "disabled", "count", "counts", "open", "closed", "no", "with",
+    "toggle", "icon", "link", "meta", "author", "date", "reply", "message", "notification",
+    "nonce", "privacy", "field", "recent", "button", "btn", "label", "input", "js",
+})
+
+
+def _names_comments(element: HtmlElement) -> bool:
+    """Whether this element's class or id says it is the comments section.
+
+    A token whose parts include the word `comment(s)` and no part that makes it a flag or
+    a piece (`comments`, `comments-area`, `comment-list`, `wpd-comment`; not
+    `has-comments`, `comment-count`, `comment-author`), or a run-together spelling
+    (`commentlisting`, `disqus_thread`).
+    """
+    names = f"{element.get('class') or ''} {element.get('id') or ''}".lower()
+    if "comment" not in names and "disqus" not in names and "wpdiscuz" not in names:
+        return False
+    for token in names.split():
+        if token in _COMMENT_COMPOUNDS:
+            return True
+        parts = set(_TOKEN_SPLIT.split(token))
+        if _COMMENT_WORDS & parts and not (_NOT_A_COMMENT_SECTION & parts):
+            return True
+    return False
+
+
 def _names_consent(element: HtmlElement) -> bool:
     """Whether this element's own class or id says it is a cookie-consent dialog."""
     names = f"{element.get('class') or ''} {element.get('id') or ''}".strip()
@@ -1246,6 +1280,16 @@ def _widget_of(
             # of WCXB dev and chosen as the main content of a GameFAQs thread (P 0.03).
             cache[element] = "consent"
             return "consent"
+        if tag in _COMMENT_TAGS and _names_comments(element):
+            # The comments under an article. Whether they are content is the page type's
+            # call (a forum thread *is* comments), so they are marked here and the content
+            # step decides. The share guard is loose: on a Slashdot story the thread is
+            # nine tenths of the page and is still not the story; only a page that is
+            # nothing but its "comments" keeps them regardless of policy.
+            words = len(element.text_content().split())
+            if words <= _MAX_COMMENTS_SHARE * body_words:
+                cache[element] = "comments"
+                return "comments"
         named = tag in _WIDGET_TAGS and (
             _names_filter(element)
             or (tag == "fieldset" and bool(element.xpath('.//input[@type="checkbox"]')))
@@ -1261,10 +1305,14 @@ def _widget_of(
     return result
 
 
+_COMMENT_TAGS: Final[frozenset[str]] = frozenset(
+    {"div", "section", "aside", "article", "ol", "ul", "form", "footer"}
+)
 _WIDGET_TAGS: Final[frozenset[str]] = frozenset(
     {"div", "section", "aside", "form", "fieldset", "nav", "ul", "details"}
 )
 _MAX_WIDGET_SHARE: Final[float] = 0.4
+_MAX_COMMENTS_SHARE: Final[float] = 0.92
 
 
 def _float_of(

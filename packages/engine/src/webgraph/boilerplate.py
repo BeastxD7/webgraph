@@ -131,6 +131,15 @@ STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent"})
 navigation over the catalogue and a cookie dialog is nobody's content, whatever element
 either is built from. See `Block.widget`."""
 
+def strip_comments(blocks: Sequence[Block]) -> list[Block]:
+    """Drop the comments section (`Block.widget == "comments"`), with the same guard as the
+    landmarks: never to nothing, never below `MIN_LANDMARK_CHARS` of text."""
+    kept = [block for block in blocks if block.widget != "comments"]
+    if not kept or sum(len(b.text) for b in kept) < MIN_LANDMARK_CHARS:
+        return list(blocks)
+    return kept
+
+
 def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
     """Keep only blocks inside the page's `main` landmark, when the page has a trustworthy one.
 

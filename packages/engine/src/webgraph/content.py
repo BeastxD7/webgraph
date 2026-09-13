@@ -31,7 +31,13 @@ from typing import Final
 
 from webgraph import config
 from webgraph.blockmodel import BlockModel, default_model, select_by_model
-from webgraph.boilerplate import SiteChrome, scope_to_main, strip_landmarks, strip_site_chrome
+from webgraph.boilerplate import (
+    SiteChrome,
+    scope_to_main,
+    strip_comments,
+    strip_landmarks,
+    strip_site_chrome,
+)
 from webgraph.main_content import MainContentConfig, select_main_content
 from webgraph.types import Block, BlockKind
 
@@ -160,6 +166,11 @@ def select_content(
     total = len(blocks)
     kept = strip_landmarks(list(blocks))
     landmarks_removed = total - len(kept)
+
+    if (config is None or config.strip_comments) and main_content:
+        before = len(kept)
+        kept = strip_comments(kept)
+        landmarks_removed += before - len(kept)
 
     before = len(kept)
     kept = scope_to_main(kept)
