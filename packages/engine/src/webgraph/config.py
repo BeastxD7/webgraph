@@ -221,6 +221,13 @@ CHROME_MIN_COMMENT_HOST_WORDS = 60
 # of the page; otherwise it is decoration and ignored. The share was 0.5; swept on WCXB dev
 # (0.5 / 0.3 / 0.2 / 0.1 -> 0.8503 / 0.8522 / 0.8531 / 0.8532 overall), 0.2 keeps articles
 # at their best and lets a page whose mega-menu outweighs its article still be scoped.
+# After the main landmark, the page's dominant <article> element: trusted as the content's
+# extent when it holds at least this many words, this share of the page, and this many
+# times the words of the next largest <article> (news teasers are often <article>s too; a
+# forum thread of equal posts never qualifies). Per-type policies can switch it off.
+CHROME_ARTICLE_MIN_WORDS = 100
+CHROME_ARTICLE_MIN_SHARE = 0.15
+CHROME_ARTICLE_DOMINANCE = 3.0
 CHROME_MAIN_MIN_WORDS = 100
 CHROME_MAIN_MIN_SHARE = 0.2
 

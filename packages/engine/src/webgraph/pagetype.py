@@ -802,13 +802,15 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     """
     kind = PageType(page_type) if page_type else PageType.UNKNOWN
     if kind is PageType.COLLECTION:
-        return MainContentConfig(group_repeats="all", group_min_share=0.3, min_run_share=0.25)
-    if kind in (PageType.LISTING, PageType.SERVICE, PageType.DOCUMENTATION):
+        return MainContentConfig(group_repeats="all", group_min_share=0.3, min_run_share=0.25, scope_article=False)
+    if kind is PageType.LISTING:
+        return MainContentConfig(group_repeats="all", group_min_share=0.3, scope_article=False)
+    if kind in (PageType.SERVICE, PageType.DOCUMENTATION):
         return MainContentConfig(group_repeats="all", group_min_share=0.3)
     if kind is PageType.PRODUCT:
         # Comments are left to the product prune: eBay's seller feedback and a training
         # course's testimonials are named "comments" and were annotated as content.
-        return MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False)
+        return MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False)
     if kind is PageType.FORUM:
-        return MainContentConfig(strip_comments=False)
+        return MainContentConfig(strip_comments=False, scope_article=False)
     return MainContentConfig()

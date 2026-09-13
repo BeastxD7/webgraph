@@ -319,6 +319,11 @@ class MainContentConfig:
     """Drop the river of other stories under an article by its heading -- "More from
     World", "Trending News", "Top Stories" -- before the run is chosen. See `_RIVER_SECTION`."""
 
+    scope_article: bool = True
+    """Scope to the page's dominant `<article>` element before the boundary is drawn. On for
+    articles and documentation; off for forums, listings, collections and products, where
+    the repeated items are `<article>`s themselves. See `boilerplate.scope_to_article`."""
+
     strip_comments: bool = True
     """Drop the comments under the page (`Block.widget == "comments"`) before anything is
     scored. On for every page type but forums, where the comments are the content: on a

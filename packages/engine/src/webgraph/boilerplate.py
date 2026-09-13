@@ -188,6 +188,48 @@ def scope_to_main(blocks: Sequence[Block]) -> list[Block]:
     return inside
 
 
+_ARTICLE_STEP: Final[re.Pattern[str]] = re.compile(r"^(.*?/article(?:\[\d+\])?)(?:/|$)")
+
+
+def scope_to_article(blocks: Sequence[Block]) -> list[Block]:
+    """Keep only the blocks inside the page's dominant `<article>`, when there is one.
+
+    `scope_to_main` reads the author's strongest statement; this reads the second. A news
+    page is one `<article>` holding the story and, around it, teasers that are often
+    `<article>` elements themselves (cbsnews.com: the story is 493 words in one article
+    element and the "More World" river beneath it is twenty small ones). The dominant
+    article is the one holding the most words, and it is trusted when it holds at least
+    `ARTICLE_MIN_WORDS`, at least `ARTICLE_MIN_SHARE` of the page's words, and
+    `ARTICLE_DOMINANCE` times the next largest -- a forum thread of equal-sized posts, each
+    an `<article>`, never qualifies. Returns the input unchanged otherwise.
+    """
+    words: dict[str, int] = {}
+    total = 0
+    for block in blocks:
+        n = word_count(block.text)
+        total += n
+        match = _ARTICLE_STEP.match(block.xpath)
+        if match:
+            words[match.group(1)] = words.get(match.group(1), 0) + n
+    if not words or not total:
+        return list(blocks)
+    ranked = sorted(words.items(), key=lambda kv: -kv[1])
+    top, top_words = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0
+    if top_words < ARTICLE_MIN_WORDS or top_words < ARTICLE_MIN_SHARE * total:
+        return list(blocks)
+    if runner_up and top_words < ARTICLE_DOMINANCE * runner_up:
+        return list(blocks)
+    prefix = top + "/"
+    inside = [block for block in blocks if block.xpath == top or block.xpath.startswith(prefix)]
+    return inside or list(blocks)
+
+
+ARTICLE_MIN_WORDS: Final[int] = config.CHROME_ARTICLE_MIN_WORDS
+ARTICLE_MIN_SHARE: Final[float] = config.CHROME_ARTICLE_MIN_SHARE
+ARTICLE_DOMINANCE: Final[float] = config.CHROME_ARTICLE_DOMINANCE
+
+
 def _key(block: Block) -> str:
     return " ".join(block.text.split()).casefold()
 

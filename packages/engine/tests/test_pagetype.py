@@ -74,9 +74,14 @@ class TestPolicy:
             assert policy_for(kind).group_repeats == "all"
         for kind in (PageType.ARTICLE, PageType.UNKNOWN, None):
             assert policy_for(kind) == MainContentConfig()
-        assert policy_for(PageType.FORUM) == MainContentConfig(strip_comments=False)
-        assert policy_for(PageType.PRODUCT) == MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False)
+        assert policy_for(PageType.FORUM) == MainContentConfig(strip_comments=False, scope_article=False)
+        assert policy_for(PageType.PRODUCT) == MainContentConfig(
+            product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False
+        )
         assert policy_for(PageType.COLLECTION).min_run_share == 0.25
+        # The repeated items of a grid or a thread are <article>s themselves.
+        for kind in (PageType.LISTING, PageType.COLLECTION, PageType.PRODUCT, PageType.FORUM):
+            assert policy_for(kind).scope_article is False
 
     def test_string_types_are_accepted(self) -> None:
         assert policy_for("listing").group_repeats == "all"
