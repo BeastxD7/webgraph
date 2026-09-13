@@ -102,11 +102,11 @@ export const BOARDS: readonly Board[] = [
     metric: "word-level F1",
     asks: "Whether an extractor holds up away from articles, on forums, products, listings and documentation.",
     caveat:
-      "The author of the top entry wrote it and tuned it on this split, and discloses so. On the 511-page held-out test split, never used for any decision here, this engine scores 0.859 (routed) and 0.853 (unrouted); the top entry's author reports 0.893 there.",
+      "The author of the top entry wrote it and tuned it on this split, and discloses so. On the 511-page held-out test split, never used for any decision here, this engine scores 0.864 (routed) and 0.855 (unrouted); the top entry's author reports 0.893 there.",
     max: 1,
     entries: [
       { name: "rs-trafilatura", score: 0.859, note: "published; author's own, tuned on this split" },
-      { name: "webgraph", score: 0.85, self: true, note: "run here 13 Sep 2026, routed by page type; 0.826 unrouted" },
+      { name: "webgraph", score: 0.855, self: true, note: "run here 13 Sep 2026, routed by page type; 0.828 unrouted" },
       { name: "MinerU-HTML", score: 0.827, note: "published 2026; not re-run here" },
       { name: "trafilatura 2.2.0", score: 0.813, note: "run here, same harness" },
       { name: "trafilatura 2.0.0", score: 0.791, note: "the figure the paper published, two releases old" },
@@ -158,7 +158,7 @@ export const BOARDS: readonly Board[] = [
       { name: "newspaper", score: 0.949 },
       { name: "readability.js", score: 0.947 },
       { name: "go-readability", score: 0.934 },
-      { name: "webgraph", score: 0.928, self: true, note: "11th of 35; was 15th at 0.895 before this round" },
+      { name: "webgraph", score: 0.934, self: true, note: "11th of 35, level with go-readability; was 15th at 0.895" },
       { name: "go-domdistiller", score: 0.927 },
       { name: "readability", score: 0.922 },
       { name: "goose3", score: 0.896 },
@@ -262,12 +262,13 @@ export const PROGRESSION: readonly Step[] = [
   { label: "text is text", score: 0.842, why: "alt text and sr-only labels are not page text" },
   { label: "comments, landmarks", score: 0.848, why: "a thread is not the story; broken nav swallowed main" },
   { label: "main by script, prose guard", score: 0.85, why: "a Japanese <main> behind a mega-menu; a short story keeps losing its thread" },
+  { label: "rails, <article>, quotes, forum furniture", score: 0.855, why: "tickers and share bars; the dominant article; repeated quotes; signatures and user cards" },
 ];
 
 /** When and against what the rows marked as this engine were measured. */
 export const MEASURED = {
   date: "13 September 2026",
-  commit: "6ea121e",
+  commit: "4134a13",
 } as const;
 
 /**
@@ -294,11 +295,11 @@ export const TYPE_SYSTEMS: readonly TypeSystem[] = [
 export const TYPE_ROWS: readonly TypeRow[] = [
   { type: "article", n: 793, scores: { webgraph: 0.937, rs: 0.932, mineru: 0.928, hydra: 0.9289, traf: 0.924 } },
   { type: "documentation", n: 91, scores: { webgraph: 0.925, rs: 0.931, mineru: 0.838, hydra: 0.9231, traf: 0.888 } },
-  { type: "service", n: 165, scores: { webgraph: 0.831, rs: 0.843, mineru: 0.824, hydra: 0.7993, traf: 0.751 } },
-  { type: "forum", n: 113, scores: { webgraph: 0.763, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
-  { type: "collection", n: 117, scores: { webgraph: 0.68, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
-  { type: "listing", n: 99, scores: { webgraph: 0.7, rs: 0.704, mineru: 0.71, hydra: 0.6612, traf: 0.55 } },
-  { type: "product", n: 119, scores: { webgraph: 0.621, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
+  { type: "service", n: 165, scores: { webgraph: 0.834, rs: 0.843, mineru: 0.824, hydra: 0.7993, traf: 0.751 } },
+  { type: "forum", n: 113, scores: { webgraph: 0.795, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
+  { type: "collection", n: 117, scores: { webgraph: 0.683, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
+  { type: "listing", n: 99, scores: { webgraph: 0.695, rs: 0.704, mineru: 0.71, hydra: 0.6612, traf: 0.55 } },
+  { type: "product", n: 119, scores: { webgraph: 0.636, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
 ];
 
 /** Benchmarks a reader would expect here, and why they are not. */
