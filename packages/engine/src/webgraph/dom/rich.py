@@ -1306,7 +1306,7 @@ def _widget_of(
 
 
 _COMMENT_TAGS: Final[frozenset[str]] = frozenset(
-    {"div", "section", "aside", "article", "ol", "ul", "form", "footer"}
+    {"div", "section", "aside", "article", "ol", "ul", "li", "form", "footer", "table", "tbody", "tr", "td"}
 )
 _WIDGET_TAGS: Final[frozenset[str]] = frozenset(
     {"div", "section", "aside", "form", "fieldset", "nav", "ul", "details"}

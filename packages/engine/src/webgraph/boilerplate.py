@@ -135,12 +135,26 @@ navigation over the catalogue and a cookie dialog is nobody's content, whatever 
 either is built from. See `Block.widget`."""
 
 def strip_comments(blocks: Sequence[Block]) -> list[Block]:
-    """Drop the comments section (`Block.widget == "comments"`), with the same guard as the
-    landmarks: never to nothing, never below `MIN_LANDMARK_CHARS` of text."""
+    """Drop the comments section (`Block.widget == "comments"`) -- unless the comments are
+    the page.
+
+    Under a Slashdot story the thread is not the story. On a Hacker News comment page, a
+    GitHub issue or a Q&A thread the router did not recognise as a forum, the "comments"
+    are everything the page has to say, and what is left without them is a login link and
+    a footer. So the section goes only when what remains is a piece of writing in its own
+    right: at least `MIN_COMMENT_HOST_WORDS` words outside it.
+    """
     kept = [block for block in blocks if block.widget != "comments"]
-    if not kept or sum(len(b.text) for b in kept) < MIN_LANDMARK_CHARS:
+    if len(kept) == len(blocks):
+        return list(blocks)
+    remaining = sum(len(b.text.split()) for b in kept if b.kind not in _NOT_HOST_KINDS)
+    if remaining < MIN_COMMENT_HOST_WORDS:
         return list(blocks)
     return kept
+
+
+MIN_COMMENT_HOST_WORDS: Final[int] = config.CHROME_MIN_COMMENT_HOST_WORDS
+_NOT_HOST_KINDS: Final[frozenset[BlockKind]] = frozenset({BlockKind.IMAGE, BlockKind.MEDIA})
 
 
 def scope_to_main(blocks: Sequence[Block]) -> list[Block]:

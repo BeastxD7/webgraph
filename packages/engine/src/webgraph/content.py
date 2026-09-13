@@ -167,7 +167,7 @@ def select_content(
     kept = strip_landmarks(list(blocks))
     landmarks_removed = total - len(kept)
 
-    if (config is None or config.strip_comments) and main_content:
+    if config is None or config.strip_comments:
         before = len(kept)
         kept = strip_comments(kept)
         landmarks_removed += before - len(kept)
