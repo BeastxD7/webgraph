@@ -127,6 +127,8 @@ export default function ColumnGap() {
         extraction began. Tables started at 0.349; a merged-cell table cannot be written in
         Markdown pipe syntax without losing the merges, so those now keep their own markup,
         and tables that were really navigation widgets are no longer emitted as tables at all.
+        This round moved prose 0.767 to 0.774 and equations 0.517 to 0.605, and cost tables
+        0.425 to 0.404 &mdash; not yet diagnosed, and recorded rather than hidden.
       </figcaption>
     </figure>
   );

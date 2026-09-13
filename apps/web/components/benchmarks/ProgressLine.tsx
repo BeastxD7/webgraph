@@ -8,8 +8,9 @@ import { PROGRESSION } from "@/lib/benchmarks";
  * fix. The fourth step is four times the height of any other, which is the whole finding and
  * is visible immediately in a line and not at all in a ranked list.
  */
-const Y0 = 0.7;
-const Y1 = 0.83;
+const SCORES = PROGRESSION.map((s) => s.score);
+const Y0 = Math.floor((Math.min(...SCORES) - 0.01) * 100) / 100;
+const Y1 = Math.ceil((Math.max(...SCORES) + 0.01) * 100) / 100;
 const PAD = { left: 36, right: 14, top: 16, bottom: 40 };
 const W = 480;
 const H = 210;
@@ -19,7 +20,7 @@ const PLOT_H = H - PAD.top - PAD.bottom;
 const y = (v: number) => PAD.top + (1 - (v - Y0) / (Y1 - Y0)) * PLOT_H;
 const x = (i: number) => PAD.left + (i / (PROGRESSION.length - 1)) * PLOT_W;
 
-const TICKS = [0.7, 0.74, 0.78, 0.82];
+const TICKS = Array.from({ length: 5 }, (_, i) => Math.round((Y0 + ((Y1 - Y0) * i) / 4) * 1000) / 1000);
 
 export default function ProgressLine() {
   const path = PROGRESSION.map((s, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(s.score)}`).join(" ");
@@ -32,7 +33,7 @@ export default function ProgressLine() {
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full min-w-[360px]"
           role="img"
-          aria-label="WCXB F1 rising from 0.714 to 0.810 across five extraction fixes."
+          aria-label={`WCXB F1 rising from ${(SCORES[0] ?? 0).toFixed(3)} to ${(SCORES[SCORES.length - 1] ?? 0).toFixed(3)} across ${PROGRESSION.length - 1} steps.`}
         >
           {TICKS.map((tick) => (
             <g key={tick}>
@@ -51,7 +52,7 @@ export default function ProgressLine() {
                 textAnchor="end"
                 className="fill-ink-faint font-mono text-[8.5px]"
               >
-                {tick.toFixed(2)}
+                {tick.toFixed(3)}
               </text>
             </g>
           ))}
@@ -117,8 +118,9 @@ export default function ProgressLine() {
       </ol>
 
       <figcaption className="mt-3 text-[12px] leading-relaxed text-ink-faint">
-        Axis runs 0.70–0.83. Every step is a bug found by a page-level diagnostic, never a
-        threshold tuned until the number moved.
+        Axis runs {Y0.toFixed(2)}–{Y1.toFixed(2)}; the production path, routed by page type,
+        on the dev split. Every step is a bug found by a page-level diagnostic and measured
+        before it shipped, never a threshold tuned until the number moved.
       </figcaption>
     </figure>
   );

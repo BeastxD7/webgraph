@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 
 import ColumnGap from "@/components/benchmarks/ColumnGap";
+import NotRun from "@/components/benchmarks/NotRun";
 import ProgressLine from "@/components/benchmarks/ProgressLine";
 import RankChart from "@/components/benchmarks/RankChart";
 import ScatterPlane from "@/components/benchmarks/ScatterPlane";
+import TypeTable from "@/components/benchmarks/TypeTable";
 import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
-import { BOARDS } from "@/lib/benchmarks";
+import { BOARDS, MEASURED } from "@/lib/benchmarks";
 import type { Trust } from "@/lib/benchmarks";
 
 /** What a side-by-side on this board is worth, said out loud rather than left in the data. */
@@ -47,10 +49,17 @@ export default function BenchmarksPage() {
             Every public benchmark, including the ones we lose
           </h1>
           <p className="mt-5 text-[15.5px] leading-relaxed text-ink-soft">
-            Six boards, six different definitions of a correct extraction. This engine is third
-            of seven on the widest of them and first on one corpus of 700 pages. It is also
-            eighth of fourteen on the only board that scores a real fetch, and well behind the
-            leader wherever tables and equations are graded on their own. All of it is below.
+            Six boards, six different definitions of a correct extraction. This engine is first
+            of seven on the widest and most independent of them, second of seven on the one
+            built to test pages that are not articles (and ahead of every published system on
+            the articles), eleventh of thirty-five on the oldest, and eighth of fourteen on the
+            only board that scores a real fetch. It is still behind the leader wherever tables
+            and equations are graded on their own. All of it is below.
+          </p>
+          <p className="mt-4 font-mono text-[11.5px] text-ink-faint">
+            Rows for this engine measured {MEASURED.date} on <code>main@{MEASURED.commit}</code>,
+            with the runners in <code>benchmark/</code>. Every other row is its authors&rsquo;
+            published figure.
           </p>
         </header>
 
@@ -118,6 +127,19 @@ export default function BenchmarksPage() {
           ))}
         </section>
 
+        <section className="mt-20 border-t border-line pt-14">
+          <h2 className="font-display text-[1.5rem] leading-tight">WCXB by page type</h2>
+          <p className="mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
+            The overall number is 53% articles, which every system reads well. The corpus was
+            built to show the other six, and that is where the systems separate: within a few
+            points on articles, twenty apart on collections. Best cell in each row in bold,
+            whoever holds it.
+          </p>
+          <div className="mt-6">
+            <TypeTable />
+          </div>
+        </section>
+
         <section className="mt-20 grid gap-x-12 gap-y-14 border-t border-line pt-14 md:grid-cols-2">
           <article className="min-w-0">
             <h2 className="font-display text-[1.5rem] leading-tight">Where the distance sits</h2>
@@ -131,15 +153,27 @@ export default function BenchmarksPage() {
           </article>
 
           <article className="min-w-0">
-            <h2 className="font-display text-[1.5rem] leading-tight">One session on WCXB</h2>
+            <h2 className="font-display text-[1.5rem] leading-tight">One round on WCXB</h2>
             <p className="mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
-              Five fixes, each traced to a page that was being extracted wrongly, and none of
-              them a tuned constant.
+              Eight merged fixes in one night, each traced to a page that was being extracted
+              wrongly and each measured before it shipped. The rejected experiments are recorded
+              in the commits beside the accepted ones.
             </p>
             <div className="mt-6">
               <ProgressLine />
             </div>
           </article>
+        </section>
+
+        <section className="mt-20 max-w-3xl border-t border-line pt-14">
+          <h2 className="font-display text-[1.6rem] leading-tight">Looked at and not run</h2>
+          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
+            A page that lists only the boards it scores on is an advertisement. These are the
+            ones a reader would expect to see here, and why they are not.
+          </p>
+          <div className="mt-6">
+            <NotRun />
+          </div>
         </section>
 
         <section className="mt-20 max-w-3xl border-t border-line pt-14">

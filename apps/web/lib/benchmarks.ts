@@ -58,12 +58,12 @@ export const BOARDS: readonly Board[] = [
     metric: "ROUGE-LSum F1",
     asks: "How much of the annotated main content survives, across eight independently built corpora.",
     caveat:
-      "The widest corpus here and the only one whose authors have no system in the comparison. Baselines are the authors' own published per-page scores.",
+      "The widest corpus here and the only one whose authors have no system in the comparison. First place is by 0.004 over trafilatura and is not first on every corpus inside it: this engine leads on cleaneval, cetd and dragnet (2,817 of the 3,985 pages) and trails trafilatura on google-trends and readability, boilerpipe on l3s-gn1, resiliparse on scrapinghub and readability on cleanportaleval.",
     max: 1,
     entries: [
+      { name: "webgraph", score: 0.871, self: true, note: "run here 13 Sep 2026; was 0.843, third" },
       { name: "trafilatura", score: 0.867 },
       { name: "readability", score: 0.855 },
-      { name: "webgraph", score: 0.843, self: true },
       { name: "boilerpipe", score: 0.825 },
       { name: "resiliparse", score: 0.819 },
       { name: "jusText", score: 0.806 },
@@ -78,13 +78,13 @@ export const BOARDS: readonly Board[] = [
     name: "WCEB · cetd",
     pages: "700 pages",
     metric: "ROUGE-LSum F1",
-    asks: "One corpus inside WCEB, and the only board anywhere on which this engine is first.",
+    asks: "One corpus inside WCEB, the largest single one on which this engine leads the published field.",
     caveat:
       "A single corpus of 700 pages. First place here is a real result against the published field, not a claim about the web.",
     max: 1,
     entries: [
-      { name: "webgraph", score: 0.925, self: true },
-      { name: "trafilatura 2.2.0", score: 0.911, note: "run here today; published figure 0.907" },
+      { name: "webgraph", score: 0.923, self: true, note: "run here 13 Sep 2026; was 0.925" },
+      { name: "trafilatura 2.2.0", score: 0.911, note: "run here earlier; published figure 0.907" },
       { name: "readability", score: 0.897 },
       { name: "resiliparse", score: 0.881 },
       { name: "jusText", score: 0.863 },
@@ -96,19 +96,19 @@ export const BOARDS: readonly Board[] = [
     id: "wcxb",
     trust: "same-corpus",
     comparability:
-      "Running trafilatura through this harness today scores 0.813 against the 0.791 its paper reports \u2014 almost all of it on forum pages, where a later release learned to read Discourse threads. So the published rows describe older software, and the only pairing here measured on one scale is trafilatura 2.2.0 against this engine. It is ahead.",
+      "Running trafilatura through this harness scores 0.813 against the 0.791 its paper reports \u2014 almost all of it on forum pages, where a later release learned to read Discourse threads. So the published rows describe older software. The row for this engine is the production path: the page-type router's out-of-fold predictions choosing the per-type policy, on the same cached HTML with the corpus's own scorer.",
     name: "WCXB",
-    pages: "1,497 pages · 7 page types",
+    pages: "1,497 pages · 7 page types · dev split",
     metric: "word-level F1",
     asks: "Whether an extractor holds up away from articles, on forums, products, listings and documentation.",
     caveat:
-      "The author of the top entry wrote it and tuned it on this split, and discloses so. The held-out test split has never been opened here.",
+      "The author of the top entry wrote it and tuned it on this split, and discloses so. On the 511-page held-out test split, never used for any decision here, this engine scores 0.859 (routed) and 0.853 (unrouted); the top entry's author reports 0.893 there.",
     max: 1,
     entries: [
       { name: "rs-trafilatura", score: 0.859, note: "published; author's own, tuned on this split" },
+      { name: "webgraph", score: 0.85, self: true, note: "run here 13 Sep 2026, routed by page type; 0.826 unrouted" },
       { name: "MinerU-HTML", score: 0.827, note: "published 2026; not re-run here" },
-      { name: "trafilatura 2.2.0", score: 0.813, note: "run here today, same harness" },
-      { name: "webgraph", score: 0.811, self: true, note: "run here today, same harness" },
+      { name: "trafilatura 2.2.0", score: 0.813, note: "run here, same harness" },
       { name: "trafilatura 2.0.0", score: 0.791, note: "the figure the paper published, two releases old" },
       { name: "ReaderLM-v2", score: 0.741, note: "published; not re-run here" },
       { name: "magic-html", score: 0.719, note: "published; not re-run here" },
@@ -129,7 +129,7 @@ export const BOARDS: readonly Board[] = [
     max: 1,
     entries: [
       { name: "MinerU-HTML", score: 0.826 },
-      { name: "webgraph", score: 0.631, self: true, note: "column mean, comparable to the published rows" },
+      { name: "webgraph", score: 0.646, self: true, note: "column mean, comparable to the published rows; was 0.631" },
       { name: "magic-html", score: 0.5 },
       { name: "trafilatura (md)", score: 0.401 },
       { name: "trafilatura (txt)", score: 0.372 },
@@ -157,9 +157,11 @@ export const BOARDS: readonly Board[] = [
       { name: "Diffbot", score: 0.951 },
       { name: "newspaper", score: 0.949 },
       { name: "readability.js", score: 0.947 },
+      { name: "go-readability", score: 0.934 },
+      { name: "webgraph", score: 0.928, self: true, note: "11th of 35; was 15th at 0.895 before this round" },
+      { name: "go-domdistiller", score: 0.927 },
+      { name: "readability", score: 0.922 },
       { name: "goose3", score: 0.896 },
-      { name: "webgraph", score: 0.895, self: true, note: "15th of 35" },
-      { name: "readability-rs", score: 0.873 },
       { name: "jusText", score: 0.804 },
     ],
   },
@@ -243,20 +245,79 @@ export type Column = {
 };
 
 export const COLUMNS: readonly Column[] = [
-  { key: "text", label: "Prose", pages: 545, us: 0.767, best: 0.862, bestName: "MinerU-HTML" },
-  { key: "code", label: "Code blocks", pages: 91, us: 0.846, best: 0.909, bestName: "MinerU-HTML" },
-  { key: "table", label: "Tables", pages: 122, us: 0.425, best: 0.678, bestName: "MinerU-HTML" },
-  { key: "teds", label: "Table structure", pages: 122, us: 0.6, best: 0.739, bestName: "MinerU-HTML" },
-  { key: "formula", label: "Equations", pages: 146, us: 0.517, best: 0.94, bestName: "MinerU-HTML" },
+  { key: "text", label: "Prose", pages: 545, us: 0.774, best: 0.862, bestName: "MinerU-HTML" },
+  { key: "code", label: "Code blocks", pages: 91, us: 0.847, best: 0.909, bestName: "MinerU-HTML" },
+  { key: "table", label: "Tables", pages: 121, us: 0.404, best: 0.678, bestName: "MinerU-HTML" },
+  { key: "teds", label: "Table structure", pages: 121, us: 0.601, best: 0.739, bestName: "MinerU-HTML" },
+  { key: "formula", label: "Equations", pages: 145, us: 0.605, best: 0.94, bestName: "MinerU-HTML" },
 ];
 
 /** WCXB across this session, each step a diagnosed extraction bug rather than a tuned constant. */
 export type Step = { readonly label: string; readonly score: number; readonly why: string };
 
 export const PROGRESSION: readonly Step[] = [
-  { label: "Start", score: 0.714, why: "where the session began" },
-  { label: "noscript + form controls", score: 0.73, why: "19 forum pages parsed to zero blocks" },
-  { label: "main landmark", score: 0.734, why: "178 pages declare main content by ARIA role alone" },
-  { label: "wrapper duplication", score: 0.803, why: "a container re-emitted its own 24 paragraphs" },
-  { label: "repeat grouping", score: 0.81, why: "scoring repeated cards as one unit" },
+  { label: "Start of round", score: 0.82, why: "routed by page type, before this round" },
+  { label: "product sheet + filter panels", score: 0.823, why: "reviews and facets are not the product" },
+  { label: "consent dialogs, asides", score: 0.83, why: "a cookie centre chosen as a thread; a deals rail" },
+  { label: "text is text", score: 0.842, why: "alt text and sr-only labels are not page text" },
+  { label: "comments, landmarks", score: 0.848, why: "a thread is not the story; broken nav swallowed main" },
+  { label: "main by script, prose guard", score: 0.85, why: "a Japanese <main> behind a mega-menu; a short story keeps losing its thread" },
+];
+
+/** When and against what the rows marked as this engine were measured. */
+export const MEASURED = {
+  date: "13 September 2026",
+  commit: "6ea121e",
+} as const;
+
+/**
+ * WCXB by page type. Published rows are the paper's Table 7 (arXiv 2605.21097) and, for
+ * Hydrafetch, their own August 2026 run of the same dev split with the same scorer; the
+ * paper's trafilatura is 2.0.0 and Hydrafetch's is 2.2.0, which is why they differ. This
+ * engine's row is the routed production path on the dev split, 13 September 2026.
+ */
+export type TypeSystem = { readonly key: string; readonly label: string; readonly self?: boolean };
+export type TypeRow = {
+  readonly type: string;
+  readonly n: number;
+  readonly scores: Readonly<Record<string, number>>;
+};
+
+export const TYPE_SYSTEMS: readonly TypeSystem[] = [
+  { key: "webgraph", label: "webgraph", self: true },
+  { key: "rs", label: "rs-trafilatura" },
+  { key: "mineru", label: "MinerU-HTML" },
+  { key: "hydra", label: "Hydrafetch" },
+  { key: "traf", label: "trafilatura 2.0" },
+];
+
+export const TYPE_ROWS: readonly TypeRow[] = [
+  { type: "article", n: 793, scores: { webgraph: 0.937, rs: 0.932, mineru: 0.928, hydra: 0.9289, traf: 0.924 } },
+  { type: "documentation", n: 91, scores: { webgraph: 0.925, rs: 0.931, mineru: 0.838, hydra: 0.9231, traf: 0.888 } },
+  { type: "service", n: 165, scores: { webgraph: 0.831, rs: 0.843, mineru: 0.824, hydra: 0.7993, traf: 0.751 } },
+  { type: "forum", n: 113, scores: { webgraph: 0.763, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
+  { type: "collection", n: 117, scores: { webgraph: 0.68, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
+  { type: "listing", n: 99, scores: { webgraph: 0.7, rs: 0.704, mineru: 0.71, hydra: 0.6612, traf: 0.55 } },
+  { type: "product", n: 119, scores: { webgraph: 0.621, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
+];
+
+/** Benchmarks a reader would expect here, and why they are not. */
+export type NotRunItem = { readonly name: string; readonly what: string; readonly why: string };
+
+export const NOT_RUN: readonly NotRunItem[] = [
+  {
+    name: "CrawlBench (Firecrawl)",
+    what: "LLM structured extraction",
+    why: "It scores JSON pulled from live pages against a schema by a language model, not the Markdown of a page, and the dataset is not published; running it needs an LLM key and their harness. This engine's schema extraction could be scored on it, and has not been.",
+  },
+  {
+    name: "Hydrafetch extraction benchmark",
+    what: "same corpus as WCXB",
+    why: "Not a separate corpus: it is the WCXB dev split scored with WCXB's own metric, published with Hydrafetch's own extractor added. Their per-type figures are the Hydrafetch column in the table above; the row for this engine is the same WCXB run, so nothing was run twice.",
+  },
+  {
+    name: "Dragnet and Boilerpipe corpora",
+    what: "inside WCEB",
+    why: "Both are among the eight corpora WCEB combines (Dragnet as its own set; the Boilerpipe-era L3S-GN1 and Google-Trends sets alongside it), so they are scored above under WCEB rather than a second time on their own.",
+  },
 ];
