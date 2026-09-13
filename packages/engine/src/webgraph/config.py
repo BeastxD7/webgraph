@@ -189,6 +189,9 @@ CONTENT_GROUP_MIN_SHARE = 0.3  # a group is scored as a unit only above this sha
 # deliberately narrow: an article's own FAQ, Q&A, Related and Comments sections count as
 # content on WCXB and pruning them measured worse. True or False.
 CONTENT_PRUNE_RIVERS = True
+# A <blockquote> whose text is already on the page above it (a forum reply quoting the post
+# it answers) is dropped before the boundary is drawn. True or False.
+CONTENT_DROP_REPEATED_QUOTES = True
 # Never return less than this share of the document's words.
 CONTENT_MIN_RUN_SHARE = 0.02
 # When the boundary step cut the page's title and it is put back, the blocks between the

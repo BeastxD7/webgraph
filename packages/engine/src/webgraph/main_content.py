@@ -319,6 +319,10 @@ class MainContentConfig:
     """Drop the river of other stories under an article by its heading -- "More from
     World", "Trending News", "Top Stories" -- before the run is chosen. See `_RIVER_SECTION`."""
 
+    drop_repeated_quotes: bool = config.CONTENT_DROP_REPEATED_QUOTES
+    """Drop a blockquote that repeats text already above it on the page. See
+    `_drop_quoted_repeats`."""
+
     scope_article: bool = True
     """Scope to the page's dominant `<article>` element before the boundary is drawn. On for
     articles and documentation; off for forums, listings, collections and products, where
@@ -485,6 +489,8 @@ def select_main_content(
         cost = min(max(config.cost_ratio * mean_words, config.cost_floor), config.cost_ceiling)
         config = replace(config, block_cost=cost)
 
+    if config.drop_repeated_quotes:
+        blocks = _drop_quoted_repeats(blocks)
     if config.product_sheet:
         blocks = _prune_product(blocks, config)
         blocks = _prune_other_sections(blocks, _OTHER_SECTION)
@@ -729,3 +735,39 @@ def _is_prose(block: Block) -> bool:
 _PROSE_WORDS: Final[int] = 30
 _MAX_SECTION_BLOCKS: Final[int] = 60
 _WRITE: Final[re.Pattern[str]] = re.compile(r"^\s*(?:write|leave|add|submit|post)\b", re.I)
+
+
+_SHINGLE: Final[int] = 6
+_REPEAT_SHARE: Final[float] = 0.5
+
+
+def _shingles(text: str) -> set[tuple[str, ...]]:
+    tokens = re.findall(r"\w+", text.lower())
+    return {tuple(tokens[i : i + _SHINGLE]) for i in range(max(0, len(tokens) - _SHINGLE + 1))}
+
+
+def _drop_quoted_repeats(blocks: Sequence[Block]) -> list[Block]:
+    """Drop a `<blockquote>` that repeats text already on the page above it.
+
+    A forum reply quotes the post it answers; the quote says nothing the thread has not
+    already said, and WCXB's annotators leave it out -- measured over the 113 forum pages,
+    25% of quoted words are in the ground truth against 58% of paragraph words. A quote
+    whose six-word shingles are half already seen is a repeat and goes; an original quote
+    (a source quoted in an article, a first mention) stays. Dropping *every* quote was
+    measured too and is worse (forum 0.758 -> 0.738): quotes hold runs together.
+
+    Forum 0.7584 -> 0.7640; every other type and Zyte unchanged.
+    """
+    seen: set[tuple[str, ...]] = set()
+    out: list[Block] = []
+    for block in blocks:
+        shingles = _shingles(block.text)
+        if (
+            block.kind is BlockKind.QUOTE
+            and shingles
+            and len(shingles & seen) / len(shingles) >= _REPEAT_SHARE
+        ):
+            continue
+        seen |= shingles
+        out.append(block)
+    return out
