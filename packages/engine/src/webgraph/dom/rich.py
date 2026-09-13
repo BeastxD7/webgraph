@@ -1231,6 +1231,14 @@ _RAIL_TOKENS: Final[frozenset[str]] = frozenset({
     "ticker", "newsticker", "marquee", "outbrain", "taboola", "sharedaddy", "yarpp",
     "jp-relatedposts", "crp_related", "breadcrumb", "breadcrumbs", "skyscraper", "adsbygoogle",
     "mgid", "revcontent", "zergnet", "sharethis", "addthis",
+    # The landmarks a page built before HTML5 names instead of marking: `<div id="footer">`,
+    # `<div class="nav">`. jpost.com (2019) still puts its 400-word footer in
+    # `div.footer-wrap`, and with no <footer> to strip it outscored a one-paragraph story.
+    "footer", "site-footer", "page-footer", "global-footer", "main-footer", "footer-wrap",
+    "footer-wrapper", "footer-container", "footer-inner", "colophon",
+    "nav", "navbar", "main-nav", "mainnav", "site-nav", "primary-nav", "top-nav", "topnav",
+    "navigation", "main-navigation", "site-navigation", "primary-navigation", "main-menu",
+    "mainmenu", "mega-menu", "megamenu",
 })
 _RAIL_ATTR_SPLIT: Final[re.Pattern[str]] = re.compile(r"\s+")
 _POST_FURNITURE: Final[frozenset[str]] = frozenset({
@@ -1252,6 +1260,17 @@ def _names_post_furniture(element: HtmlElement) -> bool:
     if not names:
         return False
     return any(token in _POST_FURNITURE for token in _RAIL_ATTR_SPLIT.split(names))
+
+
+def _holds_the_article(element: HtmlElement) -> bool:
+    """Whether the page's `<h1>` or its `itemprop="articleBody"` sits inside this element. A
+    rail never holds either: jpost.com's headline and story rows are both
+    `g-row-breaking-news`, named after their section like the `breaking-news-lst` ticker
+    beside them that is one; the story itself is `article-inner-content-breaking-news`
+    and says what it is in its microdata."""
+    if next(element.iter("h1"), None) is not None:
+        return True
+    return any("articlebody" in (e.get("itemprop") or "").lower() for e in element.iter("div", "section", "article", "p"))
 
 
 def _names_rail(element: HtmlElement) -> bool:
@@ -1277,7 +1296,8 @@ _CONSENT_MARKERS: Final[re.Pattern[str]] = re.compile(
     # Vendors' own container names, then the generic ones sites hand-roll.
     r"(?:^|[\s_\-])(?:onetrust|ot-sdk|optanon|cybotcookiebotdialog|cookiebot|qc-cmp2|didomi|"
     r"truste|sp_message|cookieconsent|cc-window|cookie-?(?:banner|notice|consent|bar|popup|"
-    r"modal|dialog|law|policy-banner|settings)|consent-?(?:banner|manager|modal|dialog|popup|"
+    r"modal|dialog|law|policy-banner|settings|policy|wrapper|wrap|box|container|overlay|"
+    r"message|msg|alert|prompt|disclaimer|info)|consent-?(?:banner|manager|modal|dialog|popup|"
     r"notice|overlay)|gdpr-?(?:banner|consent|modal|popup|notice)|privacy-?(?:banner|manager))"
     r"(?:$|[\s_\-])",
     re.I,
@@ -1362,7 +1382,7 @@ def _widget_of(
             if words <= _MAX_WIDGET_SHARE * body_words:
                 cache[element] = "post-furniture"
                 return "post-furniture"
-        if tag in _RAIL_TAGS and _names_rail(element):
+        if tag in _RAIL_TAGS and _names_rail(element) and not _holds_the_article(element):
             words = len(element.text_content().split())
             if words <= _MAX_WIDGET_SHARE * body_words:
                 cache[element] = "rail"
@@ -1371,8 +1391,12 @@ def _widget_of(
             # A cookie-consent dialog. OneTrust's preference centre is 2,000 words of
             # "Strictly Necessary Cookies" and "We and our 644 partners", in the DOM of 12%
             # of WCXB dev and chosen as the main content of a GameFAQs thread (P 0.03).
-            cache[element] = "consent"
-            return "consent"
+            # qburst.com hand-rolls one as `cookieWrapper` / `cookiePolicy`. A page that is
+            # nothing but its "cookie policy" is the cookie policy page, and is kept.
+            words = len(element.text_content().split())
+            if words <= _MAX_COMMENTS_SHARE * body_words:
+                cache[element] = "consent"
+                return "consent"
         if tag in _COMMENT_TAGS and _names_comments(element):
             # The comments under an article. Whether they are content is the page type's
             # call (a forum thread *is* comments), so they are marked here and the content

@@ -314,6 +314,34 @@ class TestConsentDialogs:
         assert widgets["Our cooki"] is None
 
 
+    def test_camel_case_cookie_wrapper_is_consent(self) -> None:
+        """qburst.com hand-rolls its dialog as `cookieWrapper` > `cookiePolicy` > `cookieText`;
+        with the nav lists beside it gone, its 200 words were bridged into the page."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><header><div class="cookieWrapper cookieWrapperCommon"><div class="cookiePolicy">'
+            "<p>This website uses cookies.</p><p>Cookies are small text files that allow us to create the best browsing experience.</p>"
+            "</div></div></header><main><h1>Quality Engineering</h1>"
+            + "".join(f"<p>Offering {i}: we deliver comprehensive functional testing to validate every feature you ship.</p>" for i in range(6))
+            + "</main></body></html>"
+        )
+        document = build_document(html, "https://qburst.test/services")
+        assert [b.widget for b in document.blocks if "small text files" in b.text] == ["consent"]
+        assert all(b.widget is None for b in document.blocks if b.text.startswith("Offering"))
+
+    def test_a_cookie_policy_page_is_not_a_dialog(self) -> None:
+        """A page that is nothing but its `cookie-policy` container is the policy itself."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><div id="cookie-policy"><h1>Cookie policy</h1>'
+            + "".join(f"<p>Section {i}: we use cookies to remember your preferences, to measure traffic and to keep you signed in.</p>" for i in range(8))
+            + "</div></body></html>"
+        )
+        document = build_document(html, "https://site.test/cookies")
+        assert all(b.widget is None for b in document.blocks)
+
 class TestAsideStripped:
     """mspoweruser.com: a "Deals" river of twenty teasers in an `<aside>` inside `<main>`,
     kept by the boundary step because a teaser blurb scores like a sentence. Measured on
@@ -546,6 +574,61 @@ class TestRails:
         document = build_document(html, "https://news.test/story")
         assert all(b.widget is None for b in document.blocks)
 
+
+    def test_a_rail_name_around_the_headline_or_article_body_is_not_a_rail(self) -> None:
+        """jpost.com: the headline row and the story row are both `g-row-breaking-news`,
+        named after the section like the ticker beside them; the story says what it is
+        with `itemprop="articleBody"`. The page scored 0.00 on the Zyte benchmark."""
+        from webgraph.pipeline import build_document
+
+        ticker = "".join(f'<div class="breaking-news-link-container"><a href="/b/{i}">Ticker headline {i} about something else</a></div>' for i in range(12))
+        html = (
+            '<html><body><div class="g-row-breaking-news"><h1>Son of former president stabbed to death</h1><p>By STAFF</p></div>'
+            '<div class="g-row-breaking-news"><div class="article-inner-content-breaking-news" itemprop="articleBody">'
+            "The son of the former president was stabbed to death, while another man was critically injured trying to stop the assailant, the broadcaster reported on Wednesday. "
+            "The stabbing occurred during a presentation at the clinic where he worked as a chief physician.</div></div>"
+            f'<div class="break-news breaking-news-lst">{ticker}</div></body></html>'
+        )
+        document = build_document(html, "https://news.test/Breaking-News/story")
+        widgets = {b.text[:12]: b.widget for b in document.blocks}
+        assert widgets["Son of forme"] is None
+        assert widgets["By STAFF"] is None
+        assert widgets["The son of t"] is None
+        assert widgets["Ticker headl"] == "rail"
+
+    def test_named_footer_and_nav_are_chrome(self) -> None:
+        """Before HTML5 a page named its landmarks instead of marking them: jpost.com's
+        400-word footer is `div.footer-wrap`, and with nothing to strip it outscored a
+        one-paragraph story."""
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><div id="nav"><ul><li><a href="/">Home</a></li><li><a href="/news">News</a></li><li><a href="/sport">Sport</a></li></ul></div>'
+            "<div id='content'><h1>Story</h1><p>The body of the story, a single paragraph of news copy long enough to be read as prose by anyone.</p>"
+            "<p>A second paragraph follows, with the detail of who said what to whom and when, as news copy does.</p>"
+            "<p>A third paragraph closes the story with the reaction of the authorities and what happens next week.</p></div>"
+            '<div class="all-screen-footer-wrap"><div class="footer-wrap"><p>The customer service center can be contacted with any questions or requests by telephone, fax or email at the addresses below.</p>'
+            "<p>Copyright 2019 Inc. All rights reserved. Terms of Use. Privacy Policy. Designed by us.</p></div></div></body></html>"
+        )
+        document = build_document(html, "https://news.test/story")
+        kept = strip_landmarks(list(document.blocks))
+        texts = [b.text for b in kept]
+        assert texts[0] == "Story"
+        assert len(texts) == 4
+        assert not any("Copyright" in t or "customer service" in t or t == "Home" for t in texts)
+
+    def test_a_named_footer_that_is_most_of_the_page_stays(self) -> None:
+        """The share guard on rails applies: a `#footer` holding the page is the page."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            '<html><body><p>Intro.</p><div id="footer">'
+            + "".join(f"<p>Paragraph {i} of the only text on this page, long enough to count as its content on any reading.</p>" for i in range(10))
+            + "</div></body></html>"
+        )
+        document = build_document(html, "https://odd.test/")
+        assert all(b.widget is None for b in document.blocks)
 
 class TestPostFurniture:
     """forum.nationstates.net (phpBB) and every XenForo board: under each post a signature,
