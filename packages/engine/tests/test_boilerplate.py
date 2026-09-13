@@ -404,3 +404,24 @@ class TestInnermostLandmarkWins:
         kept = strip_landmarks(list(document.blocks))
         assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
         assert not any(b.text == "Home" for b in kept)
+
+
+class TestCalloutAsides:
+    """Starlight renders every Note and Tip as `<aside aria-label="Tip">`. A callout is the
+    article's own words; a sidebar of teasers is not, and only the latter is a landmark."""
+
+    def test_labelled_callout_is_kept(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        body = "".join(f"<p>Paragraph {i} of the guide, long enough to read as prose on its own.</p>" for i in range(6))
+        html = (
+            f"<html><body><main><article><h1>Markdown</h1>{body}"
+            '<aside aria-label="Tip" class="starlight-aside starlight-aside--tip"><p>Tip</p>'
+            "<p>For additional functionality, add the MDX integration to write your content using MDX.</p></aside>"
+            "</article><aside class=\"right-sidebar-container\"><h2>On this page</h2><ul><li>Markdown</li><li>MDX</li></ul></aside></main></body></html>"
+        )
+        document = build_document(html, "https://docs.test/guides/markdown/")
+        kept = strip_landmarks(list(document.blocks))
+        assert any("MDX integration" in b.text for b in kept)
+        assert not any(b.text == "On this page" for b in kept)
