@@ -201,3 +201,29 @@ class TestDuplicateResolution:
         html = "<html><body><p>Same words here.</p><section><p>Same words here.</p></section></body></html>"
         blocks = build_document(html, "https://x.test/").blocks
         assert [b.text for b in blocks].count("Same words here.") == 1
+
+    def test_a_measured_later_copy_wins_where_it_was_drawn(self) -> None:
+        """python.org: the header's hidden dropdown lists the same links as the footer
+        columns. The measured footer copy must win -- and win *in the footer*, not move up
+        into the dropdown's slot, which read the whole footer inside the header."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><body>"
+            "<div id='nav'><p>Intro line of the page header.</p><ul id='dropdown'><li>Applications</li><li>Quotes</li><li>Help</li></ul></div>"
+            "<main><p>The body of the page, which is long enough to be measured as prose.</p></main>"
+            "<div id='foot'><ul><li>Applications</li><li>Quotes</li><li>Help</li></ul></div>"
+            "</body></html>"
+        )
+        geometry = {
+            "/html/body/div[1]/p": Rect(x=0, y=0, width=800, height=20),
+            "/html/body/main/p": Rect(x=0, y=100, width=800, height=40),
+            "/html/body/div[2]/ul/li[1]": Rect(x=0, y=900, width=200, height=20),
+            "/html/body/div[2]/ul/li[2]": Rect(x=0, y=920, width=200, height=20),
+            "/html/body/div[2]/ul/li[3]": Rect(x=0, y=940, width=200, height=20),
+        }
+        blocks = build_document(html, "https://python.test/", geometry=geometry).blocks
+        texts = [b.text for b in blocks]
+        assert texts.count("Applications") == 1
+        assert texts.index("The body of the page, which is long enough to be measured as prose.") < texts.index("Applications")
+        assert [b.rect is not None for b in blocks if b.text == "Applications"] == [True]

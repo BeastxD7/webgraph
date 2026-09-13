@@ -276,3 +276,35 @@ class TestTitleBlockChoice:
         ]
         chosen = _title_block(blocks, "Son of former German president stabbed to death in Berlin - Breaking News - The Jerusalem Post")
         assert chosen is not None and chosen.kind is BlockKind.HEADING
+
+
+class TestLeadRestoration:
+    """docs.python.org/3/library/functools.html: the boundary began at the fourth paragraph,
+    the title was put back alone, and the sentence that says what the page is about --
+    between the title and the run -- stayed lost."""
+
+    def test_the_prose_between_title_and_body_comes_back_with_the_title(self) -> None:
+        title = "functools — Higher-order functions and operations on callable objects"
+        blocks = [
+            Block(text=title, tag="h1", xpath="/html/body/main/h1", dom_index=0, kind=BlockKind.HEADING, level=1, in_main=True, region="main"),
+            Block(text="Source code: Lib/functools.py", tag="p", xpath="/html/body/main/p[1]", dom_index=1, in_main=True, region="main"),
+            Block(text="The functools module is for higher-order functions: functions that act on or return other functions.", tag="p", xpath="/html/body/main/p[2]", dom_index=2, in_main=True, region="main"),
+            Block(text="@functools.cache(user_function)", tag="p", xpath="/html/body/main/p[3]", dom_index=3, in_main=True, region="main"),
+        ]
+        for i in range(4, 12):
+            blocks.append(Block(text=f"{PROSE} Paragraph {i}.", tag="p", xpath=f"/html/body/main/p[{i}]", dom_index=i, in_main=True, region="main"))
+        result = select_content(blocks, title=f"{title} — Python 3.14 documentation")
+        texts = [b.text for b in result.blocks]
+        assert texts[0] == title
+        assert "Source code: Lib/functools.py" in texts
+        assert any(t.startswith("The functools module is for") for t in texts)
+
+    def test_a_menu_under_the_title_is_not_a_lead(self) -> None:
+        title = "Guide to shelving units"
+        blocks = [Block(text=title, tag="h1", xpath="/html/body/h1", dom_index=0, kind=BlockKind.HEADING, level=1)]
+        blocks += [Block(text=f"Menu item {i}", tag="li", xpath=f"/html/body/ul/li[{i}]", dom_index=i, kind=BlockKind.LIST_ITEM) for i in range(1, 9)]
+        blocks += [Block(text=f"{PROSE} Paragraph {i}.", tag="p", xpath=f"/html/body/p[{i}]", dom_index=10 + i) for i in range(6)]
+        result = select_content(blocks, title=title)
+        texts = [b.text for b in result.blocks]
+        assert texts[0] == title
+        assert not any(t.startswith("Menu item") for t in texts)

@@ -398,3 +398,34 @@ class TestRivers:
         assert sum(1 for t in texts if t.startswith(PROSE)) == 6
         assert "Most Read" not in texts and "Trending News" not in texts
         assert texts[0] == "Video shows dramatic rescue"
+
+
+class TestSpecSheetFallback:
+    """lttlabs.com: a review that is a spec sheet -- forty two-word lines and no prose -- never
+    forms a run the boundary step can believe in, and it kept three blocks of it. Product and
+    collection pages refuse a run under a quarter of the page and return everything that
+    survived the structural steps."""
+
+    @staticmethod
+    def sheet() -> list[Block]:
+        rows = [
+            ("Height", "3.2 cm"), ("Width Max", "31.0 cm"), ("Depth", "12.0 cm"), ("Weight", "653 g"),
+            ("Switches", "Gateron G Pro Brown"), ("Keycaps", "ABS double-shot"), ("Connection", "USB Type-C, Bluetooth 5.1"),
+            ("Battery", "4000 mAh"), ("Backlight", "White LED"), ("Layout", "75% ANSI"), ("Hot-swap", "Yes"), ("Case", "Aluminium frame"),
+        ]
+        blocks = [Block(text="Keychron K2 Wireless Mechanical Keyboard (Version 2)", tag="h1", xpath="/html/body/main/h1", dom_index=0, kind=BlockKind.HEADING, level=1, in_main=True)]
+        for i, (k, v) in enumerate(rows, 1):
+            blocks.append(Block(text=k, tag="p", xpath=f"/html/body/main/div[{i}]/p[1]", dom_index=2 * i - 1, in_main=True))
+            blocks.append(Block(text=v, tag="p", xpath=f"/html/body/main/div[{i}]/p[2]", dom_index=2 * i, in_main=True))
+        blocks.append(Block(text="Purchases made through these links may provide compensation to the site that runs this review.", tag="p", xpath="/html/body/main/p[99]", dom_index=99, in_main=True))
+        return blocks
+
+    def test_product_policy_returns_the_whole_sheet(self) -> None:
+        from webgraph.pagetype import policy_for
+
+        kept = select_main_content(self.sheet(), config=policy_for("product"))
+        assert len(kept) == len(self.sheet())
+
+    def test_default_policy_keeps_a_sliver(self) -> None:
+        kept = select_main_content(self.sheet(), config=MainContentConfig())
+        assert len(kept) < len(self.sheet()) // 2
