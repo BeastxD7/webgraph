@@ -429,3 +429,32 @@ class TestSpecSheetFallback:
     def test_default_policy_keeps_a_sliver(self) -> None:
         kept = select_main_content(self.sheet(), config=MainContentConfig())
         assert len(kept) < len(self.sheet()) // 2
+
+
+class TestRepeatedQuotes:
+    """forum.nationstates.net: every reply quotes the post it answers. The quote says nothing
+    the thread has not said, and the annotators leave it out."""
+
+    @staticmethod
+    def thread() -> list[Block]:
+        post = f"{PROSE} The season is one of the wildest in football history, with minnows everywhere."
+        return [
+            Block(text=post, tag="p", xpath="/html/body/div[1]/p", dom_index=0),
+            Block(text=f"{PROSE} A second post that is its own words entirely, about fixtures.", tag="p", xpath="/html/body/div[2]/p", dom_index=1),
+            Block(text=f"Outer Armatonisdaristan wrote: {post}", tag="blockquote", xpath="/html/body/div[3]/blockquote", dom_index=2, kind=BlockKind.QUOTE),
+            Block(text="Dutch eredivisie fixtures are out, and the schedule is brutal for the small clubs this year.", tag="blockquote", xpath="/html/body/div[3]/blockquote[2]", dom_index=3, kind=BlockKind.QUOTE),
+            Block(text=f"{PROSE} A reply that answers the quoted post with new words of its own.", tag="p", xpath="/html/body/div[3]/p", dom_index=4),
+        ]
+
+    def test_a_quote_of_an_earlier_post_is_dropped_and_an_original_one_kept(self) -> None:
+        from webgraph.main_content import _drop_quoted_repeats
+
+        kept = _drop_quoted_repeats(self.thread())
+        texts = [b.text for b in kept]
+        assert not any(t.startswith("Outer Armatonisdaristan wrote") for t in texts)
+        assert any(t.startswith("Dutch eredivisie") for t in texts)
+        assert len(kept) == 4
+
+    def test_off_by_config(self) -> None:
+        kept = select_main_content(self.thread(), config=MainContentConfig(drop_repeated_quotes=False))
+        assert any(b.text.startswith("Outer Armatonisdaristan wrote") for b in kept)
