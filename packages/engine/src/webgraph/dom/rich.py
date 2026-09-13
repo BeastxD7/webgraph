@@ -1233,6 +1233,25 @@ _RAIL_TOKENS: Final[frozenset[str]] = frozenset({
     "mgid", "revcontent", "zergnet", "sharethis", "addthis",
 })
 _RAIL_ATTR_SPLIT: Final[re.Pattern[str]] = re.compile(r"\s+")
+_POST_FURNITURE: Final[frozenset[str]] = frozenset({
+    # Forum software's per-post furniture: the signature under a post and the user card
+    # beside it. phpBB, XenForo, Invision, MyBB and Discourse each name them; the post body
+    # itself is never named this way.
+    "signature", "post-signature", "message-signature", "signature-view", "signature-content",
+    "signature-content-wrapper", "signature-collapsed", "postsignature",
+    "message-user", "message-userdetails", "message-userextras", "message-userbanner",
+    "user-info", "userinfo", "messagecard__user-info", "postprofile",
+    "post-profile", "author-info", "authorinfo", "memberinfo", "member-info", "extrauserinfo",
+    "messageuserinfo", "ipsentry__profile-row", "user-title", "usertitle", "reputation-score",
+    "post-count", "postcount", "messagecard__post-count",
+})
+
+
+def _names_post_furniture(element: HtmlElement) -> bool:
+    names = f"{element.get('class') or ''} {element.get('id') or ''}".lower().strip()
+    if not names:
+        return False
+    return any(token in _POST_FURNITURE for token in _RAIL_ATTR_SPLIT.split(names))
 
 
 def _names_rail(element: HtmlElement) -> bool:
@@ -1338,6 +1357,11 @@ def _widget_of(
     own: str | None = None
     if above is None:
         tag = element.tag if isinstance(element.tag, str) else ""
+        if tag in _FURNITURE_TAGS and _names_post_furniture(element):
+            words = len(element.text_content().split())
+            if words <= _MAX_WIDGET_SHARE * body_words:
+                cache[element] = "post-furniture"
+                return "post-furniture"
         if tag in _RAIL_TAGS and _names_rail(element):
             words = len(element.text_content().split())
             if words <= _MAX_WIDGET_SHARE * body_words:
@@ -1374,6 +1398,7 @@ def _widget_of(
     return result
 
 
+_FURNITURE_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "aside", "ul", "dl", "td", "span", "p", "footer", "header"})
 _RAIL_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "aside", "ul", "ol", "nav", "footer", "header", "table"})
 _COMMENT_TAGS: Final[frozenset[str]] = frozenset(
     {"div", "section", "aside", "article", "ol", "ul", "li", "form", "footer", "table", "tbody", "tr", "td"}
