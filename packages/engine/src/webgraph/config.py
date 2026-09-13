@@ -192,6 +192,15 @@ CONTENT_PRUNE_RIVERS = True
 # A <blockquote> whose text is already on the page above it (a forum reply quoting the post
 # it answers) is dropped before the boundary is drawn. True or False.
 CONTENT_DROP_REPEATED_QUOTES = True
+# A block of at least PIPELINE_RESTATED_MIN_WORDS words whose six-word shingles are already
+# PIPELINE_RESTATED_SHARE present across the *other* blocks -- with no single block supplying
+# PIPELINE_RESTATED_SINGLE_MAX of them -- is the page restating itself (an `articleBody`
+# microdata div after the paragraphs, a reply quoting the whole opening post) and is dropped
+# before the reading order is fixed. The single-block cap keeps two near-identical code
+# samples or tables, which are revisions, not restatements.
+PIPELINE_RESTATED_MIN_WORDS = 150
+PIPELINE_RESTATED_SHARE = 0.7
+PIPELINE_RESTATED_SINGLE_MAX = 0.5
 # Never return less than this share of the document's words.
 CONTENT_MIN_RUN_SHARE = 0.02
 # When the boundary step cut the page's title and it is put back, the blocks between the
