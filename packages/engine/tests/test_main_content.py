@@ -458,3 +458,42 @@ class TestRepeatedQuotes:
     def test_off_by_config(self) -> None:
         kept = select_main_content(self.thread(), config=MainContentConfig(drop_repeated_quotes=False))
         assert any(b.text.startswith("Outer Armatonisdaristan wrote") for b in kept)
+
+
+class TestGridInstances:
+    """eBay's similar-items carousel: each card is one `li[n]`, and inside it the picture,
+    the title and the price sit at different depths with their own indices. Keyed on each
+    block's innermost index, every block was its own instance and no instance was ever
+    priced *and* pictured; keyed on the group's `li[*]` template, the cards are cards."""
+
+    @staticmethod
+    def page() -> list[Block]:
+        def b(text: str, xpath: str, i: int, **kw: object) -> Block:
+            return Block(text=text, tag="p", xpath=xpath, dom_index=i, in_main=True, **kw)  # type: ignore[arg-type]
+
+        blocks = [
+            b("Next 3 pack ladies top black, white & green size 6", "/html/body/main/h1", 0, kind=BlockKind.HEADING, level=1),
+            b("Condition: not specified", "/html/body/main/div[1]/p[1]", 1),
+            b("Delivery: Varies", "/html/body/main/div[1]/p[2]", 2),
+            b("Seller assumes all responsibility for this listing. The item ships from the UK within three working days.", "/html/body/main/div[1]/p[3]", 3),
+        ]
+        i = 10
+        for n in range(1, 7):
+            base = f"/html/body/main/ul/li[{n}]/div/section/div[1]"
+            card = [
+                b("", f"{base}/div/div[1]/div/img", i, kind=BlockKind.IMAGE),
+                b(f"Next Blouse Top Size {n} Womens Green Black White Casual", f"{base}/div/div[2]/div/h3", i + 1, kind=BlockKind.HEADING, level=3),
+                b(f"${10 + n}.40", f"{base}/div/div[2]/div/div[1]/div[2]", i + 2),
+                b(f"+ ${20 + n}.69 delivery", f"{base}/div/div[2]/div/div[2]", i + 3),
+            ]
+            blocks.extend(card)
+            i += 4
+        return blocks
+
+    def test_cards_are_recognised_as_one_grid_and_pruned(self) -> None:
+        from webgraph.main_content import _prune_product
+
+        pruned = _prune_product(self.page(), MainContentConfig(product_sheet=True))
+        texts = [b.text for b in pruned]
+        assert not any("Next Blouse Top" in t for t in texts)
+        assert "Condition: not specified" in texts and texts[0].startswith("Next 3 pack")
