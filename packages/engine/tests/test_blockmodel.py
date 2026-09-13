@@ -169,7 +169,9 @@ class TestSelection:
         assert all(PROSE in t for t in kept if t.startswith("The quick")), kept
         assert sum(PROSE in t for t in kept) == 5
         assert "Home Products About Contact Blog Careers" not in kept
-        assert selection.methods == ("block-model",)
+        # The structural steps run first whichever last step is chosen: the page's one
+        # <article> scopes the nav and the copyright line away before the model sees a block.
+        assert selection.methods == ("article-element", "block-model")
         assert selection.block_model_removed >= 1
         assert selection.main_content_removed == 0
 
@@ -182,7 +184,7 @@ class TestSelection:
 
     def test_asking_for_the_shipped_model_gets_it(self) -> None:
         selection = select_content(article_page(), model=SHIPPED_MODEL)
-        assert selection.methods == ("block-model",)
+        assert selection.methods[-1] == "block-model"
         assert selection.main_content_removed == 0
 
     def test_the_default_is_parsed_once(self) -> None:

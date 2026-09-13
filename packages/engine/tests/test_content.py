@@ -41,7 +41,9 @@ def block(
 
 
 def page(unique: str) -> list[Block]:
-    """A page with a `<nav>`, a repeated footer line, a byline strip, and an article."""
+    """A page with a `<nav>`, a repeated footer line, a byline strip, and the body in a
+    plain `<section>` -- not an `<article>`, so that `scope_to_article` stays out of these
+    composition tests and each step's own work is visible in `methods`."""
     return [
         block(
             "Home About Pricing",
@@ -54,7 +56,7 @@ def page(unique: str) -> list[Block]:
         block(f"Share Tweet Email {unique}", xpath="/html/body/div/p[1]", index=1,
               rich=f"[Share](/s) [Tweet](/t) [Email](/e) {unique}"),
         *[
-            block(f"{PROSE} {unique} {i}.", xpath=f"/html/body/div/article/p[{i}]", index=2 + i)
+            block(f"{PROSE} {unique} {i}.", xpath=f"/html/body/div/section/p[{i}]", index=2 + i)
             for i in range(1, 6)
         ],
         block("Copyright Example Corp. All rights reserved.", xpath="/html/body/div/p[9]", index=9),
@@ -308,3 +310,40 @@ class TestLeadRestoration:
         texts = [b.text for b in result.blocks]
         assert texts[0] == title
         assert not any(t.startswith("Menu item") for t in texts)
+
+
+class TestArticleScope:
+    """cbsnews.com: the story is 493 words in one <article>; the "More World" river beneath
+    it is twenty small <article> teasers. The dominant article is the content's extent."""
+
+    @staticmethod
+    def news() -> list[Block]:
+        blocks = [Block(text="Share this Tweet Email", tag="p", xpath="/html/body/div/p[1]", dom_index=0)]
+        for i in range(1, 9):
+            blocks.append(Block(text=f"{PROSE} Story paragraph {i}.", tag="p", xpath=f"/html/body/div/article/p[{i}]", dom_index=i))
+        for j in range(1, 7):
+            blocks.append(Block(text=f"Teaser headline {j}", tag="h3", xpath=f"/html/body/div/section/article[{j}]/h3", dom_index=20 + 2 * j, kind=BlockKind.HEADING, level=3))
+            blocks.append(Block(text=f"A one-sentence blurb about teaser {j} that reads exactly like news copy does.", tag="p", xpath=f"/html/body/div/section/article[{j}]/p", dom_index=21 + 2 * j))
+        return blocks
+
+    def test_dominant_article_scopes_the_page(self) -> None:
+        from webgraph.boilerplate import scope_to_article
+
+        scoped = scope_to_article(self.news())
+        assert all(b.xpath.startswith("/html/body/div/article/") for b in scoped)
+        assert len(scoped) == 8
+        selection = select_content(self.news())
+        assert "article-element" in selection.methods
+        assert not any("Teaser" in b.text for b in selection.blocks)
+
+    def test_a_thread_of_equal_posts_is_not_scoped(self) -> None:
+        from webgraph.boilerplate import scope_to_article
+
+        posts = [Block(text=f"{PROSE} Post {i}.", tag="p", xpath=f"/html/body/main/article[{i}]/p", dom_index=i) for i in range(1, 6)]
+        assert scope_to_article(posts) == posts
+
+    def test_forum_policy_leaves_it_off(self) -> None:
+        from webgraph.pagetype import policy_for
+
+        assert policy_for("forum").scope_article is False
+        assert policy_for("article").scope_article is True

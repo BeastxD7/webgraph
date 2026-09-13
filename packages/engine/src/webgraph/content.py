@@ -33,6 +33,7 @@ from webgraph import config
 from webgraph.blockmodel import BlockModel, default_model, select_by_model
 from webgraph.boilerplate import (
     SiteChrome,
+    scope_to_article,
     scope_to_main,
     strip_comments,
     strip_landmarks,
@@ -73,6 +74,8 @@ class ContentSelection:
 
     landmarks_removed: int = 0
     main_scoped_removed: int = 0
+    article_scoped_removed: int = 0
+    """Blocks outside the page's dominant `<article>` element -- see `scope_to_article`."""
     chrome_removed: int = 0
     main_content_removed: int = 0
     block_model_removed: int = 0
@@ -100,6 +103,8 @@ class ContentSelection:
             names.append("landmarks")
         if self.main_scoped_removed:
             names.append("main-landmark")
+        if self.article_scoped_removed:
+            names.append("article-element")
         if self.chrome_removed:
             names.append("site-chrome")
         if self.main_content_removed:
@@ -176,6 +181,12 @@ def select_content(
     kept = scope_to_main(kept)
     main_scoped_removed = before - len(kept)
 
+    article_scoped_removed = 0
+    if config is None or config.scope_article:
+        before = len(kept)
+        kept = scope_to_article(kept)
+        article_scoped_removed = before - len(kept)
+
     chrome_removed = 0
     if chrome is not None and chrome.active:
         before = len(kept)
@@ -220,6 +231,7 @@ def select_content(
         total=total,
         landmarks_removed=landmarks_removed,
         main_scoped_removed=main_scoped_removed,
+        article_scoped_removed=article_scoped_removed,
         chrome_removed=chrome_removed,
         main_content_removed=main_content_removed,
         block_model_removed=block_model_removed,
