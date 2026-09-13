@@ -423,7 +423,7 @@ _INDEX: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")
 
 def _repeat_groups(blocks: Sequence[Block], config: MainContentConfig) -> list[int]:
     """Assign each block a group id: blocks inside repeated sibling containers share one; -1
-    otherwise.
+    otherwise. `_repeat_groups_with_prefixes` also returns each group's container template.
 
     A repeated container is an XPath prefix that ends in a positional index and occurs with
     at least `min_group_size` distinct indices -- `/main/ul/li[*]` when `li[1]`, `li[2]`,
@@ -475,6 +475,35 @@ def _repeat_groups(blocks: Sequence[Block], config: MainContentConfig) -> list[i
                 groups[index] = ids.setdefault(prefix, len(ids))
                 break
     return groups
+
+
+def _repeat_groups_with_prefixes(
+    blocks: Sequence[Block], config: MainContentConfig
+) -> tuple[list[int], list[str]]:
+    """`_repeat_groups` plus, per group id, the container template (`.../ul/li[*]`) it keys
+    on -- so a caller can tell the group's *instances* (one `li[n]` each) apart."""
+    groups = _repeat_groups(blocks, config)
+    prefixes: dict[int, str] = {}
+    for block, group in zip(blocks, groups, strict=True):
+        if group < 0 or group in prefixes:
+            continue
+        # The template is the innermost qualifying prefix; recover it by walking the
+        # block's indexed steps outward until the prefix is shared by another member.
+        matches = list(_INDEX.finditer(block.xpath))
+        for match in reversed(matches):
+            template = block.xpath[: match.start()] + "[*]"
+            instances = {
+                b.xpath[: m.end()]
+                for b, g in zip(blocks, groups, strict=True)
+                if g == group
+                for m in _INDEX.finditer(b.xpath)
+                if b.xpath[: m.start()] + "[*]" == template
+            }
+            if len(instances) >= config.min_group_size:
+                prefixes[group] = template
+                break
+        prefixes.setdefault(group, block.xpath)
+    return groups, [prefixes[i] for i in range(len(prefixes))]
 
 
 def select_main_content(
@@ -618,24 +647,33 @@ def _prune_product(blocks: Sequence[Block], config: MainContentConfig) -> list[B
     129-word spec list, because reviews are prose and specs are twenty short lines that
     each pay the block cost.
     """
-    grouped = _repeat_groups(blocks, replace(config, group_repeats="all", group_min_share=0.0))
+    grouped, prefixes = _repeat_groups_with_prefixes(
+        blocks, replace(config, group_repeats="all", group_min_share=0.0)
+    )
     members: dict[int, list[int]] = {}
     for index, group in enumerate(grouped):
         if group >= 0:
             members.setdefault(group, []).append(index)
     drop: set[int] = set()
-    for indices in members.values():
+    for group, indices in members.items():
+        # An instance is one repeated container -- one `li[n]` under the group's template
+        # -- with every block inside it. Keying on each block's *innermost* index instead
+        # made every block its own instance on eBay's similar-items carousel (61 of 61),
+        # and a grid of one-block "cards" never met the price-and-picture test.
+        template = prefixes[group]
+        stem = template[: -len("[*]")]
         instances: dict[str, list[Block]] = {}
         for i in indices:
             xpath = blocks[i].xpath
-            matches = list(_INDEX.finditer(xpath))
-            # Group by the outermost repeated step that this group keys on: `_repeat_groups`
-            # already chose the prefix; the instance is the path up to its index.
-            key = xpath[: matches[-1].end()] if matches else xpath
+            key = xpath
+            if xpath.startswith(stem):
+                rest = xpath[len(stem) :]
+                close = rest.find("]")
+                key = xpath[: len(stem) + close + 1] if close >= 0 else xpath
             instances.setdefault(key, []).append(blocks[i])
         if len(instances) < _MIN_OTHER_GROUP:
             continue
-        priced = linked = reviewish = 0
+        priced = linked = pictured = reviewish = 0
         for items in instances.values():
             text = " ".join(b.text for b in items)
             rich = " ".join(b.rich_text or "" for b in items)
@@ -643,10 +681,14 @@ def _prune_product(blocks: Sequence[Block], config: MainContentConfig) -> list[B
                 priced += 1
             if any(b.href for b in items) or _LINKED.search(rich):
                 linked += 1
+            if any(b.kind is BlockKind.IMAGE for b in items):
+                pictured += 1
             if _REVIEWISH.search(text) or _DATE.search(text):
                 reviewish += 1
         n = len(instances)
-        is_grid = priced >= 0.6 * n and linked >= 0.6 * n
+        # A grid card is priced and either linked or pictured. eBay wraps each "similar
+        # item" card in one <a>, so no block inside it carries a link; the picture does.
+        is_grid = priced >= 0.6 * n and (linked >= 0.6 * n or pictured >= 0.6 * n)
         is_reviews = reviewish >= 0.6 * n
         if is_grid or is_reviews:
             drop.update(indices)
