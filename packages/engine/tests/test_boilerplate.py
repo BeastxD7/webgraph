@@ -364,3 +364,25 @@ class TestComments:
         document = build_document(self.story(), "https://forum.test/t/1")
         kept = select_content(list(document.blocks), model=None, config=policy_for("forum"), title="Story").blocks
         assert any("Reply" in b.text for b in kept)
+
+
+class TestInnermostLandmarkWins:
+    """protiviti.com leaves a <nav> and an <li> unclosed, so the parser nests the whole
+    <main> inside them and every path on the page runs through `/nav/`. The blocks are in
+    main all the same, and main is the innermost landmark."""
+
+    def test_main_nested_under_an_unclosed_nav_is_kept(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.pipeline import build_document
+
+        body = "".join(f"<p>Paragraph {i} of the service description, long enough to be prose.</p>" for i in range(8))
+        html = (
+            "<html><body><header><nav><ul><li><a href='/'>Home</a>"
+            f"<main><article><h1>Data and Analytics Services</h1>{body}</article></main>"
+            "</li></ul></nav></header></body></html>"
+        )
+        document = build_document(html, "https://consult.test/services")
+        assert any("/nav/" in b.xpath for b in document.blocks if b.text.startswith("Paragraph"))
+        kept = strip_landmarks(list(document.blocks))
+        assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
+        assert not any(b.text == "Home" for b in kept)
