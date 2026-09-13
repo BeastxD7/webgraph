@@ -1,26 +1,41 @@
+# Dependency updates, kept quiet on purpose: this repository keeps a single long-lived
+# branch, so update PRs arrive monthly, grouped, and only for minor and patch versions.
+# Major versions are taken deliberately, by hand, with the migration read first.
 version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "monthly"
+    open-pull-requests-limit: 2
     commit-message:
       prefix: "ci"
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "build"
     groups:
-      python-minor:
+      python:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+  # The web app lives in apps/web but the pnpm workspace lockfile is at the repository
+  # root. Pointing Dependabot at apps/web produced PRs that changed package.json without the
+  # lockfile and failed `pnpm install --frozen-lockfile` (#31-#33); the root is the manifest.
   - package-ecosystem: "npm"
-    directory: "/apps/web"
+    directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "build"
     groups:
-      web-minor:
+      web:
         update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
