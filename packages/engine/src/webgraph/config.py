@@ -47,6 +47,10 @@ USER_AGENT_BROWSER = (
 )
 # The full User-Agent header sent with every request.
 USER_AGENT = f"{USER_AGENT_BROWSER} webgraph/0.1 (+https://github.com/webgraph/webgraph)"
+# What follows the operator's contact in a declared User-Agent (`DEPLOY_CONTACT`). No URL:
+# measured on sec.gov, 14 Sep 2026, `Name email webgraph/0.1` is admitted and any form
+# carrying `(+https://…)` is refused with the same demand.
+DECLARED_AGENT_SUFFIX = "webgraph/0.1"
 
 # ======================================================================================
 # Rendering (real browser)
@@ -433,3 +437,10 @@ DEPLOY_ALLOWED_ORIGINS = ()
 
 # WEBGRAPH_CHROMIUM_ARGS: extra flags for the browser, shell-split.
 DEPLOY_CHROMIUM_ARGS = ""
+
+# WEBGRAPH_CONTACT: who runs this deployment, as `Name contact@example.com`, declared to a
+# site that admits automated clients only when they say who they are (sec.gov: "declare
+# your traffic by updating your user agent to include company specific information"). Sent
+# only to a site that asked, in the form it documents; empty = such a site is refused and
+# the refusal names this setting. Never a disguise: the client is still named webgraph.
+DEPLOY_CONTACT = ""

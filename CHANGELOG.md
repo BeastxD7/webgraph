@@ -41,6 +41,19 @@ All notable changes to this project are documented here. The format follows
   `strategy=SUPPLIED` (it would have fallen through to the union branch). Whole-page
   fidelity on columbia-sample, stallman.org and catb.org: identical recall / extra /
   inversions / blocks before and after.
+### Added (2026-09-14, PR #82) — a declared client for sites that ask who is calling
+- sec.gov answers the engine's browser-shaped User-Agent with HTTP 403 and a page saying
+  "Your Request Originates from an Undeclared Automated Tool … declare your traffic by
+  updating your user agent to include company specific information". That is not a wall
+  against automation, it is a question, and it is now answered: when a refusal says so
+  (`declaration_demanded`) and the deployment has `WEBGRAPH_CONTACT` set
+  (`Name contact@example.com`), the page is fetched again — static and browser — as
+  `<contact> webgraph/0.1`, the form the site documents (measured: a URL in the string is
+  refused, `Name email webgraph/0.1` is admitted). The contact goes only to a site that
+  asked; every other page gets the ordinary fetch. Without a contact the refusal names the
+  setting and quotes the demand (`PageBlockedError.kind == "undeclared"`); a site that keeps
+  refusing a declared client is refused as such. `ResolvedPage.identity_declared` and the
+  stream's `resolve` event say when a page was served to the declared client.
 
 ### Fixed (2026-09-14, PR #81) — the blocking API routes see walls
 - `/api/text` and `/api/extract` resolve the page through `resolve_page`, the path the

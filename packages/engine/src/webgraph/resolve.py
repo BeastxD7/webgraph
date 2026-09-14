@@ -27,7 +27,7 @@ budget matters more than the last few percent.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Final
 
@@ -63,6 +63,7 @@ __all__ = [
     "Strategy",
     "block_page_evidence",
     "challenge_vendor",
+    "declaration_demanded",
     "login_redirect",
     "resolve_page",
     "resolve_supplied",
@@ -127,9 +128,30 @@ class PageBlockedError(ValueError):
     """
 
     def __init__(
-        self, url: str, evidence: str, *, challenge: str | None = None, login_url: str | None = None
+        self,
+        url: str,
+        evidence: str,
+        *,
+        challenge: str | None = None,
+        login_url: str | None = None,
+        undeclared: bool = False,
+        declared_as: str | None = None,
     ) -> None:
-        if login_url:
+        if undeclared and declared_as:
+            message = (
+                f"could not resolve {url}: the site admits automated clients only when they "
+                f'declare who runs them, and kept refusing this one declared as "{declared_as}"; '
+                f'it said: "{evidence}"'
+            )
+        elif undeclared:
+            message = (
+                f"could not resolve {url}: the site admits automated clients only when they "
+                "declare who runs them -- a User-Agent naming an operator and a contact "
+                "address -- and this deployment has nothing to declare; set "
+                "WEBGRAPH_CONTACT='Name contact@example.com' and the site is asked again "
+                f'in the form it documents. It said: "{evidence}"'
+            )
+        elif login_url:
             message = (
                 f"could not resolve {url}: redirected to a login page ({login_url}); the page "
                 "requires a sign-in and nothing of it was served"
@@ -149,13 +171,18 @@ class PageBlockedError(ValueError):
         self.evidence = evidence
         self.challenge = challenge
         self.login_url = login_url
+        self.undeclared = undeclared
 
     @property
     def kind(self) -> str:
         """Which wall this was: `login` (a redirect to a sign-in page), `challenge` (a
-        bot-management script) or `block` (a page saying the client was refused)."""
+        bot-management script), `undeclared` (the site admits automated clients that say
+        who runs them, and this one could not) or `block` (a page saying the client was
+        refused)."""
         if self.login_url:
             return "login"
+        if self.undeclared:
+            return "undeclared"
         return "challenge" if self.challenge else "block"
 
 
@@ -205,6 +232,39 @@ def challenge_vendor(html: str) -> str | None:
     return None
 
 
+_DECLARE_PHRASES: Final[re.Pattern[str]] = re.compile(
+    r"(undeclared automated tool|declare your traffic|declare your (?:automated )?(?:client|tool)"
+    r"|updat(?:e|ing) your user[- ]agent to include)",
+    re.IGNORECASE,
+)
+
+
+def declaration_demanded(html: str) -> str | None:
+    """The server's words when it refused an *undeclared* automated client and said how to
+    be admitted, or None for any other answer.
+
+    Not a wall in the sense of the others: the site is not refusing automation, it is
+    asking who is automating. sec.gov, 14 Sep 2026: HTTP 403, "Your Request Originates
+    from an Undeclared Automated Tool … Please declare your traffic by updating your user
+    agent to include company specific information." Quoted from the page's own text, so a
+    reader of the refusal sees the demand as the site wrote it.
+    """
+    said = _server_said(html, limit=1_500)
+    if not said:
+        return None
+    # The sentence that made the demand, not the page's first 200 characters: the title
+    # says "Undeclared Automated Tool", the instruction is a paragraph further down, and
+    # the instruction is the sentence worth quoting when both are there.
+    matches = list(_DECLARE_PHRASES.finditer(said))
+    if not matches:
+        return None
+    match = next((m for m in matches if "undeclared" not in m.group(0).lower()), matches[0])
+    start = max(said.rfind(". ", 0, match.start()) + 1, 0)
+    end = said.find(". ", match.end())
+    sentence = said[start : end + 1 if end != -1 else None].strip()
+    return sentence[:200]
+
+
 def block_page_evidence(text: str) -> str | None:
     """The phrase that gives a block page away, or None for a page that is one.
 
@@ -241,6 +301,9 @@ class ResolvedPage:
     blocks_only_in_static: int
     blocks_only_in_rendered: int
     render_error: str | None = None
+    identity_declared: bool = False
+    """The site asked automated clients to say who runs them, and this fetch did (see
+    `FetchConfig.declared`). False for the ordinary fetch every other page gets."""
 
     runtime: RuntimeEvidence = field(default_factory=RuntimeEvidence)
     """What the browser observed, kept so a caller can add to it.
@@ -805,6 +868,51 @@ def resolve_page(
     # this the engine extracts server error pages as though they were content.
     if static_result.status in MISSING_STATUSES:
         raise PageMissingError(url, static_result.status)
+
+    # A site that refused an undeclared automated client and said so is asked again as a
+    # declared one -- once, in the form it documents, with the deployment's own contact --
+    # and both fetches then speak as that client. With nothing to declare, the demand is
+    # the refusal: naming the setting beats a "HTTP 403" nobody can act on. The contact
+    # goes only to a site that asked; the first knock is the ordinary one everywhere.
+    demand = declaration_demanded(static_result.html) if not static_result.ok else None
+    declared = False
+    if demand is not None:
+        plain = fetch_config or FetchConfig()
+        if not plain.contact:
+            raise PageBlockedError(url, demand, undeclared=True)
+        fetch_config = plain.declared()
+        render_config = replace(render_config or RenderConfig(), user_agent=fetch_config.user_agent)
+        static_result = fetch_static(url, config=fetch_config)
+        if static_result.status in MISSING_STATUSES:
+            raise PageMissingError(url, static_result.status)
+        still = declaration_demanded(static_result.html) if not static_result.ok else None
+        if still is not None:
+            raise PageBlockedError(url, still, undeclared=True, declared_as=fetch_config.user_agent)
+        declared = True
+
+    resolved = _resolve_fetched(
+        url,
+        static_result,
+        strategy=strategy,
+        fetch_config=fetch_config,
+        render_config=render_config,
+        include_hidden_text=include_hidden_text,
+        rtl=rtl,
+    )
+    return replace(resolved, identity_declared=True) if declared else resolved
+
+
+def _resolve_fetched(
+    url: str,
+    static_result: FetchResult,
+    *,
+    strategy: Strategy | None,
+    fetch_config: FetchConfig | None,
+    render_config: RenderConfig | None,
+    include_hidden_text: bool,
+    rtl: bool | None,
+) -> ResolvedPage:
+    """`resolve_page` from the static fetch onward. See there for what the strategies mean."""
 
     # A frameset is a page made of other pages. Neither fetch sees its words -- the static
     # markup holds only the frame elements and a `<noframes>` apology, and a browser renders
