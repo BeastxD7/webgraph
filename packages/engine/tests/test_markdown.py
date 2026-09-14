@@ -1071,6 +1071,66 @@ class TestScreenReaderOnly:
         assert build_document(html, "https://x.test/", include_hidden_text=True).text == "Opens in a new window Read the guide."
 
 
+class TestClosedDialogs:
+    """karnataka.gov.in: nine Bootstrap modals (Privacy Policy, Terms, Help, Site Map…) in
+    `.modal.fade` divs at `display: none` -- 2,100 words, three times what the page shows --
+    all of it in the content. A closed dialog is a different screen, not collapsed content."""
+
+    def test_closed_dialogs_go_open_ones_stay(self) -> None:
+        html = (
+            "<main><p>The page itself says this.</p>"
+            '<div role="dialog" data-wg-hidden="display"><h2>Privacy Policy</h2><p>Thanks for visiting the website of the Government.</p></div>'
+            '<div role="dialog" aria-hidden="true"><p>Terms and conditions of this website apply to every visitor.</p></div>'
+            '<div role="alertdialog" hidden><p>Your session is about to expire.</p></div>'
+            "<dialog><p>A dialog element that is not open.</p></dialog>"
+            '<dialog open><p>A dialog element that is open, and on the page.</p></dialog>'
+            '<div role="dialog"><p>A dialog the renderer found showing: a cookie prompt.</p></div>'
+            "</main>"
+        )
+        texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
+        assert texts == [
+            "The page itself says this.",
+            "A dialog element that is open, and on the page.",
+            "A dialog the renderer found showing: a cookie prompt.",
+        ]
+
+
+class TestUnreachableHidden:
+    """karnataka.gov.in hides a 3,144-word "Recent Govt Announcements" div beside a 726-word
+    page and nothing opens it. Hidden content stays only when a control on the page reaches
+    it -- by id, by `role="tabpanel"`, or inside `<details>`."""
+
+    def test_hidden_content_nothing_opens_is_dropped(self) -> None:
+        html = (
+            "<main><p>Visible words on the page.</p>"
+            '<div data-wg-hidden="display"><p>Recent announcements that no button, tab or link opens.</p></div>'
+            "</main>"
+        )
+        texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
+        assert texts == ["Visible words on the page."]
+
+    def test_hidden_content_a_control_opens_stays(self) -> None:
+        html = (
+            "<main><p>Visible words on the page.</p>"
+            '<button aria-controls="faq1" aria-expanded="false">How do I apply?</button>'
+            '<div id="faq1" data-wg-hidden="display"><p>Apply online with your passport number.</p></div>'
+            '<a href="#more">Show more</a><div id="more" data-wg-hidden="display"><p>The rest of the notice.</p></div>'
+            '<div role="tabpanel" data-wg-hidden="display"><p>An inactive tab panel.</p></div>'
+            '<details><summary>Fees</summary><div data-wg-hidden="display"><p>Fees are listed here.</p></div></details>'
+            "</main>"
+        )
+        texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
+        assert "Apply online with your passport number." in texts
+        assert "The rest of the notice." in texts
+        assert "An inactive tab panel." in texts
+        assert "Fees are listed here." in texts
+
+    def test_a_static_fetch_is_untouched(self) -> None:
+        """No renderer, no marks, no decision: a static page keeps its hidden panels."""
+        html = '<main><p>Visible.</p><div style="display:none"><p>Hidden by a style the static parser does not read.</p></div></main>'
+        texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
+        assert texts == ["Visible.", "Hidden by a style the static parser does not read."]
+
 class TestDocumentText:
     def test_alt_text_and_placeholders_are_not_text(self) -> None:
         html = (

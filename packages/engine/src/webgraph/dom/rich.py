@@ -872,6 +872,113 @@ def _list_context(element: HtmlElement) -> tuple[bool, int]:
     return ordered, max(level, 1)
 
 
+def _drop_closed_dialogs(root: HtmlElement) -> None:
+    """Remove a dialog that is closed: a `<dialog>` without `open`, or an element with
+    `role="dialog"` / `role="alertdialog"` that is hidden -- by the renderer's measure, by
+    `aria-hidden="true"`, or by the `hidden` attribute.
+
+    A closed modal is not on the page and is not "collapsed content" a reader can open in
+    the sense an accordion is: it is a different screen. karnataka.gov.in carries nine
+    Bootstrap modals -- Privacy Policy, Terms and Conditions, Help, Screen Reader Access,
+    Site Map -- 2,100 words in `.modal.fade` divs with `display: none`, three times the
+    words the page shows, and every one of them reached the content. An open dialog (a
+    cookie prompt the renderer found showing, a `<dialog open>`) stays and is judged like
+    anything else.
+    """
+    doomed: list[HtmlElement] = []
+    for element in root.iter("dialog", "div", "section", "aside", "form"):
+        tag = element.tag if isinstance(element.tag, str) else ""
+        role = (element.get("role") or "").strip().lower()
+        if tag == "dialog":
+            closed = element.get("open") is None
+        elif role in ("dialog", "alertdialog"):
+            closed = (
+                element.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS
+                or (element.get("aria-hidden") or "").strip().lower() == "true"
+                or element.get("hidden") is not None
+            )
+        else:
+            continue
+        if closed:
+            doomed.append(element)
+    for element in doomed:
+        parent = element.getparent()
+        if parent is None or any(a in doomed for a in element.iterancestors()):
+            continue
+        _carry_tail(parent, element)
+        parent.remove(element)
+
+
+_UNSHOWN_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility"})
+_OPENER_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "aria-controls", "aria-owns", "data-target", "data-bs-target", "data-toggle-target",
+    "data-tab", "data-panel", "for",
+)
+_REACHABLE_ROLES: Final[frozenset[str]] = frozenset({"tabpanel", "region", "menu", "listbox", "tree"})
+
+
+def _drop_unreachable_hidden(root: HtmlElement) -> None:
+    """Remove hidden content that nothing on the page opens.
+
+    A collapsed accordion tray, an inactive tab, a "Show more" body: hidden by the
+    renderer's measure, and content, because a control on the page opens it -- the control
+    names it by id (`aria-controls`, `data-bs-target`, `href="#id"`), or the panel says
+    what it is (`role="tabpanel"`), or it sits in a `<details>`. Those stay, unmeasured,
+    where the source puts them.
+
+    Hidden content that no control reaches is a different thing: the source a news
+    ticker reads from, a widget for another breakpoint, a template. karnataka.gov.in
+    hides a 3,144-word "Recent Govt Announcements" div beside a 726-word page and nothing
+    opens it; every word reached the content. Only the renderer's own marks count -- a
+    static fetch marks nothing and nothing happens -- and only `display`/`visibility`
+    hiding: opacity is an animation's starting state, and a tray clipped by a collapsed
+    `overflow: hidden` ancestor is in the flow of the page and is left alone.
+    """
+    referenced: set[str] = set()
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        for attribute in _OPENER_ATTRIBUTES:
+            value = element.get(attribute)
+            if value:
+                referenced.update(v.lstrip("#") for v in value.split())
+        href = element.get("href") or ""
+        if href.startswith("#") and len(href) > 1:
+            referenced.add(href[1:])
+
+    def reachable(container: HtmlElement) -> bool:
+        for node in container.iter():
+            if not isinstance(node.tag, str):
+                continue
+            if node.get("id") in referenced:
+                return True
+            if (node.get("role") or "").strip().lower() in _REACHABLE_ROLES:
+                return True
+        for ancestor in container.iterancestors():
+            if ancestor.tag == "details" or (ancestor.get("role") or "").strip().lower() in _REACHABLE_ROLES:
+                return True
+            if ancestor.get("id") in referenced:
+                return True
+        return False
+
+    doomed: list[HtmlElement] = []
+    for element in root.xpath(f"//*[@{HIDDEN_ATTRIBUTE}]"):
+        if element.get(HIDDEN_ATTRIBUTE) not in _UNSHOWN_KINDS:
+            continue
+        if any(a.get(HIDDEN_ATTRIBUTE) in _UNSHOWN_KINDS for a in element.iterancestors()):
+            continue  # the outermost hidden container decides
+        if not element.text_content().strip():
+            continue
+        if reachable(element):
+            continue
+        doomed.append(element)
+    for element in doomed:
+        parent = element.getparent()
+        if parent is not None:
+            _carry_tail(parent, element)
+            parent.remove(element)
+
+
 def _drop_clipped(root: HtmlElement) -> None:
     """Remove the elements the renderer measured as screen-reader-only -- clipped to a 1px
     box -- whatever their class is called. The same text the `SR_ONLY_CLASSES` rule removes
@@ -1015,7 +1122,9 @@ def extract_rich_blocks(
     strip_permalinks(root, keep_hidden_text=include_hidden_text)
     if not include_hidden_text:
         _drop_clipped(root)
+    _drop_closed_dialogs(root)
     _drop_hidden_twins(root)
+    _drop_unreachable_hidden(root)
 
     tree = root.getroottree()
     blocks: list[Block] = []
