@@ -466,8 +466,8 @@ def _compose_frameset(
 
     Each frame is fetched statically (frames predate the JavaScript that would need a
     render), its links made absolute against its own address, and its `<body>` inlined into
-    one document in frameset order under `<section data-frame="...">`, followed by the
-    `<noframes>` body when there is one. Nested framesets recurse to `_MAX_FRAME_DEPTH`;
+    one document in frameset order under `<section data-frame="...">`; the `<noframes>`
+    body stands in only when no frame could be fetched. Nested framesets recurse to `_MAX_FRAME_DEPTH`;
     at most `_MAX_FRAMES` frames are read; only same-host frames are followed. Returns
     None when no frame could be read, so the caller's ordinary refusal applies.
     """
@@ -500,12 +500,15 @@ def _compose_frameset(
             else etree.tostring(root, encoding="unicode")
         )
         parts.append(f'<section data-frame="{source}">{(body.text or "") if body is not None else ""}{inner}</section>')
-    if not parts:
-        return None
+    fetched = len(parts)
     try:
         top = lxml_html.fromstring(static_result.html)
         noframes = top.find(".//noframes")
-        if noframes is not None:
+        # `<noframes>` is what a browser without frames shows *instead* of the frames:
+        # on cs.cmu.edu/~rgs it repeats the title frame and adds a second table of
+        # contents that no frame-capable browser draws. It stands in only when no frame
+        # could be fetched; a reader of a frameset sees the frames.
+        if noframes is not None and not fetched:
             # Browsers parse `<noframes>` as raw text, and so does lxml on most pages: its
             # markup arrives as a string and is parsed here; on the pages where it arrived as
             # elements those are used.
@@ -517,6 +520,8 @@ def _compose_frameset(
         title = top.findtext(".//title") or ""
     except (ValueError, TypeError):
         title = ""
+    if not parts:
+        return None
     html = f"<html><head><title>{title}</title></head><body>{''.join(parts)}</body></html>"
     return build_document(html, static_result.url, headers=static_result.headers, include_hidden_text=include_hidden_text)
 

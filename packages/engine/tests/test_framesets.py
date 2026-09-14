@@ -63,15 +63,26 @@ def server() -> Iterator[str]:
 
 
 class TestFramesets:
-    def test_the_frames_are_read_in_frameset_order_then_noframes(self, server: str) -> None:
+    def test_the_frames_are_read_in_frameset_order_without_noframes(self, server: str) -> None:
+        """The `<noframes>` body is what a browser without frames shows instead of them;
+        with the frames fetched it is not on the page (on cs.cmu.edu it repeated the
+        title frame and added a second table of contents)."""
         resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
         texts = [b.text for b in resolved.document.blocks]
         assert texts[0].startswith("Contents")  # the top frame first
         assert "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do." in texts
         assert texts.index("Alice's Adventures in Wonderland") < texts.index("Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do.")
-        assert any(t.startswith("NOTE: This is a hypertext") for t in texts)  # noframes last
-        assert texts.index("Lewis Carroll") < next(i for i, t in enumerate(texts) if t.startswith("NOTE:"))
+        assert not any(t.startswith("NOTE: This is a hypertext") for t in texts)  # noframes not shown
         assert resolved.render_error and resolved.render_error.startswith("frameset")
+
+    def test_noframes_stands_in_when_no_frame_can_be_fetched(self, server: str) -> None:
+        Server.routes = {"/rgs/alice-table.html": TOP}
+        try:
+            resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
+        finally:
+            Server.routes = {"/rgs/alice-table.html": TOP, "/rgs/alice-finfo.html": INFO, "/rgs/alice-ftitle.html": TITLE}
+        texts = [b.text for b in resolved.document.blocks]
+        assert any(t.startswith("NOTE: This is a hypertext") for t in texts)
 
     def test_frame_links_resolve_against_the_frame(self, server: str) -> None:
         resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
