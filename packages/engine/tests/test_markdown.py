@@ -1163,6 +1163,22 @@ class TestUnreachableHidden:
         assert "An inactive tab panel." in texts
         assert "Fees are listed here." in texts
 
+    def test_a_skip_link_to_main_opens_nothing_inside_it(self) -> None:
+        """MDN: `<a href="#content">Skip to main content</a>` names `<main id="content">`,
+        an ancestor of everything, and made every hidden copy under it "reachable" -- the
+        demo source four times over. A reference to a region is not a control for a tray
+        inside it; a reference to the tray itself still is."""
+        html = (
+            '<a href="#content">Skip to main content</a><main id="content"><p>Visible words on the page.</p>'
+            '<div data-wg-hidden="display"><p>A hidden copy nothing opens.</p></div>'
+            '<a href="#faq">FAQ</a><div id="faq" data-wg-hidden="display"><p>Opened by its own link.</p></div>'
+            "</main>"
+        )
+        texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://mdn.test/")]
+        assert "A hidden copy nothing opens." not in texts
+        assert "Opened by its own link." in texts
+        assert "Visible words on the page." in texts
+
     def test_a_static_fetch_is_untouched(self) -> None:
         """No renderer, no marks, no decision: a static page keeps its hidden panels."""
         html = '<main><p>Visible.</p><div style="display:none"><p>Hidden by a style the static parser does not read.</p></div></main>'

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #74)
+- A skip link to the page's main region (`href="#content"` → `<main id="content">`) no
+  longer makes every hidden container inside it count as "openable"; a reference to a
+  region is not a control for a tray inside it, a reference to the tray itself still is.
+  A page with a code editor keeps its hidden source listings for the editor's block.
+
 ### Added (2026-09-14, PR #73) — login walls
 - A fetch redirected to a login page is refused as the wall it is, named as one:
   `PageBlockedError` says `redirected to a login page (<final url>)` and carries
