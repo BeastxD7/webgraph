@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #69)
+- A table or code block a page shows more than once stays more than once on a page the
+  browser could not measure (a static fetch, a browser refused by a wall):
+  columbia.edu/~fdc/sample.html shows one demo table four times and came out with one.
+  A repeat sitting in a run that repeats the first copy's run — the mobile grid beside
+  the desktop grid — is still a hidden twin and goes; so does a repeat with nothing
+  between it and the first copy. Repeated *text* on an unmeasured page stays
+  deduplicated: measured on WCXB and Zyte, keeping it by the same rule cost 0.0017 and
+  0.003 (businessinsider.com carries its article three times, interleaved with different
+  furniture); a rendered page keeps real repeats through their rectangles, as before.
+
 ### Fixed (2026-09-14, PRs #66, #68)
 - `<li><p>…</p></li>` (DocBook, Sphinx, MediaWiki) yields list items: the item's first
   paragraph is the item, later paragraphs its continuation, indented under the bullet
