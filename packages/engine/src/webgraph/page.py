@@ -179,6 +179,7 @@ def stream_page(
             "landmarks": selection.landmarks_removed,
             "main_landmark": selection.main_scoped_removed,
             "article_element": selection.article_scoped_removed,
+            "article_body": selection.body_scoped_removed,
             "site_chrome": selection.chrome_removed,
             "boundary": selection.main_content_removed,
             "block_model": selection.block_model_removed,

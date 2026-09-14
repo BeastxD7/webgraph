@@ -347,3 +347,63 @@ class TestArticleScope:
 
         assert policy_for("forum").scope_article is False
         assert policy_for("article").scope_article is True
+
+
+class TestArticleBodyScope:
+    """thesun.co.uk, and most news CMSs: no <article> around the story, but a `div.article__content`
+    (or `itemprop="articleBody"`, `entry-content`, `story-body`) holding it and nothing else;
+    the "Most read" rail and the related-story cards sit beside it in the same column. The
+    body element is the author's third statement, read after <main> and <article>."""
+
+    @staticmethod
+    def page(body_attr: str = 'class="article__content"') -> str:
+        story = "".join(f"<p>{PROSE} Story paragraph {i}.</p>" for i in range(1, 9))
+        cards = "".join(
+            f"<div class='card'><h3>Teaser headline {j}</h3><p>A one-sentence blurb about teaser {j} that reads exactly like news copy does.</p></div>"
+            for j in range(1, 7)
+        )
+        return (
+            "<html><head><title>Hunter diagnosed with plague | The Sun</title></head><body><div class='col'>"
+            "<h1>Hunter diagnosed with plague</h1><p class='byline'>By A Reporter, 20 Nov 2019</p>"
+            f"<div {body_attr}>{story}</div><div class='more'>{cards}</div></div></body></html>"
+        )
+
+    def test_blocks_carry_the_body_they_sit_in(self) -> None:
+        from webgraph.pipeline import build_document
+
+        blocks = build_document(self.page(), "https://news.test/story").blocks
+        bodies = {b.text[:6]: b.body_of for b in blocks}
+        assert bodies["Hunter"] is None and bodies["By A R"] is None
+        assert bodies[PROSE[:6]] == "/html/body/div/div[1]"
+        assert bodies["Teaser"] is None
+
+    def test_the_dominant_body_scopes_the_page_and_the_title_comes_back(self) -> None:
+        from webgraph.pipeline import build_document
+
+        document = build_document(self.page(), "https://news.test/story")
+        selection = select_content(list(document.blocks), model=None, title=document.title or "")
+        texts = [b.text for b in selection.blocks]
+        assert "article-body" in selection.methods
+        assert texts[0] == "Hunter diagnosed with plague"
+        assert texts[1] == "By A Reporter, 20 Nov 2019"
+        assert sum(1 for t in texts if "Story paragraph" in t) == 8
+        assert not any("Teaser" in t for t in texts)
+
+    def test_itemprop_article_body_is_a_body(self) -> None:
+        from webgraph.pipeline import build_document
+
+        blocks = build_document(self.page('itemprop="articleBody"'), "https://news.test/story").blocks
+        assert all(b.body_of for b in blocks if "Story paragraph" in b.text)
+
+    def test_two_bodies_of_equal_weight_do_not_scope(self) -> None:
+        """A page of several `entry-content` posts (a blog index, a forum theme) is not scoped
+        to one of them: the dominance test that guards <article> guards this too."""
+        from webgraph.boilerplate import scope_to_article_body
+        from webgraph.pipeline import build_document
+
+        posts = "".join(
+            "<div class='entry-content'>" + "".join(f"<p>{PROSE} Post {i} paragraph {k}.</p>" for k in range(3)) + "</div>"
+            for i in range(4)
+        )
+        blocks = list(build_document(f"<html><body>{posts}</body></html>", "https://blog.test/").blocks)
+        assert scope_to_article_body(blocks) == blocks

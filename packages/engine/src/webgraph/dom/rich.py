@@ -971,6 +971,7 @@ def extract_rich_blocks(
     consumed: set[HtmlElement] = set()
     landmark_cache: dict[HtmlElement, tuple[str | None, bool]] = {}
     float_cache: dict[HtmlElement, HtmlElement | None] = {}
+    body_cache: dict[HtmlElement, HtmlElement | None] = {}
     widget_cache: dict[HtmlElement, str | None] = {}
     body_words = len(root.text_content().split())
     # A container's own text, held until the walk reaches the child block it precedes (or
@@ -989,6 +990,9 @@ def extract_rich_blocks(
         floated = _float_of(element, float_cache)
         if floated is not None:
             block = block.model_copy(update={"float_of": tree.getpath(floated)})
+        body = _body_of(element, body_cache)
+        if body is not None:
+            block = block.model_copy(update={"body_of": tree.getpath(body)})
         widget = _widget_of(element, widget_cache, body_words)
         if widget is not None:
             block = block.model_copy(update={"widget": widget})
@@ -1432,6 +1436,50 @@ _WIDGET_TAGS: Final[frozenset[str]] = frozenset(
 )
 _MAX_WIDGET_SHARE: Final[float] = 0.4
 _MAX_COMMENTS_SHARE: Final[float] = 0.92
+
+
+_BODY_NAMES: Final[frozenset[str]] = frozenset({
+    # What a CMS calls the element holding the story and nothing else. The list is the
+    # core of trafilatura's BODY_XPATH and Readability's positive patterns, kept to names
+    # that mean the body: not `content`, `text` or `entry` alone, which themes hang on
+    # whole columns.
+    "entry-content", "entry-body", "entrycontent", "post-content", "post_content",
+    "postcontent", "post-body", "post_body", "postbody", "post-entry", "post-text",
+    "post_text", "posttext", "post-bodycopy", "article-body", "article__body",
+    "articlebody", "article-content", "article__content", "articlecontent", "article-text",
+    "articletext", "article__text", "story-body", "story__body", "storybody",
+    "story-content", "storycontent", "story-text", "storytext", "content-body",
+    "content__body", "body-copy", "bodycopy", "field-body", "fulltext", "td-post-content",
+    "news-body", "news-content", "news-text", "blog-content", "blog-post-content",
+})
+_BODY_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "article", "main"})
+
+
+def _names_body(element: HtmlElement) -> bool:
+    tag = element.tag if isinstance(element.tag, str) else ""
+    if tag not in _BODY_TAGS:
+        return False
+    if "articlebody" in (element.get("itemprop") or "").lower():
+        return True
+    names = f"{element.get('class') or ''} {element.get('id') or ''}".lower().strip()
+    return bool(names) and any(token in _BODY_NAMES for token in _RAIL_ATTR_SPLIT.split(names))
+
+
+def _body_of(
+    element: HtmlElement, cache: dict[HtmlElement, HtmlElement | None]
+) -> HtmlElement | None:
+    """The outermost ancestor-or-self that names itself the article body; None if none.
+
+    Outermost, so a `div.entry-content` wrapping `div.post-body` is one body, not two
+    halves that split its words between them when the content step asks which body
+    dominates the page."""
+    if element in cache:
+        return cache[element]
+    parent = element.getparent()
+    above = _body_of(parent, cache) if parent is not None else None
+    result = above if above is not None else (element if _names_body(element) else None)
+    cache[element] = result
+    return result
 
 
 def _float_of(

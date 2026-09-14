@@ -233,6 +233,36 @@ def scope_to_article(blocks: Sequence[Block]) -> list[Block]:
     return inside or list(blocks)
 
 
+def scope_to_article_body(blocks: Sequence[Block]) -> list[Block]:
+    """Keep only the blocks inside the page's dominant declared article body, when there is
+    one -- see `Block.body_of`.
+
+    The third statement after `<main>` and `<article>`, under the same three tests as the
+    `<article>` (`ARTICLE_MIN_WORDS`, `ARTICLE_MIN_SHARE`, `ARTICLE_DOMINANCE`). Unlike
+    an `<article>`, a body element leaves the headline and byline outside; the content
+    step restores them from the blocks this removed. Returns the input unchanged when no
+    body qualifies.
+    """
+    words: dict[str, int] = {}
+    total = 0
+    for block in blocks:
+        n = word_count(block.text)
+        total += n
+        if block.body_of is not None:
+            words[block.body_of] = words.get(block.body_of, 0) + n
+    if not words or not total:
+        return list(blocks)
+    ranked = sorted(words.items(), key=lambda kv: -kv[1])
+    top, top_words = ranked[0]
+    runner_up = ranked[1][1] if len(ranked) > 1 else 0
+    if top_words < ARTICLE_MIN_WORDS or top_words < ARTICLE_MIN_SHARE * total:
+        return list(blocks)
+    if runner_up and top_words < ARTICLE_DOMINANCE * runner_up:
+        return list(blocks)
+    inside = [block for block in blocks if block.body_of == top]
+    return inside or list(blocks)
+
+
 ARTICLE_MIN_WORDS: Final[int] = config.CHROME_ARTICLE_MIN_WORDS
 ARTICLE_MIN_SHARE: Final[float] = config.CHROME_ARTICLE_MIN_SHARE
 ARTICLE_DOMINANCE: Final[float] = config.CHROME_ARTICLE_DOMINANCE
