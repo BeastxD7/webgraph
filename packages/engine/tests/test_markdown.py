@@ -934,6 +934,35 @@ class TestHiddenTwins:
         blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
         assert [b.text for b in blocks] == ["NEW NEW"]
 
+    def test_a_group_of_hidden_siblings_saying_what_the_visible_ones_say_is_dropped(self) -> None:
+        """linear.app's <h1>: four `show-mobile` spans (display none on a laptop) and two
+        `hide-mobile` spans (opacity 0 until the entrance animation) carry the same headline
+        with different line breaks. No hidden span has a single visible twin; together they
+        do. Opacity 0 counts as shown: a scroll animation starts its text there."""
+        html = (
+            '<main><h1><span>'
+            '<span data-wg-hidden="display">The product</span><span data-wg-hidden="display"> </span>'
+            '<span data-wg-hidden="display">development</span><span data-wg-hidden="display"> </span>'
+            '<span data-wg-hidden="display">system for teams</span><span data-wg-hidden="display"> and agents</span>'
+            '<span data-wg-hidden="opacity">The product development</span> '
+            '<span data-wg-hidden="opacity">system for teams and agents</span>'
+            "</span></h1><p>Purpose-built for planning.</p></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
+        assert [b.text for b in blocks] == ["The product development system for teams and agents", "Purpose-built for planning."]
+
+    def test_a_clipped_copy_is_screen_reader_only_whatever_its_class(self) -> None:
+        """The renderer marks a 1px, overflow-hidden box `clipped`; the CSS-module class
+        (`Fzcv4W_visuallyHidden`) is one the name rule cannot know."""
+        html = (
+            '<main><h1><span>The product development system</span>'
+            '<span class="Fzcv4W_visuallyHidden" data-wg-hidden="clipped">The product development system</span></h1>'
+            '<p>Body.</p></main>'
+        )
+        assert [b.text for b in extract_rich_blocks(parse_html(html), "https://x.test/")] == ["The product development system", "Body."]
+        kept = extract_rich_blocks(parse_html(html), "https://x.test/", include_hidden_text=True)
+        assert kept[0].text.startswith("The product development system")
+
 
 class TestOrphanRuns:
     """A container's own text is emitted where it sits among the child blocks."""

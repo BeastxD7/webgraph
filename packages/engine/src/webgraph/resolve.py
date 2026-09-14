@@ -233,13 +233,22 @@ class ResolvedPage:
         )
 
 
+_RUN_IN_MIN_CHARS: Final[int] = 20
+
+
 def _key(block: Block) -> str:
     """Identity for deduplication: normalised text.
 
     Text rather than XPath, because the two representations of a page rarely agree on
     structure -- hydration rewrites the tree -- but the words themselves are stable.
+
+    Whitespace is dropped altogether, not normalised. The two representations disagree
+    about spaces as well as structure: a rendered block knows a `<span>` was laid out as a
+    line of its own and breaks there, the static one runs it into the next -- linear.app's
+    "New Loops →" and "NewLoops →", "Karri · 2min ago" and "Karri·2min ago" -- and with
+    spaces in the key both spellings survived the union.
     """
-    return _WHITESPACE.sub(" ", block.text).strip().casefold()
+    return _WHITESPACE.sub("", block.text).casefold()
 
 
 def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Document, int, int]:
@@ -275,7 +284,6 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     static_keys = {_key(b) for b in static_doc.blocks if b.text.strip()}
     rendered_keys = {_key(b) for b in rendered_doc.blocks if b.text.strip()}
 
-    only_static = static_keys - rendered_keys
     only_rendered = rendered_keys - static_keys
 
     # Static-only blocks, grouped by the shared block they follow. `None` means they precede
@@ -283,6 +291,19 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     following: dict[str | None, list[Block]] = {}
     anchor: str | None = None
     emitted: set[str] = set()
+    # A static-only block that begins or ends with the whole text of a rendered block is
+    # the same block with hidden matter run into it -- a headline followed by its own
+    # `display: none` mobile copy, which only the rendered fetch can see and strip -- and
+    # it is the dirtier copy of something already there, not something only the static
+    # page had. Short rendered keys are excluded from the test: "menu" begins a lot of
+    # things.
+    long_rendered = tuple(k for k in rendered_keys if len(k) >= _RUN_IN_MIN_CHARS)
+
+    def runs_into_rendered(key: str) -> bool:
+        return any(key.startswith(k) or key.endswith(k) for k in long_rendered)
+
+    only_static = {k for k in static_keys - rendered_keys if not runs_into_rendered(k)}
+
     for block in static_doc.blocks:
         key = _key(block)
         if not key:
@@ -290,7 +311,7 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
         if key in rendered_keys:
             anchor = key
             continue
-        if key in emitted:
+        if key in emitted or runs_into_rendered(key):
             continue
         emitted.add(key)
         following.setdefault(anchor, []).append(block)
