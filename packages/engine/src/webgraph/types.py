@@ -172,7 +172,9 @@ class Block(BaseModel):
 
     kind: BlockKind = BlockKind.PARAGRAPH
     level: int = 0
-    """Heading level (1-6), or list nesting depth. Zero when not applicable."""
+    """Heading level (1-6), or list nesting depth -- on a list item, and on a paragraph
+    that continues one (`<li><p>…</p><p>…</p></li>`: the second paragraph, indented under
+    the bullet in the Markdown). Zero when not applicable."""
 
     href: str | None = None
     """Absolute URL: an image's source, or a standalone link's target."""

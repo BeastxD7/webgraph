@@ -206,6 +206,11 @@ def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
     if kind is BlockKind.FIGURE_CAPTION:
         return f"*{_ONE_LINE.sub(' ', _text(block.text, options))}*"
 
+    if kind is BlockKind.PARAGRAPH and block.level:
+        # A paragraph inside a list item after its first: indented under the bullet, as
+        # CommonMark wants a continuation paragraph.
+        indent = "  " * max(block.level - 1, 0) + "   "
+        return "\n".join(indent + line for line in _hard_breaks(_body(block, options)).split("\n"))
     return _hard_breaks(_body(block, options))
 
 
