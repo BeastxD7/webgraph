@@ -1131,6 +1131,110 @@ class TestUnreachableHidden:
         texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
         assert texts == ["Visible.", "Hidden by a style the static parser does not read."]
 
+class TestPreCssPages:
+    """textfiles.com, erikdemaine.org/foldcut: pages written before CSS, where text sits
+    straight under `<body>` or inside `<center>` and `<font>` with no `<p>` or `<div>`, and
+    paragraphs are separated by `<br><br>`. 21% of textfiles.com's words were lost outright
+    and every `<br>` read as a space."""
+
+    def test_text_in_body_center_and_font_is_read(self) -> None:
+        html = (
+            "<html><body>Bare words in the body.<table><tr><td>cell</td></tr></table>"
+            "<CENTER><FONT FACE=Courier>TEXTFILES.COM has been online for nearly 25 years with no ads.<br>"
+            "If you feel like donating: <a href='https://paypal.me/x'>Paypal</a>.</FONT></CENTER>"
+            "And a trailing line.</body></html>"
+        )
+        texts = [b.text for b in build_document(html, "http://old.test/").blocks]
+        assert texts == [
+            "Bare words in the body.",
+            "cell",
+            "TEXTFILES.COM has been online for nearly 25 years with no ads.\nIf you feel like donating: Paypal.",
+            "And a trailing line.",
+        ]
+
+    def test_br_is_a_line_break_and_br_br_a_paragraph(self) -> None:
+        html = (
+            "<html><body><p>12 Elm Street<br>Springfield<br>Illinois</p>"
+            "<div>First paragraph of an old page.<br><br>Second paragraph after a blank line.</div>"
+            "<p>A source\n   newline is\n a space.</p></body></html>"
+        )
+        document = build_document(html, "http://old.test/")
+        assert [b.text for b in document.blocks] == [
+            "12 Elm Street\nSpringfield\nIllinois",
+            "First paragraph of an old page.",
+            "Second paragraph after a blank line.",
+            "A source newline is a space.",
+        ]
+        markdown = to_markdown(document, options=MarkdownOptions())
+        assert "12 Elm Street\\\nSpringfield\\\nIllinois" in markdown
+        assert "First paragraph of an old page.\n\nSecond paragraph after a blank line." in markdown
+        assert "A source newline is a space." in markdown
+
+    def test_split_paragraphs_keep_their_order_and_their_headings(self) -> None:
+        """AppleInsider (Zyte 65bf3048) wraps a `<br><br>`-separated review in one `<span>`
+        with `<h2>`s between the paragraphs. Splitting only at the container's direct
+        children put every heading ahead of every paragraph, and the innermost-first
+        flush of trailing runs reversed the paragraphs (0.983 -> 0.934 on the board)."""
+        html = (
+            "<html><body><div><span>Intro para.<br><br>Second para.<h2>Head</h2>"
+            "Third para.<br><br>Fourth.</span></div>"
+            "<div>a<div>inner<p>P</p>inner tail one<br><br>inner tail two</div>"
+            "outer tail one<br><br>outer tail two</div></body></html>"
+        )
+        document = build_document(html, "http://old.test/")
+        assert [b.text for b in document.blocks] == [
+            "Intro para.",
+            "Second para.",
+            "Head",
+            "Third para.",
+            "Fourth.",
+            "a",
+            "inner",
+            "P",
+            "inner tail one",
+            "inner tail two",
+            "outer tail one",
+            "outer tail two",
+        ]
+
+    def test_a_blockquote_holding_a_table_keeps_the_table(self) -> None:
+        """columbia.edu/~fdc/sample.html indents its demo tables with `<blockquote>`; the
+        table came out as one line of quoted words. A quote made of blocks is walked into
+        and each block is quoted in the Markdown."""
+        html = (
+            "<html><body><p>A simple table:</p>"
+            "<blockquote><table><tr><th>Heading A</th><th>Heading B</th></tr><tr><td>Cell 1A</td><td>Cell 1B</td></tr></table></blockquote>"
+            "<blockquote>A short quoted line only.</blockquote>"
+            "<blockquote><p>First quoted paragraph.</p><ul><li>a quoted item</li></ul></blockquote></body></html>"
+        )
+        document = build_document(html, "http://old.test/")
+        kinds = [(b.kind.value, b.quoted) for b in document.blocks]
+        assert kinds == [("paragraph", 0), ("table", 1), ("quote", 0), ("paragraph", 1), ("list-item", 1)]
+        markdown = to_markdown(document, options=MarkdownOptions())
+        assert "> | Heading A | Heading B |\n> | --- | --- |\n> | Cell 1A | Cell 1B |" in markdown
+        assert "> A short quoted line only." in markdown
+        assert "> - a quoted item" in markdown
+
+    def test_a_data_table_cell_keeps_its_words_apart(self) -> None:
+        """`<td>a<br>b</td>` was `ab` and `<td><span>x</span><div>y</div></td>` was `xy`;
+        a cell is one row of a grid, so the break is a space, not a newline."""
+        html = (
+            "<html><body><table><tr><th>H1</th><th>H2</th></tr>"
+            "<tr><td>a<br>b</td><td>c<br><br>d</td></tr>"
+            "<tr><td><span>x</span><div>y</div></td><td>e</td></tr></table></body></html>"
+        )
+        document = build_document(html, "http://old.test/")
+        assert document.blocks[0].rows == (("H1", "H2"), ("a b", "c d"), ("x y", "e"))
+        markdown = to_markdown(document, options=MarkdownOptions())
+        assert "| a b | c d |\n| x y | e |" in markdown
+
+    def test_headings_and_captions_stay_on_one_line(self) -> None:
+        html = "<html><body><h2>Chapter<br>One</h2><figure><img src='/a.jpg' alt='x'><figcaption>Seen<br>here</figcaption></figure><ul><li>first<br>line two</li></ul></body></html>"
+        markdown = to_markdown(build_document(html, "http://old.test/"), options=MarkdownOptions())
+        assert "## Chapter One" in markdown
+        assert "*Seen here*" in markdown
+        assert "- first\n  line two" in markdown
+
 class TestDocumentText:
     def test_alt_text_and_placeholders_are_not_text(self) -> None:
         html = (

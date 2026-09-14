@@ -922,8 +922,10 @@ def _drop_quoted_repeats(blocks: Sequence[Block]) -> list[Block]:
     out: list[Block] = []
     for block in blocks:
         shingles = _shingles(block.text)
+        # A quote block, or a block inside a quote that held structure and was walked into
+        # (`Block.quoted`): the two shapes of the same thing.
         if (
-            block.kind is BlockKind.QUOTE
+            (block.kind is BlockKind.QUOTE or block.quoted)
             and shingles
             and len(shingles & seen) / len(shingles) >= _REPEAT_SHARE
         ):

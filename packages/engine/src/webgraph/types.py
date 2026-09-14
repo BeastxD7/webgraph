@@ -224,6 +224,14 @@ class Block(BaseModel):
     on a collection page and is link-dense by design, so no density rule can find it; the
     markup names it, and this records the name. None elsewhere."""
 
+    quoted: int = 0
+    """How many `<blockquote>` ancestors the block sits inside. A quote that holds
+    structure -- a table, a list, a code block, several paragraphs -- is walked into rather
+    than flattened, and each block inside it carries the depth so the Markdown can put it
+    back: `> | a | b |`, `> - item`. Pre-CSS pages used `<blockquote>` for indentation as
+    much as for quotation, and a table indented that way was coming out as one line of
+    quoted text (columbia.edu/~fdc/sample.html, the "Tables" section)."""
+
     body_of: str | None = None
     """XPath of the outermost ancestor that declares itself the article body --
     `itemprop="articleBody"`, or a class such as `entry-content`, `post-content`,

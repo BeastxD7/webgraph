@@ -26,6 +26,7 @@ NOSCRIPT_CONTENT_MIN_WORDS = config.NOSCRIPT_CONTENT_MIN_WORDS
 __all__ = [
     "BLOCK_TAGS",
     "HEADING_CONTROL_CLASSES",
+    "LINE_BREAK",
     "PERMALINK_CLASSES",
     "RTL_LANGUAGES",
     "RTL_SCRIPTS",
@@ -79,14 +80,28 @@ the page is about. `replace_math_with_latex` now runs first and rewrites each `<
 delimited LaTeX, so by the time extraction sees the tree there is no MathML left to strip."""
 
 _WHITESPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
+_BLANK_RUN: Final[re.Pattern[str]] = re.compile(r"\n{3,}")
 _WORD: Final[re.Pattern[str]] = re.compile(r"\w+")
 
 
+LINE_BREAK: Final[str] = "\ue000"
+"""What `flowed_text` writes for a `<br>`: a private-use character no whitespace class
+matches, so the source's own newlines can still collapse to spaces while the break the
+markup declared survives to become a newline in the block's text."""
+
+
 def normalize_text(value: str | None) -> str:
-    """Collapse runs of whitespace and trim. HTML whitespace is not semantic."""
+    """Collapse runs of whitespace and trim. HTML whitespace is not semantic -- source
+    newlines are spaces -- except the break a `<br>` declares, carried as `LINE_BREAK` and
+    turned into a newline here: one for a line break, two for the blank line a `<br><br>`
+    makes (an address, a verse, the paragraphs of a pre-CSS page). Lines are trimmed and
+    runs of three or more newlines collapse to two."""
     if not value:
         return ""
-    return _WHITESPACE.sub(" ", value).strip()
+    if LINE_BREAK not in value:
+        return _WHITESPACE.sub(" ", value).strip()
+    lines = [_WHITESPACE.sub(" ", line).strip() for line in value.split(LINE_BREAK)]
+    return _BLANK_RUN.sub("\n\n", "\n".join(lines)).strip()
 
 
 _XML_DECLARATION: Final = re.compile(r"^\s*<\?xml[^>]*\?>\s*", re.IGNORECASE)

@@ -157,11 +157,21 @@ def _render_table(block: Block) -> str:
 
 
 def _render_block(block: Block, options: MarkdownOptions) -> str | None:
+    rendered = _render_plain(block, options)
+    if rendered is None or not block.quoted:
+        return rendered
+    # Inside a blockquote that held structure: every line of the block is quoted, once per
+    # level, so a table or a list keeps its shape inside the quote.
+    prefix = "> " * block.quoted
+    return "\n".join(prefix + line for line in rendered.split("\n"))
+
+
+def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
     kind = block.kind
 
     if kind is BlockKind.HEADING:
         level = min(max(block.level + options.heading_offset, 1), 6)
-        return f"{'#' * level} {_body(block, options)}"
+        return f"{'#' * level} {_ONE_LINE.sub(' ', _body(block, options))}"
 
     if kind is BlockKind.IMAGE:
         if not options.include_images or not block.href:
@@ -190,12 +200,23 @@ def _render_block(block: Block, options: MarkdownOptions) -> str | None:
     if kind is BlockKind.LIST_ITEM:
         indent = "  " * max(block.level - 1, 0)
         marker = "1." if block.ordered else "-"
-        return f"{indent}{marker} {_body(block, options)}"
+        continuation = "\n" + indent + " " * (len(marker) + 1)
+        return f"{indent}{marker} {_ONE_LINE.sub(continuation, _body(block, options))}"
 
     if kind is BlockKind.FIGURE_CAPTION:
-        return f"*{_text(block.text, options)}*"
+        return f"*{_ONE_LINE.sub(' ', _text(block.text, options))}*"
 
-    return _body(block, options)
+    return _hard_breaks(_body(block, options))
+
+
+_ONE_LINE = re.compile(r"\s*\n+\s*")
+_SINGLE_NEWLINE = re.compile(r"(?<!\n)\n(?!\n)")
+
+
+def _hard_breaks(text: str) -> str:
+    """A line break inside a paragraph -- a `<br>` -- is a Markdown hard break (a backslash
+    at the line's end); a blank line -- `<br><br>` -- is left as the paragraph break it is."""
+    return _SINGLE_NEWLINE.sub("\\\n", text)
 
 
 def to_markdown(document: Document, *, options: MarkdownOptions | None = None) -> str:
