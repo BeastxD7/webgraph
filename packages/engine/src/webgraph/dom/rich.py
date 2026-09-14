@@ -1255,6 +1255,8 @@ _OPENER_ATTRIBUTES: Final[tuple[str, ...]] = (
     "data-tab", "data-panel", "for",
 )
 _REACHABLE_ROLES: Final[frozenset[str]] = frozenset({"tabpanel", "region", "menu", "listbox", "tree"})
+_REGION_TAGS: Final[frozenset[str]] = frozenset({"html", "body", "main", "article"})
+_REGION_ROLES: Final[frozenset[str]] = frozenset({"main", "document"})
 
 
 def _drop_unreachable_hidden(root: HtmlElement) -> None:
@@ -1297,9 +1299,19 @@ def _drop_unreachable_hidden(root: HtmlElement) -> None:
         for ancestor in container.iterancestors():
             if ancestor.tag == "details" or (ancestor.get("role") or "").strip().lower() in _REACHABLE_ROLES:
                 return True
-            if ancestor.get("id") in referenced:
+            # A reference to the page's main region does not open a tray inside it: MDN's
+            # skip link `href="#content"` names `<main id="content">`, an ancestor of
+            # everything, and made every hidden copy under it "reachable".
+            if ancestor.get("id") in referenced and ancestor.tag not in _REGION_TAGS and (
+                ancestor.get("role") or ""
+            ).strip().lower() not in _REGION_ROLES:
                 return True
         return False
+
+    # A page with a code editor keeps its hidden source listings: the editor draws only
+    # the lines in view, and the hidden `<pre>` it was built from is the whole document,
+    # which `_complete_editor_windows` gives back to the editor's block (MDN's "Try it").
+    has_editor = any(_is_editor(e) for e in root.iter() if isinstance(e.tag, str))
 
     doomed: list[HtmlElement] = []
     for element in root.xpath(f"//*[@{HIDDEN_ATTRIBUTE}]"):
@@ -1310,6 +1322,8 @@ def _drop_unreachable_hidden(root: HtmlElement) -> None:
         if not element.text_content().strip():
             continue
         if reachable(element):
+            continue
+        if has_editor and (element.tag == "pre" or element.find(".//pre") is not None):
             continue
         doomed.append(element)
     for element in doomed:
