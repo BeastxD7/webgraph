@@ -58,12 +58,12 @@ export const BOARDS: readonly Board[] = [
     metric: "ROUGE-LSum F1",
     asks: "How much of the annotated main content survives, across eight independently built corpora.",
     caveat:
-      "The widest corpus here and the only one whose authors have no system in the comparison. Second, 0.011 behind trafilatura. Two of the eight corpora — Dragnet (1,379 pages) and cetd — count a page's comment threads as content, and the production path removes them: on Dragnet it scores 0.792 where the same engine with that one step left out scores 0.849. That variant is drawn as a reference line, not ranked, because it is not what the API returns. Until this page was re-measured on 14 September it showed the reference figure as the ranked one.",
+      "The widest corpus here and the only one whose authors have no system in the comparison. The API returns two fields: `content_markdown`, the page with its comment thread removed, and `comments_markdown`, the thread. Two of the eight corpora — Dragnet (1,379 pages) and cetd (700) — count the thread as content, so the two fields joined are the like-for-like output there and an over-count on the other six; scored as one text they place first, 0.883 to trafilatura's 0.867. The content field alone is second at 0.856. Until 14 September this page showed 0.871 for a diagnostic variant that the API never returned; that row is gone.",
     max: 1,
     entries: [
-      { name: "webgraph", score: 0.856, self: true, note: "production path, run here 14 Sep 2026; was 0.852 before #50–#52" },
-      { name: "webgraph, comments kept", score: 0.874, reference: true, note: "landmarks + boundary only, no comment stripping — the figure shown here until 14 Sep" },
+      { name: "webgraph, content + comments", score: 0.883, self: true, note: "the two API fields joined, run here 14 Sep 2026" },
       { name: "trafilatura", score: 0.867 },
+      { name: "webgraph, content only", score: 0.856, self: true, note: "content_markdown alone; the thread under the page left out" },
       { name: "readability", score: 0.855 },
       { name: "boilerpipe", score: 0.825 },
       { name: "resiliparse", score: 0.819 },
@@ -79,14 +79,14 @@ export const BOARDS: readonly Board[] = [
     name: "WCEB · cetd",
     pages: "700 pages",
     metric: "ROUGE-LSum F1",
-    asks: "One corpus inside WCEB, shown on its own because it is where the comment question costs this engine the most.",
+    asks: "One corpus inside WCEB, shown on its own because it is where the comment thread matters most.",
     caveat:
-      "A single corpus of 700 pages. The production path is level with readability and 0.014 behind trafilatura; with comments kept the same engine scores 0.928, ahead of everything published — cetd's annotators counted the threads as content. Neither figure is a claim about the web.",
+      "A single corpus of 700 pages whose annotators counted the threads as content. Content and comments joined lead the published field; the content field alone is level with readability and 0.014 behind trafilatura. Neither figure is a claim about the web.",
     max: 1,
     entries: [
-      { name: "webgraph", score: 0.897, self: true, note: "production path, run here 14 Sep 2026" },
-      { name: "webgraph, comments kept", score: 0.928, reference: true, note: "no comment stripping; was the ranked figure until 14 Sep" },
+      { name: "webgraph, content + comments", score: 0.925, self: true, note: "the two API fields joined, run here 14 Sep 2026" },
       { name: "trafilatura 2.2.0", score: 0.911, note: "run here earlier; published figure 0.907" },
+      { name: "webgraph, content only", score: 0.897, self: true, note: "content_markdown alone" },
       { name: "readability", score: 0.897 },
       { name: "resiliparse", score: 0.881 },
       { name: "jusText", score: 0.863 },
@@ -271,7 +271,7 @@ export const PROGRESSION: readonly Step[] = [
 /** When and against what the rows marked as this engine were measured. */
 export const MEASURED = {
   date: "14 September 2026",
-  commit: "4773784",
+  commit: "2232c10",
 } as const;
 
 /**
@@ -302,7 +302,7 @@ export const TYPE_ROWS: readonly TypeRow[] = [
   { type: "forum", n: 113, scores: { webgraph: 0.8, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
   { type: "collection", n: 117, scores: { webgraph: 0.692, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
   { type: "listing", n: 99, scores: { webgraph: 0.706, rs: 0.704, mineru: 0.71, hydra: 0.6612, traf: 0.55 } },
-  { type: "product", n: 119, scores: { webgraph: 0.636, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
+  { type: "product", n: 119, scores: { webgraph: 0.639, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
 ];
 
 /** Benchmarks a reader would expect here, and why they are not. */

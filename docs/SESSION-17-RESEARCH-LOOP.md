@@ -36,8 +36,10 @@ comparison. The page now ranks the production path (0.856, second) and draws the
 a dashed reference line with the reason. The same applies to the cetd board (0.897 ranked,
 0.928 reference).
 
-What would move it: returning comments as a labelled section rather than dropping them —
-right for LLM consumers of a Hacker News or Slashdot page anyway. Not done this session.
+What moved it (#55, the same day): the thread is returned as `comments_markdown` beside
+`content_markdown` instead of being dropped. Scored as the two fields joined, WCEB is
+**0.883, first** (trafilatura 0.867); the content field alone is 0.856, second. The page
+shows both rows and says which is which; the diagnostic-variant row is gone.
 
 ## 3. What changed, in merge order
 
@@ -94,3 +96,15 @@ not because the engine hung; `pmset -g log` confirmed it and the runs were relau
 `caffeinate -i` the next morning. ROUGE-LSum over 3,985 pages × 2 variants takes about two
 hours per run on this machine; the runner accepts `WCEB_VARIANTS=main,boundary` (a
 scratchpad copy) to skip the four diagnostic columns.
+
+## 8. Addendum, 14 September afternoon (#54–#57)
+
+| PR | change | effect |
+|---|---|---|
+| #54 | a block contributes at most 400 words to the cost's mean | wordpress.org release post 9 → 52 blocks; boards unchanged; median / trimmed mean / 150-word cap rejected as "a lower ratio by another name" (WCXB +0.0005, Zyte −0.004) |
+| #55 | `comments_markdown` beside `content_markdown`; WCEB runner gains `boundary+comments` | WCEB content + comments 0.883 (first), content 0.856 |
+| #56 | product pages prune seller / shop-policy / report / "Did you know?" sections | product +0.0034, Etsy +0.19 / +0.20; shipping / delivery / returns tried and left out (newegg, zalando keep them in the sheet) |
+| #57 | `include_hidden_text` request option | measured first: full-page `text` is 0.99–1.00 word-complete against Chromium's body text on 21 live pages; the missing 1 % is sr-only labels, skip links, `[edit]` controls — now available on request |
+
+Rejected in this stretch: jusText-style relabel of short blocks between kept prose (zero
+or half cost): WCXB +0.0006, Zyte −0.003 / −0.001.
