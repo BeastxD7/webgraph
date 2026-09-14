@@ -24,12 +24,14 @@ All notable changes to this project are documented here. The format follows
   tables. `tools/run_logged.py <label> -- <command>` starts a run with its command, pid,
   start and exit recorded beside the log so the state is exact.
 
-### Fixed (2026-09-14, PR #64)
+### Fixed (2026-09-14, PRs #64, #67)
 - A bot wall served to one of the two fetches (plain or browser) while the other got the
   real page is left out and named in `render_error`, instead of being merged into the
   page's text (columbia.edu/~fdc/sample.html: Cloudflare's "Performing security
   verification … Ray ID" sentences were presented as content). A wall beside a fetch
-  with no words of its own still raises `PageBlockedError`, as do walls on both sides.
+  with fewer than `MIN_PAGE_BESIDE_WALL_WORDS` (20) words of its own still raises
+  `PageBlockedError` (old.reddit.com's login redirect: an empty logo and "Skip to main
+  content" are not the page), as do walls on both sides.
 
 ### Fixed (2026-09-14, PR #63) — pre-CSS pages read whole
 Found reading old and ugly pages against Chromium for the whole-page `markdown`, where

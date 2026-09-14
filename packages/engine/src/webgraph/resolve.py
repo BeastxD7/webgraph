@@ -49,6 +49,7 @@ from webgraph.types import Block, BlockKind, Document, ReadingOrderMethod
 MISSING_STATUSES = config.MISSING_STATUSES
 BLOCKING_STATUSES = config.BLOCKING_STATUSES
 MAX_BLOCK_PAGE_CHARS = config.MAX_BLOCK_PAGE_CHARS
+MIN_PAGE_BESIDE_WALL_WORDS = config.MIN_PAGE_BESIDE_WALL_WORDS
 
 __all__ = [
     "MISSING_STATUSES",
@@ -542,6 +543,12 @@ def wall_evidence(document: Document) -> str | None:
     return f"{vendor} bot challenge" if vendor is not None else None
 
 
+def _is_a_page(document: Document) -> bool:
+    """Whether a document can stand in for the page beside a wall: at least
+    `MIN_PAGE_BESIDE_WALL_WORDS` words of its own."""
+    return len(document.text.split()) >= MIN_PAGE_BESIDE_WALL_WORDS
+
+
 def _refuse_block_page(document: Document, *, status: int | None = None) -> None:
     """Raise rather than return a wall -- or nothing -- as if it were the page.
 
@@ -753,11 +760,11 @@ def resolve_page(
     # wall is left out and named, the other is the page. Both walls still raise.
     # The other side has to be a page with words of its own: old.reddit.com answers the
     # browser with a wall and the plain fetch with a login redirect holding one empty
-    # image, and that is not the page either -- it falls through to the merge, which is
-    # refused as the wall it contains.
+    # image and a "Skip to main content" link, and that is not the page either -- it
+    # falls through to the merge, which is refused as the wall it contains.
     static_wall = wall_evidence(static_doc)
     rendered_wall = wall_evidence(rendered_doc)
-    if rendered_wall is not None and static_wall is None and static_doc.text.strip():
+    if rendered_wall is not None and static_wall is None and _is_a_page(static_doc):
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -771,7 +778,7 @@ def resolve_page(
             render_error=f'the browser was served a wall, left out: "{rendered_wall}"',
             runtime=observed,
         )
-    if static_wall is not None and rendered_wall is None and rendered_doc.text.strip():
+    if static_wall is not None and rendered_wall is None and _is_a_page(rendered_doc):
         chars = len(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
