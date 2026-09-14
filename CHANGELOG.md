@@ -19,7 +19,9 @@ All notable changes to this project are documented here. The format follows
   first unnamed slot), its fallback kept only when nothing is; what no slot takes is
   dropped; nested components inside out. `flatten_shadow_roots`, `_compose_slots`. No
   corpus page carries a shadow root (WCXB, Zyte, WCEB, WebMainBench: 0 files), so the
-  boards cannot move; measured on the live and fidelity suites. MEASURE_PLACEHOLDER
+  boards cannot move; measured on the live and fidelity suites: github.com's `<relative-time>`
+  no longer reads twice ("on Dec 5, 2022on Dec 5, 2022" → "on Dec 5, 2022", one duplicate
+  block gone), MDN and every other page unchanged.
 
 ### Added (2026-09-14, PR #84) — bring your own HTML
 - `/api/text` and `/api/text/stream` take `html`: the page as the caller already has it,
