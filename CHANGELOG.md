@@ -15,8 +15,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed (2026-09-14, PR #63) — pre-CSS pages read whole
 Found reading old and ugly pages against Chromium for the whole-page `markdown`, where
-nothing may be lost. Boards: WCXB dev +0.0001, Zyte 0.945 → 0.945, WCEB cleaneval
-0.895 → 0.899 (the old-HTML corpus), live suite unchanged.
+nothing may be lost. Boards: WCXB dev +0.0001, Zyte 0.945 → 0.945, WCEB 0.856 → 0.856
+(cleaneval, the old-HTML corpus, 0.890 → 0.895), WebMainBench 0.7297 → 0.7319, live
+suite unchanged.
 - A `<frameset>` page was read as an empty JavaScript shell; its frames are fetched
   statically (same host, up to eight, two levels) and composed in frameset order
   (cs.cmu.edu/~rgs/alice-table.html: 0 → 307 words). `render_error` says so.
