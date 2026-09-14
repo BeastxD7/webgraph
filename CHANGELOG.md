@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-13/14, PRs #48–#52)
+- Extraction quality, measured on the corpus runners in `benchmark/`: WCXB dev routed
+  0.855 → 0.861 (first of the published field, by 0.002), WCXB test 0.864 → 0.875, Zyte
+  article-extraction 0.934 → 0.945, WCEB production path 0.852 → 0.856.
+- A long block that restates what several other blocks already say (an `articleBody`
+  microdata copy of the article, a reply quoting a whole post) is dropped (#48).
+- Pre-HTML5 chrome names (`div#footer`, `div.nav`, `.main-menu`, …) are stripped; a rail
+  never holds the page's `<h1>` or `itemprop="articleBody"`; camelCase cookie dialogs are
+  consent (#49).
+- The adaptive block cost ratio is 0.60 (was 0.70), re-swept after the structural steps
+  changed what the boundary step sees (#50).
+- A river of teasers at its own heading level ends where the article resumes, not at its
+  first kicker (#51).
+- The declared article body (`itemprop="articleBody"`, `entry-content`, `story-body`, …) is
+  a structural scope after `<main>` and `<article>`; `Block.body_of` is new and `methods`
+  gains `"article-body"` (#52).
+- Benchmarks page: the WCEB row is the production path (0.856, second) rather than the
+  comments-kept variant (0.874) it showed before; that variant is drawn as a reference
+  line with the reason (Dragnet and cetd count comment threads as content).
+
 ### Changed (2026-09-13, PRs #13–#28)
 - Extraction quality, measured on the corpus runners in `benchmark/`: WCXB dev routed
   0.820 → 0.853, WCXB test 0.856, Zyte article-extraction 0.895 → 0.928, reading-order
