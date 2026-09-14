@@ -734,7 +734,10 @@ _OTHER_SECTION: Final[re.Pattern[str]] = re.compile(
     r"related (?:products?|items?)|similar (?:products?|items?)|recommended|recommendations|"
     r"recently viewed|frequently bought|complete the look|pairs? well with|questions?( & answers?| and answers?)?|q\s*&\s*a|"
     r"compare (?:with )?similar|more from|shop the look|others? (?:also )?(?:bought|viewed)|"
-    r"bestsellers?|best sellers?|new arrivals|trending)\b",
+    r"bestsellers?|best sellers?|new arrivals|trending|"
+    r"shop polic(?:y|ies)|store polic(?:y|ies)|(?:meet|about) (?:your|the) seller|seller information|sold by|"
+    r"did you know|report (?:this |a )?(?:listing|item|problem)|what.s wrong with this listing|payment (?:methods|options)|"
+    r"customer service|need help|help (?:and|&) (?:support|faq))\b",
     re.I,
 )
 
