@@ -23,7 +23,7 @@
  */
 
 /** Fields that are output rather than evidence. Mirrors `_SKIP_KEYS` in `webgraph/trace.py`. */
-const CONTENT_KEYS = new Set(["markdown", "content_markdown", "html", "text"]);
+const CONTENT_KEYS = new Set(["markdown", "content_markdown", "comments_markdown", "html", "text"]);
 
 /** Mirrors `_MAX_VALUE_CHARS` in `webgraph/trace.py`. */
 const MAX_VALUE_CHARS = 2_000;

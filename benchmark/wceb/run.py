@@ -89,7 +89,18 @@ from typing import Any, Final
 
 from webgraph.types import blocks_text
 
-VARIANTS: Final[tuple[str, ...]] = ("raw", "landmarks", "prose", "main", "boundary", "model")
+VARIANTS: Final[tuple[str, ...]] = tuple(
+    os.environ.get(
+        "WCEB_VARIANTS", "raw,landmarks,prose,main,boundary,boundary+comments,model"
+    ).split(",")
+)
+"""The columns to score. `WCEB_VARIANTS=main,boundary` skips the diagnostic ones; ROUGE-LSum
+over 3,985 pages costs about twenty minutes per column on eight cores.
+
+`boundary+comments` is the production path's `content` with its `comments` appended -- the
+two fields the API returns, joined. Dragnet and cetd count a page's comment thread as
+content, so this is the like-for-like number on those two corpora and an over-count on the
+six that do not; it is reported, not ranked."""
 """The four ways to turn a parsed document into text, in increasing order of how much they
 throw away.
 
@@ -351,6 +362,7 @@ def extract(corpus: Path, dataset: str, page_id: str, url: str) -> PageOutcome:
     landmarks = strip_landmarks(blocks)
     main = select_main_content(landmarks)
     model = _model()
+    production = select_content(blocks, model=None)
     texts = {
         "raw": document.text,
         "landmarks": _join(landmarks),
@@ -362,7 +374,8 @@ def extract(corpus: Path, dataset: str, page_id: str, url: str) -> PageOutcome:
         # load-bearing: `select_content` now defaults to the model, so omitting it would
         # make these two columns the same number and the comparison would say nothing.
         # WCEB is an untouched test set for the model -- eight corpora, none of them WCXB.
-        "boundary": _join(select_content(blocks, model=None).blocks),
+        "boundary": _join(production.blocks),
+        "boundary+comments": _join((*production.blocks, *production.comments)),
         "model": _join(select_content(blocks, model=model).blocks) if model else _join(main),
     }
     return PageOutcome(

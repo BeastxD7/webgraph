@@ -42,7 +42,9 @@ _MAX_VALUE_CHARS = config.TRACE_MAX_VALUE_CHARS
 
 __all__ = ["RunTrace", "trace_events"]
 
-_SKIP_KEYS: Final[frozenset[str]] = frozenset({"markdown", "content_markdown", "html", "text"})
+_SKIP_KEYS: Final[frozenset[str]] = frozenset(
+    {"markdown", "content_markdown", "comments_markdown", "html", "text"}
+)
 """Payload fields that are output rather than evidence, dropped whole."""
 
 
