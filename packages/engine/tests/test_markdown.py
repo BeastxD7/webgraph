@@ -1324,3 +1324,123 @@ class TestCodeHeaders:
         html = "<main><p>Here we reduce the same array with an initial value of ten passed in:</p><pre>x</pre></main>"
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
         assert len(blocks) == 2
+
+
+class TestCodeEditors:
+    """A browser-side code editor's DOM is one code block: its lines, not its gutter.
+
+    developer.mozilla.org/en-US/docs/Web/HTML/Element/table mounts a CodeMirror 6 editor
+    per tab of its "Try it" demo, and the whole-page Markdown carried one paragraph per
+    gutter number and one per line -- `1`, `<table>`, `2`, `<caption>`, … -- with the
+    other tab's lines scattered among them.
+    """
+
+    CM6 = (
+        '<mdn-play-editor language="html"><div class="editor"><div class="cm-editor">'
+        '<div class="cm-announced" aria-live="polite"></div>'
+        '<div class="cm-scroller"><div class="cm-gutters" aria-hidden="true">'
+        '<div class="cm-gutter cm-lineNumbers">'
+        '<div class="cm-gutterElement" data-wg-hidden="visibility">99</div>'
+        '<div class="cm-gutterElement">1</div><div class="cm-gutterElement">2</div>'
+        '<div class="cm-gutterElement">3</div></div></div>'
+        '<div class="cm-content" contenteditable="true" role="textbox" data-language="html">'
+        '<div class="cm-line"><span class="cm-matchingBracket">&lt;</span><span>table</span>&gt;</div>'
+        '<div class="cm-line">  &lt;<span>caption</span>&gt;Course 2021&lt;/caption&gt;</div>'
+        '<div class="cm-line">&lt;/<span>table</span>&gt;</div></div>'
+        '<div class="cm-layer cm-cursorLayer"><div class="cm-cursor"></div></div>'
+        "</div></div></div></mdn-play-editor>"
+    )
+
+    def test_codemirror_6_is_one_code_block_without_its_gutter(self) -> None:
+        found = blocks(f"<p>Try it</p>{self.CM6}<p>After</p>")
+        assert [b.text for b in found] == [
+            "Try it",
+            "<table>\n  <caption>Course 2021</caption>\n</table>",
+            "After",
+        ]
+        assert found[1].kind is BlockKind.CODE
+        assert found[1].language == "html"
+
+    def test_the_language_comes_from_the_host_when_the_content_has_none(self) -> None:
+        found = blocks(self.CM6.replace(' data-language="html"', ""))
+        assert found[0].language == "html"  # `<mdn-play-editor language="html">`
+
+    def test_codemirror_5_lines_are_pres_and_still_one_block(self) -> None:
+        html = (
+            '<div class="CodeMirror cm-s-default"><div class="CodeMirror-scroll">'
+            '<div class="CodeMirror-sizer"><div><div class="CodeMirror-lines"><div role="presentation">'
+            '<div class="CodeMirror-measure"><pre class="CodeMirror-line-like">xxxxxxxxxx</pre></div>'
+            '<div class="CodeMirror-code">'
+            '<div><pre class="CodeMirror-line"><span>def f():</span></pre></div>'
+            '<div><pre class="CodeMirror-line"><span>    return 1</span></pre></div>'
+            "</div></div></div></div></div>"
+            '<div class="CodeMirror-gutters"><div class="CodeMirror-gutter CodeMirror-linenumbers">'
+            '<div class="CodeMirror-linenumber">1</div><div class="CodeMirror-linenumber">2</div>'
+            "</div></div></div></div>"
+        )
+        found = blocks(html)
+        assert [b.text for b in found] == ["def f():\n    return 1"]
+        assert found[0].kind is BlockKind.CODE
+
+    def test_monaco_lines_are_put_back_in_order(self) -> None:
+        """Monaco virtualises and emits lines in render order; `top` says which is which."""
+        html = (
+            '<div class="monaco-editor" data-mode-id="typescript"><div class="overflow-guard">'
+            '<div class="margin"><div class="line-numbers">1</div><div class="line-numbers">2</div></div>'
+            '<div class="lines-content"><div class="view-lines">'
+            '<div class="view-line" style="top:19px;height:19px;"><span>&nbsp;&nbsp;return&nbsp;x;</span></div>'
+            '<div class="view-line" style="top:0px;height:19px;"><span>function&nbsp;f()&nbsp;{</span></div>'
+            '<div class="view-line" style="top:38px;height:19px;"><span>}</span></div>'
+            "</div></div></div></div>"
+        )
+        found = blocks(html)
+        assert [b.text for b in found] == ["function f() {\n  return x;\n}"]
+        assert found[0].language == "typescript"
+
+    def test_ace_lines(self) -> None:
+        html = (
+            '<div class="ace_editor ace-tm"><div class="ace_gutter"><div class="ace_gutter-cell">1</div></div>'
+            '<div class="ace_scroller"><div class="ace_content"><div class="ace_text-layer">'
+            '<div class="ace_line_group"><div class="ace_line"><span>SELECT 1;</span></div></div>'
+            '<div class="ace_line"><span>SELECT 2;</span></div>'
+            "</div></div></div></div>"
+        )
+        assert [b.text for b in blocks(html)] == ["SELECT 1;\nSELECT 2;"]
+
+    def test_an_editor_window_takes_the_whole_document_the_page_holds(self) -> None:
+        """CodeMirror draws only the lines in view: MDN's editor holds 30 of 40 lines,
+        while the hidden `<pre>` it was built from holds all 40. The editor block takes
+        the whole text and the twin is dropped -- once, where the editor is."""
+        full = "<table>\n  <caption>Course 2021</caption>\n</table>\n<p>more</p>\n<p>and more</p>"
+        # MDN's shape: the hidden `<pre>` sits in `<main id="content">`, which the skip
+        # link names, so `_drop_unreachable_hidden` keeps it (as it keeps everything hidden
+        # under a referenced ancestor).
+        html = (
+            '<a href="#content">Skip to main content</a><main id="content">'
+            f"<p>Try it</p>{self.CM6}<h4>Output</h4>"
+            '<pre class="brush: html interactive-example" data-wg-hidden="display">'
+            f'<code>{full.replace("<", "&lt;")}</code></pre>'
+            "<p>After</p></main>"
+        )
+        found = blocks(html)
+        assert [b.text for b in found] == ["Skip to main content", "Try it", full, "Output", "After"]
+        assert found[2].kind is BlockKind.CODE and found[2].language == "html"
+
+    def test_a_visible_listing_beside_an_editor_is_its_own_block(self) -> None:
+        """A listing the reader sees under a playground is on the page in its own right:
+        only a hidden twin is the editor's document (a page's deliberate repeats stay)."""
+        full = "<table>\n  <caption>Course 2021</caption>\n</table>\n<p>more</p>"
+        html = f'{self.CM6}<pre><code>{full.replace("<", "&lt;")}</code></pre>'
+        found = blocks(html)
+        assert [b.text for b in found] == ["<table>\n  <caption>Course 2021</caption>\n</table>", full]
+
+    def test_an_editor_showing_something_of_its_own_keeps_it(self) -> None:
+        html = f"{self.CM6}<pre><code>&lt;div&gt;unrelated&lt;/div&gt;</code></pre>"
+        assert [b.text for b in blocks(html)] == [
+            "<table>\n  <caption>Course 2021</caption>\n</table>",
+            "<div>unrelated</div>",
+        ]
+
+    def test_an_empty_editor_is_nothing(self) -> None:
+        html = '<div class="cm-editor"><div class="cm-scroller"><div class="cm-content"></div></div></div>'
+        assert blocks(html) == []
