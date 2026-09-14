@@ -837,7 +837,11 @@ Stated plainly, because a limitations section that reads like marketing is worse
   sidebar" and "Toggle Light / Dark / Auto colour theme" were not removed: their template
   slots shift between page types, so neither detector catches them.
 - **Sites that block headless browsers** cannot be rendered. Seven of 100 benchmark sites
-  block Chromium outright; the static path still works, but union does not.
+  block Chromium outright; the static path still works, but union does not. A site that
+  refuses *every* automated fetch (a Cloudflare challenge, a login wall) is not disguised
+  past: a caller who has the page in their own browser passes its source as `html` to
+  `/api/text`, nothing is fetched, and the output is the same — except that a pasted wall
+  is refused like a fetched one.
 - **Interaction-gated content is invisible.** Anything behind a click — an accordion, a
   modal, a "load more" — is not in the rendered DOM and is not extracted. This is also why
   four of Wappalyzer's persyn.ai detections are still missed.

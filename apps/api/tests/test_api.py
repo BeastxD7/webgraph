@@ -582,6 +582,116 @@ class TestWallsOnTheBlockingRoutes:
         assert response.json()["text"]
 
 
+SUPPLIED_PAGE = """<html><head><title>Behind a wall</title></head><body>
+<h1>Behind a wall</h1>
+<p>The first paragraph of a page the engine could not fetch, pasted in by a reader who had it
+open in their own browser, with <a href="/next">a relative link</a>.</p>
+<p>A second paragraph, so the page has some words in it.</p></body></html>"""
+
+
+class TestSuppliedHtml:
+    """Bring your own HTML. Some sites refuse every automated fetch, and the engine does
+    not disguise the client to get past them; a caller who already has the page hands its
+    HTML over in `html` and gets the same output. The `url` points at a host that does not
+    exist, which is the proof that nothing was fetched: on `main` the field is ignored and
+    the route tries to fetch it."""
+
+    URL = "http://nope.invalid/page"
+
+    def test_text_reads_the_supplied_html_without_fetching(self, client: TestClient) -> None:
+        response = client.post("/api/text", json={"url": self.URL, "html": SUPPLIED_PAGE})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert "first paragraph of a page the engine could not fetch" in body["text"]
+        assert "# Behind a wall" in body["markdown"]
+        # `url` is the base for links, as on a fetched page.
+        assert "http://nope.invalid/next" in body["markdown"]
+        assert body["page"]["url"] == self.URL
+        assert body["page"]["reading_order_measured"] is False
+
+    def test_render_is_ignored_when_html_is_supplied(self, client: TestClient) -> None:
+        """There is nothing to render; asking for it must not turn into a fetch."""
+        response = client.post(
+            "/api/text", json={"url": self.URL, "html": SUPPLIED_PAGE, "render": True}
+        )
+        assert response.status_code == 200, response.text
+
+    def test_the_stream_reads_it_too(self, client: TestClient) -> None:
+        import json
+
+        with client.stream(
+            "POST", "/api/text/stream", json={"url": self.URL, "html": SUPPLIED_PAGE}
+        ) as response:
+            assert response.status_code == 200
+            got = [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+        assert got[0]["type"] == "run"
+        assert got[0]["strategy"] == "supplied"
+        assert got[0]["supplied"] is True
+        assert got[0]["render"] is False
+        assert got[1] == {
+            "type": "stage",
+            "stage": "resolve",
+            "state": "running",
+            "message": "Reading the HTML supplied by the caller",
+        }
+        resolve = next(e for e in got if e["type"] == "resolve")
+        assert resolve["strategy"] == "supplied"
+        assert not [e for e in got if e["type"] == "error"]
+        assert got[-1]["type"] == "done"
+        assert "first paragraph of a page the engine could not fetch" in got[-1]["text"]
+
+    def test_a_pasted_block_page_is_refused(self, client: TestClient) -> None:
+        """Never a false output: the wall a reader pasted is the wall a fetch would have
+        been served, and is refused the same way."""
+        response = client.post("/api/text", json={"url": self.URL, "html": WALL})
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "block page" in detail and "you have been blocked" in detail.lower()
+
+    def test_a_pasted_block_page_ends_the_stream_with_an_error(self, client: TestClient) -> None:
+        import json
+
+        with client.stream(
+            "POST", "/api/text/stream", json={"url": self.URL, "html": WALL}
+        ) as response:
+            got = [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+        assert got[-1]["type"] == "error"
+        assert "block page" in got[-1]["message"]
+
+    def test_the_url_is_still_required(self, client: TestClient) -> None:
+        """Passes on `main` too -- `url` was always required. Kept so the new field is
+        seen not to have loosened the schema: without an address the links have no base
+        and a login page nothing to be judged against."""
+        response = client.post("/api/text", json={"html": SUPPLIED_PAGE})
+        assert response.status_code == 422
+
+    def test_the_url_must_still_be_http(self, client: TestClient) -> None:
+        response = client.post("/api/text", json={"url": "file:///etc/passwd", "html": SUPPLIED_PAGE})
+        assert response.status_code == 422
+        response = client.post("/api/text/stream", json={"url": "ftp://x/", "html": SUPPLIED_PAGE})
+        assert response.status_code == 422
+
+    def test_oversize_html_is_refused_with_a_reason(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import config
+
+        monkeypatch.setattr(config, "FETCH_MAX_BYTES", 1_000)
+        big = "<html><body><p>" + "words " * 400 + "</p></body></html>"
+        response = client.post("/api/text", json={"url": self.URL, "html": big})
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "over the 1,000-byte limit" in detail
+        # No fetch happened, and the detail must not claim one did.
+        assert detail.startswith("could not read the supplied HTML")
 ROBOTS_CLOSED = "User-agent: *\nDisallow: /\n"
 PLAIN_PAGE = (
     "<html><body><h1>An article</h1><p>Enough words here to be a real page of its own, "

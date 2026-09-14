@@ -57,6 +57,7 @@ MAX_LOGIN_PAGE_WORDS = config.MAX_LOGIN_PAGE_WORDS
 
 __all__ = [
     "MISSING_STATUSES",
+    "SUPPLIED_RENDER_NOTE",
     "PageBlockedError",
     "PageDisallowedError",
     "PageMissingError",
@@ -67,6 +68,7 @@ __all__ = [
     "declaration_demanded",
     "login_redirect",
     "resolve_page",
+    "resolve_supplied",
     "union_documents",
     "wall_evidence",
 ]
@@ -82,6 +84,14 @@ class Strategy(StrEnum):
 
     UNION = "union"
     """Both representations obtained and merged. The completeness path."""
+
+    SUPPLIED = "supplied"
+    """Nothing fetched: the caller handed over the HTML (`resolve_supplied`). For the sites
+    that refuse every automated fetch -- Stack Overflow behind a Cloudflare challenge,
+    nyc.gov behind Akamai, anything behind a login -- a reader who already has the page in
+    their own browser can have it read without the engine pretending to be that browser.
+    Not a value `resolve_page` accepts: there is no fetch for it to describe."""
+
 
 class PageMissingError(Exception):
     """Raised when a URL does not exist. Distinct from a transport failure."""
@@ -856,6 +866,15 @@ def resolve_page(
     Rendering silently degrades to `STATIC_ONLY` when Playwright is not installed or the
     render fails; `render_error` on the result says which.
     """
+    if strategy is Strategy.SUPPLIED:
+        # Every other value names how to fetch; this one names a page that was never
+        # fetched. Left unchecked it fell through to the union branch, and a crawl
+        # configured with `CRAWL_STRATEGY = "supplied"` would have fetched both ways and
+        # reported it as something else.
+        raise ValueError(
+            f"could not resolve {url}: strategy {Strategy.SUPPLIED.value!r} means the caller "
+            "supplies the HTML -- use resolve_supplied(html, url)"
+        )
     # The site's own rule first. A page robots.txt disallows for this client is not
     # fetched at all -- reading it and then refusing would be the request the site asked
     # not to receive. `FetchConfig.respect_robots=False` is the caller's explicit override,
@@ -1098,4 +1117,129 @@ def _resolve_fetched(
         blocks_only_in_static=only_static,
         blocks_only_in_rendered=only_rendered,
         runtime=observed,
+    )
+
+
+_DECLARED_URL_XPATHS: Final[tuple[str, ...]] = (
+    "//link[@rel='canonical']/@href",
+    "//meta[@property='og:url']/@content",
+)
+
+
+def _declared_url(html: str, base_url: str) -> str | None:
+    """Where the markup says its page lives: `<link rel="canonical">`, else `og:url`.
+
+    Absolute against `base_url`; None when the page declares nothing. This is the only
+    trace of a redirect a supplied document can carry -- see `resolve_supplied`.
+    """
+    from urllib.parse import urljoin, urlsplit
+
+    from lxml import html as lxml_html
+
+    try:
+        root = lxml_html.fromstring(html)
+    except (ValueError, TypeError):
+        return None
+    for xpath in _DECLARED_URL_XPATHS:
+        found = root.xpath(xpath)
+        if not isinstance(found, list):
+            continue
+        for value in found:
+            declared = urljoin(base_url, str(value).strip())
+            parts = urlsplit(declared)
+            if parts.scheme in ("http", "https") and parts.netloc:
+                return declared
+    return None
+
+
+SUPPLIED_RENDER_NOTE: Final[str] = (
+    "HTML supplied by the caller; not fetched or rendered -- reading order is source order, "
+    "and what the browser would have hidden may appear"
+)
+"""`ResolvedPage.render_error` on every supplied page. Not a failure: it says what the
+result is -- one representation, unmeasured -- so a caller showing a completeness claim
+knows which one it is looking at, the same way `"rendering not available"` does."""
+
+
+def resolve_supplied(
+    html: str,
+    url: str,
+    *,
+    include_hidden_text: bool = False,
+    rtl: bool | None = None,
+) -> ResolvedPage:
+    """Resolve a page from HTML the caller already has, fetching nothing.
+
+    Why this exists
+    ---------------
+    Some sites refuse every automated fetch: stackoverflow.com answers both the plain
+    fetch and the browser with a Cloudflare challenge, nyc.gov with Akamai's, and a login
+    wall serves nothing of the page to anyone not signed in. The engine will not disguise
+    the client to get past them -- that is the owner's decision, and a disguise is a
+    contest the engine would lose to the next rule change anyway. What a caller *can* do
+    is hand over the page they already have: their own logged-in browser's document, an
+    extension's copy, a saved file. This reads it exactly as a fetched page is read and
+    returns the same `text` / `markdown`, marked `Strategy.SUPPLIED`.
+
+    What it does not do
+    -------------------
+    **No network, ever.** `url` is the page's address for making links and images
+    absolute and for the wall check below; it is not fetched, and neither is anything the
+    markup names. A supplied `<frameset>` in particular is parsed as the markup it is --
+    `_compose_frameset`, which fetches each frame, is not called, because a caller who can
+    name frame URLs in pasted HTML would otherwise be naming URLs for this process to fetch
+    from inside its network. No render either: the reading order is source order and says
+    so (`reading_order_method`), and text a browser would have hidden -- a `display: none`
+    menu, a collapsed section -- may appear. `render_error` carries that caveat verbatim.
+
+    Never a false output
+    --------------------
+    The HTML is judged by `_refuse_block_page` like a fetched document: a pasted Cloudflare
+    "Sorry, you have been blocked", a challenge script with no words, a page with no text
+    at all, are refused with the same `PageBlockedError` / `ValueError` a fetch of them
+    raises. A login page is the one wall that needs an extra step. A fetch is caught
+    redirecting to one (`login_redirect` compares where it ended with where it was sent);
+    a supplied document never went anywhere, so the one place it can say where it really
+    is is its own `<link rel="canonical">` or `og:url`. When that declared address differs
+    from `url`, the login conditions are applied with it as the final URL. Measured
+    2026-09-14: www.linkedin.com/login carries `<link rel="canonical"
+    href="https://www.linkedin.com/login">` and the same `og:url`, so a paste of it with
+    `url` set to the feed it was guarding is refused as a login redirect, not returned as
+    twenty blocks of "Email or phone". A page declaring nothing, or declaring itself, is
+    judged on its words.
+
+    Size: `html` larger than `config.FETCH_MAX_BYTES` is refused -- the same limit a fetch
+    applies, because a body above it is not a page whichever way it arrived.
+    """
+    size = len(html.encode("utf-8", errors="replace"))
+    if size > config.FETCH_MAX_BYTES:
+        raise ValueError(
+            f"could not read the supplied HTML for {url}: {size:,} bytes is over the "
+            f"{config.FETCH_MAX_BYTES:,}-byte limit a fetched page is held to"
+        )
+    if not html.strip():
+        raise ValueError(f"could not read the supplied HTML for {url}: it is empty")
+
+    document = build_document(html, url, include_hidden_text=include_hidden_text, rtl=rtl)
+
+    declared = _declared_url(html, url)
+    if declared is not None:
+        # `login_redirect` treats a declaration of `url` itself, `www.` or a trailing slash
+        # as no redirect at all, the same as it does for a fetch.
+        login = login_redirect(document.model_copy(update={"url": declared}), url)
+        if login is not None:
+            raise PageBlockedError(url, login, login_url=login)
+    _refuse_block_page(document, requested_url=url)
+
+    chars = len(document.text)
+    return ResolvedPage(
+        url=document.url,
+        document=document,
+        strategy=Strategy.SUPPLIED,
+        static_chars=chars,
+        rendered_chars=0,
+        union_chars=chars,
+        blocks_only_in_static=0,
+        blocks_only_in_rendered=0,
+        render_error=SUPPLIED_RENDER_NOTE,
     )

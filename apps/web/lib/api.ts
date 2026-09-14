@@ -541,6 +541,9 @@ export interface RunEvent {
   started: number;
   strategy?: string;
   render?: boolean;
+  /** True when the caller supplied the HTML and nothing was fetched (`strategy` is then
+   *  `"supplied"`). */
+  supplied?: boolean;
   complete?: boolean;
   max_pages?: number;
   concurrency?: number;
@@ -575,6 +578,8 @@ export type PageStageEvent =
       stage: "resolve";
       at: number;
       url: string;
+      /** `static-only`, `rendered-only`, `union` -- or `supplied`, when the reader handed
+       *  over the HTML and nothing was fetched. `strategyLabel` names each for a reader. */
       strategy: string;
       static_chars: number;
       rendered_chars: number;
@@ -640,13 +645,32 @@ export type PageStageEvent =
   | { type: "error"; stage: string; message: string; at?: number };
 
 /**
+ * What to call a fetch strategy on screen. The wire values are the engine's enum, and
+ * `"supplied"` is the one a reader would not decode: it means the HTML came from them.
+ */
+export const STRATEGY_LABELS: Readonly<Record<string, string>> = {
+  supplied: "supplied by you",
+};
+
+export function strategyLabel(strategy: string): string {
+  return STRATEGY_LABELS[strategy] ?? strategy;
+}
+
+/**
  * Stream one page, stage by stage.
  *
  * Shares the frame decoding with `streamSite` deliberately: a second parser for the same
  * wire format is a second place for a frame split across TCP reads to be mishandled.
  */
 export async function streamPage(
-  input: { url: string; render: boolean } & Pick<RunOptions, "fetch" | "renderOptions">,
+  input: {
+    url: string;
+    render: boolean;
+    /** The page's HTML, when the reader already has it -- their own signed-in browser, a
+     *  saved file. The API fetches nothing and reads this instead; `render` is ignored.
+     *  For the sites that refuse every automated fetch. A pasted wall is still refused. */
+    html?: string;
+  } & Pick<RunOptions, "fetch" | "renderOptions">,
   onEvent: (event: PageStageEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {

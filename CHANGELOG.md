@@ -6,6 +6,41 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-14, PR #84) — bring your own HTML
+- `/api/text` and `/api/text/stream` take `html`: the page as the caller already has it,
+  from their own signed-in browser, an extension or a saved file. Nothing is fetched or
+  rendered; the engine reads the paste (`resolve_supplied`, `Strategy.SUPPLIED`) and
+  returns the same `text` / `markdown` / `content_markdown`. For the sites that refuse
+  every automated fetch — stackoverflow.com answers both fetches with a Cloudflare
+  challenge, nyc.gov with Akamai's, a login wall serves nothing to anyone signed out. The
+  owner's decision is not to disguise the client to get past them; the reader who has the
+  page hands it over instead.
+- Never a false output: a pasted wall is refused as a fetched one is — a Cloudflare block
+  page, a challenge script, an empty document all raise the same `PageBlockedError` /
+  `ValueError` (502 on the API, an `error` event on the stream). A pasted login page has
+  no redirect to be caught by, so its own `<link rel="canonical">` / `og:url` stands in
+  for where the fetch ended: www.linkedin.com/login declares both as itself (measured
+  2026-09-14), and a paste of it with the feed's URL is refused as a login redirect. `url`
+  stays required (422 without
+  it, or when not http(s)): links and images are made absolute against it. `render` is
+  ignored. HTML over `FETCH_MAX_BYTES` (32 MB, the fetch limit) is refused with the limit
+  named.
+- The supplied path makes no request at all — a pasted `<frameset>` is parsed as the
+  markup it is, not composed by fetching its frames, since a caller who can name frame
+  URLs in a paste would otherwise be naming URLs for this process to fetch from inside its
+  network. The stream skips the private-host guard for a supplied page (there is nothing
+  for it to stop) and its `run` header says `strategy: supplied`, `render: false`.
+- The result says what it is: `rendered_chars` 0, `static_chars` = `union_chars`, and
+  `render_error` "HTML supplied by the caller; not fetched or rendered -- reading order
+  is source order, and what the browser would have hidden may appear".
+- Web: the single-page run has a "Paste the page's HTML instead" disclosure, opened for
+  the reader when the fetch failed; the resolve stage then reads "Read the HTML you
+  supplied" and the strategy "supplied by you". Schema mapping still fetches on its own
+  and is off for a supplied run, and says so.
+- Fetched output is unchanged: `resolve_page` gains only a guard refusing
+  `strategy=SUPPLIED` (it would have fallen through to the union branch). Whole-page
+  fidelity on columbia-sample, stallman.org and catb.org: identical recall / extra /
+  inversions / blocks before and after.
 ### Changed (2026-09-14, PR #83) — a single page honours robots.txt
 - `resolve_page` -- and so `/api/text`, `/api/text/stream`, `/api/extract` -- asks the
   host's robots.txt before fetching a page, as the crawl has since its first version. A
