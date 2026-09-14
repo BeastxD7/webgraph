@@ -34,9 +34,11 @@ from typing import Final
 from webgraph import config
 from webgraph.fetch.render import (
     PLAYWRIGHT_AVAILABLE,
+    HiddenMatter,
     RenderConfig,
     RenderResult,
     geometry_by_xpath,
+    hidden_matter,
     render_page,
 )
 from webgraph.fetch.static import FetchConfig, FetchResult, fetch_static
@@ -234,6 +236,7 @@ class ResolvedPage:
 
 
 _RUN_IN_MIN_CHARS: Final[int] = 20
+_HIDDEN_MIN_CHARS: Final[int] = 12
 
 
 def _key(block: Block) -> str:
@@ -251,7 +254,9 @@ def _key(block: Block) -> str:
     return _WHITESPACE.sub("", block.text).casefold()
 
 
-def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Document, int, int]:
+def union_documents(
+    static_doc: Document, rendered_doc: Document, *, hidden: HiddenMatter | None = None
+) -> tuple[Document, int, int]:
     """Merge two representations of one page, losing nothing.
 
     The rendered document leads, because its reading order is measured rather than assumed.
@@ -279,6 +284,15 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     duplicates the content outright. Both halves of that were wrong before they were
     measured; see the comment on `last_occurrence` for the numbers.
 
+    `hidden` is what the browser laid out and hid (`fetch.render.hidden_matter`). A
+    static-only block found in it is not something the render lost; it is something the
+    render *hid*, and it stays out. php.net's manual TOC -- `nav#trick`, a hundred links
+    under `display: none` -- was dropped from the rendered document by the renderer's own
+    mark and put straight back by this merge from the static one; same for cppreference's
+    hover menus (103 and 128 static-only blocks, every one of them invisible). A hidden
+    line is matched exactly, however short; a block spanning several hidden nodes is
+    matched as a substring only past `_HIDDEN_MIN_CHARS`, because "home" is in every menu.
+
     Returns (merged document, blocks only in static, blocks only in rendered).
     """
     static_keys = {_key(b) for b in static_doc.blocks if b.text.strip()}
@@ -302,7 +316,14 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
     def runs_into_rendered(key: str) -> bool:
         return any(key.startswith(k) or key.endswith(k) for k in long_rendered)
 
-    only_static = {k for k in static_keys - rendered_keys if not runs_into_rendered(k)}
+    def hidden_in_render(key: str) -> bool:
+        return hidden is not None and hidden.holds(key, min_chars=_HIDDEN_MIN_CHARS)
+
+    only_static = {
+        k
+        for k in static_keys - rendered_keys
+        if not runs_into_rendered(k) and not hidden_in_render(k)
+    }
 
     for block in static_doc.blocks:
         key = _key(block)
@@ -311,7 +332,7 @@ def union_documents(static_doc: Document, rendered_doc: Document) -> tuple[Docum
         if key in rendered_keys:
             anchor = key
             continue
-        if key in emitted or runs_into_rendered(key):
+        if key in emitted or key not in only_static:
             continue
         emitted.add(key)
         following.setdefault(anchor, []).append(block)
@@ -764,7 +785,9 @@ def resolve_page(
             runtime=observed,
         )
 
-    merged, only_static, only_rendered = union_documents(static_doc, rendered_doc)
+    merged, only_static, only_rendered = union_documents(
+        static_doc, rendered_doc, hidden=hidden_matter(rendered.html)
+    )
     _refuse_block_page(merged)
 
     return ResolvedPage(

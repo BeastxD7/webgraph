@@ -56,9 +56,11 @@ __all__ = [
     "GATE_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
     "PLAYWRIGHT_AVAILABLE",
+    "HiddenMatter",
     "RenderConfig",
     "RenderResult",
     "geometry_by_xpath",
+    "hidden_matter",
     "render_page",
 ]
 
@@ -521,6 +523,56 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
         return RenderResult(
             url=url, html="", rects={}, ok=False, error=f"{type(exc).__name__}: {exc}"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class HiddenMatter:
+    """What the browser laid out and hid, in the form `resolve._key` gives a block."""
+
+    lines: frozenset[str]
+    """Each hidden element's whole text, and each text node inside it: a menu item is
+    matched exactly, however short."""
+
+    text: str
+    """The hidden elements' text joined, for a block that spans several nodes."""
+
+    def holds(self, key: str, *, min_chars: int) -> bool:
+        return key in self.lines or (len(key) >= min_chars and key in self.text)
+
+
+def hidden_matter(html: str) -> HiddenMatter:
+    """Every word the browser laid out as `display: none` or `visibility: hidden`.
+
+    The union of the static and rendered documents keeps a block only the static one has,
+    on the reasoning that the render lost it (a consent wall, a lazy section). A block the
+    renderer *hid* is not lost: the browser saw it and judged it. php.net's manual TOC
+    (`nav#trick`, ~100 links, `display: none`) and cppreference's hover menus were dropped
+    from the rendered document and put straight back by the union from the static one.
+    `union_documents` checks a static-only block against this.
+
+    Only the two kinds a reader cannot see. Clipped (screen-reader-only) text is the
+    `include_hidden_text` option's business, and a collapsed `overflow` tray is in the flow
+    of the page.
+    """
+    from webgraph.dom.blocks import parse_html
+    from webgraph.markers import HIDDEN_ATTRIBUTE
+
+    root = parse_html(html)
+    lines: set[str] = set()
+    wholes: list[str] = []
+    for element in root.xpath(
+        f"//*[@{HIDDEN_ATTRIBUTE}='display' or @{HIDDEN_ATTRIBUTE}='visibility']"
+    ):
+        whole = "".join(element.text_content().split()).casefold()
+        if not whole:
+            continue
+        wholes.append(whole)
+        lines.add(whole)
+        for text in element.itertext():
+            key = "".join(text.split()).casefold()
+            if key:
+                lines.add(key)
+    return HiddenMatter(frozenset(lines), "\n".join(wholes))
 
 
 def geometry_by_xpath(html: str, rects: dict[str, Rect]) -> dict[str, Rect]:
