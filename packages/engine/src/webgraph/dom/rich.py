@@ -785,6 +785,166 @@ def _code_language(element: HtmlElement) -> str | None:
     return None
 
 
+def _has_class(element: HtmlElement, name: str) -> bool:
+    return name in (element.get("class") or "").split()
+
+
+def _first_with_class(element: HtmlElement, name: str) -> HtmlElement | None:
+    for node in element.iterdescendants():
+        if isinstance(node.tag, str) and _has_class(node, name):
+            return node
+    return None
+
+
+_EDITOR_CLASSES: Final[frozenset[str]] = frozenset({"cm-editor", "CodeMirror", "monaco-editor", "ace_editor"})
+_EDITOR_LANGUAGE_ATTRIBUTES: Final[tuple[str, ...]] = ("data-language", "data-lang", "data-mode-id", "language")
+_EDITOR_ANCESTOR_DEPTH: Final[int] = 4
+_STYLE_TOP: Final[re.Pattern[str]] = re.compile(r"(?:^|;)\s*top\s*:\s*(-?[\d.]+)px")
+
+
+def _is_editor(element: HtmlElement) -> bool:
+    """Whether this element is the root of a browser-side code editor's DOM."""
+    return not _EDITOR_CLASSES.isdisjoint((element.get("class") or "").split())
+
+
+def _editor_lines(element: HtmlElement) -> tuple[list[HtmlElement], str | None] | None:
+    """The line elements of a code editor's DOM, in line order, and the language it
+    declares -- or None when this element is not an editor (see `_is_editor`).
+
+    A browser-side code editor draws its document as one element per line beside a gutter
+    of line numbers, and everything else in it is machinery: measuring layers, a cursor, a
+    hidden textarea, an `aria-live` announcer. Only the line elements are read:
+
+    - CodeMirror 6: `.cm-editor` … `.cm-content > .cm-line`; the language is
+      `data-language` on the content element (the language package sets it).
+    - CodeMirror 5: `.CodeMirror` … `.CodeMirror-code` … `.CodeMirror-line` (a `<pre>` each);
+      `.CodeMirror-measure` holds a sample line for measuring and is not the document.
+    - Monaco: `.monaco-editor[data-mode-id]` … `.view-lines > .view-line`, virtualised and
+      emitted in render order, so the lines are put back in order by their `top`.
+    - Ace: `.ace_editor` … `.ace_text-layer > .ace_line`.
+    """
+    if _has_class(element, "cm-editor"):
+        content = _first_with_class(element, "cm-content")
+        if content is None:
+            return [], None
+        lines = [n for n in content.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "cm-line")]
+        return lines, (content.get("data-language") or "").strip().lower() or None
+    if _has_class(element, "CodeMirror"):
+        code = _first_with_class(element, "CodeMirror-code")
+        if code is None:
+            return [], None
+        return [n for n in code.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "CodeMirror-line")], None
+    if _has_class(element, "monaco-editor"):
+        view = _first_with_class(element, "view-lines")
+        if view is None:
+            return [], None
+        lines = [n for n in view if isinstance(n.tag, str) and _has_class(n, "view-line")]
+
+        def top(line: HtmlElement) -> float:
+            match = _STYLE_TOP.search(line.get("style") or "")
+            return float(match.group(1)) if match else 0.0
+
+        return sorted(lines, key=top), (element.get("data-mode-id") or "").strip().lower() or None
+    if _has_class(element, "ace_editor"):
+        layer = _first_with_class(element, "ace_text-layer")
+        if layer is None:
+            return [], None
+        return [n for n in layer.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "ace_line")], None
+    return None
+
+
+def _editor_block(element: HtmlElement, index: int, tree: object) -> Block | None:
+    """One code block for a code editor's DOM: its lines in order, gutters left out.
+
+    MDN's `<interactive-example>` mounts a CodeMirror 6 editor for each tab of the demo,
+    and developer.mozilla.org/…/Element/table came out as one paragraph per gutter number
+    and one per line -- `1`, `<table>`, `2`, `<caption>`, … -- with the CSS tab's lines
+    scattered among them. The editor's text is code, whitespace and all, and is emitted
+    the way a `<pre>` is: verbatim lines joined by newlines, `kind=code`, with the language
+    the widget declares (`data-language` on the content, Monaco's `data-mode-id`, a
+    `language=` attribute on the host element, or a `language-*` class nearby).
+    """
+    found = _editor_lines(element)
+    if found is None:
+        return None
+    lines, language = found
+    text = "\n".join(line.text_content().replace("\xa0", " ").rstrip() for line in lines).strip("\n")
+    if not text.strip():
+        return None
+    if language is None:
+        for depth, node in enumerate((element, *element.iterancestors())):
+            if depth > _EDITOR_ANCESTOR_DEPTH:
+                break
+            for attribute in _EDITOR_LANGUAGE_ATTRIBUTES:
+                declared = (node.get(attribute) or "").strip().lower()
+                if declared:
+                    language = declared
+                    break
+            if language is not None:
+                break
+    if language is None:
+        language = _code_language(element)
+    return Block(
+        text=text,
+        tag=element.tag,
+        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        dom_index=index,
+        kind=BlockKind.CODE,
+        language=language,
+    )
+
+
+_MIN_EDITOR_WINDOW_CHARS: Final[int] = 20
+
+
+def _code_key(text: str) -> str:
+    return "\n".join(line.rstrip() for line in text.strip("\n").splitlines())
+
+
+def _complete_editor_windows(blocks: list[Block], editors: set[str], hidden_code: set[str]) -> list[Block]:
+    """Give an editor block the whole document it shows a window onto, once.
+
+    CodeMirror 6 and Monaco draw only the lines in view: MDN's `<table>` demo editor holds
+    30 of its 40 lines, and a reader scrolls to the rest. The page carries the whole source
+    beside it, in the `<pre class="interactive-example">` the widget was built from, which
+    the browser hides. When a *hidden* code block in the document (`hidden_code`) begins
+    with everything the editor shows, that block is the editor's document: the editor block
+    takes its text and the twin is dropped, so the source appears once, whole, where the
+    editor is. A visible code block saying the same is on the page in its own right -- a
+    listing under a playground -- and stays (a page's deliberate repeats stay; see the
+    repeated-block rule in `pipeline`). An editor showing something no hidden block holds
+    is left as it is.
+    """
+    if not editors or not hidden_code:
+        return blocks
+    keys = {id(b): _code_key(b.text) for b in blocks if b.kind is BlockKind.CODE}
+    adopted: dict[int, Block] = {}
+    dropped: set[int] = set()
+    for block in blocks:
+        if block.xpath not in editors or block.kind is not BlockKind.CODE:
+            continue
+        shown = keys[id(block)]
+        if len(shown) < _MIN_EDITOR_WINDOW_CHARS:
+            continue
+        for other in blocks:
+            if (
+                other is block
+                or other.kind is not BlockKind.CODE
+                or other.xpath not in hidden_code
+                or id(other) in dropped
+                or not keys[id(other)].startswith(shown)
+            ):
+                continue
+            adopted[id(block)] = block.model_copy(
+                update={"text": other.text, "language": block.language or other.language}
+            )
+            dropped.add(id(other))
+            break
+    if not dropped:
+        return blocks
+    return [adopted.get(id(b), b) for b in blocks if id(b) not in dropped]
+
+
 _NESTED_CONTAINERS: Final[frozenset[str]] = frozenset({"ul", "ol", "table", "dl"})
 
 
@@ -1246,6 +1406,13 @@ def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
         parent.text = (parent.text or "") + tail
 
 
+def _is_hidden(element: HtmlElement) -> bool:
+    """Whether the renderer found this element, or an ancestor, not on the page."""
+    return any(
+        node.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS for node in (element, *element.iterancestors())
+    )
+
+
 def _is_control(button: HtmlElement) -> bool:
     """Whether a standalone `<button>` is a control the reader cannot even see.
 
@@ -1314,6 +1481,8 @@ def extract_rich_blocks(
     float_cache: dict[HtmlElement, HtmlElement | None] = {}
     body_cache: dict[HtmlElement, HtmlElement | None] = {}
     widget_cache: dict[HtmlElement, str | None] = {}
+    editors: set[str] = set()
+    hidden_code: set[str] = set()
     body_words = len(root.text_content().split())
     # A container's own text, held until the walk reaches the child block it precedes (or
     # the container's last descendant, for text after every child), so the block lands
@@ -1407,6 +1576,15 @@ def extract_rich_blocks(
                 nested.update(inner.iterdescendants())
             consumed.update(d for d in element.iterdescendants() if d not in nested)
 
+        elif _is_editor(element):
+            # A code editor's DOM (CodeMirror, Monaco, Ace) is one code block: its lines,
+            # not its gutter, cursor and measuring layers. Judged before `<pre>` because
+            # CodeMirror 5 draws each line as a `<pre>` of its own.
+            block = _editor_block(element, index, tree)
+            if block is not None:
+                editors.add(block.xpath)
+            consumed.update(element.iterdescendants())
+
         elif tag == "pre":
             # Verbatim, deliberately: `flowed_text` would insert separators at the block
             # boundaries a syntax highlighter creates, and a code block's whitespace is its
@@ -1421,6 +1599,8 @@ def extract_rich_blocks(
                     kind=BlockKind.CODE,
                     language=_code_language(element),
                 )
+                if _is_hidden(element):
+                    hidden_code.add(block.xpath)
             consumed.update(element.iterdescendants())
 
         elif tag == "blockquote" and not _quote_has_structure(element):
@@ -1546,7 +1726,7 @@ def extract_rich_blocks(
     if previous is not None and previous in held_after:
         admit_orphans(_innermost_first(held_after.pop(previous)))
 
-    return blocks
+    return _complete_editor_windows(blocks, editors, hidden_code)
 
 
 _LANDMARK_TAGS: Final[dict[str, str]] = {

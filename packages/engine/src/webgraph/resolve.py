@@ -50,6 +50,9 @@ MISSING_STATUSES = config.MISSING_STATUSES
 BLOCKING_STATUSES = config.BLOCKING_STATUSES
 MAX_BLOCK_PAGE_CHARS = config.MAX_BLOCK_PAGE_CHARS
 MIN_PAGE_BESIDE_WALL_WORDS = config.MIN_PAGE_BESIDE_WALL_WORDS
+LOGIN_PATH_MARKERS = config.LOGIN_PATH_MARKERS
+LOGIN_RETURN_PARAMS = config.LOGIN_RETURN_PARAMS
+MAX_LOGIN_PAGE_WORDS = config.MAX_LOGIN_PAGE_WORDS
 
 __all__ = [
     "MISSING_STATUSES",
@@ -59,8 +62,10 @@ __all__ = [
     "Strategy",
     "block_page_evidence",
     "challenge_vendor",
+    "login_redirect",
     "resolve_page",
     "union_documents",
+    "wall_evidence",
 ]
 
 
@@ -92,8 +97,15 @@ class PageBlockedError(ValueError):
     as three blocks, typed `listing` at 86% confidence, with a green tick.
     """
 
-    def __init__(self, url: str, evidence: str, *, challenge: str | None = None) -> None:
-        if challenge:
+    def __init__(
+        self, url: str, evidence: str, *, challenge: str | None = None, login_url: str | None = None
+    ) -> None:
+        if login_url:
+            message = (
+                f"could not resolve {url}: redirected to a login page ({login_url}); the page "
+                "requires a sign-in and nothing of it was served"
+            )
+        elif challenge:
             message = (
                 f"could not resolve {url}: the site answered with a {challenge} bot challenge "
                 "-- a script a browser must run before the page is served -- and no page"
@@ -107,6 +119,15 @@ class PageBlockedError(ValueError):
         self.url = url
         self.evidence = evidence
         self.challenge = challenge
+        self.login_url = login_url
+
+    @property
+    def kind(self) -> str:
+        """Which wall this was: `login` (a redirect to a sign-in page), `challenge` (a
+        bot-management script) or `block` (a page saying the client was refused)."""
+        if self.login_url:
+            return "login"
+        return "challenge" if self.challenge else "block"
 
 
 _BLOCK_PAGE_PHRASES: Final[re.Pattern[str]] = re.compile(
@@ -532,13 +553,93 @@ def _server_said(html: str, limit: int = 140) -> str:
     return text[:limit].strip() if len(text) >= 20 else ""
 
 
-def wall_evidence(document: Document) -> str | None:
+_PASSWORD_FIELD: Final[re.Pattern[str]] = re.compile(
+    r"<input\b[^>]*\btype\s*=\s*[\"']?password\b", re.IGNORECASE
+)
+
+
+def _same_page(requested: str, final: str) -> bool:
+    """Whether two URLs name the same page: a trailing slash, `www.`, the scheme, letter
+    case in the host and a fragment are not a redirect to anywhere else."""
+    from urllib.parse import urlsplit
+
+    def key(url: str) -> tuple[str, str, str]:
+        parts = urlsplit(url.strip())
+        host = parts.netloc.lower().removeprefix("www.")
+        path = parts.path.rstrip("/") or "/"
+        return host, path, parts.query
+
+    return key(requested) == key(final)
+
+
+def _path_is_login(path: str) -> bool:
+    """Whether a URL path holds one of `LOGIN_PATH_MARKERS` as whole segments."""
+    padded = "/" + path.strip("/").lower() + "/"
+    return any(f"{marker.lower()}/" in padded for marker in LOGIN_PATH_MARKERS)
+
+
+def _returns_to(final: str, requested: str) -> bool:
+    """Whether `final` carries a return-to parameter (`dest=`, `next=`, `session_redirect=`)
+    naming the page that was asked for: the sign of a login page that will send the reader
+    back once they sign in."""
+    from urllib.parse import parse_qsl, urlsplit
+
+    asked = urlsplit(requested)
+    asked_path = asked.path.rstrip("/") or "/"
+    for name, value in parse_qsl(urlsplit(final).query, keep_blank_values=False):
+        if name.lower().replace("_", "").replace("-", "") not in LOGIN_RETURN_PARAMS:
+            continue
+        value = value.strip()
+        if not value:
+            continue
+        if _same_page(requested, value):
+            return True
+        # A path-only value: `next=/r/programming/` against the requested path.
+        if value.startswith("/") and (value.split("?")[0].rstrip("/") or "/") == asked_path:
+            return True
+    return False
+
+
+def login_redirect(document: Document, requested_url: str | None) -> str | None:
+    """The login page a fetch was redirected to, or None when it was not.
+
+    Three things have to be true at once. The fetch ended somewhere other than where it
+    was sent -- a real redirect, not a trailing slash or `www.` -- and not at a login URL
+    the caller asked for. The final URL says it is a login page: a `LOGIN_PATH_MARKERS`
+    segment in its path (`/login/`, `/uas/login`), or a `LOGIN_RETURN_PARAMS` parameter
+    naming the page that was asked for (`?dest=https://old.reddit.com/r/…`). And the
+    document is a login page rather than a page with a login on it: it holds a password
+    field, or has fewer than `MAX_LOGIN_PAGE_WORDS` words. old.reddit.com's login shell
+    has 4 words and no field until React runs; linkedin.com's has 52 and two fields; a
+    shop whose header carries a sign-in box has neither shortage.
+    """
+    if not requested_url:
+        return None
+    from urllib.parse import urlsplit
+
+    final = document.url
+    if _same_page(requested_url, final):
+        return None
+    if _path_is_login(urlsplit(requested_url).path):
+        return None
+    if not (_path_is_login(urlsplit(final).path) or _returns_to(final, requested_url)):
+        return None
+    if len(document.text.split()) >= MAX_LOGIN_PAGE_WORDS and not _PASSWORD_FIELD.search(document.html):
+        return None
+    return final
+
+
+def wall_evidence(document: Document, *, requested_url: str | None = None) -> str | None:
     """What gives this document away as a wall rather than a page, or None for a page.
 
-    The two shapes `_refuse_block_page` refuses, as a question rather than an exception:
-    a wall with words, or an empty document whose markup carries a bot-management
-    vendor's script. Asked of each side of a union separately -- see `resolve_page`.
+    The three shapes `_refuse_block_page` refuses, as a question rather than an exception:
+    a redirect to a login page (judged against `requested_url`, when given), a wall with
+    words, or an empty document whose markup carries a bot-management vendor's script.
+    Asked of each side of a union separately -- see `resolve_page`.
     """
+    login = login_redirect(document, requested_url)
+    if login is not None:
+        return f"redirected to a login page ({login})"
     evidence = block_page_evidence(document.text)
     if evidence is not None:
         return evidence
@@ -554,15 +655,23 @@ def _is_a_page(document: Document) -> bool:
     return len(document.text.split()) >= MIN_PAGE_BESIDE_WALL_WORDS
 
 
-def _refuse_block_page(document: Document, *, status: int | None = None) -> None:
+def _refuse_block_page(
+    document: Document, *, status: int | None = None, requested_url: str | None = None
+) -> None:
     """Raise rather than return a wall -- or nothing -- as if it were the page.
 
-    Two shapes. A wall with words ("You've been blocked") is caught by its words. A
-    JavaScript challenge has no words: the document is empty, and the only evidence is the
-    vendor's script in the markup. An empty document with no such script is still not a
-    page, and is refused as what it is -- a response that produced no readable text --
-    rather than returned as a success of zero blocks.
+    Three shapes. A redirect to a login page is caught by where the fetch ended
+    (`login_redirect`), and is judged first: old.reddit.com sends a thread's reader to
+    `/login/?dest=…` and Cloudflare then walls the browser on that login page, and the
+    redirect is the cause, the wall a consequence. A wall with words ("You've been
+    blocked") is caught by its words. A JavaScript challenge has no words: the document is
+    empty, and the only evidence is the vendor's script in the markup. An empty document
+    with no such script is still not a page, and is refused as what it is -- a response
+    that produced no readable text -- rather than returned as a success of zero blocks.
     """
+    login = login_redirect(document, requested_url)
+    if login is not None:
+        raise PageBlockedError(requested_url or document.url, login, login_url=login)
     evidence = block_page_evidence(document.text)
     if evidence is not None:
         raise PageBlockedError(document.url, evidence)
@@ -644,7 +753,7 @@ def resolve_page(
     if static_result.ok and static_result.is_html and _FRAME.search(static_result.html):
         composed = _compose_frameset(static_result, fetch_config, include_hidden_text)
         if composed is not None:
-            _refuse_block_page(composed, status=static_result.status)
+            _refuse_block_page(composed, status=static_result.status, requested_url=url)
             chars = len(composed.text)
             return ResolvedPage(
                 url=composed.url,
@@ -674,7 +783,7 @@ def resolve_page(
     if strategy is Strategy.STATIC_ONLY:
         if static_doc is None:
             raise ValueError(f"static fetch produced no document for {url}: {static_result.error}")
-        _refuse_block_page(static_doc, status=static_result.status)
+        _refuse_block_page(static_doc, status=static_result.status, requested_url=url)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -693,7 +802,7 @@ def resolve_page(
     if not PLAYWRIGHT_AVAILABLE:
         if static_doc is None:
             raise ValueError(_both_failed(url, static_result, "rendering not installed"))
-        _refuse_block_page(static_doc)
+        _refuse_block_page(static_doc, requested_url=url)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -715,7 +824,7 @@ def resolve_page(
             # only the second leaves a caller unable to tell "the site refused us" from "the
             # browser could not start", which are different problems with different fixes.
             raise ValueError(_both_failed(url, static_result, rendered.error))
-        _refuse_block_page(static_doc)
+        _refuse_block_page(static_doc, requested_url=url)
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -741,7 +850,7 @@ def resolve_page(
     )
 
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:
-        _refuse_block_page(rendered_doc)
+        _refuse_block_page(rendered_doc, requested_url=url)
         chars = len(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
@@ -766,9 +875,11 @@ def resolve_page(
     # The other side has to be a page with words of its own: old.reddit.com answers the
     # browser with a wall and the plain fetch with a login redirect holding one empty
     # image and a "Skip to main content" link, and that is not the page either -- it
-    # falls through to the merge, which is refused as the wall it contains.
-    static_wall = wall_evidence(static_doc)
-    rendered_wall = wall_evidence(rendered_doc)
+    # falls through to the merge, which is refused as the wall it contains. A redirect
+    # to a login page is a wall in the same sense (`login_redirect`): a site that sends
+    # the plain fetch to sign in and serves the browser the page is read from the browser.
+    static_wall = wall_evidence(static_doc, requested_url=url)
+    rendered_wall = wall_evidence(rendered_doc, requested_url=url)
     if rendered_wall is not None and static_wall is None and _is_a_page(static_doc):
         chars = len(static_doc.text)
         return ResolvedPage(
@@ -800,7 +911,7 @@ def resolve_page(
     merged, only_static, only_rendered = union_documents(
         static_doc, rendered_doc, hidden=hidden_matter(rendered.html)
     )
-    _refuse_block_page(merged)
+    _refuse_block_page(merged, requested_url=url)
 
     return ResolvedPage(
         url=merged.url,
