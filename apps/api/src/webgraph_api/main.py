@@ -38,8 +38,8 @@ from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch import guard
-from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig, geometry_by_xpath, render_page
-from webgraph.fetch.static import FetchConfig, fetch_static
+from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
+from webgraph.fetch.static import FetchConfig
 from webgraph.graph.build import GraphBuilder
 from webgraph.graph.entities import derive_entities
 from webgraph.graph.export import to_jsonl
@@ -47,13 +47,19 @@ from webgraph.graph.retrieve import Budget, ContextAssembler
 from webgraph.graph.store import GraphStore
 from webgraph.page import stream_page
 from webgraph.pagetype import PageType, default_router, policy_for
-from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.resolve import Strategy
+from webgraph.resolve import (
+    PageBlockedError,
+    PageMissingError,
+    PageShellError,
+    ResolvedPage,
+    Strategy,
+    resolve_page,
+)
 from webgraph.settings import Settings, describe_config
 from webgraph.site import SiteConfig, stream_site
 from webgraph.trace import RunTrace, trace_events
-from webgraph.types import BlockKind, Document, Rect
+from webgraph.types import BlockKind, Document, ReadingOrderMethod
 
 # Every value a deployment can set lives in `webgraph.settings.Settings` (defaults in `webgraph.config`), read once here. The
 # reasoning for each cap is beside its field there; these names are kept because the rest of
@@ -403,6 +409,15 @@ app.add_middleware(
 )
 
 
+def _measured(resolved: ResolvedPage) -> bool:
+    """Whether the reading order came from a rendered layout. `geometric-anchored` counts:
+    most blocks were measured and the rest placed beside them -- see `PageInfo`."""
+    return resolved.document.reading_order_method in (
+        ReadingOrderMethod.GEOMETRIC_XY_CUT,
+        ReadingOrderMethod.GEOMETRIC_ANCHORED,
+    )
+
+
 def _page_info(document: Document, measured: bool) -> PageInfo:
     return PageInfo(
         url=document.url,
@@ -417,41 +432,83 @@ def _page_info(document: Document, measured: bool) -> PageInfo:
     )
 
 
-def _load_blocking(url: str, want_render: bool) -> tuple[str, dict[str, Rect], str]:
-    """Fetch and optionally render. Runs in a worker thread -- both calls are blocking."""
-    result = fetch_static(url)
-    if not result.ok:
-        raise HTTPException(status_code=502, detail=f"could not fetch page: {result.error}")
-    if not result.is_html:
-        raise HTTPException(
-            status_code=415, detail=f"unsupported content type: {result.content_type}"
-        )
+def _resolve_blocking(request: TextRequest | ExtractRequest) -> ResolvedPage:
+    """Resolve the page the way the streaming route and the crawl do. Runs in a worker
+    thread -- both fetches are blocking.
 
-    if not want_render:
-        probe = build_document(result.html, result.url)
-        if not probe.profile.requires_render:
-            return result.html, {}, result.url
+    Until PR #81 this route fetched and parsed on its own: static HTML, a browser only when
+    the static document looked like a JavaScript shell, and no wall check at all. Every
+    refusal the engine learned to name -- a Cloudflare block page (#64), a login redirect
+    (#67, #73), a browser served a wall while the plain fetch got the page -- lived in
+    `resolve_page`, which only `/api/text/stream` called, so the blocking API could still
+    return "Sorry, you have been blocked" as a page of text with a green tick. One path now.
 
-    if not PLAYWRIGHT_AVAILABLE:
-        return result.html, {}, result.url
+    `render=False` still means what it meant: plain HTTP, escalated to the browser when the
+    static document is a shell that needs one. That is one more static fetch for a shell
+    than a single `resolve_page` call would make, and a shell is the cheap case. Without a
+    browser, a shell is still a document for `/api/extract` -- its hydration payload is the
+    whole point of that page -- and a refusal for `/api/text`, which would have nothing to say.
+    """
+    strategy = Strategy.UNION if request.render else Strategy.STATIC_ONLY
+    options: dict[str, Any] = {
+        "fetch_config": _applied(FetchConfig(), getattr(request, "fetch", None)),
+        "render_config": _applied(RenderConfig(), getattr(request, "render_options", None)),
+        "include_hidden_text": getattr(request, "include_hidden_text", False),
+        "rtl": request.rtl,
+    }
+    try:
+        resolved = resolve_page(request.url, strategy=strategy, **options)
+    except PageShellError as exc:
+        shell = exc.document
+        if strategy is Strategy.STATIC_ONLY and PLAYWRIGHT_AVAILABLE:
+            try:
+                return resolve_page(request.url, strategy=Strategy.UNION, **options)
+            except PageShellError as still_a_shell:
+                # The browser ran it and it stayed empty: a shell whose script never
+                # filled the page. The payload is still what the extract route reads.
+                shell = still_a_shell.document
+        if isinstance(request, ExtractRequest):
+            return ResolvedPage(
+                url=shell.url,
+                document=shell,
+                strategy=Strategy.STATIC_ONLY,
+                static_chars=0,
+                rendered_chars=0,
+                union_chars=0,
+                blocks_only_in_static=0,
+                blocks_only_in_rendered=0,
+                render_error="the page stayed a JavaScript shell; facts read from its payload",
+            )
+        raise
+    if (
+        strategy is Strategy.STATIC_ONLY
+        and resolved.document.profile.requires_render
+        and PLAYWRIGHT_AVAILABLE
+    ):
+        resolved = resolve_page(request.url, strategy=Strategy.UNION, **options)
+    return resolved
 
-    rendered = render_page(url)
-    if not rendered.ok:
-        # A render failure degrades to static HTML rather than failing the request: partial
-        # content with honest metadata beats a 500.
-        return result.html, {}, result.url
 
-    return rendered.html, geometry_by_xpath(rendered.html, rendered.rects), rendered.url
-
-
-async def _load(url: str, want_render: bool) -> tuple[str, dict[str, Rect], str]:
-    if not url.startswith(("http://", "https://")):
+async def _resolve(request: TextRequest | ExtractRequest) -> ResolvedPage:
+    if not request.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url must be http or https")
 
-    if want_render:
-        async with _render_slots:
-            return await asyncio.to_thread(_load_blocking, url, True)
-    return await asyncio.to_thread(_load_blocking, url, False)
+    try:
+        if request.render:
+            async with _render_slots:
+                return await asyncio.to_thread(_resolve_blocking, request)
+        # A shell escalates to the browser inside `_resolve_blocking`, outside the render
+        # slots; the crawl's browser pool bounds it the same way it bounds the stream route.
+        return await asyncio.to_thread(_resolve_blocking, request)
+    except PageMissingError as exc:
+        raise HTTPException(status_code=502, detail=f"could not fetch page: {exc}") from exc
+    except PageBlockedError as exc:
+        # The server answered, but with a wall. 502 like every other "could not fetch": the
+        # page was not obtained, and a caller that treats the body as content would be
+        # reading the wall. The message says which wall (`kind`) and quotes it.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=f"could not fetch page: {exc}") from exc
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -468,14 +525,8 @@ async def health() -> HealthResponse:
 @app.post("/api/text", response_model=TextResponse)
 async def get_text(request: TextRequest) -> TextResponse:
     """Return page text in recovered reading order."""
-    html, geometry, url = await _load(request.url, request.render)
-    document = build_document(
-        html,
-        url,
-        geometry=geometry,
-        rtl=request.rtl,
-        include_hidden_text=request.include_hidden_text,
-    )
+    resolved = await _resolve(request)
+    document = resolved.document
 
     images = [b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href]
     tables = sum(1 for b in document.blocks if b.kind is BlockKind.TABLE)
@@ -508,7 +559,7 @@ async def get_text(request: TextRequest) -> TextResponse:
     )
 
     return TextResponse(
-        page=_page_info(document, bool(geometry)),
+        page=_page_info(document, _measured(resolved)),
         text=document.text,
         markdown=to_markdown(document, options=MarkdownOptions()),
         content_markdown=content,
@@ -538,8 +589,8 @@ async def extract(request: ExtractRequest) -> ExtractResponse:
             status_code=422, detail="schema must be a JSON Schema object with 'properties'"
         )
 
-    html, geometry, url = await _load(request.url, request.render)
-    document = build_document(html, url, geometry=geometry, rtl=request.rtl)
+    resolved = await _resolve(request)
+    document, url = resolved.document, resolved.url
 
     choice: SchemaChoice | None = None
     if request.schema_ is not None:
@@ -568,7 +619,7 @@ async def extract(request: ExtractRequest) -> ExtractResponse:
         )
 
     return ExtractResponse(
-        page=_page_info(document, bool(geometry)),
+        page=_page_info(document, _measured(resolved)),
         schema_choice=choice,
         facts={
             path: FactOut(

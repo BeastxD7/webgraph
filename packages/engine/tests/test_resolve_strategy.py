@@ -96,6 +96,20 @@ class TestStaticOnly:
         assert browser["renders"] == 0
         assert "rendering was not used" in str(caught.value)
 
+    def test_the_shell_refusal_carries_the_shell(self, browser: dict[str, Any]) -> None:
+        """A shell's hydration payload is complete without a browser, and fact extraction
+        reads it: the refusal is typed and hands the document over, so `/api/extract` can
+        answer from the payload while `/api/text`, with nothing to say, still refuses."""
+        import pytest
+
+        from webgraph.resolve import PageShellError
+
+        browser["static_html"] = SHELL
+        with pytest.raises(PageShellError) as caught:
+            resolve_page(URL, strategy=Strategy.STATIC_ONLY)
+        assert caught.value.document.url == URL
+        assert caught.value.document.profile.requires_render
+
 
 class TestRenderedOnly:
     def test_returns_the_browser_document_alone(self, browser: dict[str, Any]) -> None:

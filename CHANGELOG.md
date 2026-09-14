@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #81) — the blocking API routes see walls
+- `/api/text` and `/api/extract` resolve the page through `resolve_page`, the path the
+  streaming route and the crawl already used. They fetched and parsed on their own, with
+  none of the wall checks (#64, #67, #73): a Cloudflare block page served with a 200, or a
+  login redirect, came back as a page of text with a green tick. Now both answer 502 with
+  the wall's own words. `render=false` still escalates a JavaScript shell to the browser;
+  without one, `/api/extract` still reads the shell's hydration payload (`PageShellError`
+  carries the document) and `/api/text` refuses, having nothing to say.
+- A static-only refusal says what the status means and quotes the server ("HTTP 403 -- the
+  site refused this client; it said: …") instead of "HTTP 403"; the quote skips the block
+  page's stylesheet, which used to be most of it.
+
 ### Changed (2026-09-14, PR #80) — docs
 - `docs/SESSION-18-WHOLE-PAGE.md` closes the evening: PRs #71–#79 in the merge table, the
   standings at `main@f0b0ac4`, the fidelity suite on that commit recall 1.000 on 22 of 29 scored sites, sqlite.org 0.749 → 1.000, MDN extra 0.228 → 0.142; nothing below 0.945,
