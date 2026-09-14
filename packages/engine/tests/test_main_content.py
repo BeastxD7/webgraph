@@ -412,6 +412,71 @@ class TestRivers:
         assert texts[0] == "Video shows dramatic rescue"
 
 
+    def test_a_river_of_kickers_at_its_own_level_ends_at_the_short_paragraphs(self) -> None:
+        """thesun.co.uk: "Most read in world news" is an <h3> over <h3> kickers, each with a
+        one-line blurb, dropped mid-article; the article's paragraphs are twenty words --
+        under the prose floor -- and its next section heading is another <h3>. The river
+        used to end at the first kicker (same level) and leave every teaser in."""
+        from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
+
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
+            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+
+        short = "In May this year travellers were left stranded in Mongolia after an outbreak of the disease there."
+        blocks = [b("Hunter diagnosed with plague", 0, kind=BlockKind.HEADING, level=1), b(short, 1), b(short + " Again.", 2)]
+        tail: list[tuple[str, BlockKind]] = [("Most read in world news", BlockKind.HEADING)]
+        for i in range(6):
+            tail += [("", BlockKind.IMAGE), (f"KICKER {i}", BlockKind.HEADING)]
+            if i == 3:
+                tail.append(("Warning", BlockKind.PARAGRAPH))
+            tail.append((f"Teaser blurb number {i} about some other story on the site today.", BlockKind.PARAGRAPH))
+        tail += [
+            ("Authorities in western Mongolia, close to the Russian frontier, instituted a quarantine.", BlockKind.PARAGRAPH),
+            ("American, Dutch and German tourists were marooned in the town for six days.", BlockKind.PARAGRAPH),
+            ("How is the plague spread?", BlockKind.HEADING),
+            (f"{PROSE} Plague is caused by the bacteria Yersinia pestis.", BlockKind.PARAGRAPH),
+        ]
+        blocks += [b(text, 3 + i, kind=kind, level=3 if kind is BlockKind.HEADING else 0) for i, (text, kind) in enumerate(tail)]
+
+        texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
+        assert not any(t.startswith("KICKER") or t.startswith("Teaser blurb") for t in texts)
+        assert "Warning" not in texts and "Most read in world news" not in texts
+        assert texts[-4:-1] == [
+            "Authorities in western Mongolia, close to the Russian frontier, instituted a quarantine.",
+            "American, Dutch and German tourists were marooned in the town for six days.",
+            "How is the plague spread?",
+        ]
+
+    def test_a_river_gives_back_the_heading_over_the_prose_that_ends_it(self) -> None:
+        """A same-level article heading followed by prose is the article's, not the river's."""
+        from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
+
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
+            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+
+        blocks = [b(f"{PROSE} Opening.", 0), b("Trending now", 1, kind=BlockKind.HEADING, level=2)]
+        blocks += [b(f"Story {i} headline", 2 + i, kind=BlockKind.HEADING, level=2) for i in range(3)]
+        blocks += [b("What happens next", 5, kind=BlockKind.HEADING, level=2), b(f"{PROSE} Closing.", 6)]
+        texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
+        assert texts == [f"{PROSE} Opening.", "What happens next", f"{PROSE} Closing."]
+
+    def test_a_river_that_is_the_page_ends_at_its_first_heading(self) -> None:
+        """bbc.com/news: "Latest" over forty <h2> teasers is the listing, not a box in an
+        article. Past `_MAX_RIVER_BLOCKS` through same-level headings the river ends where it
+        used to, at the first of them, and only the label goes."""
+        from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
+
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
+            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+
+        blocks = [b("Latest news", 0, kind=BlockKind.HEADING, level=2)]
+        for i in range(40):
+            blocks.append(b(f"Headline {i}", 1 + 2 * i, kind=BlockKind.HEADING, level=2))
+            blocks.append(b(f"A one-sentence blurb about story {i} that reads like news copy.", 2 + 2 * i))
+        texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
+        assert "Latest news" not in texts
+        assert sum(1 for t in texts if t.startswith("Headline")) == 40
+
 class TestSpecSheetFallback:
     """lttlabs.com: a review that is a spec sheet -- forty two-word lines and no prose -- never
     forms a run the boundary step can believe in, and it kept three blocks of it. Product and
