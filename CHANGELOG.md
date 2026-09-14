@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-15, PR #86) — prose before a code block
+- A paragraph of four words or fewer directly before a `<pre>` was dropped as MDN's
+  language-and-copy strip ("js Copy"). perldoc.perl.org/perlre lost "is made equivalent
+  to", "For example, this program" and "will output the following:" -- sixty words of
+  prose; pubs.opengroup.org's awk page lost its example lead-ins the same way. The strip
+  is now a container that holds a button, or one whose words are all labels (a language
+  name, the block's own declared language, "Copy"); a `<p>` is never the strip. Fidelity:
+  perldoc 61 → 4 missing words, posix-awk 15 → 1. MEASURE_PLACEHOLDER
+- A highlighter's `language-undefined` (highlight.js on a block it could not classify)
+  is no language: perldoc's fences came out as ```undefined, a word the page never
+  showed. `none`, `plaintext`, `text`, `nohighlight` likewise.
+
 ### Added (2026-09-14, PR #84) — bring your own HTML
 - `/api/text` and `/api/text/stream` take `html`: the page as the caller already has it,
   from their own signed-in browser, an extension or a saved file. Nothing is fetched or

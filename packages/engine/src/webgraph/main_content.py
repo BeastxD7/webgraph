@@ -457,6 +457,12 @@ def _introduces_code(blocks: Sequence[Block], index: int) -> bool:
     block = blocks[index]
     if block.kind is not BlockKind.PARAGRAPH or word_count(block.text) > CODE_CAPTION_MAX_WORDS:
         return False
+    # A caption is prose. "« Previous Paper Next Paper »" above an exploit-db listing is
+    # short and before a `<pre>` too, and it is navigation: floored, it bridged the page's
+    # metadata table into the run (WebMainBench 5814e2e6, a table column at 0.000 that
+    # was not there before).
+    if link_density(block) > 0.5:
+        return False
     return index + 1 < len(blocks) and blocks[index + 1].kind is BlockKind.CODE
 
 
@@ -598,7 +604,7 @@ def select_main_content(
     # for the same reason the code is (see `content_value`). Left negative, a tutorial's
     # dozen captions paid the block cost a dozen times along the article and Kadane cut
     # the run before its last commands: WebMainBench 0ed88efa (hrace009.com's LAMP guide)
-    # code_edit 1.000 → 0.874 the moment those captions were read at all (PR #85).
+    # code_edit 1.000 → 0.874 the moment those captions were read at all (PR #86).
     values = [
         max(v, 0.0) if _introduces_code(blocks, i) else v for i, v in enumerate(values)
     ]

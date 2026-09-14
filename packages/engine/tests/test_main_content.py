@@ -141,7 +141,7 @@ class TestCodeCaptions:
     is a one-to-three-word paragraph that, valued on its own, pays the block cost and
     nothing back; a dozen in a row outweigh the code between them (floored at zero) and
     Kadane ends the run before the tutorial's last commands. WebMainBench 0ed88efa
-    (hrace009.com's LAMP guide): code_edit 1.000 → 0.874 the moment PR #85 started reading
+    (hrace009.com's LAMP guide): code_edit 1.000 → 0.874 the moment PR #86 started reading
     those captions at all. A caption is as deliberate as its code and costs nothing."""
 
     @staticmethod
@@ -170,6 +170,17 @@ class TestCodeCaptions:
         blocks = [block("Then", index=0), block(PROSE, index=1), block("Then", index=2), block("x = 1", kind=BlockKind.CODE, index=3)]
         assert _introduces_code(blocks, 0) is False
         assert _introduces_code(blocks, 2) is True
+
+    def test_a_link_strip_before_code_is_not_a_caption(self) -> None:
+        """exploit-db: "« Previous Paper Next Paper »" above the paper's `<pre>` -- short,
+        before code, and all links. Navigation, not a caption."""
+        from webgraph.main_content import _introduces_code
+
+        blocks = [
+            block("« Previous Paper Next Paper »", rich="« [Previous Paper](/p) [Next Paper](/n) »", index=0),
+            block("x = 1", kind=BlockKind.CODE, index=1),
+        ]
+        assert _introduces_code(blocks, 0) is False
 
     def test_a_long_paragraph_before_code_is_not_a_caption(self) -> None:
         from webgraph.main_content import _introduces_code
