@@ -196,7 +196,9 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
     kept: list[Block | None] = []
 
     for block in blocks:
-        text = " ".join(block.text.split()).casefold()
+        # Whitespace is dropped from the key, not normalised: the same words with a
+        # missing space between two inline spans are the same block -- see `resolve._key`.
+        text = "".join(block.text.split()).casefold()
         if not text:
             kept.append(block)
             continue

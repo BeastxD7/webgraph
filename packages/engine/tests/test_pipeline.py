@@ -201,6 +201,16 @@ class TestDuplicateResolution:
         )
         assert texts.index("Recipes") < texts.index(heading[0].text)
 
+    def test_copies_differing_only_by_a_missing_space_are_one(self) -> None:
+        """The static and rendered readings of one line differ by a space between two inline
+        spans ("Karri·2min ago" / "Karri · 2min ago"); after the union both reached the
+        boundary step as two blocks."""
+        from webgraph.pipeline import build_document
+
+        html = "<html><body><p>Linear created the issue on behalf of Karri·2min ago</p><section><p>Linear created the issue on behalf of Karri · 2min ago</p></section></body></html>"
+        blocks = build_document(html, "https://x.test/").blocks
+        assert len([b for b in blocks if "Karri" in b.text]) == 1
+
     def test_two_plain_copies_still_keep_the_first(self) -> None:
         """The general rule is unchanged: the copy a reader reaches first stays."""
         from webgraph.pipeline import build_document

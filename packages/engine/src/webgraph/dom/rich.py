@@ -872,6 +872,19 @@ def _list_context(element: HtmlElement) -> tuple[bool, int]:
     return ordered, max(level, 1)
 
 
+def _drop_clipped(root: HtmlElement) -> None:
+    """Remove the elements the renderer measured as screen-reader-only -- clipped to a 1px
+    box -- whatever their class is called. The same text the `SR_ONLY_CLASSES` rule removes
+    on a static fetch, found by measurement on a rendered one; `include_hidden_text` keeps
+    both. Nothing is marked on a static fetch and nothing happens."""
+    for element in root.xpath(f"//*[@{HIDDEN_ATTRIBUTE}='clipped']"):
+        parent = element.getparent()
+        if parent is None:
+            continue
+        _carry_tail(parent, element)
+        parent.remove(element)
+
+
 def _drop_hidden_twins(root: HtmlElement) -> None:
     """Remove a hidden element whose visible sibling says the same thing.
 
@@ -882,23 +895,56 @@ def _drop_hidden_twins(root: HtmlElement) -> None:
     own (a collapsed panel, a tab) is content and stays, unmeasured, where source order puts
     it. On a static fetch nothing is marked and nothing happens.
     """
+    # Pass one: a parent whose hidden children, taken together, say exactly what its other
+    # children say. linear.app's <h1> holds the headline three ways -- four `show-mobile`
+    # spans (display none on a laptop), two `hide-mobile` spans (opacity 0 until the
+    # entrance animation runs), and a clipped copy -- and no single hidden span has a
+    # single visible twin. Compared without whitespace, since the copies differ in where
+    # the lines break; `opacity` counts as showing, since content faded in by a scroll
+    # animation is content.
+    for parent in root.xpath(f"//*[*[@{HIDDEN_ATTRIBUTE}]]"):
+        hidden_children = [
+            child
+            for child in parent
+            if isinstance(child.tag, str) and child.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS
+        ]
+        if not hidden_children:
+            continue
+        hidden_text = "".join("".join(c.text_content().split()) for c in hidden_children)
+        shown_text = "".join(
+            "".join(c.text_content().split())
+            for c in parent
+            if isinstance(c.tag, str) and c.get(HIDDEN_ATTRIBUTE) not in _ABSENT_KINDS
+        ) + "".join((parent.text or "").split())
+        if hidden_text and hidden_text == shown_text:
+            for child in hidden_children:
+                _carry_tail(parent, child)
+                parent.remove(child)
+
+    # Pass two: one hidden element beside one visible sibling saying the same thing.
     for hidden in root.xpath(f"//*[@{HIDDEN_ATTRIBUTE}]"):
         parent = hidden.getparent()
         if parent is None:
             continue
-        text = normalize_text(hidden.text_content())
+        text = "".join(hidden.text_content().split())
         if not text:
             continue
         twin = any(
             sibling is not hidden
             and isinstance(sibling.tag, str)
             and sibling.get(HIDDEN_ATTRIBUTE) is None
-            and normalize_text(sibling.text_content()) == text
+            and "".join(sibling.text_content().split()) == text
             for sibling in parent
         )
         if twin:
             _carry_tail(parent, hidden)
             parent.remove(hidden)
+
+
+_ABSENT_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility"})
+"""The ways of hiding that mean "not on the page": `display: none` and `visibility: hidden`.
+`opacity` is not one -- a scroll animation starts its text at opacity 0 -- and `clipped`
+is handled by `_drop_clipped` before this runs."""
 
 
 def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
@@ -966,6 +1012,8 @@ def extract_rich_blocks(
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
     strip_permalinks(root, keep_hidden_text=include_hidden_text)
+    if not include_hidden_text:
+        _drop_clipped(root)
     _drop_hidden_twins(root)
 
     tree = root.getroottree()

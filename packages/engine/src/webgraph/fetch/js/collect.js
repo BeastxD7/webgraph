@@ -66,6 +66,14 @@
     if (style.visibility === 'hidden') { el.setAttribute(HIDDEN, 'visibility'); continue; }
     if (style.opacity === '0') { el.setAttribute(HIDDEN, 'opacity'); continue; }
     const box = el.getBoundingClientRect();
+    // Screen-reader-only text, measured rather than named: the convention clips the element
+    // to a 1px box with overflow hidden (or `clip: rect(0 0 0 0)` / `clip-path: inset(50%)`).
+    // linear.app's <h1> carries a second copy of the headline in a CSS-module class the
+    // name rule cannot know (`Fzcv4W_visuallyHidden`); the box says what the class means.
+    const clipped = (box.width <= 1 && box.height <= 1 && style.overflow === 'hidden') ||
+      /^rect\(0px,? 0px,? 0px,? 0px\)$/.test(style.clip || '') ||
+      /^inset\((?:50|100)%\)$/.test(style.clipPath || '');
+    if (clipped && (el.textContent || '').trim()) { el.setAttribute(HIDDEN, 'clipped'); continue; }
     if (box.width <= 0 || box.height <= 0) continue;
 
     rects[id] = {

@@ -68,6 +68,34 @@ class TestUnionKeepsEverything:
         _merged, only_static, only_rendered = union_documents(static, rendered)
         assert (only_static, only_rendered) == (0, 0)
 
+    def test_a_missing_space_is_not_new_content(self) -> None:
+        """linear.app: the static page runs two inline spans together ("NewLoops →",
+        "Karri·2min ago"); the rendered one knows the second span was laid out as its own
+        line and breaks there. Same block, and the rendered spelling is the one kept."""
+        static = doc("<p>NewLoops →</p><p>Linear created the issue on behalf of Karri·2min ago</p>")
+        rendered = doc("<p>New Loops →</p><p>Linear created the issue on behalf of Karri · 2min ago</p>")
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert (only_static, only_rendered) == (0, 0)
+        assert [b.text for b in merged.blocks] == ["New Loops →", "Linear created the issue on behalf of Karri · 2min ago"]
+
+    def test_a_static_block_that_runs_a_rendered_block_into_hidden_matter_is_dropped(self) -> None:
+        """linear.app's <h1> holds the headline and a `display: none` mobile copy of it. The
+        rendered fetch sees the copy is hidden and strips it; the static one cannot and
+        emits "HeadlineHeadline". That is the dirtier copy of a block already there."""
+        static = doc("<h1>The product development system for teams and agentsThe product development system for teams and agents</h1><p>Body of the page follows here.</p>")
+        rendered = doc("<h1>The product development system for teams and agents</h1><p>Body of the page follows here.</p>")
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert only_static == 0  # the jammed copy is not "content only the static page had"
+        assert only_rendered == 1  # the clean headline is, as far as the keys can tell, new
+        assert [b.text for b in merged.blocks if b.kind.value == "heading"] == ["The product development system for teams and agents"]
+
+    def test_a_short_rendered_block_does_not_swallow_static_content(self) -> None:
+        """"Menu" begins a lot of things; only a rendered block of some length counts."""
+        static = doc("<p>Menu</p><p>Menu of the day: soup, bread and a long list of things.</p>")
+        rendered = doc("<p>Menu</p>")
+        _merged, only_static, _only_rendered = union_documents(static, rendered)
+        assert only_static == 1
+
 
 class TestUnionOrdering:
     def test_rendered_order_leads(self) -> None:
