@@ -154,7 +154,11 @@ def _render_table(block: Block, options: MarkdownOptions) -> str:
     if not block.rows:
         return ""
 
-    rows = block.rich_rows or block.rows
+    # The cells' inline Markdown only when the caller wants links: with links off the
+    # plain cells are the honest rendering, and WebMainBench runs with links off --
+    # #68 rendered `[text](href)` into every cell regardless and table_edit fell
+    # 0.390 -> 0.338 unnoticed until the board was re-run.
+    rows = (block.rich_rows or block.rows) if options.include_links else block.rows
     width = max(len(row) for row in rows)
     padded = [list(row) + [""] * (width - len(row)) for row in rows]
 

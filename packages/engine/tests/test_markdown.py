@@ -104,6 +104,13 @@ class TestTables:
         assert "| [Free Guinea Pig Lawn Trimming](https://example.com/x/1) | **SF** bay \\| area |" in out
         document = build_document(self.HTML, "https://example.com/")
         assert document.blocks[0].rich_rows == ()
+        # With links off the plain cells render: WebMainBench scores that way, and #68
+        # put `[text](href)` into every cell regardless (table_edit 0.390 -> 0.338).
+        linked = build_document(
+            '<table><tr><th>T</th></tr><tr><td><a href="/x/1">Title</a></td></tr></table>',
+            "https://example.com/",
+        )
+        assert "| Title |" in to_markdown(linked, options=MarkdownOptions(include_links=False))
 
     def test_table_renders_as_markdown_table(self) -> None:
         """A flattened table loses which column a value belonged to."""
