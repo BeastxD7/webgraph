@@ -30,6 +30,7 @@ from webgraph.fetch.render import (
     render_page,
 )
 from webgraph.pipeline import build_document
+from webgraph.types import BlockKind
 
 _PAGE = """<!doctype html><html><head><title>Shadow</title></head><body>
 <p>LIGHT DOM PARAGRAPH</p>
@@ -94,17 +95,29 @@ class TestFlattening:
         root = lxml_html.document_fromstring(html)
         assert flatten_shadow_roots(root) == 2
 
-    def test_text_following_a_shadow_root_survives(self) -> None:
+    def test_text_following_the_host_survives(self) -> None:
         html = (
             "<html><body><div>"
             '<template shadowrootmode="open"><p>Shadow</p></template>'
-            "Tail text after the host"
-            "</div></body></html>"
+            "</div>Tail text after the host</body></html>"
         )
         root = parse_html(html)
         content = root.text_content()
         assert "Shadow" in content
         assert "Tail text" in content
+
+    def test_light_text_of_a_slotless_host_is_not_rendered(self) -> None:
+        """Text inside the host beside its shadow root is a light-DOM text node; with no
+        `<slot>` to take it the browser paints the shadow tree alone. An earlier version
+        kept it ("text following a shadow root survives"), which read a component's no-JS
+        fallback as page text."""
+        html = (
+            "<html><body><div>"
+            '<template shadowrootmode="open"><p>Shadow</p></template>'
+            "Light text nobody sees"
+            "</div></body></html>"
+        )
+        assert parse_html(html).text_content().strip() == "Shadow"
 
 
 @pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="needs the 'render' extra")
@@ -158,3 +171,139 @@ class TestPiercing:
         assert result.ok
         assert result.shadow_roots == 0
         assert "Title" in build_document(result.html, target.as_uri()).text
+
+
+CARD = (
+    "<html><body><main>"
+    '<my-card><template shadowrootmode="open">'
+    '<div class="card"><h2><slot name="title">Untitled card</slot></h2>'
+    "<p>Shadow intro paragraph shown above the body.</p>"
+    '<div class="body"><slot>Nothing was slotted here.</slot></div>'
+    '<footer><slot name="footer"></slot></footer></div>'
+    "</template>"
+    '<span slot="title">Quarterly results</span>'
+    "<p>Revenue grew twelve percent on the back of strong demand.</p>"
+    "<p>Costs were flat, so margins expanded.</p>"
+    '<span slot="footer">Published 14 Sep</span>'
+    '<p slot="nowhere">This light child is assigned to no slot and never renders.</p>'
+    "</my-card>"
+    "<p>After the component, the page goes on with a closing paragraph.</p>"
+    "</main></body></html>"
+)
+
+
+class TestSlotComposition:
+    """A shadow root's `<slot>`s are where the host's own children are painted.
+
+    Unwrapping the serialised shadow root and leaving the light DOM behind it read the
+    component the way no browser shows it: the slots' *fallback* text ("Untitled card",
+    "Nothing was slotted here") came out although the browser had replaced it -- invented
+    text, the worst failure the whole-page output can have -- the slotted children landed
+    after the entire shadow tree instead of at their slot, a title slotted into an `<h2>`
+    stopped being a heading, and a light child assigned to no slot, which the browser never
+    renders, was read as a paragraph. The flat tree is composed the way the browser
+    composes it: each slot is replaced by what is assigned to it, or by its fallback when
+    nothing is; the unassigned rest is dropped.
+    """
+
+    def test_slotted_children_replace_their_slots_in_place(self) -> None:
+        document = build_document(CARD, "https://x.test/")
+        texts = [b.text for b in document.blocks]
+        assert texts == [
+            "Quarterly results",
+            "Shadow intro paragraph shown above the body.",
+            "Revenue grew twelve percent on the back of strong demand.",
+            "Costs were flat, so margins expanded.",
+            "Published 14 Sep",
+            "After the component, the page goes on with a closing paragraph.",
+        ]
+
+    def test_a_filled_slots_fallback_is_never_shown(self) -> None:
+        text = build_document(CARD, "https://x.test/").text
+        assert "Untitled card" not in text
+        assert "Nothing was slotted here" not in text
+
+    def test_slotted_content_takes_the_slots_structure(self) -> None:
+        """`<h2><slot name="title">` with a span slotted in is a heading in the browser."""
+        document = build_document(CARD, "https://x.test/")
+        title = next(b for b in document.blocks if b.text == "Quarterly results")
+        assert title.kind is BlockKind.HEADING
+
+    def test_a_child_assigned_to_no_slot_is_not_rendered(self) -> None:
+        assert "never renders" not in build_document(CARD, "https://x.test/").text
+
+    def test_an_empty_slot_shows_its_fallback(self) -> None:
+        html = (
+            '<html><body><x-note><template shadowrootmode="open">'
+            "<p><slot>No note was given for this entry.</slot></p></template></x-note>"
+            "</body></html>"
+        )
+        assert build_document(html, "https://x.test/").text == "No note was given for this entry."
+
+    def test_light_text_goes_to_the_default_slot(self) -> None:
+        html = (
+            '<html><body><x-badge><template shadowrootmode="open">'
+            "<b>Status: </b><slot>unknown</slot></template>Shipped on time</x-badge></body></html>"
+        )
+        text = build_document(html, "https://x.test/").text
+        assert "Shipped on time" in text and "unknown" not in text
+
+    def test_only_the_first_slot_of_a_name_is_filled(self) -> None:
+        """Per the spec, a second slot with the same name gets nothing -- and shows its fallback."""
+        html = (
+            '<html><body><x-two><template shadowrootmode="open">'
+            '<p><slot name="a">first fallback</slot></p><p><slot name="a">second fallback</slot></p>'
+            '</template><span slot="a">Assigned once</span></x-two></body></html>'
+        )
+        text = build_document(html, "https://x.test/").text
+        assert text.count("Assigned once") == 1
+        assert "first fallback" not in text and "second fallback" in text
+
+    def test_a_host_without_slots_keeps_nothing_of_the_light_dom(self) -> None:
+        """No slot means the browser paints the shadow tree alone; the host's children are
+        markup nobody sees. Before this the light DOM was kept behind the shadow content."""
+        html = (
+            '<html><body><x-only><template shadowrootmode="open"><p>Shadow only</p></template>'
+            "<p>Light child that the browser does not render</p></x-only></body></html>"
+        )
+        assert build_document(html, "https://x.test/").text == "Shadow only"
+
+    def test_nested_components_compose_inside_out(self) -> None:
+        html = (
+            '<html><body><x-outer><template shadowrootmode="open">'
+            '<x-inner><template shadowrootmode="open"><h3><slot>inner fallback</slot></h3></template>'
+            '<slot name="heading">outer fallback</slot></x-inner>'
+            "<p>Outer shadow paragraph.</p></template>"
+            '<span slot="heading">Composed heading</span></x-outer></body></html>'
+        )
+        document = build_document(html, "https://x.test/")
+        assert [b.text for b in document.blocks] == ["Composed heading", "Outer shadow paragraph."]
+        assert document.blocks[0].kind is BlockKind.HEADING
+
+
+_SLOT_PAGE = """<!doctype html><html><head><title>Slots</title></head><body>
+<p>LIGHT PARAGRAPH before the component.</p>
+<x-card><span slot="title">SLOTTED TITLE</span><p>SLOTTED BODY that came from the light DOM.</p></x-card>
+<script>
+  const root = document.querySelector('x-card').attachShadow({mode: 'open'});
+  root.innerHTML = '<h2><slot name="title">FALLBACK TITLE</slot></h2><div><slot>FALLBACK BODY</slot></div><p>SHADOW FOOTER</p>';
+</script>
+</body></html>"""
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="needs the 'render' extra")
+class TestSlotsEndToEnd:
+    def test_the_browser_serialisation_composes_the_same_way(self, tmp_path: Path) -> None:
+        target = tmp_path / "slots.html"
+        target.write_text(_SLOT_PAGE, encoding="utf-8")
+        result = render_page(target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False))
+        assert result.ok and result.shadow_roots == 1
+        document = build_document(result.html, target.as_uri())
+        texts = [b.text for b in document.blocks]
+        assert texts == [
+            "LIGHT PARAGRAPH before the component.",
+            "SLOTTED TITLE",
+            "SLOTTED BODY that came from the light DOM.",
+            "SHADOW FOOTER",
+        ]
+        assert "FALLBACK" not in document.text

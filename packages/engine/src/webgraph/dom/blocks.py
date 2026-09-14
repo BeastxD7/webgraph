@@ -312,6 +312,18 @@ def flatten_shadow_roots(root: HtmlElement) -> int:
     Only templates carrying `shadowrootmode` are unwrapped. A genuine inert `<template>` is
     markup the page has *not* rendered, and it stays stripped -- flattening those would
     invent content, which is the opposite failure but a failure all the same.
+
+    The result is the browser's *flat tree*, not the shadow tree followed by the light
+    tree. A shadow root's `<slot>`s are where the host's own children are painted: each
+    slot is replaced by the children assigned to it -- `slot="name"` to the first
+    `<slot name="name">`, everything else (text included) to the first unnamed slot -- or by
+    its fallback content when nothing is. What no slot takes is not rendered and is
+    dropped. Splicing the shadow content ahead of an untouched light DOM, as this did
+    before, read every filled slot's fallback ("Untitled card") as text on the page, put
+    the slotted children after the whole component instead of at their place, turned a
+    title slotted into an `<h2>` into a paragraph, and kept children the browser never
+    shows. Deepest first, so a component nested in another's shadow tree is composed --
+    its slots resolved -- before the outer one moves it.
     """
     flattened = 0
     # Deepest first, so a shadow root nested inside another is unwrapped before its parent
@@ -320,30 +332,136 @@ def flatten_shadow_roots(root: HtmlElement) -> int:
     for template in reversed(templates):
         if template.get(SHADOW_TEMPLATE_ATTRIBUTE) is None:
             continue
-        parent = template.getparent()
-        if parent is None:
+        host = template.getparent()
+        if host is None:
             continue
-        index = parent.index(template)
-        # The host's own light-DOM children stay where they are; the shadow content is
-        # spliced in ahead of them, which is where the browser paints it.
+        _compose_slots(host, template)
+        index = host.index(template)
         for offset, child in enumerate(list(template)):
-            parent.insert(index + offset, child)
+            host.insert(index + offset, child)
         text = (template.text or "").strip()
         if text:
             previous = template.getprevious()
             if previous is not None:
                 previous.tail = (previous.tail or "") + " " + text
             else:
-                parent.text = (parent.text or "") + " " + text
+                host.text = (host.text or "") + " " + text
         if template.tail:
             previous = template.getprevious()
             if previous is not None:
                 previous.tail = (previous.tail or "") + template.tail
             else:
-                parent.text = (parent.text or "") + template.tail
-        parent.remove(template)
+                host.text = (host.text or "") + template.tail
+        host.remove(template)
         flattened += 1
     return flattened
+
+
+def _compose_slots(host: HtmlElement, template: HtmlElement) -> None:
+    """Move the host's light-DOM children into the template's slots, browser-style.
+
+    Light children are every child of `host` but `template`, plus the text between them
+    (which the browser assigns to the default slot as text nodes). A `<slot>` inside a
+    nested serialised shadow root belongs to that root and is not this host's -- but by the
+    time this runs, deeper templates are already flattened, so any slot still in the
+    template's tree is this root's own.
+    """
+    light = [child for child in host if child is not template]
+    # The text nodes of the light DOM, in order: what follows the template, then what
+    # follows each light child. Kept as (after_element, text) so it can be placed.
+    light_text: list[str] = []
+    if template.tail and template.tail.strip():
+        light_text.append(template.tail)
+    for child in light:
+        if child.tail and child.tail.strip():
+            light_text.append(child.tail)
+        child.tail = None
+    template.tail = None
+    if host.text and host.text.strip() and host.index(template) > 0:
+        # Text before the template is light text too (the template is normally first).
+        light_text.insert(0, host.text)
+    host.text = None
+
+    slots = [s for s in template.iter("slot") if isinstance(s.tag, str)]
+    named_taken: set[str] = set()
+    default_taken = False
+    for slot in slots:
+        name = (slot.get("name") or "").strip()
+        if name:
+            if name in named_taken:
+                assigned: list[HtmlElement] = []
+                text_for_slot: list[str] = []
+            else:
+                named_taken.add(name)
+                assigned = [c for c in light if (c.get("slot") or "").strip() == name]
+                text_for_slot = []
+        elif default_taken:
+            assigned, text_for_slot = [], []
+        else:
+            default_taken = True
+            assigned = [c for c in light if not (c.get("slot") or "").strip()]
+            text_for_slot = light_text
+        _fill_slot(slot, assigned, text_for_slot)
+        for c in assigned:
+            light.remove(c)
+    # Whatever no slot took is not in the flat tree: the browser does not paint it.
+    for leftover in light:
+        host.remove(leftover)
+
+
+def _fill_slot(slot: HtmlElement, assigned: list[HtmlElement], text: list[str]) -> None:
+    """Replace `slot` with its assigned nodes, or leave its fallback when it got none."""
+    parent = slot.getparent()
+    if parent is None:
+        return
+    index = parent.index(slot)
+    tail = slot.tail
+    if not assigned and not text:
+        # Fallback: the slot's own content stands. Unwrap the slot element itself so no
+        # `<slot>` tag survives into the block walk.
+        for offset, child in enumerate(list(slot)):
+            parent.insert(index + offset, child)
+        lead = slot.text or ""
+        _prepend_text(parent, index, lead)
+        parent.remove(slot)
+        _append_text(parent, index + len(slot) - 1 if len(slot) else index - 1, tail)
+        return
+    for child in list(slot):
+        slot.remove(child)
+    slot.text = None
+    for offset, node in enumerate(assigned):
+        parent.insert(index + offset, node)
+    joined = " ".join(t.strip() for t in text if t.strip())
+    if joined:
+        if assigned:
+            assigned[-1].tail = ((assigned[-1].tail or "") + " " + joined).strip()
+        else:
+            _prepend_text(parent, index, joined)
+    parent.remove(slot)
+    _append_text(parent, index + len(assigned) - 1, tail)
+
+
+def _prepend_text(parent: HtmlElement, index: int, text: str | None) -> None:
+    """Put `text` where the child at `index` begins: after the previous sibling, or as the
+    parent's leading text."""
+    if not text or not text.strip():
+        return
+    if index > 0:
+        previous = parent[index - 1]
+        previous.tail = (previous.tail or "") + text
+    else:
+        parent.text = (parent.text or "") + text
+
+
+def _append_text(parent: HtmlElement, index: int, text: str | None) -> None:
+    """Put `text` after the child at `index` (or as leading text when `index` < 0)."""
+    if not text:
+        return
+    if index >= 0 and index < len(parent):
+        child = parent[index]
+        child.tail = (child.tail or "") + text
+    else:
+        parent.text = (parent.text or "") + text
 
 
 PERMALINK_CLASSES: Final[tuple[str, ...]] = (
