@@ -180,11 +180,20 @@ class Block(BaseModel):
     """Absolute URL: an image's source, or a standalone link's target."""
 
     alt: str | None = None
+    link: str | None = None
+    """For an image: the target of the link wrapping it, when the link holds nothing but
+    the image (`<a href><img></a>` -- a logo, a planet on spacejam.com/1996, a navigation
+    arrow). Rendered as `[![alt](src)](link)`."""
     ordered: bool = False
     """True for numbered list items."""
 
     rows: tuple[tuple[str, ...], ...] = ()
     """Table cells, first row treated as the header."""
+
+    rich_rows: tuple[tuple[str, ...], ...] = ()
+    """The same cells as inline Markdown -- links and emphasis kept -- when any cell has
+    some; empty for a plain grid. The Markdown renderer prefers it: a table of links
+    (craigslist's "best of", a directory, a release list) is its links."""
 
     table_html: str | None = None
     """The table's own markup, cleaned, for a table whose structure Markdown cannot express.

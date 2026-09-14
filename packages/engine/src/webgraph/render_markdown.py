@@ -143,8 +143,9 @@ def _render_table(block: Block) -> str:
     if not block.rows:
         return ""
 
-    width = max(len(row) for row in block.rows)
-    padded = [list(row) + [""] * (width - len(row)) for row in block.rows]
+    rows = block.rich_rows or block.rows
+    width = max(len(row) for row in rows)
+    padded = [list(row) + [""] * (width - len(row)) for row in rows]
 
     def line(cells: list[str]) -> str:
         cleaned = (_escape_currency(_TABLE_PIPE.sub(r"\\|", c)) for c in cells)
@@ -177,7 +178,8 @@ def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
         if not options.include_images or not block.href:
             return None
         alt = _text(block.alt or "", options)
-        return f"![{alt}]({block.href})"
+        image = f"![{alt}]({block.href})"
+        return f"[{image}]({block.link})" if block.link else image
 
     if kind is BlockKind.MEDIA:
         # Rendered as an italic aside rather than a link or an image: it is a note *about*

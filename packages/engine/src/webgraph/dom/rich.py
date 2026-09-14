@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import urljoin
@@ -245,7 +246,30 @@ def _image_block(element: HtmlElement, base: str, index: int, tree: object) -> B
         kind=BlockKind.IMAGE,
         href=src,
         alt=alt or title or None,
+        link=_image_link(element, base),
     )
+
+
+def _image_link(element: HtmlElement, base: str) -> str | None:
+    """The target of the link wrapping an image, when the image is what the link is.
+
+    spacejam.com/1996 is twelve `<a href><img></a>` planets and the Common Lisp
+    HyperSpec's navigation is eleven of them; the images were kept and every href was
+    dropped, because a link's target only survived through the text it wrapped and these
+    wrap none. Only an `<a>` within two levels and holding no text of its own counts: a
+    link around a paragraph with a picture in it belongs to the paragraph.
+    """
+    parent = element.getparent()
+    for _ in range(2):
+        if parent is None or not isinstance(parent.tag, str):
+            return None
+        if parent.tag == "a":
+            if normalize_text(parent.text_content()):
+                return None
+            href = _absolute(parent.get("href"), base)
+            return None if not href or href.lower().startswith("javascript:") else href
+        parent = parent.getparent()
+    return None
 
 
 MEDIA_TAGS: Final[frozenset[str]] = frozenset({"video", "audio", "iframe", "embed", "object"})
@@ -492,7 +516,26 @@ def _cell_text(cell: HtmlElement) -> str:
     return normalize_text("".join(parts).replace(LINE_BREAK, " "))
 
 
-def _expanded_rows(element: HtmlElement) -> list[list[str]]:
+def _cell_rich(cell: HtmlElement, base: str) -> str:
+    """A cell's inline Markdown: `_cell_text` with its links and emphasis kept.
+
+    craigslist.org/about/best/all is a table of `<td><a href>title</a></td>`; the links
+    are the whole point of the page and every one was dropped, because a pipe table was
+    rendered from the plain cell text. A pipe in a link is escaped by the renderer.
+    """
+    parts: list[str] = [cell.text or ""]
+    for child in cell:
+        if isinstance(child.tag, str) and child.tag == "table":
+            parts.append(child.tail or "")
+            continue
+        parts.append(_inline_child(child, base, orphan_only=False))
+        parts.append(child.tail or "")
+    return normalize_text("".join(parts).replace(LINE_BREAK, " "))
+
+
+def _expanded_rows(
+    element: HtmlElement, render: Callable[[HtmlElement], str] = _cell_text
+) -> list[list[str]]:
     """The table as a rectangular grid, with `rowspan` and `colspan` resolved.
 
     Ignoring spans does not merely lose formatting, it **misaligns every value**. A header
@@ -528,7 +571,7 @@ def _expanded_rows(element: HtmlElement) -> list[list[str]]:
                     next_carried.append((held_column, held_text, held_rows - 1))
                 column += 1
 
-            text = _cell_text(cell)
+            text = render(cell)
             rows_spanned = _span(cell, "rowspan")
             for _ in range(_span(cell, "colspan")):
                 line.append(text)
@@ -687,6 +730,13 @@ def _table_block(
     if not rows:
         return None
 
+    # The same grid with each cell's links and emphasis, for the Markdown; kept only
+    # when it differs, so a plain grid carries nothing twice.
+    rich_grid = [row for row in _expanded_rows(element, lambda c: _cell_rich(c, base_url)) if any(cell for cell in row)]
+    rich_rows = _collapse_header(rich_grid, _header_depth(element)) if rich_grid else []
+    if len(rich_rows) != len(rows) or rich_rows == rows:
+        rich_rows = []
+
     caption = element.xpath("./caption")
     summary = normalize_text(flowed_text(caption[0])) if caption else ""
     preserved = preserved_table_html(element, base_url) if is_complex_table(element) else None
@@ -708,6 +758,7 @@ def _table_block(
         dom_index=index,
         kind=BlockKind.TABLE,
         rows=tuple(rows),
+        rich_rows=tuple(rich_rows),
         table_html=preserved,
     )
 

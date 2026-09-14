@@ -47,6 +47,17 @@ class TestImages:
         out = md('<img src="/logo.png" alt="Company logo">')
         assert "![Company logo](https://example.com/logo.png)" in out
 
+    def test_a_link_that_is_only_an_image_keeps_its_target(self) -> None:
+        """spacejam.com/1996: twelve `<a href><img></a>` planets, every href dropped. A
+        link with words of its own belongs to the words; a `javascript:` target is not
+        a destination."""
+        out = md('<a href="/jam.htm"><img src="/planet.gif" alt="Jam"></a>')
+        assert "[![Jam](https://example.com/planet.gif)](https://example.com/jam.htm)" in out
+        out = md('<p><a href="/t"><img src="/i.png" alt="i"> with words</a></p>')
+        assert "[with words](https://example.com/t)" in out and "[![i]" not in out
+        out = md('<a href="javascript:void(0)"><img src="/j.png" alt="j"></a>')
+        assert "![j](https://example.com/j.png)" in out and "[![j]" not in out
+
     def test_relative_paths_resolved(self) -> None:
         out = md('<img src="../img/a.png" alt="A">')
         assert "https://example.com/img/a.png" in out
@@ -81,6 +92,18 @@ class TestTables:
       <tr><td>Team</td><td>99</td></tr>
     </table>
     """
+
+    def test_a_link_in_a_cell_is_a_link(self) -> None:
+        """craigslist.org/about/best/all is a table of `<td><a href>title</a></td>` -- the
+        links are the page -- and every one was dropped; `Block.rich_rows` carries the
+        cells' inline Markdown, a pipe inside is escaped, a plain grid carries nothing twice."""
+        out = md(
+            "<table><tr><th>Title</th><th>Where</th></tr>"
+            '<tr><td><a href="/x/1">Free Guinea Pig Lawn Trimming</a></td><td><b>SF</b> bay | area</td></tr></table>'
+        )
+        assert "| [Free Guinea Pig Lawn Trimming](https://example.com/x/1) | **SF** bay \\| area |" in out
+        document = build_document(self.HTML, "https://example.com/")
+        assert document.blocks[0].rich_rows == ()
 
     def test_table_renders_as_markdown_table(self) -> None:
         """A flattened table loses which column a value belonged to."""
