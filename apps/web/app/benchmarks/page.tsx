@@ -51,11 +51,11 @@ export default function BenchmarksPage() {
           <p className="mt-5 text-[15.5px] leading-relaxed text-ink-soft">
             Six boards, six different definitions of a correct extraction. This engine is first
             of seven, by a margin that is a tie, on the one built to test pages that are not
-            articles; second of seven on the widest and most independent of them, where until
-            this measurement the page showed a variant of the engine rather than what the API
-            returns; tenth of thirty-five on the oldest; and eighth of fourteen on the only
-            board that scores a real fetch. It is still behind the leader wherever tables and
-            equations are graded on their own. All of it is below, including the correction.
+            articles; on the widest and most independent of them it is first with its two
+            output fields joined and second with the content field alone, and the board says
+            which is which; tenth of thirty-five on the oldest; and eighth of fourteen on the
+            only board that scores a real fetch. It is still behind the leader wherever tables
+            and equations are graded on their own. All of it is below.
           </p>
           <p className="mt-4 font-mono text-[11.5px] text-ink-faint">
             Rows for this engine measured {MEASURED.date} on <code>main@{MEASURED.commit}</code>,

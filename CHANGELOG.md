@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-14, PRs #55, #57)
+- `/api/text` and the page stream return `comments_markdown`: the comment thread found
+  under the content, in page order, left out of `content_markdown` instead of thrown away.
+  The extract view shows it as a collapsed section (#55).
+- `include_hidden_text` on `/api/text` and `--include-hidden-text` on the CLI keep
+  screen-reader-only labels, skip links and wiki edit controls for callers that want every
+  string in the DOM; the default still strips them (#57).
+
+### Changed (2026-09-14, PRs #54, #56)
+- A single block contributes at most 400 words to the mean the adaptive block cost is
+  drawn from; a 2,100-word contributor list no longer prices the page (#54).
+- Product pages: seller, shop-policy, "Did you know?", payment and report-listing sections
+  are pruned like reviews and related grids (#56; WCXB product +0.003).
+- Benchmarks page: WCEB ranks the two output fields joined (0.883, first) and the content
+  field alone (0.856, second); the diagnostic-variant row is gone.
+
 ### Changed (2026-09-13/14, PRs #48–#52)
 - Extraction quality, measured on the corpus runners in `benchmark/`: WCXB dev routed
   0.855 → 0.861 (first of the published field, by 0.002), WCXB test 0.864 → 0.875, Zyte
