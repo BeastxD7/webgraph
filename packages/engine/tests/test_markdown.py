@@ -258,6 +258,12 @@ class TestPermalinkAnchors:
     def test_a_heading_that_really_ends_in_a_hash_survives(self) -> None:
         assert "# The C# language" in md("<h1>The C# language</h1>")
 
+    def test_an_old_mediawiki_editsection_is_a_control(self) -> None:
+        """cppreference.com: `<span class="editsection noprint">[edit]</span>` beside every
+        heading and table row, 56 on the `std::vector` page."""
+        out = md('<h3>Member functions<span class="editsection noprint plainlinks">[<a href="/w/x">edit</a>]</span></h3><p>Body text here.</p>')
+        assert "### Member functions" in out and "edit" not in out
+
     def test_a_glyph_only_fragment_anchor_is_a_permalink_whatever_its_class(self) -> None:
         """php.net's `<a class="genanchor" href="#…"> ¶</a>` is added by a script, so the
         rendered heading read "Description ¶" beside the static "Description" and the union

@@ -382,13 +382,17 @@ rendered fetch measures such an element at 1x1px and it goes as unmeasured chrom
 static fetch has only the class to go by, and this reads it.
 """
 
-HEADING_CONTROL_CLASSES: Final[tuple[str, ...]] = ("mw-editsection",)
+HEADING_CONTROL_CLASSES: Final[tuple[str, ...]] = ("mw-editsection", "editsection")
 """Class names of the control strip beside a heading that is not an anchor.
 
 MediaWiki puts `<span class="mw-editsection">[edit | edit source]</span>` beside every
 section heading of every Wikipedia, Wiktionary and Fandom page. Two links and two
 brackets, and once per section: measured on ar.wikipedia's "حاسوب", 49 of them, each a
-paragraph of its own in the Markdown right before the heading it belongs to.
+paragraph of its own in the Markdown right before the heading it belongs to. Older
+MediaWiki skins -- cppreference.com -- write `<span class="editsection noprint">[edit]`
+beside every heading and every table row: 56 of them on the `std::vector` page, hidden
+by the stylesheet, a quarter of our words on that page, and, because the static fetch
+kept them and the rendered one did not, the member-function tables emitted twice.
 """
 
 
