@@ -32,6 +32,7 @@ from enum import StrEnum
 from typing import Final
 
 from webgraph import config
+from webgraph.fetch import robots
 from webgraph.fetch.render import (
     PLAYWRIGHT_AVAILABLE,
     HiddenMatter,
@@ -58,6 +59,7 @@ __all__ = [
     "MISSING_STATUSES",
     "SUPPLIED_RENDER_NOTE",
     "PageBlockedError",
+    "PageDisallowedError",
     "PageMissingError",
     "ResolvedPage",
     "Strategy",
@@ -98,6 +100,17 @@ class PageMissingError(Exception):
         super().__init__(f"HTTP {status}: page does not exist")
         self.url = url
         self.status = status
+
+class PageDisallowedError(ValueError):
+    """The site's robots.txt asks automated clients not to read this page, and this client
+    is one. A `ValueError` like every other "could not resolve"; its own type because the
+    fix is not on the engine's side -- the message says what the site offers instead."""
+
+    def __init__(self, url: str, reason: str) -> None:
+        super().__init__(f"could not resolve {url}: {reason}")
+        self.url = url
+        self.reason = reason
+
 
 class PageShellError(ValueError):
     """The response was a JavaScript shell: markup with no readable text until a browser
@@ -862,6 +875,15 @@ def resolve_page(
             f"could not resolve {url}: strategy {Strategy.SUPPLIED.value!r} means the caller "
             "supplies the HTML -- use resolve_supplied(html, url)"
         )
+    # The site's own rule first. A page robots.txt disallows for this client is not
+    # fetched at all -- reading it and then refusing would be the request the site asked
+    # not to receive. `FetchConfig.respect_robots=False` is the caller's explicit override,
+    # as `SiteConfig.respect_robots` has always been for the crawl.
+    if (fetch_config or FetchConfig()).respect_robots:
+        reason = robots.allowed(url, fetch_config=fetch_config)
+        if reason is not None:
+            raise PageDisallowedError(url, reason)
+
     static_result = fetch_static(url, config=fetch_config)
 
     # Gate on status before anything else. A 404 page renders perfectly well, and without

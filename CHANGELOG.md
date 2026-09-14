@@ -41,6 +41,26 @@ All notable changes to this project are documented here. The format follows
   `strategy=SUPPLIED` (it would have fallen through to the union branch). Whole-page
   fidelity on columbia-sample, stallman.org and catb.org: identical recall / extra /
   inversions / blocks before and after.
+### Changed (2026-09-14, PR #83) — a single page honours robots.txt
+- `resolve_page` -- and so `/api/text`, `/api/text/stream`, `/api/extract` -- asks the
+  host's robots.txt before fetching a page, as the crawl has since its first version. A
+  page the file disallows for this client is not fetched; the refusal
+  (`PageDisallowedError`) names the file, quotes the group and rule that decided
+  (`User-agent: *` / `Disallow: /`), and says what the site offers instead -- its API
+  where the engine can cite one (`ROBOTS_SANCTIONED_SOURCES`: Stack Overflow, Reddit) and
+  the caller's own HTML. One fetch of the file per host per hour
+  (`fetch/robots.py`); a file that cannot be fetched means allow. Per request:
+  `FetchConfig.respect_robots` / `fetch.respect_robots` on the API, the same switch the
+  crawl has always had. Measured on the live suite (24 sites, main@8b49391 vs this): two pages flip to a
+  refusal -- thesun.co.uk (`User-agent: * / Disallow: /`, 189 blocks read before) and
+  old.reddit.com (disallowed now, a login wall before); every other page identical
+  (amazon's recall moved 0.69 → 0.27 on an oracle that served 566 vs 1,548 words to the
+  two runs; our 1,163 words were the same). Fidelity suite: no page moved.
+- Rules are asked for by the client's name. `urllib.robotparser` matches the first
+  `/`-split token of the string it is given, and the engine's browser-shaped User-Agent
+  made every rule for `webgraph` a rule for `mozilla`, which no robots.txt names; the crawl
+  had the same bug (`RobotsPolicy.allows`, `crawl_delay`). `ROBOTS_AGENT_TOKEN`.
+
 ### Added (2026-09-14, PR #82) — a declared client for sites that ask who is calling
 - sec.gov answers the engine's browser-shaped User-Agent with HTTP 403 and a page saying
   "Your Request Originates from an Undeclared Automated Tool … declare your traffic by

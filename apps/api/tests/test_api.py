@@ -692,3 +692,55 @@ class TestSuppliedHtml:
         assert "over the 1,000-byte limit" in detail
         # No fetch happened, and the detail must not claim one did.
         assert detail.startswith("could not read the supplied HTML")
+ROBOTS_CLOSED = "User-agent: *\nDisallow: /\n"
+PLAIN_PAGE = (
+    "<html><body><h1>An article</h1><p>Enough words here to be a real page of its own, "
+    "with a second sentence so the boundary step has something to keep.</p></body></html>"
+)
+
+
+@pytest.fixture
+def closed_server(tmp_path: Path) -> Iterator[str]:
+    """A site whose robots.txt asks every automated client to stay out."""
+    (tmp_path / "robots.txt").write_text(ROBOTS_CLOSED, encoding="utf-8")
+    (tmp_path / "article.html").write_text(PLAIN_PAGE, encoding="utf-8")
+    handler = partial(_QuietHandler, directory=str(tmp_path))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class TestRobotsOnASinglePage:
+    """The crawl honoured robots.txt from the start; a single page through `/api/text`
+    never did. Now it does, and the caller can say otherwise in so many words."""
+
+    def test_a_disallowed_page_is_refused_with_the_rule(
+        self, client: TestClient, closed_server: str
+    ) -> None:
+        from webgraph.fetch import robots
+
+        robots.forget()
+        response = client.post("/api/text", json={"url": f"{closed_server}/article.html"})
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "robots.txt disallows /article.html" in detail
+        assert "Disallow: /" in detail
+        assert "supply the HTML" in detail
+
+    def test_the_caller_can_decline_the_check(
+        self, client: TestClient, closed_server: str
+    ) -> None:
+        from webgraph.fetch import robots
+
+        robots.forget()
+        response = client.post(
+            "/api/text",
+            json={"url": f"{closed_server}/article.html", "fetch": {"respect_robots": False}},
+        )
+        assert response.status_code == 200
+        assert "An article" in response.json()["text"]

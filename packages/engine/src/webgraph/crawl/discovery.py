@@ -21,6 +21,8 @@ from webgraph import config
 from webgraph.crawl.frontier import reconcile_scheme
 from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, fetch_static
 
+ROBOTS_AGENT_TOKEN = config.ROBOTS_AGENT_TOKEN
+
 MAX_SITEMAP_DOCUMENTS = config.MAX_SITEMAP_DOCUMENTS
 MAX_ANCHOR_CHARS = config.MAX_ANCHOR_CHARS
 
@@ -49,10 +51,20 @@ class RobotsPolicy:
     but it is recorded so the distinction stays visible."""
 
     def allows(self, url: str, user_agent: str = DEFAULT_USER_AGENT) -> bool:
+        """Whether robots.txt lets this client fetch `url`.
+
+        Asked by the client's name (`ROBOTS_AGENT_TOKEN`), whatever User-Agent header it
+        sends: `urllib.robotparser` takes the first `/`-split token of the string it is
+        given, and the browser-shaped header made every rule for `webgraph` a rule for
+        `mozilla`, which no robots.txt names. `user_agent` is kept for callers that pass
+        it and consulted only when it is not the engine's own -- a caller crawling under
+        another name is asking about that name.
+        """
         if self.parser is None:
             return True
+        token = ROBOTS_AGENT_TOKEN if ROBOTS_AGENT_TOKEN in user_agent else user_agent
         try:
-            return bool(self.parser.can_fetch(user_agent, url))
+            return bool(self.parser.can_fetch(token, url))
         except Exception:
             return True
 
@@ -80,7 +92,7 @@ def load_robots(root: str, *, config: FetchConfig | None = None) -> RobotsPolicy
 
     delay: float | None = None
     try:
-        raw_delay = parser.crawl_delay(DEFAULT_USER_AGENT)
+        raw_delay = parser.crawl_delay(ROBOTS_AGENT_TOKEN)
         if raw_delay is not None:
             delay = float(raw_delay)
     except Exception:

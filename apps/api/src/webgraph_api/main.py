@@ -195,6 +195,12 @@ class FetchOptions(BaseModel):
 
     timeout_seconds: float | None = Field(default=None, ge=1, le=120)
     retries: int | None = Field(default=None, ge=0, le=5)
+    respect_robots: bool | None = Field(
+        default=None,
+        description="Ask the site's robots.txt before fetching and refuse a page it "
+        "disallows for this client, naming the rule and what the site offers instead. On "
+        "by default, as it always was for a crawl; `false` is the caller's explicit choice.",
+    )
 
 
 class CrawlOptions(BaseModel):

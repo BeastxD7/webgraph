@@ -68,6 +68,10 @@ class FetchConfig:
     """Extra attempts for a `RETRY_STATUSES` answer or a transport error. One by default:
     enough for a server that said *later*, not enough to be the reason it said so."""
 
+    respect_robots: bool = config.PAGE_RESPECT_ROBOTS
+    """Ask the host's robots.txt before fetching a page (`resolve_page`). The crawl has its
+    own switch, `SiteConfig.respect_robots`; this one is for a single URL."""
+
     contact: str = field(default_factory=lambda: _deployment_contact())
     """Who runs this client, `Name contact@example.com`, for a site that asks (see
     `declared`). From `WEBGRAPH_CONTACT`; empty means there is nothing to declare."""
