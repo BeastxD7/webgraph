@@ -13,7 +13,17 @@ All notable changes to this project are documented here. The format follows
   prose; pubs.opengroup.org's awk page lost its example lead-ins the same way. The strip
   is now a container that holds a button, or one whose words are all labels (a language
   name, the block's own declared language, "Copy"); a `<p>` is never the strip. Fidelity:
-  perldoc 61 → 4 missing words, posix-awk 15 → 1. MEASURE_PLACEHOLDER
+  perldoc 0.997 → 1.000, posix-awk 0.999 → 1.000. WebMainBench 0.7331 → 0.7335 (code_edit
+  0.8468 → 0.8500, 12 pages up, none down); WCXB 0.8632 = 0.8632; Zyte 0.945 = 0.945.
+- Reading those captions at all moved the content boundary on one tutorial: a dozen
+  "Start the service:" lines each paid the block cost and Kadane ended the run before the
+  last commands (WebMainBench 0ed88efa code_edit 1.000 → 0.874). A prose caption of at
+  most `CODE_CAPTION_MAX_WORDS` before a code block is floored at zero like the code, and a
+  run extends forward over the neutral code that closes it. Not a link strip: exploit-db's
+  "« Previous Paper Next Paper »" above a `<pre>` bridged a metadata table into the run
+  until captions were required to be prose (`link_density` ≤ 0.5).
+- phpBB's `<p>Code: <a href="#">Select all</a></p>` is still the strip: a paragraph with a
+  control that goes nowhere counts, one without does not.
 - A highlighter's `language-undefined` (highlight.js on a block it could not classify)
   is no language: perldoc's fences came out as ```undefined, a word the page never
   showed. `none`, `plaintext`, `text`, `nohighlight` likewise.
