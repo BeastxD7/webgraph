@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import webbrowser
@@ -47,6 +48,7 @@ _FAILED = re.compile(r"Traceback \(most recent call last\)|Killed: 9|MemoryError
 QUIET_RUNNING_SECONDS = 180
 QUIET_FINISHED_SECONDS = 600
 TAIL_LINES = 6
+LIVE_TAIL_LINES = 40
 RESULT_LINES = 40
 
 
@@ -160,12 +162,49 @@ def _inspect(log: Path) -> Run:
         progress_done=done,
         progress_total=total,
         milestone=milestone,
-        tail=lines[-TAIL_LINES:],
+        tail=lines[-(LIVE_TAIL_LINES if state == "running" else TAIL_LINES) :],
         results=results,
         command=str(meta.get("command", "")),
         exit_code=exit_code,
         log_bytes=stat.st_size,
     )
+
+
+_PROCESS_MARKERS = ("benchmark/", "tools/", "fidelity.py", "per_page.py", "run_logged.py")
+
+
+def processes() -> list[dict[str, object]]:
+    """Every benchmark or tool process running on this machine right now, wrapper or
+    not: what `ps` says, filtered to the engine's own runners."""
+    try:
+        out = subprocess.run(
+            ["ps", "-eo", "pid,pcpu,rss,etime,command"], capture_output=True, text=True, timeout=5, check=False
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows: list[dict[str, object]] = []
+    for line in out.splitlines()[1:]:
+        parts = line.split(None, 4)
+        if len(parts) < 5:
+            continue
+        pid, cpu, rss, etime, command = parts
+        if "runs_dashboard" in command or command.startswith(("ps ", "caffeinate")):
+            continue
+        if not any(marker in command for marker in _PROCESS_MARKERS):
+            continue
+        if "python" not in command and "uv run" not in command:
+            continue
+        rows.append(
+            {
+                "pid": int(pid),
+                "cpu": float(cpu),
+                "rss_mb": int(rss) // 1024,
+                "elapsed": etime,
+                "command": command[-160:],
+            }
+        )
+    rows.sort(key=lambda r: -float(str(r["cpu"])))
+    return rows[:20]
 
 
 def scan(directories: list[Path]) -> list[Run]:
@@ -190,9 +229,13 @@ PAGE = """<!doctype html>
 :root{--bg:#f6f7f9;--card:#fff;--ink:#1a1d21;--muted:#6b7280;--line:#e5e7eb;--run:#2563eb;--ok:#16a34a;--bad:#dc2626;--bar:#e5e7eb}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#171a20;--ink:#e6e8eb;--muted:#9aa3ad;--line:#2a2f37;--bar:#2a2f37}}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:20px 16px}
-h1{font-size:18px;margin:0 0 4px}.sub{color:var(--muted);margin-bottom:16px}
+h1{font-size:18px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+.sub{color:var(--muted);margin-bottom:16px}.clock{font:13px ui-monospace,Menlo,monospace;color:var(--muted)}
+.live{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.live.off{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.card.running{border-color:var(--run);grid-column:1 / -1}
 .head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
 .name{font-weight:600;word-break:break-all}.dir{color:var(--muted);font-size:12px;word-break:break-all}
 .state{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
@@ -201,52 +244,98 @@ h1{font-size:18px;margin:0 0 4px}.sub{color:var(--muted);margin-bottom:16px}
 .state.failed{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
 .bar{height:8px;background:var(--bar);border-radius:4px;overflow:hidden;margin:10px 0 4px}
 .bar>i{display:block;height:100%;background:var(--run);transition:width .6s}
+.card.running .bar>i{background:repeating-linear-gradient(45deg,var(--run) 0 10px,color-mix(in srgb,var(--run) 60%,transparent) 10px 20px);background-size:28px 28px;animation:m 1s linear infinite}
+@keyframes m{to{background-position:28px 0}}
 .finished .bar>i{background:var(--ok)}.failed .bar>i{background:var(--bad)}
 .meta{color:var(--muted);font-size:12px;display:flex;gap:12px;flex-wrap:wrap}
 pre{margin:8px 0 0;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;color:var(--muted);max-height:150px;overflow:auto}
+pre.live{max-height:340px;color:var(--ink);background:var(--bg);padding:8px;border-radius:6px}
 pre.results{color:var(--ink);max-height:320px}
 details{margin-top:6px}summary{cursor:pointer;color:var(--muted);font-size:12px}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--run);margin-right:6px;animation:p 1.2s infinite}
 @keyframes p{0%,100%{opacity:.25}50%{opacity:1}}
 .empty{color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:12px}td,th{text-align:left;padding:4px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600}
+td.cmd{font:11px ui-monospace,Menlo,monospace;word-break:break-all}
+h2{font-size:14px;margin:18px 0 8px}
 </style></head><body>
-<h1>webgraph runs</h1><div class="sub" id="sub">loading…</div>
+<h1>webgraph runs <span class="live off" id="live">connecting…</span> <span class="clock" id="clock"></span></h1>
+<div class="sub" id="sub">loading…</div>
+<h2>Processes on this machine right now</h2>
+<div class="card" id="procs"><span class="empty">none</span></div>
+<h2>Runs</h2>
 <div class="grid" id="grid"></div>
 <script>
-const fmt=s=>{s=Math.round(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+'h ':'')+(h||m?m+'m ':'')+x+'s'};
-const ago=t=>fmt(Date.now()/1000-t)+' ago';
-const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-async function tick(){
-  let data;try{data=await (await fetch('/api/runs')).json()}catch(e){document.getElementById('sub').textContent='dashboard stopped';return}
-  const runs=data.runs;const running=runs.filter(r=>r.state==='running').length;
-  document.getElementById('sub').innerHTML=(running?'<span class="pulse"></span>'+running+' running · ':'')+runs.length+' runs in '+data.directories.length+' director'+(data.directories.length===1?'y':'ies')+' · refreshed '+new Date().toLocaleTimeString();
+const fmt=s=>{s=Math.max(0,Math.round(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return (h?h+'h ':'')+(h||m?m+'m ':'')+x+'s'};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+let data=null, skew=0, lastEvent=0;
+function clock(){document.getElementById('clock').textContent=new Date().toLocaleTimeString();
+  const live=document.getElementById('live');
+  if(Date.now()-lastEvent>4000){live.textContent='no updates for '+fmt((Date.now()-lastEvent)/1000);live.className='live off'}
+  else{live.textContent='LIVE · pushed every second';live.className='live'}
+  if(data) renderCounters();}
+function renderCounters(){const now=Date.now()/1000-skew;
+  document.querySelectorAll('[data-started]').forEach(el=>{el.textContent='elapsed '+fmt(now-parseFloat(el.dataset.started))});
+  document.querySelectorAll('[data-changed]').forEach(el=>{el.textContent='last output '+fmt(now-parseFloat(el.dataset.changed))+' ago'});}
+function render(d){data=d;skew=Date.now()/1000-d.now;
+  const runs=d.runs;const running=runs.filter(r=>r.state==='running').length;
+  document.getElementById('sub').innerHTML=(running?'<span class="pulse"></span>'+running+' running · ':'')+runs.length+' runs in '+d.directories.length+' director'+(d.directories.length===1?'y':'ies')+' · '+d.processes.length+' engine process'+(d.processes.length===1?'':'es');
+  const procs=document.getElementById('procs');
+  procs.innerHTML=d.processes.length?'<table><tr><th>pid</th><th>cpu%</th><th>mem</th><th>up</th><th>command</th></tr>'+d.processes.map(p=>`<tr><td>${p.pid}</td><td>${p.cpu.toFixed(1)}</td><td>${p.rss_mb} MB</td><td>${esc(p.elapsed)}</td><td class="cmd">${esc(p.command)}</td></tr>`).join('')+'</table>':'<span class="empty">no benchmark or tool process is running right now</span>';
   const grid=document.getElementById('grid');
   if(!runs.length){grid.innerHTML='<div class="empty">No *.log files yet. Start a run with <code>uv run python tools/run_logged.py &lt;label&gt; -- &lt;command&gt;</code>.</div>';return}
   grid.innerHTML=runs.map(r=>{
-    const pct=r.progress_total?Math.min(100,Math.round(100*r.progress_done/r.progress_total)):(r.state==='finished'?100:0);
+    const pct=r.progress_total?Math.min(100,Math.round(100*r.progress_done/r.progress_total)):(r.state==='finished'?100:(r.state==='running'?100:0));
+    const live=r.state==='running';
     return `<div class="card ${r.state}"><div class="head"><div><div class="name">${esc(r.name)}</div><div class="dir">${esc(r.directory)}</div></div><span class="state ${r.state}">${r.state}</span></div>
     <div class="bar"><i style="width:${pct}%"></i></div>
-    <div class="meta"><span>${r.progress_total?r.progress_done+' / '+r.progress_total+' ('+pct+'%)':'no counter yet'}</span><span>elapsed ${fmt(r.elapsed_seconds)}</span><span>last output ${ago(r.last_change)}</span>${r.exit_code!==null?'<span>exit '+r.exit_code+'</span>':''}</div>
+    <div class="meta"><span>${r.progress_total?r.progress_done+' / '+r.progress_total+' ('+pct+'%)':(live?'working, no counter printed yet':'no counter')}</span><span data-started="${r.started}"></span><span data-changed="${r.last_change}"></span>${r.exit_code!==null?'<span>exit '+r.exit_code+'</span>':''}</div>
     ${r.milestone?'<div class="meta" style="margin-top:4px"><span>'+esc(r.milestone)+'</span></div>':''}
-    <pre>${esc(r.tail.join('\\n'))}</pre>
-    ${r.results.length?'<details open><summary>results ('+r.results.length+' lines)</summary><pre class="results">'+esc(r.results.join('\\n'))+'</pre></details>':''}
+    <pre class="${live?'live':''}" id="tail-${esc(r.name)}">${esc(r.tail.join('\\n'))}</pre>
+    ${r.results.length&&!live?'<details open><summary>results ('+r.results.length+' lines)</summary><pre class="results">'+esc(r.results.join('\\n'))+'</pre></details>':''}
     ${r.command?'<details><summary>command</summary><pre>'+esc(r.command)+'</pre></details>':''}
     </div>`}).join('');
-}
-tick();setInterval(tick,3000);
+  document.querySelectorAll('pre.live').forEach(p=>{p.scrollTop=p.scrollHeight});
+  renderCounters();}
+function connect(){const es=new EventSource('/api/stream');
+  es.onmessage=e=>{lastEvent=Date.now();try{render(JSON.parse(e.data))}catch(err){console.error(err)}};
+  es.onerror=()=>{es.close();setTimeout(connect,2000)};}
+connect();setInterval(clock,1000);clock();
 </script></body></html>
 """
 
 
 def serve(directories: list[Path], port: int, open_browser: bool) -> None:
+    def snapshot() -> str:
+        return json.dumps(
+            {
+                "now": time.time(),
+                "directories": [str(d) for d in directories],
+                "runs": [asdict(r) for r in scan(directories)],
+                "processes": processes(),
+            }
+        )
+
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parts = urlsplit(self.path)
             if parts.path == "/api/runs":
-                body = json.dumps(
-                    {"directories": [str(d) for d in directories], "runs": [asdict(r) for r in scan(directories)]}
-                ).encode()
-                self._send(200, "application/json", body)
+                self._send(200, "application/json", snapshot().encode())
+            elif parts.path == "/api/stream":
+                # Server-sent events: one snapshot a second, pushed, so the page never
+                # waits on a poll and a broken connection is visible at once.
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "keep-alive")
+                self.end_headers()
+                try:
+                    while True:
+                        self.wfile.write(f"data: {snapshot()}\n\n".encode())
+                        self.wfile.flush()
+                        time.sleep(1)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
             elif parts.path == "/api/log":
                 name = parse_qs(parts.query).get("name", [""])[0]
                 for directory in directories:
