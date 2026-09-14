@@ -10,9 +10,12 @@ three seconds; nothing is installed and nothing is written.
     uv run python tools/runs_dashboard.py --runs /path/a --runs /path/b --port 8765
 
 Start a run through `tools/run_logged.py` so its command, pid, start and exit are recorded
-beside the log; a bare `*.log` in a run directory is shown too, with its state inferred
-from the file (a `Traceback` means failed, a final `done` line or ten quiet minutes
-means finished, a change in the last three minutes means running).
+beside the log and the state is exact; a bare `*.log` in a run directory is shown too,
+with its state inferred from the file (a `Traceback` at the end means failed, a final
+`done` line or ten quiet minutes means finished, a change in the last three minutes
+means running -- so a bare log of a runner that prints no final line shows "running"
+for up to ten minutes after it exits). The progress bar reads the runner's own counter
+lines (`extracted 200/738`, `scored 1000/1476`, `12/23 sites`), never a result line.
 
 Stdlib only, on purpose: it must work on a machine where the engine's optional extras
 are not installed.
@@ -32,7 +35,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-_PROGRESS = re.compile(r"(?<![\d.])(\d+)\s*/\s*(\d+)(?![\d.])")
+_PROGRESS = re.compile(
+    r"(?:extracted|scored|fetched|processed|page|site|done|progress|\bat)\s+(\d+)\s*/\s*(\d+)(?![\d.])"
+    r"|^\s*(\d+)\s*/\s*(\d+)\b",
+    re.IGNORECASE,
+)
 _RESULT = re.compile(
     r"done:|mean F1|\bF1\b|overall|median|\bP\s+R\b|^\s*\w[\w+-]*\s+\d\.\d{3}", re.IGNORECASE
 )
@@ -102,7 +109,8 @@ def _inspect(log: Path) -> Run:
         # The last counter printed is the current stage; a board run prints one per
         # corpus, so the bar shows where the run is now, not a total nobody printed.
         for match in _PROGRESS.finditer(line):
-            a, b = int(match.group(1)), int(match.group(2))
+            a = int(match.group(1) or match.group(3))
+            b = int(match.group(2) or match.group(4))
             if b >= max(a, 2):
                 done, total = a, b
         if "done:" in line or line.strip().endswith("done") or ":" in line and "pages" in line:
