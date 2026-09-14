@@ -131,7 +131,10 @@ the production path against Chromium's own text and diffs two runs; a page that 
 a page to open. `benchmark/fidelity/run.py` does the same for the *whole-page* Markdown on
 a fixed set of old and ugly pages -- word recall against Chromium (nothing lost), extra
 words (nothing added), order inversions, and structure counts -- which is the measure for
-any change to blocks, the union, ordering or rendering. These are the tools the
+any change to blocks, the union, ordering or rendering. A change to table, code or
+Markdown rendering also re-runs WebMainBench before merge, whatever WCXB and Zyte say: they
+score plain text, and a link rendered into every table cell cost WebMainBench's table
+score for six pull requests unnoticed (#68, fixed in #78). These are the tools the
 pull-request template's "how to reproduce" section expects -- nothing that lives only on
 one machine.
 
