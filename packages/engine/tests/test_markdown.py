@@ -235,6 +235,15 @@ class TestPermalinkAnchors:
     def test_a_heading_that_really_ends_in_a_hash_survives(self) -> None:
         assert "# The C# language" in md("<h1>The C# language</h1>")
 
+    def test_a_glyph_only_fragment_anchor_is_a_permalink_whatever_its_class(self) -> None:
+        """php.net's `<a class="genanchor" href="#…"> ¶</a>` is added by a script, so the
+        rendered heading read "Description ¶" beside the static "Description" and the union
+        kept both. The glyph and the fragment href are the thing itself."""
+        out = md('<h3 class="title">Description<a class="genanchor" href="#refsect1"> ¶</a></h3>')
+        assert "### Description" in out and "¶" not in out
+        out = md('<p>See <a href="#top">back to top</a> and note <a href="#n1">1</a>.</p>')
+        assert "[back to top]" in out and "[1]" in out
+
     def test_mediawiki_edit_section_removed(self) -> None:
         out = md(
             '<div class="mw-heading mw-heading2"><h2 id="History">History</h2>'

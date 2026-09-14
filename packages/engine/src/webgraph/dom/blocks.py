@@ -405,10 +405,10 @@ def strip_permalinks(root: HtmlElement, *, keep_hidden_text: bool = False) -> No
     """
     permalinks = set(PERMALINK_CLASSES)
     controls = set(HEADING_CONTROL_CLASSES)
-    for element in root.xpath(".//*[@class]"):
+    for element in root.xpath(".//*[@class] | .//a[starts-with(@href, '#')]"):
         classes = set((element.get("class") or "").lower().split())
         if not (
-            (element.tag == "a" and classes & permalinks)
+            (element.tag == "a" and (classes & permalinks or _is_permalink_glyph(element)))
             or (
                 not keep_hidden_text
                 and (
@@ -430,6 +430,21 @@ def strip_permalinks(root: HtmlElement, *, keep_hidden_text: bool = False) -> No
             else:
                 parent.text = (parent.text or "") + element.tail
         parent.remove(element)
+
+
+PERMALINK_GLYPHS: Final[frozenset[str]] = frozenset("¶#§🔗⚓↩🔗︎")
+"""What a permalink anchor says when it says anything. php.net's `<a class="genanchor"
+href="#refsect1-…"> ¶</a>` is added by a script the static fetch never runs, so the
+rendered heading read "Description ¶" and the static one "Description": two keys, and
+the union emitted both. The class list cannot be complete; the glyph and the fragment
+href together are the thing itself."""
+
+
+def _is_permalink_glyph(element: HtmlElement) -> bool:
+    if not (element.get("href") or "").startswith("#"):
+        return False
+    text = "".join(element.text_content().split())
+    return bool(text) and all(ch in PERMALINK_GLYPHS or ch == "\ufe0e" for ch in text)
 
 
 def _sr_only_is_content(element: HtmlElement) -> bool:

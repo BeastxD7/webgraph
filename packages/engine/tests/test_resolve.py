@@ -481,3 +481,58 @@ class TestAWallOnOneSide:
         self.stub(monkeypatch, static=self.PAGE, rendered=self.PAGE)
         resolved = module.resolve_page("https://www.example.test/sample.html")
         assert resolved.strategy is Strategy.UNION
+
+
+class TestHiddenInRender:
+    """A static-only block the browser laid out and hid is not something the render lost.
+
+    php.net's manual TOC (`nav#trick`, ~100 links under `display: none`) was dropped from
+    the rendered document by the renderer's own mark and put straight back by the union
+    from the static one; cppreference's hover menus the same (103 and 128 blocks).
+    """
+
+    STATIC = (
+        "<html><body><nav id='trick'><ul><li>Basic syntax</li><li>Types</li>"
+        "<li>Variables and constants of the language</li></ul></nav>"
+        "<main><h1>array_map</h1><p>Applies the callback to the elements of the given "
+        "arrays.</p><p>Only in the static page: a paragraph the render unmounted.</p>"
+        "</main></body></html>"
+    )
+    RENDERED = (
+        "<html><body><nav id='trick' data-wg-hidden='display'><ul><li>Basic syntax</li>"
+        "<li>Types</li><li>Variables and constants of the language</li></ul></nav>"
+        "<main><h1>array_map</h1><p>Applies the callback to the elements of the given "
+        "arrays.</p></main></body></html>"
+    )
+
+    def test_hidden_menu_items_stay_out_and_lost_content_stays_in(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+
+        static_doc = build_document(self.STATIC, "https://x.test/")
+        rendered_doc = build_document(self.RENDERED, "https://x.test/")
+        assert not any("Basic syntax" in b.text for b in rendered_doc.blocks)
+        hidden = hidden_matter(self.RENDERED)
+        merged, only_static, _ = union_documents(static_doc, rendered_doc, hidden=hidden)
+        texts = [b.text for b in merged.blocks]
+        assert "Basic syntax" not in texts and "Types" not in texts
+        assert "Variables and constants of the language" not in texts
+        assert "Only in the static page: a paragraph the render unmounted." in texts
+        assert only_static == 1
+
+    def test_without_the_browser_view_nothing_changes(self) -> None:
+        static_doc = build_document(self.STATIC, "https://x.test/")
+        rendered_doc = build_document(self.RENDERED, "https://x.test/")
+        merged, only_static, _ = union_documents(static_doc, rendered_doc)
+        assert any("Basic syntax" in b.text for b in merged.blocks)
+        assert only_static == 4
+
+    def test_a_short_visible_word_is_not_matched_inside_hidden_text(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+
+        hidden = hidden_matter(
+            "<div data-wg-hidden='display'>Home and away, the long hidden sentence.</div>"
+        )
+        assert hidden.holds("homeandaway,thelonghiddensentence.", min_chars=12)
+        assert hidden.holds("thelonghiddensentence", min_chars=12)  # past the guard, a substring
+        assert not hidden.holds("home", min_chars=12)  # short, and not a hidden line of its own
+        assert not hidden.holds("nothere", min_chars=12)
