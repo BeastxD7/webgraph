@@ -33,7 +33,7 @@ from webgraph.dom.rich import extract_rich_blocks
 from webgraph.profile.fingerprint import profile_page
 from webgraph.profile.technology import RuntimeEvidence
 from webgraph.structured.payloads import extract_payloads
-from webgraph.types import Block, BlockKind, Document, Rect
+from webgraph.types import STRUCTURE_ONLY, Block, BlockKind, Document, Rect
 
 if TYPE_CHECKING:
     from lxml.html import HtmlElement
@@ -97,6 +97,10 @@ def build_document(
 
     if geometry:
         blocks = _attach_geometry(blocks, geometry)
+        # A rule the browser gave no box -- `hr { height: 0; border: 0 }`, a stylesheet's
+        # way of removing one -- is not a line the reader sees, and an unmeasured block
+        # would also turn the page's reading order from measured into anchored.
+        blocks = [b for b in blocks if b.rect is not None or b.kind not in STRUCTURE_ONLY]
 
     ordered, method = order_blocks(list(blocks), rtl=rtl, config=ordering)
     ordered = _deduplicate(ordered)

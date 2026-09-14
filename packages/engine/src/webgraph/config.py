@@ -179,6 +179,13 @@ MIN_FILLED_SHARE = 0.4
 # More than this share of empty rows and it is spacing, not data.
 MAX_EMPTY_ROW_SHARE = 0.2
 
+# An inline <svg> is read for its <text> labels (a syntax diagram, a flow chart, a chart's
+# axis) when it has at least this many <text> nodes ...
+SVG_MIN_TEXT_NODES = 2
+# ... or at least this many words across them. Below both it is an icon whose one label
+# ("Search", "Menu") the button beside it already says.
+SVG_MIN_WORDS = 3
+
 # ======================================================================================
 # Reading order (geometric XY-cut)
 # ======================================================================================

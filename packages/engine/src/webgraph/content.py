@@ -41,7 +41,7 @@ from webgraph.boilerplate import (
     strip_site_chrome,
 )
 from webgraph.main_content import MainContentConfig, select_main_content
-from webgraph.types import Block, BlockKind
+from webgraph.types import Block, BlockKind, without_structure
 
 __all__ = ["SHIPPED_MODEL", "ContentSelection", "select_content"]
 
@@ -290,10 +290,14 @@ def _restore_lead(candidates: list[Block], kept: list[Block]) -> tuple[list[Bloc
     title_at = positions[0]
     body_at = positions[1]
     gap = candidates[title_at + 1 : body_at]
-    if not gap or len(gap) > _LEAD_MAX_BLOCKS:
+    # Judged on the text-bearing blocks: a rule between the byline and the body is not
+    # a block of lead, and counting it kept l-camera-forum.com's byline and post header
+    # out (twelve blocks and two rules).
+    words = without_structure(gap)
+    if not words or len(words) > _LEAD_MAX_BLOCKS:
         return kept, 0
-    lists = sum(1 for block in gap if block.kind is BlockKind.LIST_ITEM)
-    if lists / len(gap) > _LEAD_MAX_LIST_SHARE:
+    lists = sum(1 for block in words if block.kind is BlockKind.LIST_ITEM)
+    if lists / len(words) > _LEAD_MAX_LIST_SHARE:
         return kept, 0
     kept_ids.update(id(block) for block in gap)
     return [block for block in candidates if id(block) in kept_ids], len(gap)

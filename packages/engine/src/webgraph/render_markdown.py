@@ -120,7 +120,11 @@ def _body(block: Block, options: MarkdownOptions) -> str:
     return _text(block.text, options)
 
 
-def _render_table(block: Block) -> str:
+_HTML_IMAGE: Final[re.Pattern[str]] = re.compile(r"<img\b[^>]*>")
+_HTML_LINK: Final[re.Pattern[str]] = re.compile(r"<a\b[^>]*>(.*?)</a>", re.S)
+
+
+def _render_table(block: Block, options: MarkdownOptions) -> str:
     """Render a table as pipes when pipes can say what it says, and as its own markup when
     they cannot.
 
@@ -139,7 +143,14 @@ def _render_table(block: Block) -> str:
     its values, and padding keeps them and keeps the Markdown valid.
     """
     if block.table_html:
-        return block.table_html
+        # The table's own markup honours the same switches as the rest of the page: a
+        # caller who asked for no images or no links gets none inside a cell either.
+        markup = block.table_html
+        if not options.include_images:
+            markup = _HTML_IMAGE.sub("", markup)
+        if not options.include_links:
+            markup = _HTML_LINK.sub(r"\1", markup)
+        return markup
     if not block.rows:
         return ""
 
@@ -181,6 +192,9 @@ def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
         image = f"![{alt}]({block.href})"
         return f"[{image}]({block.link})" if block.link else image
 
+    if kind is BlockKind.RULE:
+        return "---"
+
     if kind is BlockKind.MEDIA:
         # Rendered as an italic aside rather than a link or an image: it is a note *about*
         # the document, not content in it, and a reader -- or a model building notes -- should
@@ -190,7 +204,7 @@ def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
     if kind is BlockKind.TABLE:
         if not options.include_tables:
             return None
-        return _render_table(block) or None
+        return _render_table(block, options) or None
 
     if kind is BlockKind.CODE:
         language = block.language or ""
@@ -208,12 +222,45 @@ def _render_plain(block: Block, options: MarkdownOptions) -> str | None:
     if kind is BlockKind.FIGURE_CAPTION:
         return f"*{_ONE_LINE.sub(' ', _text(block.text, options))}*"
 
+    if kind is BlockKind.PARAGRAPH and block.tag in _DEFINITION_TAGS:
+        return _render_definition(block, options)
+
     if kind is BlockKind.PARAGRAPH and block.level:
         # A paragraph inside a list item after its first: indented under the bullet, as
         # CommonMark wants a continuation paragraph.
         indent = "  " * max(block.level - 1, 0) + "   "
         return "\n".join(indent + line for line in _hard_breaks(_body(block, options)).split("\n"))
     return _hard_breaks(_body(block, options))
+
+
+_DEFINITION_TAGS: Final[frozenset[str]] = frozenset({"dt", "dd"})
+
+
+def _render_definition(block: Block, options: MarkdownOptions) -> str:
+    """A `<dt>` as a bold line and a `<dd>` as `: definition` -- the definition-list syntax
+    of Markdown Extra, kramdown, Pandoc and Python-Markdown, which turn it back into a
+    `<dl>`:
+
+        **term**
+        : definition
+
+    CommonMark has no definition lists. Chosen over "term, then an indented definition"
+    because under a CommonMark reader this still reads as *one* paragraph, `**term** :
+    definition`, with the term marked and the association kept, where an indented
+    paragraph after a blank line is just another paragraph and the term is just another
+    line -- which is what the `<dl>`s of cl.cam.ac.uk's Unicode FAQ and every php.net
+    parameter list were coming out as. A definition's later paragraphs
+    (`<dd><p>…</p><p>…</p></dd>`) are indented two spaces under the marker: three would
+    still be nothing to CommonMark, four would be a code block."""
+    body = _hard_breaks(_body(block, options))
+    if block.tag == "dt":
+        term = _ONE_LINE.sub(" ", body)
+        # A term written in bold already (`<dt><strong>Stupid:</strong></dt>`, catb.org)
+        # is not bolded again.
+        return term if "**" in term else f"**{term}**"
+    if block.level:
+        return "\n".join("  " + line for line in body.split("\n"))
+    return ": " + body.replace("\n", "\n  ")
 
 
 _ONE_LINE = re.compile(r"\s*\n+\s*")
@@ -247,16 +294,29 @@ def to_markdown(document: Document, *, options: MarkdownOptions | None = None) -
         )
 
     previous_list = False
+    previous_tag = ""
     for block in document.blocks:
         rendered = _render_block(block, options)
         if rendered is None or not rendered.strip():
             continue
 
         is_list = block.kind is BlockKind.LIST_ITEM
+        # A definition follows its term on the next line; a blank line before the next
+        # term, or a definition list's reader would take the term as the definition's
+        # continuation. Two terms in a row each get their line: a DocBook table of
+        # contents is a `<dl>` of terms with no definitions (catb.org), and run together
+        # they would read as one paragraph.
+        defines = (
+            block.kind is BlockKind.PARAGRAPH
+            and previous_tag == "dt"
+            and block.tag == "dd"
+            and not block.level
+        )
         # Consecutive list items form one list; a blank line between them would split it.
-        if parts and not (is_list and previous_list):
+        if parts and not (is_list and previous_list) and not defines:
             parts.append("")
         parts.append(rendered)
         previous_list = is_list
+        previous_tag = block.tag if block.kind is BlockKind.PARAGRAPH else ""
 
     return "\n".join(parts).strip() + "\n"

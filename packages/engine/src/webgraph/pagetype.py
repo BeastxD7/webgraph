@@ -48,7 +48,7 @@ from urllib.parse import urlsplit
 from webgraph import config
 from webgraph.dom.markup_stats import CLASS_BUCKETS, COUNTED_TAGS
 from webgraph.main_content import MainContentConfig, _repeat_groups, link_density, word_count
-from webgraph.types import Block, BlockKind, Document, PayloadSource
+from webgraph.types import Block, BlockKind, Document, PayloadSource, without_structure
 
 DEFAULT_MIN_CONFIDENCE = config.ROUTER_MIN_CONFIDENCE
 
@@ -316,7 +316,9 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
         features.append(float(og == og_type))
     features.append(float(og == ""))
 
-    blocks: Sequence[Block] = document.blocks
+    # Without the rules: a `<hr>` is not a block the router was trained to count, and every
+    # per-block share below would shift on a page that has a few.
+    blocks: Sequence[Block] = without_structure(document.blocks)
     n = len(blocks) or 1
     words = [word_count(b.text) for b in blocks]
     total = sum(words) or 1
