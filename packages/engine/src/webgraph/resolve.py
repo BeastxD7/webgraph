@@ -44,7 +44,7 @@ from webgraph.fetch.render import (
 from webgraph.fetch.static import FetchConfig, FetchResult, fetch_static
 from webgraph.pipeline import build_document
 from webgraph.profile.technology import RuntimeEvidence
-from webgraph.types import Block, BlockKind, Document, ReadingOrderMethod
+from webgraph.types import STRUCTURE_ONLY, Block, BlockKind, Document, ReadingOrderMethod
 
 MISSING_STATUSES = config.MISSING_STATUSES
 BLOCKING_STATUSES = config.BLOCKING_STATUSES
@@ -643,10 +643,16 @@ def wall_evidence(document: Document, *, requested_url: str | None = None) -> st
     evidence = block_page_evidence(document.text)
     if evidence is not None:
         return evidence
-    if document.text.strip() or any(b.kind is not BlockKind.PARAGRAPH for b in document.blocks):
+    if document.text.strip() or any(_is_structure(b) for b in document.blocks):
         return None
     vendor = challenge_vendor(document.html)
     return f"{vendor} bot challenge" if vendor is not None else None
+
+
+def _is_structure(block: Block) -> bool:
+    """Whether a text-less block is evidence of a page: an image, a table, a placeholder.
+    A rule is not -- a challenge page can draw one."""
+    return block.kind is not BlockKind.PARAGRAPH and block.kind not in STRUCTURE_ONLY
 
 
 def _is_a_page(document: Document) -> bool:
@@ -675,7 +681,7 @@ def _refuse_block_page(
     evidence = block_page_evidence(document.text)
     if evidence is not None:
         raise PageBlockedError(document.url, evidence)
-    if document.text.strip() or any(b.kind is not BlockKind.PARAGRAPH for b in document.blocks):
+    if document.text.strip() or any(_is_structure(b) for b in document.blocks):
         return
     vendor = challenge_vendor(document.html)
     if vendor is not None:

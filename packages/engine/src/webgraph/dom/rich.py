@@ -32,6 +32,8 @@ LONG_CELL_CHARS = config.LONG_CELL_CHARS
 MIN_GRID = config.MIN_GRID
 MIN_FILLED_SHARE = config.MIN_FILLED_SHARE
 MAX_EMPTY_ROW_SHARE = config.MAX_EMPTY_ROW_SHARE
+SVG_MIN_TEXT_NODES = config.SVG_MIN_TEXT_NODES
+SVG_MIN_WORDS = config.SVG_MIN_WORDS
 
 __all__ = ["extract_rich_blocks"]
 
@@ -57,8 +59,17 @@ _TEXT_CONTAINERS: Final[frozenset[str]] = frozenset({
     "blockquote",
 })
 
-_ATOMIC: Final[frozenset[str]] = frozenset({"table", "pre", "blockquote", "img", "figure"})
-"""Handled whole. Descending into them would shatter the structure being preserved."""
+_ATOMIC: Final[frozenset[str]] = frozenset({"table", "pre", "blockquote", "img", "figure", "svg"})
+"""Handled whole. Descending into them would shatter the structure being preserved.
+
+`svg` for the diagram case: an inline `<svg>` that qualifies (see `_svg_labels`) is one
+block of its labels, and a container around it must not read those labels again as its
+own text."""
+
+_STRUCTURE_TAGS: Final[frozenset[str]] = frozenset({"hr"})
+"""Elements that are a block with no text: a horizontal rule. Carried elsewhere like the
+atomic ones, so a container's own text splits around them, but never a "block descendant"
+by the text test -- there is no text to test."""
 
 _MIN_IMAGE_DIMENSION: Final[int] = 32
 """Images declared smaller than this are tracking pixels and spacers, not content."""
@@ -370,6 +381,83 @@ def _media_block(
     )
 
 
+_SVG_LABEL_SEPARATOR: Final[str] = " \u00b7 "
+"""What joins a diagram's labels: a middle dot, so that `EXPLAIN`, `QUERY` and `PLAN` --
+three boxes in a railroad diagram -- do not read as the sentence "EXPLAIN QUERY PLAN".
+Punctuation, not a word: the benchmarks' tokenisers and the live suite's fold ignore it."""
+
+
+def _svg_labels(element: HtmlElement) -> list[str]:
+    """The `<text>` labels of an inline SVG, in document order.
+
+    Only `<text>` (with its `<tspan>`s): a `<title>` or `<desc>` is the accessible name of
+    an icon, not something drawn on the page. Chromium's `innerText` puts each label on a
+    line of its own, and a reader of the page sees each one where its node sits."""
+    labels: list[str] = []
+    for node in element.iter("text"):
+        if node.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS:
+            continue
+        label = normalize_text(node.text_content())
+        if label:
+            labels.append(label)
+    return labels
+
+
+def _svg_is_diagram(element: HtmlElement) -> bool:
+    """Whether an inline SVG carries text a reader reads rather than an icon's one label.
+
+    sqlite.org's syntax pages draw every railroad diagram as inline SVG -- 32 `<text>`
+    nodes and a quarter of lang.html's words -- and `svg` was in `SKIP_TAGS`, so the
+    diagrams' labels were the one thing on those pages the Markdown did not carry. An icon
+    is the other case: `<svg><text>Search</text></svg>` beside a search box, or an
+    `<svg><title>Menu</title>…</svg>` with no text at all, says nothing the button does not.
+    The line is `SVG_MIN_TEXT_NODES` labels or `SVG_MIN_WORDS` words: the smallest sqlite
+    diagram is two labels (`sql-stmt`, `;`), a logo is one.
+    """
+    labels = _svg_labels(element)
+    return len(labels) >= SVG_MIN_TEXT_NODES or sum(len(label.split()) for label in labels) >= SVG_MIN_WORDS
+
+
+def _drop_svg_icons(root: HtmlElement) -> None:
+    """Remove every inline SVG that is not a diagram -- what `SKIP_TAGS` did to all of them
+    -- keeping the tail text, which is the sentence the icon sat in."""
+    doomed = [
+        element
+        for element in root.iter("svg")
+        if not any(a.tag == "svg" for a in element.iterancestors()) and not _svg_is_diagram(element)
+    ]
+    for element in doomed:
+        parent = element.getparent()
+        if parent is not None:
+            _carry_tail(parent, element)
+            parent.remove(element)
+
+
+def _svg_block(element: HtmlElement, index: int, tree: object) -> Block | None:
+    """One paragraph of a diagram's labels, in document order, joined by a middle dot.
+
+    A paragraph rather than a media placeholder: the labels are words the reader sees and
+    the page's text has to carry them; a placeholder's text is a note from this engine and
+    is kept out of `Document.text`. `tag` says `svg`, and `alt` carries the diagram's own
+    `<title>` or `aria-label` when it has one, so a consumer can still tell a diagram from
+    a sentence."""
+    if element.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS:
+        return None
+    labels = _svg_labels(element)
+    if not labels:
+        return None
+    title = next((normalize_text(t.text_content()) for t in element.iter("title")), None)
+    title = title or normalize_text(element.get("aria-label"))
+    return Block(
+        text=_SVG_LABEL_SEPARATOR.join(labels),
+        tag="svg",
+        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        dom_index=index,
+        kind=BlockKind.PARAGRAPH,
+        alt=title or None,
+    )
+
+
 _PAGE_LEVEL_TAGS: Final[frozenset[str]] = frozenset(
     {"table", "form", "section", "article", "h1", "h2", "h3"}
 )
@@ -645,7 +733,7 @@ def _collapse_header(grid: list[list[str]], depth: int) -> list[tuple[str, ...]]
 
 
 _TABLE_TAGS: Final[frozenset[str]] = frozenset(
-    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup", "a"}
+    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup", "a", "br", "img"}
 )
 """Tags kept when preserving a table's own markup.
 
@@ -653,13 +741,23 @@ _TABLE_TAGS: Final[frozenset[str]] = frozenset(
 presentation. `a` because a link in a cell is often the *point* of the cell: verified on
 Hacker News, whose front page is a table of 30 rows in which the destination of each row is
 the single most important fact, and which came back with all 30 stories and **zero links**
-before this. A cell's link target is not something any other field can carry."""
+before this. A cell's link target is not something any other field can carry.
 
-_TABLE_ATTRS: Final[frozenset[str]] = frozenset({"colspan", "rowspan", "href"})
-"""Attributes kept: the two that carry a merge, and the one that carries a destination.
+`br` because unwrapping it fused the words on either side: `<td>a<br>b</td>` came out as
+`<td>ab</td>`, and a `<td><p>one</p><p>two</p></td>` as `onetwo` -- destroyed words, not
+lost formatting, in every table this path renders. A block-level child gets a `<br>` where
+the browser started a new line. `img` because a picture in a cell is content a reader sees,
+and its `alt` is the only text it has."""
+
+_TABLE_ATTRS: Final[frozenset[str]] = frozenset({"colspan", "rowspan", "href", "src", "alt"})
+"""Attributes kept: the two that carry a merge, the one that carries a destination, and an
+image's source and alt text.
 
 Everything else -- styles, widths, tracking ids, translation-tool bookkeeping -- is noise
 that would otherwise be emitted verbatim into the output."""
+
+_REDUNDANT_BREAKS: Final[re.Pattern[str]] = re.compile(r"(?:<br>\s*){2,}")
+_EDGE_BREAKS: Final[re.Pattern[str]] = re.compile(r"(<t[dh][^>]*>)\s*<br>\s*|\s*<br>\s*(</t[dh]>)")
 
 _MAX_PRESERVED_TABLE_BYTES: Final[int] = 200_000
 """Refuse to inline a table larger than this. Untrusted input, and a runaway table would
@@ -692,12 +790,18 @@ def preserved_table_html(element: HtmlElement, base_url: str = "") -> str | None
     from, so a bare `item?id=123` in it points nowhere.
     """
     copied = copy.deepcopy(element)
-    for node in copied.iter():
+    for node in list(copied.iter()):
         if not isinstance(node.tag, str):
             continue
         if node.tag not in _TABLE_TAGS and node is not copied:
+            if _breaks_line(node) and node.getparent() is not None:
+                # The browser began a line here (`<p>`, `<div>`, `<li>`); the markup keeps
+                # the break so the words on either side stay apart.
+                _break_around(node)
             node.tag = "span"  # unwrapped below by `strip_tags`, keeping the text
         href = node.get("href") if node.tag == "a" else None
+        src = node.get("src") if node.tag == "img" else None
+        tiny = node.tag == "img" and _is_tiny_image(element_size=node)
         for name in list(node.attrib):
             if name not in _TABLE_ATTRS:
                 del node.attrib[name]
@@ -707,10 +811,42 @@ def preserved_table_html(element: HtmlElement, base_url: str = "") -> str | None
         elif node.tag == "a":
             # An anchor with no destination is a span wearing a link's clothes.
             node.tag = "span"
+        if node.tag == "img":
+            absolute = _absolute(src, base_url) if base_url else src
+            if not absolute or tiny:
+                node.tag = "span"  # a spacer or a tracking pixel, not a picture
+            else:
+                node.set("src", absolute)
     etree.strip_tags(copied, "span")
     markup = etree.tostring(copied, encoding="unicode", method="html").strip()
     markup = _COLLAPSE_SPACE.sub(" ", markup)
+    markup = _REDUNDANT_BREAKS.sub("<br>", markup)
+    markup = _EDGE_BREAKS.sub(lambda m: m.group(1) or m.group(2), markup)
     return None if len(markup) > _MAX_PRESERVED_TABLE_BYTES else markup
+
+
+def _break_around(node: HtmlElement) -> None:
+    """Put a `<br>` before a block-level node that follows other content in its parent, and
+    after it when text follows it -- where the browser broke the line."""
+    parent = node.getparent()
+    previous = node.getprevious()
+    before = (parent.text or "").strip() if previous is None else True
+    if before:
+        node.addprevious(etree.Element("br"))
+    if (node.tail or "").strip():
+        following = etree.Element("br")
+        following.tail = node.tail
+        node.tail = None
+        node.addnext(following)
+
+
+def _is_tiny_image(*, element_size: HtmlElement) -> bool:
+    """`_image_block`'s rule for spacers and tracking pixels, on a table cell's image."""
+    for dimension in ("width", "height"):
+        raw = element_size.get(dimension)
+        if raw and raw.isdigit() and int(raw) < _MIN_IMAGE_DIMENSION:
+            return True
+    return False
 
 
 _COLLAPSE_SPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
@@ -956,7 +1092,7 @@ def _own_text(element: HtmlElement) -> str:
 
 
 _CARRIED_ELSEWHERE: Final[frozenset[str]] = (
-    _TEXT_CONTAINERS | _HEADINGS | _ATOMIC | _NESTED_CONTAINERS
+    _TEXT_CONTAINERS | _HEADINGS | _ATOMIC | _NESTED_CONTAINERS | _STRUCTURE_TAGS
 )
 """Tags whose text some *other* block will emit: block containers, headings, atomic
 elements, and the list and table containers whose items are blocks of their own."""
@@ -1150,8 +1286,14 @@ def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
         parts.append(child.tail or "")
 
 
+_ITEM_TAGS: Final[frozenset[str]] = frozenset({"li", "dt", "dd"})
+"""Elements whose first paragraph *is* the element: a list item, a definition's term, a
+definition. `<dd><p class="para">…</p></dd>` is how php.net writes every parameter."""
+
+
 def _item_of(element: HtmlElement) -> tuple[HtmlElement | None, bool]:
-    """The `<li>` this block is the body of, and whether it is the item's first block.
+    """The `<li>`, `<dt>` or `<dd>` this block is the body of, and whether it is the item's
+    first block.
 
     `<li><p>Try to find an answer by searching the Web.</p></li>` (catb.org, tldp.org,
     every DocBook and Sphinx page) put the paragraph out as a paragraph and the item as
@@ -1160,7 +1302,7 @@ def _item_of(element: HtmlElement) -> tuple[HtmlElement | None, bool]:
     keeps that as its label, as before, and its paragraphs are continuations.
     """
     parent = element.getparent()
-    if parent is None or parent.tag != "li" or element.tag not in {"p", "div"}:
+    if parent is None or parent.tag not in _ITEM_TAGS or element.tag not in {"p", "div"}:
         return None, False
     if (parent.text or "").strip():
         return parent, False  # the item's own text is its label; this is a continuation
@@ -1177,9 +1319,14 @@ def _item_of(element: HtmlElement) -> tuple[HtmlElement | None, bool]:
 
 
 def _list_context(element: HtmlElement) -> tuple[bool, int]:
-    """Return (ordered, nesting level) for a list item."""
+    """Return (ordered, nesting level) for a list item.
+
+    A `<dd>` above the list counts as a level: a list inside a definition is indented under
+    it in the Markdown, as it is on the page, and stays a list to a CommonMark reader (up to
+    three spaces of indentation are nothing to one)."""
     ordered = False
     level = 0
+    definitions = 0
     parent = element.getparent()
     while parent is not None:
         tag = parent.tag
@@ -1187,8 +1334,10 @@ def _list_context(element: HtmlElement) -> tuple[bool, int]:
             level += 1
             if level == 1:
                 ordered = tag == "ol"
+        elif tag == "dd":
+            definitions += 1
         parent = parent.getparent()
-    return ordered, max(level, 1)
+    return ordered, max(level, 1) + definitions
 
 
 _QUOTE_STRUCTURE: Final[frozenset[str]] = frozenset(
@@ -1477,9 +1626,10 @@ def extract_rich_blocks(
     `strip_permalinks`."""
     # Media survives this strip so it can become a placeholder; see `MEDIA_TAGS`. Its own
     # children (`<source>`, `<track>`) are read by `_media_block` and never emitted.
-    keep = MEDIA_TAGS | _MEDIA_CHILDREN
+    keep = MEDIA_TAGS | _MEDIA_CHILDREN | {"svg"}
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
+    _drop_svg_icons(root)
     strip_permalinks(root, keep_hidden_text=include_hidden_text)
     if not include_hidden_text:
         _drop_clipped(root)
@@ -1506,7 +1656,10 @@ def extract_rich_blocks(
 
     def admit(block: Block, element: HtmlElement) -> None:
         nonlocal index
-        if block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA) and len(block.text) < min_chars:
+        if (
+            block.kind not in (BlockKind.IMAGE, BlockKind.MEDIA, BlockKind.RULE)
+            and len(block.text) < min_chars
+        ):
             return
         region, in_main = _landmarks_of(element, landmark_cache)
         if region is not None or in_main:
@@ -1572,6 +1725,21 @@ def extract_rich_blocks(
 
         elif tag == "img":
             block = _image_block(element, base_url, index, tree)
+
+        elif tag == "hr":
+            # A line the reader sees. Hidden ones (a stylesheet's `display: none`) are not.
+            if element.get(HIDDEN_ATTRIBUTE) not in _ABSENT_KINDS:
+                block = Block(
+                    text="",
+                    tag=tag,
+                    xpath=tree.getpath(element),
+                    dom_index=index,
+                    kind=BlockKind.RULE,
+                )
+
+        elif tag == "svg":
+            block = _svg_block(element, index, tree)
+            consumed.update(element.iterdescendants())
 
         elif tag == "table":
             if is_layout_table(element):
@@ -1669,8 +1837,13 @@ def extract_rich_blocks(
             # div never swallows a whole column.
             has_block_descendant = any(
                 isinstance(d.tag, str)
-                and (d.tag in _TEXT_CONTAINERS or d.tag in _HEADINGS or d.tag in _ATOMIC)
-                and normalize_text(flowed_text(d))
+                and (
+                    d.tag in _STRUCTURE_TAGS
+                    or (
+                        (d.tag in _TEXT_CONTAINERS or d.tag in _HEADINGS or d.tag in _ATOMIC)
+                        and normalize_text(flowed_text(d))
+                    )
+                )
                 for d in element.iterdescendants()
             )
             # A container holding a block descendant is skipped so a wrapper does not swallow
@@ -1694,15 +1867,23 @@ def extract_rich_blocks(
             if text:
                 rich = _inline_markdown(element, base_url, orphan_only=has_block_descendant)
                 item, first = _item_of(element)
+                block_tag = tag
                 if tag == "li":
                     ordered, level = _list_context(element)
                     kind = BlockKind.LIST_ITEM
-                elif item is not None:
+                elif item is not None and item.tag == "li":
                     # DocBook, Sphinx and every wiki write `<li><p>…</p></li>`; the item's
                     # first paragraph *is* the item, and the ones after it are its
                     # continuation, indented under the bullet in the Markdown.
                     ordered, level = _list_context(item)
                     kind = BlockKind.LIST_ITEM if first else BlockKind.PARAGRAPH
+                elif item is not None:
+                    # `<dd><p>…</p><p>…</p></dd>`: the first paragraph is the definition
+                    # and the rest continue it. The block wears the item's tag so the
+                    # Markdown can render it as one -- `tag` on an orphan run is likewise
+                    # its container's -- and `level` marks a continuation.
+                    block_tag = item.tag
+                    ordered, level, kind = False, (0 if first else 1), BlockKind.PARAGRAPH
                 else:
                     ordered, level, kind = False, 0, BlockKind.PARAGRAPH
                 # A `<br><br>` is a paragraph break: the paragraphs of a pre-CSS page, of a
@@ -1713,7 +1894,7 @@ def extract_rich_blocks(
                     admit(
                         Block(
                             text=piece_text,
-                            tag=tag,
+                            tag=block_tag,
                             xpath=tree.getpath(element),
                             dom_index=index,
                             kind=kind,
@@ -1726,7 +1907,7 @@ def extract_rich_blocks(
                 text, rich = pieces[-1]
                 block = Block(
                     text=text,
-                    tag=tag,
+                    tag=block_tag,
                     xpath=tree.getpath(element),
                     dom_index=index,
                     kind=kind,

@@ -8,7 +8,7 @@ one (see MEMORY.md D7).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -141,6 +141,57 @@ class BlockKind(StrEnum):
 
     `href` is the media source, `alt` its title where the markup gives one, and `text` a
     sentence saying plainly that it was not transcribed."""
+
+    RULE = "rule"
+    """A horizontal rule (`<hr>`): a line the reader sees between two parts of the page.
+
+    It has no text -- `text` is empty -- so it is invisible to everything that reads words:
+    `Document.text` skips it, deduplication and the static/rendered union key on text and
+    pass it through, the boilerplate profile ignores it. Content selection and the two
+    classifiers take it out of their input and put it back where both its neighbours were
+    kept (`STRUCTURE_ONLY`), so a rule can never be chosen as content on its own, never
+    counts as a block in a density statistic, and never shifts a feature the routers were
+    trained on. It was dropped outright before -- on 6 of 14 old pages in a census, the
+    one visible separator between sections had no trace in the Markdown."""
+
+
+STRUCTURE_ONLY: frozenset[BlockKind] = frozenset({BlockKind.RULE})
+"""Block kinds that carry structure and no text. Content selection and the classifiers
+run on the other blocks and put these back afterwards -- see `without_structure` and
+`restore_structure`."""
+
+
+def without_structure(blocks: Iterable[Block]) -> list[Block]:
+    """`blocks` with the `STRUCTURE_ONLY` kinds left out."""
+    return [b for b in blocks if b.kind not in STRUCTURE_ONLY]
+
+
+def restore_structure(original: Sequence[Block], kept: Iterable[Block]) -> list[Block]:
+    """Put the `STRUCTURE_ONLY` blocks of `original` back into `kept`, a selection made from
+    `without_structure(original)`, wherever the nearest text-bearing block on *both* sides
+    was kept. A rule between two kept paragraphs is part of what was kept; a rule at the
+    edge of the selection, or between two dropped blocks, is not -- so a selection never
+    begins or ends with a rule, and a page of rules and nothing else selects nothing."""
+    kept = list(kept)
+    survivors = {id(b) for b in kept}
+    if len(survivors) == sum(1 for b in original if b.kind not in STRUCTURE_ONLY):
+        return list(original)  # nothing was dropped, so nothing is an edge
+    out: list[Block] = []
+    pending: list[Block] = []
+    previous_kept = False
+    for block in original:
+        if block.kind in STRUCTURE_ONLY:
+            if previous_kept:
+                pending.append(block)
+            continue
+        if id(block) in survivors:
+            out.extend(pending)
+            out.append(block)
+            previous_kept = True
+        else:
+            previous_kept = False
+        pending = []
+    return out
 
 
 class Block(BaseModel):

@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #75) — Markdown structure a reader sees
+Found by a census of 25 old and plain pages against Chromium's own text.
+- `<hr>` is a block (`BlockKind.RULE`, rendered `---`); it was dropped outright on 6 of
+  the 14 census sites whose markup was inspected (catb.org, gutenberg.org, pgsql docs,
+  ibiblio.org …). A rule has no text: it is not in `text`, not a block to the boundary
+  step, the block model or the page-type router (each takes rules out and puts them back
+  between kept neighbours), never content on its own, and never a duplicate. A rule the
+  browser gave no box is not a line the reader sees and is left out.
+- `<dl>` renders as a definition list a reader can parse — `**term**` on one line, `:
+  definition` on the next, the Markdown Extra / Pandoc / kramdown form — instead of
+  alternating paragraphs (cl.cam.ac.uk's Unicode FAQ, every php.net parameter list). A
+  `<dd>` holding paragraphs keeps them under its marker, a list inside one is indented.
+- A table kept as its own markup (merged cells) fused the words on either side of a
+  `<br>`, `<p>` or `<li>` inside a cell (`<td>a<br>b</td>` → `ab`); breaks are kept and
+  block children get one, links stay, images in cells keep `src` and `alt` (both follow
+  `include_links` / `include_images`, as everywhere else). Rendering
+  such a table as pipes when its only span is a full-width title row was measured on
+  WebMainBench and rejected (table_edit 0.3365 → 0.3305; the corpus's own truth writes
+  that shape as HTML 6 times and as pipes once).
+- An inline `<svg>` with `SVG_MIN_TEXT_NODES` (2) labels or `SVG_MIN_WORDS` (3) words is
+  read for its `<text>` labels, in document order, joined with `·` (sqlite.org/lang.html's
+  railroad diagrams: 206 → 267 words, a quarter of the page). An icon — a `<title>` and
+  no text, or one word — still emits nothing, and leaves the sentence it sat in whole.
+
 ### Fixed (2026-09-14, PR #74)
 - A skip link to the page's main region (`href="#content"` → `<main id="content">`) no
   longer makes every hidden container inside it count as "openable"; a reference to a

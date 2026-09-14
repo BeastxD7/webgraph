@@ -50,7 +50,7 @@ from importlib import resources
 from typing import Final
 
 from webgraph.main_content import MainContentConfig, _repeat_groups, link_density, word_count
-from webgraph.types import Block, BlockKind
+from webgraph.types import STRUCTURE_ONLY, Block, BlockKind, restore_structure, without_structure
 
 __all__ = [
     "FEATURE_DOCS",
@@ -76,6 +76,10 @@ _KINDS: Final[tuple[BlockKind, ...]] = (
     BlockKind.MEDIA,
 )
 _KIND_CODE: Final[dict[BlockKind, int]] = {kind: i for i, kind in enumerate(_KINDS)}
+"""The kinds the shipped model was trained on, in feature order. `_KINDS` is the width of
+the one-hot slice, so a kind added later (`RULE`) is not appended here: `select_by_model`
+takes such blocks out before scoring, and a caller who passes one anyway gets the
+"none of these" code rather than a KeyError."""
 _REGIONS: Final[tuple[str, ...]] = ("main", "nav", "header", "footer", "aside")
 
 _TOKEN: Final[re.Pattern[str]] = re.compile(r"\w+")
@@ -258,7 +262,7 @@ def page_features(blocks: Sequence[Block]) -> list[list[float]]:
                 (
                     float(words[i - 1]),
                     density[i - 1],
-                    float(_KIND_CODE[blocks[i - 1].kind]),
+                    float(_KIND_CODE.get(blocks[i - 1].kind, len(_KINDS))),
                     1.0 if g >= 0 and groups[i - 1] == g else 0.0,
                 )
             )
@@ -269,7 +273,7 @@ def page_features(blocks: Sequence[Block]) -> list[list[float]]:
                 (
                     float(words[i + 1]),
                     density[i + 1],
-                    float(_KIND_CODE[blocks[i + 1].kind]),
+                    float(_KIND_CODE.get(blocks[i + 1].kind, len(_KINDS))),
                     1.0 if g >= 0 and groups[i + 1] == g else 0.0,
                 )
             )
@@ -377,6 +381,12 @@ def select_by_model(
     """
     if not blocks:
         return []
+    if any(b.kind in STRUCTURE_ONLY for b in blocks):
+        # The feature vector has one column per kind the model was trained on, and a rule
+        # is not one of them: it is scored by its neighbours, not by itself.
+        content = without_structure(blocks)
+        kept = select_by_model(content, model, threshold=threshold, min_share=min_share)
+        return restore_structure(blocks, kept)
     cut = model.threshold if threshold is None else threshold
     share = model.min_share if min_share is None else min_share
     probabilities = model.score(blocks)

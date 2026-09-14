@@ -62,7 +62,7 @@ from dataclasses import dataclass, replace
 from typing import Final
 
 from webgraph import config
-from webgraph.types import Block, BlockKind
+from webgraph.types import STRUCTURE_ONLY, Block, BlockKind, restore_structure, without_structure
 
 __all__ = [
     "MainContentConfig",
@@ -416,6 +416,11 @@ def content_value(block: Block, config: MainContentConfig) -> float:
     """
     words = word_count(block.text)
 
+    if block.kind in STRUCTURE_ONLY:
+        # A rule is worth nothing and costs nothing: `select_main_content` takes it out
+        # before Kadane runs and puts it back between kept neighbours.
+        return 0.0
+
     if block.kind is BlockKind.IMAGE:
         # An image contributes its alt text at most, and alt text on a product grid is a
         # list of filenames. It never anchors a run.
@@ -541,6 +546,12 @@ def select_main_content(
     Falls back to the whole list when no run is clearly better -- see `min_run_share`.
     """
     config = config or MainContentConfig()
+    if any(b.kind in STRUCTURE_ONLY for b in blocks):
+        # A rule has no words. It is not a block to Kadane, to the adaptive cost's mean, to
+        # a repeat group or to a river; the selection is made over the text-bearing blocks
+        # and the rules come back wherever both their neighbours were kept.
+        content = without_structure(blocks)
+        return restore_structure(blocks, select_main_content(content, config=config))
     if len(blocks) < 2:
         return list(blocks)
 
