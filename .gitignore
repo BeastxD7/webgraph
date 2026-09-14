@@ -44,3 +44,4 @@ out/
 # Benchmark corpora cloned next to their runners. Each is somebody else's dataset on
 # somebody else's release cadence; the runners take a --corpus path instead.
 /benchmark/*/corpus/
+live-suite.json*
