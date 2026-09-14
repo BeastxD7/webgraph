@@ -224,6 +224,13 @@ class Block(BaseModel):
     on a collection page and is link-dense by design, so no density rule can find it; the
     markup names it, and this records the name. None elsewhere."""
 
+    body_of: str | None = None
+    """XPath of the outermost ancestor that declares itself the article body --
+    `itemprop="articleBody"`, or a class such as `entry-content`, `post-content`,
+    `article-body`, `story-body` -- when there is one. The author's third statement about
+    the page after `<main>` and `<article>`, and the one news CMSs make most often: the
+    headline, byline and related-story rails sit outside it, the story inside."""
+
     float_of: str | None = None
     """XPath of the outermost floated ancestor, when the renderer measured one. Everything
     sharing a value sits in one float -- a thumbnail and its caption, an infobox -- and is

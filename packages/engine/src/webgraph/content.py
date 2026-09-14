@@ -34,6 +34,7 @@ from webgraph.blockmodel import BlockModel, default_model, select_by_model
 from webgraph.boilerplate import (
     SiteChrome,
     scope_to_article,
+    scope_to_article_body,
     scope_to_main,
     strip_comments,
     strip_landmarks,
@@ -75,6 +76,7 @@ class ContentSelection:
     landmarks_removed: int = 0
     main_scoped_removed: int = 0
     article_scoped_removed: int = 0
+    body_scoped_removed: int = 0
     """Blocks outside the page's dominant `<article>` element -- see `scope_to_article`."""
     chrome_removed: int = 0
     main_content_removed: int = 0
@@ -105,6 +107,8 @@ class ContentSelection:
             names.append("main-landmark")
         if self.article_scoped_removed:
             names.append("article-element")
+        if self.body_scoped_removed:
+            names.append("article-body")
         if self.chrome_removed:
             names.append("site-chrome")
         if self.main_content_removed:
@@ -182,16 +186,26 @@ def select_content(
     main_scoped_removed = before - len(kept)
 
     article_scoped_removed = 0
+    body_scoped_removed = 0
+    # The blocks the body scope removed are still where the title and byline live; the
+    # restoration below looks there for them. Set before the body scope, so an `<article>`
+    # scope's leftovers are not candidates: those were teasers.
+    around = kept
     if config is None or config.scope_article:
         before = len(kept)
         kept = scope_to_article(kept)
         article_scoped_removed = before - len(kept)
+        around = kept
+        before = len(kept)
+        kept = scope_to_article_body(kept)
+        body_scoped_removed = before - len(kept)
 
     chrome_removed = 0
     if chrome is not None and chrome.active:
         before = len(kept)
         kept = strip_site_chrome(kept, chrome)
         chrome_removed = before - len(kept)
+        around = strip_site_chrome(around, chrome)
 
     # `config` configures the boundary step and means nothing to the model, so asking for
     # both is a contradiction rather than a precedence question. It raises instead of
@@ -206,7 +220,6 @@ def select_content(
     main_content_removed = 0
     block_model_removed = 0
     title_restored = False
-    structural = kept
     if resolved is not None and main_content:
         before = len(kept)
         kept = select_by_model(kept, resolved)
@@ -216,10 +229,10 @@ def select_content(
         kept = select_main_content(kept, config=config)
         main_content_removed = before - len(kept)
     if main_content and title:
-        kept, title_restored = _restore_title(structural, kept, title)
+        kept, title_restored = _restore_title(around, kept, title)
         restored = 1 if title_restored else 0
         if title_restored:
-            kept, lead = _restore_lead(structural, kept)
+            kept, lead = _restore_lead(around, kept)
             restored += lead
         if resolved is not None:
             block_model_removed -= restored
@@ -232,6 +245,7 @@ def select_content(
         landmarks_removed=landmarks_removed,
         main_scoped_removed=main_scoped_removed,
         article_scoped_removed=article_scoped_removed,
+        body_scoped_removed=body_scoped_removed,
         chrome_removed=chrome_removed,
         main_content_removed=main_content_removed,
         block_model_removed=block_model_removed,
