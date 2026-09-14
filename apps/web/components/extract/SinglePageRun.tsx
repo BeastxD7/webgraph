@@ -6,7 +6,7 @@ import PageStages from "./PageStages";
 import RunLog from "./RunLog";
 import { usePageStream } from "@/hooks/usePageStream";
 import { useTabTitle } from "@/hooks/useTabTitle";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
 import {
   type ExtractResponse,
@@ -57,16 +57,102 @@ function Meta({ page }: { page: TextResponse["page"] }) {
 }
 
 /**
+ * "Paste the page's HTML instead": the way in for the sites that refuse every automated
+ * fetch -- a Cloudflare challenge, a login wall. The engine does not disguise itself to get
+ * past them; the reader, who has the page open in their own browser, hands its source over
+ * and nothing is fetched. A pasted wall is refused exactly like a fetched one.
+ *
+ * The textarea is a draft: the run restarts only on "Read it", not on every keystroke,
+ * because a run is a request to the API and a draft is not.
+ */
+function SuppliedHtml({
+  html,
+  onSubmit,
+  onClear,
+  failed,
+}: {
+  html: string | undefined;
+  onSubmit: (html: string) => void;
+  onClear: () => void;
+  failed: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  const inputId = useId();
+  const ready = draft.trim().length > 0;
+
+  return (
+    <details
+      // Opened for the reader when the fetch failed: that is the moment this is for.
+      open={failed && !html ? true : undefined}
+      className="rounded-2xl border border-line bg-surface shadow-card"
+    >
+      <summary className="flex cursor-pointer flex-wrap items-center gap-3 p-4 text-[15px] font-extrabold tracking-tight">
+        Paste the page&rsquo;s HTML instead
+        {html && (
+          <span className="rounded-full bg-leaf-50 px-2 py-0.5 text-[11.5px] font-semibold text-leaf-700">
+            reading your HTML · {compact(html.length)} chars
+          </span>
+        )}
+        <span className="ml-auto text-[12.5px] font-semibold text-ink-soft">
+          For sites that refuse every automated fetch
+        </span>
+      </summary>
+      <div className="space-y-3 border-t border-line px-5 py-4">
+        <p className="text-[13px] leading-relaxed text-ink-soft">
+          If the site answers with a bot challenge or a sign-in page, open it in your own
+          browser, view the page source, and paste it here. Nothing is fetched: the engine
+          reads what you paste, with links made absolute against the address above. Reading
+          order is source order, hidden text may appear, and a pasted wall is still refused.
+        </p>
+        <label htmlFor={inputId} className="sr-only">
+          The page&rsquo;s HTML
+        </label>
+        <textarea
+          id={inputId}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          spellCheck={false}
+          rows={6}
+          placeholder="<!doctype html><html>…"
+          className="w-full rounded-xl border border-line bg-haze px-3 py-2 font-mono text-[12px] leading-relaxed outline-none focus:border-leaf-600"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={!ready}
+            onClick={() => onSubmit(draft)}
+            className="rounded-full bg-ink px-4 py-1.5 text-[13px] font-bold text-inverse transition-opacity hover:opacity-85 disabled:opacity-50"
+          >
+            Read it
+          </button>
+          {html && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-soft transition-colors hover:bg-sunk"
+            >
+              Fetch it again instead
+            </button>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/**
  * Single-page mode. Two requests against the same URL: the Markdown rendering, and — on
  * demand — a JSON-schema mapping that reports where each value came from and how sure the
  * engine is. A field the engine cannot support yields no fact rather than a guess, so an
  * absent row here is the engine declining, not failing silently.
  */
 export default function SinglePageRun({ url }: { url: string }) {
+  // The page's HTML when the reader supplied it (see `SuppliedHtml`); undefined means fetch.
+  const [html, setHtml] = useState<string | undefined>(undefined);
   // Streamed rather than awaited. A render can take ten seconds, and a page that says
   // nothing until it finishes is indistinguishable from one that has hung -- which is why
   // the whole-site crawl has always streamed and this, until now, did not.
-  const run = usePageStream({ url, render: true });
+  const run = usePageStream({ url, render: true, html });
   const loading = run.running;
   const error = run.error;
   useTabTitle(loading ? "running" : error ? "failed" : "done", url.replace(/^https?:\/\//, "").split("/")[0] ?? url);
@@ -133,7 +219,9 @@ export default function SinglePageRun({ url }: { url: string }) {
   const logMeta: RunMeta = {
     url,
     mode: "single page",
-    request: { render: true },
+    // What was asked for: `render` is ignored by the API when the HTML is supplied, and
+    // the log says which of the two this run was.
+    request: html ? { render: false, supplied: true } : { render: true },
     header: (run.log.entries.current[0]?.event.type === "run"
       ? run.log.entries.current[0]?.event
       : null) as Record<string, unknown> | null,
@@ -195,6 +283,21 @@ export default function SinglePageRun({ url }: { url: string }) {
         </div>
       )}
 
+      <SuppliedHtml
+        html={html}
+        failed={Boolean(error)}
+        // A new source is a new run: `retry` clears the previous run's stages, error and
+        // log, and React batches it with the source change into one restart.
+        onSubmit={(pasted) => {
+          setHtml(pasted);
+          run.retry();
+        }}
+        onClear={() => {
+          setHtml(undefined);
+          run.retry();
+        }}
+      />
+
       {text && (
         <>
           <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
@@ -246,14 +349,17 @@ export default function SinglePageRun({ url }: { url: string }) {
               <button
                 type="button"
                 onClick={() => void mapSchema()}
-                disabled={mapping}
+                disabled={mapping || Boolean(html)}
+                title={html ? "Schema mapping fetches the page itself; it cannot read supplied HTML yet" : undefined}
                 className="rounded-full bg-ink px-4 py-1.5 text-[13px] font-bold text-inverse transition-opacity hover:opacity-85 disabled:opacity-50"
               >
                 {mapping ? "Mapping…" : "Map fields"}
               </button>
             </div>
             <p className="mt-2 text-[13px] text-ink-soft">
-              {SCHEMA_PRESETS[presetIndex]?.description}
+              {html
+                ? "Schema mapping fetches the page itself and cannot read supplied HTML yet, so it is off for this run."
+                : SCHEMA_PRESETS[presetIndex]?.description}
             </p>
 
             {mapError && (

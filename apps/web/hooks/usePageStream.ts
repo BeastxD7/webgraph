@@ -56,7 +56,17 @@ const EMPTY: PageRun = {
   elapsed: 0,
 };
 
-export function usePageStream({ url, render }: { url: string; render: boolean }): PageRun & {
+export function usePageStream({
+  url,
+  render,
+  html,
+}: {
+  url: string;
+  render: boolean;
+  /** The page's HTML supplied by the reader. When set nothing is fetched; a change here
+   *  starts a new run, so callers commit it on a click rather than on every keystroke. */
+  html?: string;
+}): PageRun & {
   retry: () => void;
   log: RunLog;
 } {
@@ -79,35 +89,39 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
     void (async () => {
       try {
         const saved = readOverrides();
-        await streamPage({ url, render, fetch: saved.fetch, renderOptions: saved.renderOptions }, (event) => {
-          log.record(event);
-          setRun((state) => {
-            switch (event.type) {
-              case "stage":
-                return { ...state, current: event.stage as PageStage };
-              case "resolve":
-                return { ...state, resolve: event, current: "parse" };
-              case "parse":
-                return { ...state, parse: event, current: "classify" };
-              case "classify":
-                return { ...state, classify: event, current: "select" };
-              case "select":
-                return { ...state, select: event, current: "done" };
-              case "done":
-                return { ...state, done: event, current: null, running: false };
-              case "error":
-                return {
-                  ...state,
-                  error: event.message,
-                  errorStage: event.stage,
-                  current: null,
-                  running: false,
-                };
-              default:
-                return state;
-            }
-          });
-        }, controller.signal);
+        await streamPage(
+          { url, render, ...(html ? { html } : {}), fetch: saved.fetch, renderOptions: saved.renderOptions },
+          (event) => {
+            log.record(event);
+            setRun((state) => {
+              switch (event.type) {
+                case "stage":
+                  return { ...state, current: event.stage as PageStage };
+                case "resolve":
+                  return { ...state, resolve: event, current: "parse" };
+                case "parse":
+                  return { ...state, parse: event, current: "classify" };
+                case "classify":
+                  return { ...state, classify: event, current: "select" };
+                case "select":
+                  return { ...state, select: event, current: "done" };
+                case "done":
+                  return { ...state, done: event, current: null, running: false };
+                case "error":
+                  return {
+                    ...state,
+                    error: event.message,
+                    errorStage: event.stage,
+                    current: null,
+                    running: false,
+                  };
+                default:
+                  return state;
+              }
+            });
+          },
+          controller.signal,
+        );
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         // Never arrives as a frame -- the request itself failed, so the server said nothing.
@@ -138,7 +152,7 @@ export function usePageStream({ url, render }: { url: string; render: boolean })
     return () => controller.abort();
     // `log` is stable: every member is a ref or a `useCallback` with no dependencies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, render, attempt]);
+  }, [url, render, html, attempt]);
 
   // Ticks locally rather than waiting on events: a render can take ten seconds, and a
   // frozen clock during it reads as a hung page.
