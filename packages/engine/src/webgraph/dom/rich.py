@@ -910,15 +910,25 @@ def _code_language(element: HtmlElement) -> str | None:
         for attribute in ("data-language", "data-lang"):
             declared = (node.get(attribute) or "").strip().lower()
             if declared:
-                return declared
+                return _a_language(declared)
         classes = [str(token) for token in (node.get("class") or "").split()]
         for index, value in enumerate(classes):
             for prefix in ("language-", "lang-", "highlight-"):
                 if value.startswith(prefix) and len(value) > len(prefix):
-                    return value[len(prefix):]
+                    return _a_language(value[len(prefix):])
             if value == "brush:" and index + 1 < len(classes):
-                return str(classes[index + 1]).rstrip(";")
+                return _a_language(str(classes[index + 1]).rstrip(";"))
     return None
+
+
+_NOT_A_LANGUAGE: Final[frozenset[str]] = frozenset({"undefined", "none", "null", "text", "plaintext", "plain", "nohighlight", ""})
+
+
+def _a_language(declared: str) -> str | None:
+    """`declared` unless it is a highlighter's way of saying it found none. highlight.js
+    writes `language-undefined` on a block it could not classify, and perldoc's fences
+    came out as ```undefined -- a word the page never showed anyone."""
+    return None if declared.lower() in _NOT_A_LANGUAGE else declared
 
 
 def _has_class(element: HtmlElement, name: str) -> bool:
@@ -1592,21 +1602,57 @@ def _is_control(button: HtmlElement) -> bool:
 _MAX_CODE_HEADER_WORDS: Final[int] = 4
 
 
+_CODE_HEADER_CONTROLS: Final[frozenset[str]] = frozenset(
+    {"copy", "copied", "copied!", "play", "run", "reset", "clipboard", "edit", "raw"}
+)
+_LANGUAGE_LABELS: Final[frozenset[str]] = frozenset(
+    {
+        "js", "javascript", "ts", "typescript", "jsx", "tsx", "html", "css", "scss", "less",
+        "json", "yaml", "yml", "toml", "xml", "svg", "md", "markdown", "sh", "shell", "bash",
+        "zsh", "console", "terminal", "powershell", "ps1", "bat", "cmd", "python", "py",
+        "ruby", "rb", "php", "perl", "pl", "go", "golang", "rust", "rs", "c", "cpp", "c++",
+        "h", "hpp", "cs", "c#", "csharp", "java", "kotlin", "kt", "swift", "objc",
+        "objective-c", "scala", "clojure", "haskell", "hs", "elixir", "erlang", "lua", "r",
+        "julia", "matlab", "sql", "graphql", "dockerfile", "docker", "makefile", "cmake",
+        "nginx", "apache", "ini", "diff", "patch", "http", "curl", "wasm", "asm", "dart",
+        "vue", "svelte", "astro", "mdx",
+    }
+)
+
+
 def _is_code_header(element: HtmlElement, text: str) -> bool:
     """Whether this is the strip above a code block: a language label and a copy button.
 
     MDN renders every example as `<div class="example-header"><span>js</span>
     <button>Copy</button></div><pre>...`, and "js Copy" arrived as a paragraph before each
     of the eleven examples on Array.prototype.reduce(). The strip is the element directly
-    before a `<pre>` with no more than a few words in it; a caption or a sentence
-    introducing the code is longer, and stays.
+    before a `<pre>`, with no more than a few words in it, **and** either a control in it
+    or nothing but labels: a language name, the block's own declared language, a
+    button's word. Its length alone used to decide, and perldoc.perl.org/perlre lost "is
+    made equivalent to", "For example, this program" and "will output the following:" --
+    sixty words of prose in `<p>` tags of four words or fewer, each before a `<pre>`. A
+    `<p>` is never the strip: no site writes its copy button in a paragraph.
     """
     if not 0 < len(text.split()) <= _MAX_CODE_HEADER_WORDS:
+        return False
+    if element.tag == "p":
         return False
     following = element.getnext()
     while following is not None and not isinstance(following.tag, str):
         following = following.getnext()
-    return following is not None and following.tag == "pre"
+    if following is None or following.tag != "pre":
+        return False
+    if any(
+        isinstance(node.tag, str) and (node.tag == "button" or node.get("role") == "button")
+        for node in element.iter()
+    ):
+        return True
+    language = (_code_language(following) or "").lower()
+    tokens = [token.strip(":").lower() for token in text.split()]
+    return all(
+        token in _LANGUAGE_LABELS or token in _CODE_HEADER_CONTROLS or (language and token == language)
+        for token in tokens
+    )
 
 
 def _last_descendant(element: HtmlElement) -> HtmlElement:
