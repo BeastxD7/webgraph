@@ -794,3 +794,172 @@ class TestLoginWalls:
         long_without = build_document(self.LONG, "https://www.example.test/login/")
         assert login_redirect(long_without, asked) is None
         assert login_redirect(short, None) is None
+
+
+SEC_DEMAND = """<html><head><title>SEC.gov | Your Request Originates from an Undeclared Automated Tool</title>
+<style>html {height: 100%}</style></head><body>
+<h1>Your Request Originates from an Undeclared Automated Tool</h1>
+<p>To allow for equitable access to all users, SEC reserves the right to limit requests
+originating from undeclared automated tools. Your request has been identified as part of a
+network of automated tools outside of the acceptable policy and will be managed until action
+is taken to declare your traffic.</p>
+<p>Please declare your traffic by updating your user agent to include company specific
+information.</p><p>Reference ID: 0.b58cd017.1789405615.26cfa2d3</p></body></html>"""
+
+SEC_PAGE = """<html><head><title>EDGAR Search Results</title></head><body>
+<h1>EDGAR Company Search Results</h1>
+<p>Apple Inc. CIK#: 0000320193 (see all company filings). SIC: 3571 - ELECTRONIC COMPUTERS.
+State location: CA. Fiscal year end: 0927. Business address: One Apple Park Way, Cupertino.</p>
+<table><tr><th>Filings</th><th>Format</th><th>Description</th></tr>
+<tr><td>10-K</td><td>Documents</td><td>Annual report for the fiscal year ended September 28</td></tr>
+</table></body></html>"""
+
+
+class TestDeclaredIdentity:
+    """Some sites admit automated clients only when the client says who runs it.
+
+    sec.gov answers the engine's browser-shaped User-Agent with HTTP 403 and a page that
+    says so in words: "declare your traffic by updating your user agent to include company
+    specific information". Their documented form is `Name contact@example.com`; measured on
+    14 Sep 2026, `Name email webgraph/0.1` is admitted and anything carrying a URL is not.
+    The demand is answered when the deployment has a contact to declare, and named when it
+    does not -- never disguised, never silently dropped.
+    """
+
+    @staticmethod
+    def stub(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+        """sec.gov's door: 403 + the demand for an undeclared client, the page for a
+        declared one. Records every User-Agent it was shown."""
+        from webgraph import resolve
+        from webgraph.fetch.static import FetchConfig, FetchResult
+
+        seen: list[str] = []
+
+        def fetch(url: str, *, config: FetchConfig | None = None) -> FetchResult:
+            agent = (config or FetchConfig()).user_agent
+            seen.append(agent)
+            declared = "@" in agent.split(" webgraph/")[0] and "Mozilla" not in agent
+            return FetchResult(
+                url=url,
+                requested_url=url,
+                status=200 if declared else 403,
+                html=SEC_PAGE if declared else SEC_DEMAND,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=declared,
+                error=None if declared else "HTTP 403",
+            )
+
+        monkeypatch.setattr(resolve, "fetch_static", fetch)
+        return seen
+
+    def test_the_demand_is_recognised_in_the_servers_words(self) -> None:
+        from webgraph.resolve import declaration_demanded
+
+        assert declaration_demanded(SEC_DEMAND) is not None
+        assert "declare your traffic" in declaration_demanded(SEC_DEMAND).lower()
+        assert declaration_demanded(SEC_PAGE) is None
+        assert declaration_demanded("<p>Sorry, you have been blocked. Ray ID: 8c1</p>") is None
+
+    def test_the_declared_agent_is_the_documented_form(self) -> None:
+        from webgraph.fetch.static import FetchConfig
+
+        declared = FetchConfig(contact="Example Co admin@example.com").declared()
+        assert declared.user_agent == "Example Co admin@example.com webgraph/0.1"
+        assert "Mozilla" not in declared.user_agent
+        assert "http" not in declared.user_agent
+
+    def test_with_a_contact_the_page_is_read_after_declaring(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph.fetch.static import FetchConfig
+        from webgraph.resolve import Strategy, resolve_page
+
+        seen = self.stub(monkeypatch)
+        resolved = resolve_page(
+            "https://www.sec.gov/cgi-bin/browse-edgar?CIK=0000320193",
+            strategy=Strategy.STATIC_ONLY,
+            fetch_config=FetchConfig(contact="Example Co admin@example.com"),
+        )
+        assert "EDGAR Company Search Results" in resolved.document.text
+        assert "Undeclared Automated Tool" not in resolved.document.text
+        assert resolved.identity_declared is True
+        # The first knock is the ordinary one; the site asked, and only then did we declare.
+        assert seen[0].startswith("Mozilla/5.0")
+        assert seen[1] == "Example Co admin@example.com webgraph/0.1"
+
+    def test_without_a_contact_the_demand_is_the_refusal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph.fetch.static import FetchConfig
+        from webgraph.resolve import PageBlockedError, Strategy, resolve_page
+
+        seen = self.stub(monkeypatch)
+        with pytest.raises(PageBlockedError) as caught:
+            resolve_page(
+                "https://www.sec.gov/cgi-bin/browse-edgar?CIK=0000320193",
+                strategy=Strategy.STATIC_ONLY,
+                fetch_config=FetchConfig(contact=""),
+            )
+        message = str(caught.value)
+        assert caught.value.kind == "undeclared"
+        assert "WEBGRAPH_CONTACT" in message
+        assert "declare your traffic" in message.lower()
+        assert len(seen) == 1, "no second knock with nothing to declare"
+
+    def test_a_site_that_keeps_refusing_a_declared_client_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import resolve
+        from webgraph.fetch.static import FetchConfig, FetchResult
+
+        def fetch(url: str, *, config: FetchConfig | None = None) -> FetchResult:  # noqa: ARG001
+            return FetchResult(
+                url=url,
+                requested_url=url,
+                status=403,
+                html=SEC_DEMAND,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=False,
+                error="HTTP 403",
+            )
+
+        monkeypatch.setattr(resolve, "fetch_static", fetch)
+        with pytest.raises(resolve.PageBlockedError) as caught:
+            resolve.resolve_page(
+                "https://www.sec.gov/x",
+                strategy=resolve.Strategy.STATIC_ONLY,
+                fetch_config=FetchConfig(contact="Example Co admin@example.com"),
+            )
+        assert "declared" in str(caught.value) and caught.value.kind == "undeclared"
+
+    def test_a_contact_never_reaches_a_site_that_did_not_ask(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The contact is declared to the site that demanded it, not sent everywhere."""
+        from webgraph import resolve
+        from webgraph.fetch.static import FetchConfig, FetchResult
+
+        seen: list[str] = []
+
+        def fetch(url: str, *, config: FetchConfig | None = None) -> FetchResult:
+            seen.append((config or FetchConfig()).user_agent)
+            return FetchResult(
+                url=url,
+                requested_url=url,
+                status=200,
+                html=SEC_PAGE,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=True,
+            )
+
+        monkeypatch.setattr(resolve, "fetch_static", fetch)
+        resolved = resolve.resolve_page(
+            "https://example.com/",
+            strategy=resolve.Strategy.STATIC_ONLY,
+            fetch_config=FetchConfig(contact="Example Co admin@example.com"),
+        )
+        assert resolved.identity_declared is False
+        assert seen == [FetchConfig().user_agent]

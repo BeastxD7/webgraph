@@ -29,7 +29,7 @@ same 403s because it is not imitating a browser, it is one. See `webgraph.resolv
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
@@ -45,6 +45,15 @@ _MAX_RESPONSE_BYTES = config.FETCH_MAX_BYTES
 __all__ = ["DEFAULT_USER_AGENT", "FetchConfig", "FetchResult", "fetch_static"]
 
 
+def _deployment_contact() -> str:
+    """`WEBGRAPH_CONTACT` as the process sees it. Read per configuration rather than at
+    import so a test, or a deployment that sets it late, is not stuck with the import-time
+    value."""
+    from webgraph.settings import Settings
+
+    return Settings.from_env().contact
+
+
 @dataclass(frozen=True, slots=True)
 class FetchConfig:
     timeout_seconds: float = config.FETCH_TIMEOUT_SECONDS
@@ -58,6 +67,20 @@ class FetchConfig:
     retries: int = config.FETCH_RETRIES
     """Extra attempts for a `RETRY_STATUSES` answer or a transport error. One by default:
     enough for a server that said *later*, not enough to be the reason it said so."""
+
+    contact: str = field(default_factory=lambda: _deployment_contact())
+    """Who runs this client, `Name contact@example.com`, for a site that asks (see
+    `declared`). From `WEBGRAPH_CONTACT`; empty means there is nothing to declare."""
+
+    def declared(self) -> FetchConfig:
+        """This configuration speaking as a declared automated client.
+
+        The User-Agent becomes `<contact> webgraph/0.1` -- the operator first, in the form
+        sec.gov documents, then the software's own name. The browser prefix goes: a client
+        declaring itself has no reason to look like Chrome. Only meaningful with a contact;
+        callers check `contact` before asking.
+        """
+        return replace(self, user_agent=f"{self.contact} {config.DECLARED_AGENT_SUFFIX}")
 
 @dataclass(frozen=True, slots=True)
 class FetchResult:

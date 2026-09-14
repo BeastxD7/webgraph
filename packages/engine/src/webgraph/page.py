@@ -116,6 +116,10 @@ def stream_page(
         # gave up, and that the result is the static fetch alone. A caller that shows a
         # completeness claim needs to know which it is looking at.
         "render_error": resolved.render_error,
+        # True when the site asked automated clients to say who runs them and this fetch
+        # did, with the deployment's `WEBGRAPH_CONTACT`. A reader of the log should know
+        # the page was served to a declared client, not to the ordinary fetch.
+        "identity_declared": resolved.identity_declared,
     }
 
     yield {

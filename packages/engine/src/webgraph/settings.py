@@ -61,6 +61,10 @@ class Settings:
     chromium_args: str = config.DEPLOY_CHROMIUM_ARGS
     """`WEBGRAPH_CHROMIUM_ARGS`: extra flags for the browser, shell-split."""
 
+    contact: str = config.DEPLOY_CONTACT
+    """`WEBGRAPH_CONTACT`: `Name contact@example.com`, declared to a site that admits
+    automated clients only when they say who runs them. Empty = such a site is refused."""
+
     @classmethod
     def from_env(cls, environ: os._Environ[str] | dict[str, str] | None = None) -> Settings:
         env = os.environ if environ is None else environ
@@ -85,6 +89,7 @@ class Settings:
             graph_dir=path("WEBGRAPH_GRAPH_DIR") or (Path(config.DEPLOY_GRAPH_DIR) if config.DEPLOY_GRAPH_DIR else None),
             allowed_origins=origins or tuple(config.DEPLOY_ALLOWED_ORIGINS),
             chromium_args=env.get("WEBGRAPH_CHROMIUM_ARGS", "") or config.DEPLOY_CHROMIUM_ARGS,
+            contact=env.get("WEBGRAPH_CONTACT", "").strip() or config.DEPLOY_CONTACT,
         )
 
 
