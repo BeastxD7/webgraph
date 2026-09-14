@@ -218,6 +218,14 @@ class TextRequest(BaseModel):
     url: str
     render: bool = False
     rtl: bool = False
+    include_hidden_text: bool = Field(
+        default=False,
+        description="Keep the text a browser holds but a sighted reader never sees: "
+        "screen-reader-only labels (`sr-only`, `visually-hidden`), skip links, wiki "
+        "edit controls. Off by default -- they label controls rather than say anything, "
+        "and on a category page they can outweigh the products -- and on for a caller "
+        "that wants every string in the DOM.",
+    )
     fetch: FetchOptions | None = None
     render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
 
@@ -461,7 +469,13 @@ async def health() -> HealthResponse:
 async def get_text(request: TextRequest) -> TextResponse:
     """Return page text in recovered reading order."""
     html, geometry, url = await _load(request.url, request.render)
-    document = build_document(html, url, geometry=geometry, rtl=request.rtl)
+    document = build_document(
+        html,
+        url,
+        geometry=geometry,
+        rtl=request.rtl,
+        include_hidden_text=request.include_hidden_text,
+    )
 
     images = [b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href]
     tables = sum(1 for b in document.blocks if b.kind is BlockKind.TABLE)
@@ -939,6 +953,7 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
                         strategy=strategy,
                         fetch_config=fetch_config,
                         render_config=render_config,
+                        include_hidden_text=request.include_hidden_text,
                     ),
                     trace,
                 ):

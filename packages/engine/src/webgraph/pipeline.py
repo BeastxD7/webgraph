@@ -61,8 +61,13 @@ def build_document(
     min_block_chars: int = 1,
     headers: dict[str, str] | None = None,
     runtime: RuntimeEvidence | None = None,
+    include_hidden_text: bool = False,
 ) -> Document:
     """Parse `html` into a `Document` with blocks in reading order.
+
+    `include_hidden_text` keeps the text a browser holds but a sighted reader never sees
+    -- screen-reader-only labels, skip links, wiki edit controls. Off by default: they are
+    labels for controls, not content. See `dom.blocks.strip_permalinks`.
 
     `geometry` maps XPath to bounding box, as produced by a rendered fetch. Without it the
     document falls back to DOM order and says so via `reading_order_method`.
@@ -86,7 +91,9 @@ def build_document(
     # Block extraction strips <script>/<style> from the tree it is given, and the profile
     # pass below still needs them. Copy rather than parse again -- see the module docstring.
     block_tree = copy.deepcopy(payload_tree)
-    blocks = extract_rich_blocks(block_tree, url, min_chars=min_block_chars)
+    blocks = extract_rich_blocks(
+        block_tree, url, min_chars=min_block_chars, include_hidden_text=include_hidden_text
+    )
 
     if geometry:
         blocks = _attach_geometry(blocks, geometry)

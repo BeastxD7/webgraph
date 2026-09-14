@@ -954,15 +954,18 @@ def _last_descendant(element: HtmlElement) -> HtmlElement:
 
 
 def extract_rich_blocks(
-    root: HtmlElement, base_url: str, *, min_chars: int = 1
+    root: HtmlElement, base_url: str, *, min_chars: int = 1, include_hidden_text: bool = False
 ) -> list[Block]:
-    """Extract blocks with their structure intact, in document order."""
+    """Extract blocks with their structure intact, in document order.
+
+    `include_hidden_text` keeps screen-reader-only labels and wiki edit controls -- see
+    `strip_permalinks`."""
     # Media survives this strip so it can become a placeholder; see `MEDIA_TAGS`. Its own
     # children (`<source>`, `<track>`) are read by `_media_block` and never emitted.
     keep = MEDIA_TAGS | _MEDIA_CHILDREN
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
-    strip_permalinks(root)
+    strip_permalinks(root, keep_hidden_text=include_hidden_text)
     _drop_hidden_twins(root)
 
     tree = root.getroottree()
