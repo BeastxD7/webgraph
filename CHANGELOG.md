@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-14, PR #84) — a single page honours robots.txt
+### Changed (2026-09-14, PR #83) — a single page honours robots.txt
 - `resolve_page` -- and so `/api/text`, `/api/text/stream`, `/api/extract` -- asks the
   host's robots.txt before fetching a page, as the crawl has since its first version. A
   page the file disallows for this client is not fetched; the refusal

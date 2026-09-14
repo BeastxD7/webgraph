@@ -1,6 +1,6 @@
 """Shared test setup for the engine.
 
-`resolve_page` asks a host's robots.txt before fetching a page (PR #84). Tests that stub
+`resolve_page` asks a host's robots.txt before fetching a page (PR #83). Tests that stub
 `resolve.fetch_static` to serve one page would otherwise reach the real host for its
 robots.txt -- and a stubbed reddit.com wall was refused by the real reddit.com's
 `Disallow: /` before the wall check ever ran. Here every host has no robots.txt unless a
