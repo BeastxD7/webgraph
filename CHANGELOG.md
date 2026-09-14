@@ -13,6 +13,40 @@ All notable changes to this project are documented here. The format follows
   verification … Ray ID" sentences were presented as content). A wall beside a fetch
   with no words of its own still raises `PageBlockedError`, as do walls on both sides.
 
+### Fixed (2026-09-14, PR #63) — pre-CSS pages read whole
+Found reading old and ugly pages against Chromium for the whole-page `markdown`, where
+nothing may be lost. Boards: WCXB dev +0.0001, Zyte 0.945 → 0.945, WCEB cleaneval
+0.895 → 0.899 (the old-HTML corpus), live suite unchanged.
+- A `<frameset>` page was read as an empty JavaScript shell; its frames are fetched
+  statically (same host, up to eight, two levels) and composed in frameset order
+  (cs.cmu.edu/~rgs/alice-table.html: 0 → 307 words). `render_error` says so.
+- Bare text under `<body>`, `<center>`, `<font>`, `<form>` and `<fieldset>` was emitted
+  by nobody (textfiles.com word recall 0.787 → 1.0).
+- `<br>` is a line break and `<br><br>` a paragraph break: an address keeps its lines
+  (a Markdown hard break), a `<br><br>`-separated article becomes paragraphs, headings,
+  captions and list items stay one line. Source newlines still collapse to spaces.
+- A `<blockquote>` that holds structure (a table, a list, paragraphs) is walked into and
+  each block inside carries `Block.quoted`, rendered `> ` per level, so an indented table
+  is a table (columbia.edu/~fdc/sample.html).
+- Found by measuring the above: split paragraphs came out reversed and, when the article
+  sat inside one `<span>`, every heading ahead of every paragraph (AppleInsider); the
+  orphan-run walk now goes through inline wrappers and flushes per container. Also on
+  `main` all along: a data-table cell fused words across `<br>` and block children
+  (`a<br>b` → `ab`).
+
+### Fixed (2026-09-14, PRs #59, #60, #62)
+- Hidden twins of visible text (CSS-module mobile/desktop copies) are matched as a group;
+  screen-reader-only text is detected by its measured 1px box; deduplication keys ignore
+  whitespace (linear.app 401 → 337 blocks) (#59).
+- Opacity-0 elements are measured and ordered where they sit; text inside a collapsed
+  `overflow: hidden` ancestor (an accordion) is slotted after its heading (#60).
+- A closed `<dialog>` / `aria-hidden` modal is not on the page; hidden content nothing
+  opens is dropped (karnataka.gov.in 9,270 → 726 words) (#62).
+
+### Added (2026-09-14, PR #61)
+- `tools/inspect_page.py`, `tools/inspect_corpus_page.py`, `benchmark/live/run.py` and
+  `benchmark/wcxb/per_page.py`: the diagnostic commands the PR template's repro steps use.
+
 ### Added (2026-09-14, PRs #55, #57)
 - `/api/text` and the page stream return `comments_markdown`: the comment thread found
   under the content, in page order, left out of `content_markdown` instead of thrown away.
