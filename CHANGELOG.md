@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #64)
+- A bot wall served to one of the two fetches (plain or browser) while the other got the
+  real page is left out and named in `render_error`, instead of being merged into the
+  page's text (columbia.edu/~fdc/sample.html: Cloudflare's "Performing security
+  verification … Ray ID" sentences were presented as content). A wall beside a fetch
+  with no words of its own still raises `PageBlockedError`, as do walls on both sides.
+
 ### Added (2026-09-14, PRs #55, #57)
 - `/api/text` and the page stream return `comments_markdown`: the comment thread found
   under the content, in page order, left out of `content_markdown` instead of thrown away.
