@@ -45,4 +45,5 @@ out/
 # somebody else's release cadence; the runners take a --corpus path instead.
 /benchmark/*/corpus/
 live-suite.json*
+fidelity.json*
 runs/

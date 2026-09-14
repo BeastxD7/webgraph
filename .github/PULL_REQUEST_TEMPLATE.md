@@ -99,6 +99,7 @@ Required for extraction, reading-order, routing, discovery and performance chang
 | reading order — discriminating / stacked / side-by-side (`benchmark/reading_order/run.py`) | | |
 | WebMainBench (anything touching tables, code, Markdown rendering) | | |
 | Live suite (`benchmark/live/run.py` on `main` and here, then `--compare`): pages that moved | | |
+| Whole-page fidelity (anything touching blocks, the union, ordering or Markdown rendering; `benchmark/fidelity/run.py` on `main` and here, then `--compare`): recall / extra / inversions on pages that moved | | |
 
 Live pages re-checked (URL → what was verified):
 -->

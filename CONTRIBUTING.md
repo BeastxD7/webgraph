@@ -128,8 +128,12 @@ does the same for a WCXB or Zyte page beside its ground truth; the web UI's "Cop
 carries every decision the engine made for that page. To check a change against the web
 rather than the corpora, `benchmark/live/run.py` scores a fixed set of live sites through
 the production path against Chromium's own text and diffs two runs; a page that moves is
-a page to open. These are the tools the pull-request template's "how to reproduce"
-section expects -- nothing that lives only on one machine.
+a page to open. `benchmark/fidelity/run.py` does the same for the *whole-page* Markdown on
+a fixed set of old and ugly pages -- word recall against Chromium (nothing lost), extra
+words (nothing added), order inversions, and structure counts -- which is the measure for
+any change to blocks, the union, ordering or rendering. These are the tools the
+pull-request template's "how to reproduce" section expects -- nothing that lives only on
+one machine.
 
 ## Where decisions are recorded
 
