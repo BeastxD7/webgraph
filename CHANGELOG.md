@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-14, PR #79)
+- Benchmarks page: WCXB dev routed 0.861 → 0.862 (per type: article .945, docs .929,
+  service .846, forum .801, collection .695, listing .706, product .637), WebMainBench
+  overall 0.733 / table 0.395 after #78, measured at `main@19f601f`; the progression
+  gains the whole-page step.
+
 ### Fixed (2026-09-14, PR #78)
 - A pipe table's cells carry their links only when the caller asked for links; #68 had
   rendered `[text](href)` into every cell regardless of `include_links`, which cost
