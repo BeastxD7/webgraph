@@ -939,6 +939,32 @@ def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
         parts.append(child.tail or "")
 
 
+def _item_of(element: HtmlElement) -> tuple[HtmlElement | None, bool]:
+    """The `<li>` this block is the body of, and whether it is the item's first block.
+
+    `<li><p>Try to find an answer by searching the Web.</p></li>` (catb.org, tldp.org,
+    every DocBook and Sphinx page) put the paragraph out as a paragraph and the item as
+    nothing, so the list lost its bullets, its numbering and its item boundaries. Only a
+    paragraph or div directly inside an item counts; an item that says something itself
+    keeps that as its label, as before, and its paragraphs are continuations.
+    """
+    parent = element.getparent()
+    if parent is None or parent.tag != "li" or element.tag not in {"p", "div"}:
+        return None, False
+    if (parent.text or "").strip():
+        return parent, False  # the item's own text is its label; this is a continuation
+    for sibling in parent:
+        if not isinstance(sibling.tag, str):
+            continue
+        if sibling is element:
+            return parent, True
+        if sibling.tag in _TEXT_CONTAINERS or sibling.tag in _HEADINGS or sibling.tag in _ATOMIC:
+            return parent, False
+        if (sibling.tail or "").strip() or normalize_text(flowed_text(sibling)):
+            return None, False
+    return None, False
+
+
 def _list_context(element: HtmlElement) -> tuple[bool, int]:
     """Return (ordered, nesting level) for a list item."""
     ordered = False
@@ -1421,9 +1447,19 @@ def extract_rich_blocks(
             if text and tag == "button" and _is_control(element):
                 text = ""
             if text:
-                ordered, level = _list_context(element) if tag == "li" else (False, 0)
                 rich = _inline_markdown(element, base_url, orphan_only=has_block_descendant)
-                kind = BlockKind.LIST_ITEM if tag == "li" else BlockKind.PARAGRAPH
+                item, first = _item_of(element)
+                if tag == "li":
+                    ordered, level = _list_context(element)
+                    kind = BlockKind.LIST_ITEM
+                elif item is not None:
+                    # DocBook, Sphinx and every wiki write `<li><p>…</p></li>`; the item's
+                    # first paragraph *is* the item, and the ones after it are its
+                    # continuation, indented under the bullet in the Markdown.
+                    ordered, level = _list_context(item)
+                    kind = BlockKind.LIST_ITEM if first else BlockKind.PARAGRAPH
+                else:
+                    ordered, level, kind = False, 0, BlockKind.PARAGRAPH
                 # A `<br><br>` is a paragraph break: the paragraphs of a pre-CSS page, of a
                 # forum post, of an email pasted into a `<div>`. Each becomes a block of its
                 # own, as it would have with `<p>` tags; a list item stays one item.

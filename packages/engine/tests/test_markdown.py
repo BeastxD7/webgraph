@@ -1197,6 +1197,29 @@ class TestPreCssPages:
             "outer tail two",
         ]
 
+    def test_a_list_items_first_paragraph_is_the_item(self) -> None:
+        """DocBook / Sphinx / wiki markup: `<li><p>…</p></li>`. catb.org's "How To Ask
+        Questions" lost every bullet and number of its eight lists; tldp.org's HOWTO index
+        came out as a hundred bare paragraphs."""
+        html = (
+            "<html><body><ol><li><p>Search the Web first.</p><p>Then the archives.</p></li>"
+            "<li><p>Read the manual.</p><ul><li><p>Nested item.</p></li></ul></li>"
+            "<li>Label <p>and a paragraph after it</p></li></ol></body></html>"
+        )
+        document = build_document(html, "http://old.test/")
+        assert [(b.kind.value, b.level, b.ordered, b.text) for b in document.blocks] == [
+            ("list-item", 1, True, "Search the Web first."),
+            ("paragraph", 1, True, "Then the archives."),
+            ("list-item", 1, True, "Read the manual."),
+            ("list-item", 2, False, "Nested item."),
+            ("list-item", 1, True, "Label"),
+            ("paragraph", 1, True, "and a paragraph after it"),
+        ]
+        markdown = to_markdown(document, options=MarkdownOptions())
+        assert "1. Search the Web first.\n\n   Then the archives.\n\n1. Read the manual." in markdown
+        assert "  - Nested item." in markdown
+        assert "1. Label\n\n   and a paragraph after it" in markdown
+
     def test_a_blockquote_holding_a_table_keeps_the_table(self) -> None:
         """columbia.edu/~fdc/sample.html indents its demo tables with `<blockquote>`; the
         table came out as one line of quoted words. A quote made of blocks is walked into
