@@ -3,6 +3,7 @@
 import Timeline, { type TimelineStep } from "@/components/ui/Timeline";
 import Why from "@/components/ui/Why";
 import { STAGE_ORDER, type PageRun, type PageStage } from "@/hooks/usePageStream";
+import { strategyLabel } from "@/lib/api";
 
 /**
  * One page's extraction, stage by stage, with what each stage measured.
@@ -36,6 +37,13 @@ const COPY: Record<PageStage, { title: string; does: string }> = {
   done: { title: "Hand it back", does: "Text, Markdown, images and tables." },
 };
 
+/** The resolve stage when the reader supplied the HTML: nothing was fetched, and a title
+ *  saying "fetch it both ways" would be describing a run that did not happen. */
+const SUPPLIED_RESOLVE = {
+  title: "Read the HTML you supplied",
+  does: "Nothing fetched or rendered. Reading order is source order, and what a browser would have hidden may appear.",
+};
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-line-soft py-1 last:border-b-0">
@@ -59,8 +67,10 @@ export default function PageStages({ run }: { run: PageRun }) {
   const failedIndex = failedAt ? STAGE_ORDER.indexOf(failedAt) : -1;
 
   const steps: TimelineStep[] = [];
+  const supplied = run.resolve?.strategy === "supplied";
+
   for (const [index, stage] of STAGE_ORDER.entries()) {
-    const copy = COPY[stage];
+    const copy = stage === "resolve" && supplied ? SUPPLIED_RESOLVE : COPY[stage];
     const finished = endedAt[stage] !== undefined;
     const running = run.current === stage && !run.error;
     const failed = failedIndex === index;
@@ -78,7 +88,7 @@ export default function PageStages({ run }: { run: PageRun }) {
     // What the collapsed line says: the one fact worth a glance per stage.
     const summary =
       stage === "resolve" && run.resolve
-        ? `${run.resolve.strategy} · ${run.resolve.union_chars.toLocaleString("en-US")} chars`
+        ? `${strategyLabel(run.resolve.strategy)} · ${run.resolve.union_chars.toLocaleString("en-US")} chars`
         : stage === "parse" && run.parse
           ? `${run.parse.blocks.toLocaleString("en-US")} blocks · ${run.parse.words.toLocaleString("en-US")} words · ${run.parse.reading_order}`
           : stage === "classify" && run.classify
@@ -101,21 +111,32 @@ export default function PageStages({ run }: { run: PageRun }) {
         <>
           {stage === "resolve" && run.resolve && (
             <dl className="mt-2.5">
-              <Row label="Strategy" value={run.resolve.strategy} />
-              <Row
-                label="Plain HTTP vs browser"
-                value={`${run.resolve.static_chars.toLocaleString("en-US")} vs ${run.resolve.rendered_chars.toLocaleString("en-US")} chars`}
-              />
-              <Row
-                label="Merged, losing nothing"
-                value={`${run.resolve.union_chars.toLocaleString("en-US")} chars`}
-              />
-              <Row
-                label="Plain HTTP alone would have given"
-                value={`${Math.round(run.resolve.static_coverage * 100)}% of it`}
-              />
-              {run.resolve.render_error && (
-                <Row label="Browser" value={run.resolve.render_error.slice(0, 60)} />
+              <Row label="Strategy" value={strategyLabel(run.resolve.strategy)} />
+              {supplied ? (
+                // One representation, unmeasured: a "plain HTTP vs browser" comparison
+                // would be comparing the paste with a fetch that never happened.
+                <Row
+                  label="Read from your HTML"
+                  value={`${run.resolve.union_chars.toLocaleString("en-US")} chars`}
+                />
+              ) : (
+                <>
+                  <Row
+                    label="Plain HTTP vs browser"
+                    value={`${run.resolve.static_chars.toLocaleString("en-US")} vs ${run.resolve.rendered_chars.toLocaleString("en-US")} chars`}
+                  />
+                  <Row
+                    label="Merged, losing nothing"
+                    value={`${run.resolve.union_chars.toLocaleString("en-US")} chars`}
+                  />
+                  <Row
+                    label="Plain HTTP alone would have given"
+                    value={`${Math.round(run.resolve.static_coverage * 100)}% of it`}
+                  />
+                  {run.resolve.render_error && (
+                    <Row label="Browser" value={run.resolve.render_error.slice(0, 60)} />
+                  )}
+                </>
               )}
             </dl>
           )}
