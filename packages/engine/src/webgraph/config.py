@@ -338,6 +338,28 @@ CRAWL_SITEMAP_LIMIT = 50_000
 # Honour robots.txt.
 CRAWL_RESPECT_ROBOTS = True
 
+# Honour robots.txt for a single page too (`resolve_page`, `/api/text`). The crawl always
+# did; a single URL never was checked, so the API read pages the site had asked automated
+# clients not to (Stack Overflow, The Sun: `User-agent: * / Disallow: /`). A disallowed
+# page is refused with the file and the rule quoted, and the sanctioned paths named
+# (`ROBOTS_SANCTIONED_SOURCES`, the caller's own HTML). Per request: `FetchConfig.respect_robots`.
+PAGE_RESPECT_ROBOTS = True
+
+# The name this client answers to in a robots.txt `User-agent:` line. `urllib.robotparser`
+# takes the first `/`-split token of the User-Agent string, which for the browser-shaped
+# agent is "mozilla" -- so the rule is asked for by this token, not by the header.
+ROBOTS_AGENT_TOKEN = "webgraph"
+
+# How long a host's robots.txt is trusted before it is fetched again.
+ROBOTS_CACHE_SECONDS = 3600
+
+# Where a site that disallows automated reading offers its content instead, named in the
+# refusal. Only the ones that could be cited; a hint the engine cannot stand behind is noise.
+ROBOTS_SANCTIONED_SOURCES = {
+    "stackoverflow.com": "the Stack Exchange API (https://api.stackexchange.com/docs)",
+    "reddit.com": "the Reddit Data API (https://www.reddit.com/dev/api)",
+}
+
 # Also produce content_markdown: the page with landmarks, site chrome and boilerplate
 # removed.
 CRAWL_REMOVE_CHROME = True
