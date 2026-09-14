@@ -618,3 +618,36 @@ class TestAdaptiveCostRatio:
         blocks = self._plan_page()
         kept = select_main_content(blocks, config=replace(MainContentConfig(), cost_ratio=0.70))
         assert [b.kind for b in kept] == [BlockKind.TABLE]
+
+
+class TestCostBlockCap:
+    """wordpress.org/news, the 6.6 release post: 630 contributor names in one 2,100-word
+    paragraph near the end. Counted whole it set the page's mean block length to 44 and the
+    cost to the ceiling, and the boundary step kept that paragraph and eight blocks around
+    it out of the post's 54. One block may not price the page."""
+
+    @staticmethod
+    def _release_post() -> list[Block]:
+        from webgraph.pipeline import build_document
+
+        sections = "".join(
+            f"<h2>Feature {i}</h2><p>Create colour or font sets to multiply design combinations across one theme; "
+            f"these {i} new options sit in the style book and apply to every block that uses them, on any screen.</p>"
+            f"<img src='/f{i}.png' alt=''>"
+            for i in range(15)
+        )
+        names = " · ".join(f"contributor{i}" for i in range(2100))
+        html = f"<html><body><main><h1>WordPress 6.6</h1><p>Say hello to the release, named after a band leader.</p>{sections}<h2>Thank you</h2><p>{names}</p><p>More than 60 locales have translated most of the release into their language.</p></main></body></html>"
+        return list(build_document(html, "https://wp.test/news/6-6/").blocks)
+
+    def test_one_giant_block_does_not_price_the_page(self) -> None:
+        kept = select_main_content(self._release_post(), config=MainContentConfig())
+        assert sum(1 for b in kept if b.text.startswith("Create colour")) == 15
+        assert sum(1 for b in kept if b.text.startswith("Feature ")) >= 14  # the first sits before the run's start
+
+    def test_uncapped_the_same_page_loses_its_sections(self) -> None:
+        """Pins the mechanism the cap exists for."""
+        from dataclasses import replace
+
+        kept = select_main_content(self._release_post(), config=replace(MainContentConfig(), cost_block_cap=10**6))
+        assert sum(1 for b in kept if b.text.startswith("Create colour")) < 15

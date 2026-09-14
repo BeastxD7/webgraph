@@ -169,6 +169,10 @@ CONTENT_ADAPTIVE_COST = True
 CONTENT_COST_RATIO = 0.60  # cost = clamp(ratio * mean block words, floor, ceiling)
 CONTENT_COST_FLOOR = 5.0
 CONTENT_COST_CEILING = 18.0
+# A single block counts at most this many words towards the mean the cost is drawn from.
+# wordpress.org's release post lists 630 contributor names in one 2,100-word paragraph; it
+# set the cost to the ceiling and the boundary step kept 9 of the post's 54 blocks.
+CONTENT_COST_BLOCK_CAP = 400
 CONTENT_BLOCK_COST = 13.0  # the fixed cost, when CONTENT_ADAPTIVE_COST is False
 
 # Words credited to a heading beyond its own count -- headings are short and are content.
