@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (2026-09-14, login walls)
+### Added (2026-09-14, PR #73) — login walls
 - A fetch redirected to a login page is refused as the wall it is, named as one:
   `PageBlockedError` says `redirected to a login page (<final url>)` and carries
   `login_url` and `kind` (`login` / `challenge` / `block`). The final URL has to hold a
@@ -21,7 +21,7 @@ All notable changes to this project are documented here. The format follows
   pages. A login redirect on one fetch beside the real page on the other is left out
   like a bot wall, and the page is read from the other side.
 
-### Fixed (2026-09-14, code editors)
+### Fixed (2026-09-14, PR #73) — code editors
 - A browser-side code editor's DOM (CodeMirror 5 and 6, Monaco, Ace) is one `code` block:
   its lines in order, the gutter's line numbers, cursor and measuring layers left out,
   the language from the widget (`data-language`, `data-mode-id`, a `language=` attribute
