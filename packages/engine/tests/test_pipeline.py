@@ -211,6 +211,48 @@ class TestDuplicateResolution:
         blocks = build_document(html, "https://x.test/").blocks
         assert len([b for b in blocks if "Karri" in b.text]) == 1
 
+    def test_a_page_that_says_something_twice_keeps_both(self) -> None:
+        """columbia.edu/~fdc/sample.html shows one demo table four times, with four border
+        styles, and came out with one; a heading or sentence a page repeats on purpose
+        came out once. Unmeasured repeats standing among different neighbours stay."""
+        from webgraph.pipeline import build_document
+
+        table = "<table><tr><th>Heading A</th><th>Heading B</th></tr><tr><td>Cell 1A</td><td>Cell 1B</td></tr></table>"
+        html = (
+            f"<html><body><p>A simple table:</p>{table}<p>Same table again but with borders:</p>{table}"
+            "<p>A sentence the author repeats on purpose, for effect, twice on the page.</p>"
+            "<p>Between them, something else entirely is said here.</p>"
+            "<p>A sentence the author repeats on purpose, for effect, twice on the page.</p>"
+            "<h2>Every word counts</h2><p>Body under the first heading, long enough to matter.</p>"
+            "<h2>Every word counts</h2><p>Body under the second, which differs.</p></body></html>"
+        )
+        texts = [b.text for b in build_document(html, "https://x.test/").blocks]
+        assert texts.count("Heading A | Heading B\nCell 1A | Cell 1B") == 2
+        # Repeated text stays deduplicated on an unmeasured page: measured on WCXB and
+        # Zyte, hidden copies of prose outnumber deliberate repeats by far (see
+        # `_substantial`); a rendered page keeps both through their rectangles.
+        assert texts.count("A sentence the author repeats on purpose, for effect, twice on the page.") == 1
+        assert texts.count("Every word counts") == 1
+
+    def test_a_repeated_run_is_a_hidden_layout_and_goes(self) -> None:
+        """The mobile grid beside the desktop grid, unmeasured: the second run repeats the
+        first block for block, and is a twin, not the page repeating itself."""
+        from webgraph.pipeline import build_document
+
+        table = "<table><tr><th>Plan</th><th>Price</th></tr><tr><td>Pro</td><td>49</td></tr></table>"
+        cards = f"<p>Card one: the first product on the shelf.</p>{table}<p>Card two: the second product.</p>"
+        html = f"<html><body><h1>Shelf</h1><div class='desktop'>{cards}</div><div class='mobile'>{cards}</div></body></html>"
+        texts = [b.text for b in build_document(html, "https://x.test/").blocks]
+        assert len(texts) == 4
+        assert texts.count("Plan | Price\nPro | 49") == 1
+
+    def test_a_short_label_repeated_still_goes(self) -> None:
+        from webgraph.pipeline import build_document
+
+        html = "<html><body><p>NEW</p><p>Intro paragraph one.</p><p>NEW</p><p>Second paragraph.</p></body></html>"
+        texts = [b.text for b in build_document(html, "https://x.test/").blocks]
+        assert texts.count("NEW") == 1
+
     def test_two_plain_copies_still_keep_the_first(self) -> None:
         """The general rule is unchanged: the copy a reader reaches first stays."""
         from webgraph.pipeline import build_document

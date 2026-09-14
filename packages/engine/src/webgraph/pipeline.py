@@ -191,14 +191,39 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
     every module page lost its heading this way. When the later copy is a heading and the
     earlier is not, or sits in the main content while the earlier sits in navigation, the
     later copy stays where it is and the earlier one goes.
+
+    **A page that says something twice is not a duplicate of itself.** Two copies the
+    browser drew in two places were already kept; two copies nobody measured -- a static
+    fetch, a page whose browser fetch was refused -- were not, so columbia.edu/~fdc/sample.html,
+    which shows one demo table four times with four border styles, came out with one, and a
+    heading a page repeats on purpose came out once. What tells a repeat from a hidden
+    twin without a measurement is its company: a hidden layout copies a *run* -- the
+    mobile grid beside the desktop grid, the second navigation beside the first -- so a
+    repeated block whose neighbour also repeats the earlier copy's neighbour is a layout
+    copy and goes, while a repeated block standing among different neighbours is the
+    page repeating itself and stays. A run is any two adjacent repeats of two adjacent
+    blocks; a repeat straight after its earlier copy, with nothing between, is the two
+    readings of one line (static and rendered, "Karri·2min ago" / "Karri · 2min ago")
+    and goes. Only a table or a code block is judged this way -- see `_substantial` for
+    the measurement that keeps repeated text under the old rule.
     """
     seen: dict[tuple[str, str | None], int] = {}
     kept: list[Block | None] = []
+    # For the run test: each input index's key, and the input index of the first block
+    # with that key -- over *every* block, dropped ones included, since a twin run's
+    # text neighbours are dropped before its table is judged.
+    keys: list[str] = []
+    first_at: dict[str, int] = {}
+    # Unmeasured structural repeats, decided once every neighbour is known:
+    # (position in `kept`, input index, input index of the first copy).
+    pending: list[tuple[int, int, int]] = []
 
-    for block in blocks:
+    for index, block in enumerate(blocks):
         # Whitespace is dropped from the key, not normalised: the same words with a
         # missing space between two inline spans are the same block -- see `resolve._key`.
         text = "".join(block.text.split()).casefold()
+        keys.append(text)
+        first_at.setdefault(text, index)
         if not text:
             kept.append(block)
             continue
@@ -240,8 +265,45 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             kept[previous] = None
             seen[key] = len(kept)
             kept.append(block)
+        elif block.rect is None and earlier.rect is None and _substantial(block):
+            # Neither copy measured: kept for now, decided below by its neighbours.
+            pending.append((len(kept), index, first_at[text]))
+            kept.append(block)
+
+    for position, index, first in pending:
+        if index == first + 1 or _in_repeated_run(keys, first_at, index, first):
+            kept[position] = None
 
     return [block for block in kept if block is not None]
+
+
+def _substantial(block: Block) -> bool:
+    """A repeat worth judging by its neighbours: a table or a code block. Repeated *text*
+    on a page nobody measured is a hidden layout copy far more often than the page
+    repeating itself -- measured on WCXB and Zyte, keeping repeated prose and headings by
+    the neighbour rule cost 0.0017 and 0.003 overall, with businessinsider.com (the
+    article three times over, interleaved with different furniture) at 0.998 -> 0.471 --
+    so text goes as before, however long. A demo table shown four ways, a code sample
+    shown before and after, are structure a page repeats on purpose."""
+    return block.kind in _STRUCTURAL_REPEATS
+
+
+def _in_repeated_run(keys: list[str], first_at: dict[str, int], index: int, first: int) -> bool:
+    """Whether the repeat at input `index` sits in a run that repeats the run around its
+    first copy at `first`: the block before it is a repeat of the block before the first
+    copy, or the block after it a repeat of the block after. Hidden layouts copy runs; a
+    page repeating one thing does not. Judged on the input sequence, dropped blocks
+    included, since a twin run's text neighbours are dropped before its table is judged."""
+
+    def repeats(a: int, b: int) -> bool:
+        if not (0 <= a < len(keys) and 0 <= b < len(keys)):
+            return False
+        return bool(keys[a]) and keys[a] == keys[b] and first_at[keys[a]] == b
+
+    return repeats(index - 1, first - 1) or repeats(index + 1, first + 1)
+
+
+_STRUCTURAL_REPEATS: Final[frozenset[BlockKind]] = frozenset({BlockKind.TABLE, BlockKind.CODE})
 
 
 _RESTATED_SHINGLE: Final[int] = 6
