@@ -509,3 +509,47 @@ class TestGridInstances:
         texts = [b.text for b in pruned]
         assert not any("Next Blouse Top" in t for t in texts)
         assert "Condition: not specified" in texts and texts[0].startswith("Next 3 pack")
+
+
+class TestAdaptiveCostRatio:
+    """everywomansmarathon.com, classcentral.com: a listicle of short lines beside one large
+    table. The table raises the page's mean block length, the ratio turns that into a
+    per-block cost the short lines cannot pay, and the boundary was the table alone.
+    Re-swept after the structural steps took most short chrome out of the mean, 0.60
+    plateaus on WCXB dev and test; at 0.70 this fixture keeps one block."""
+
+    @staticmethod
+    def _plan_page() -> list[Block]:
+        from webgraph.pipeline import build_document
+
+        words = [
+            "run", "walk", "rest", "hill", "tempo", "long", "easy", "strides", "drills", "stretch",
+            "core", "yoga", "swim", "bike", "fuel", "hydrate", "sleep", "recover", "pace", "form",
+        ]
+
+        def line(i: int) -> str:
+            return f"Day {i}: " + " ".join(words[(i + k) % len(words)] for k in range(7)) + " today."
+
+        rows = "".join(
+            f"<tr><td>Week {w}</td>" + "".join(f"<td>{k + w} mile {words[(w + k) % 20]} run</td>" for k in range(6)) + "</tr>"
+            for w in range(1, 8)
+        )
+        table = "<table><tr><th>Plan</th>" + "".join(f"<th>Day {d}</th>" for d in range(6)) + f"</tr>{rows}</table>"
+        before = "".join(f"<p>{line(i)}</p>" for i in range(20))
+        after = "".join(f"<p>{line(i)}</p>" for i in range(20, 40))
+        html = f"<html><body><main><h1>Beginner plan</h1>{before}{table}{after}</main></body></html>"
+        return list(build_document(html, "https://plan.test/beginner").blocks)
+
+    def test_short_lines_beside_a_table_are_kept(self) -> None:
+        blocks = self._plan_page()
+        kept = select_main_content(blocks, config=MainContentConfig())
+        assert sum(1 for b in kept if b.text.startswith("Day ")) == 40
+        assert any(b.kind is BlockKind.TABLE for b in kept)
+
+    def test_the_old_ratio_kept_only_the_table(self) -> None:
+        """Pins the mechanism, so a future re-sweep knows what this fixture measures."""
+        from dataclasses import replace
+
+        blocks = self._plan_page()
+        kept = select_main_content(blocks, config=replace(MainContentConfig(), cost_ratio=0.70))
+        assert [b.kind for b in kept] == [BlockKind.TABLE]

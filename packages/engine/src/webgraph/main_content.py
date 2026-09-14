@@ -142,9 +142,25 @@ class MainContentConfig:
     cost_ratio: float = config.CONTENT_COST_RATIO
     """Multiple of mean block words used as the per-block cost when `adaptive_cost` is set.
 
-    Flat over 0.65-0.80, and 0.70 is the maximum on WCXB dev **and** test independently. The
-    Zyte column was deliberately not used to break the tie -- it jitters by +/-0.008 across
-    that range on 181 pages, which is noise being asked to decide a parameter."""
+    0.70 was the maximum on WCXB dev and test independently when the boundary step saw
+    nearly every block of the page. The structural steps before it now strip landmarks,
+    named chrome, consent dialogs, rails, comments and post furniture, most of them short
+    blocks, so the mean block length it calibrates against rose and the same ratio buys a
+    higher cost: a listicle beside a table (everywomansmarathon.com, classcentral.com) kept
+    only the table. Re-swept in September 2026, policy by true page type:
+
+    ```
+                  WCXB dev   WCXB test     Zyte
+    0.70            0.8576      0.8828    0.942
+    0.65            0.8591      0.8854    0.941
+    0.60            0.8602      0.8860    0.940
+    0.55            0.8603      0.8862      --
+    ```
+
+    0.60 is where both splits plateau; 0.55 is the edge of the sweep. Zyte gives up 0.002
+    to it, and that is not jitter -- sixteen pages lose a little precision to one more
+    bridged block and four gain -- but it is 181 pages of one type against 2,008 of seven
+    moving the same way on two splits."""
 
     cost_floor: float = config.CONTENT_COST_FLOOR
     """Lower clamp. A page of very short blocks would otherwise set a cost near zero, and a
