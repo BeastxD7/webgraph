@@ -170,6 +170,17 @@ class MainContentConfig:
     """Upper clamp. A page of very long blocks would otherwise set a cost that rejects real
     paragraphs."""
 
+    cost_block_cap: int = config.CONTENT_COST_BLOCK_CAP
+    """Words a single block may contribute to the mean the cost is drawn from.
+
+    One outlier should not price the page. wordpress.org's 6.6 release post carries 630
+    contributor names in one 2,100-word paragraph; with it counted whole the mean was 44,
+    the cost the 18-word ceiling, and the boundary step kept the paragraph and eight
+    blocks around it out of the post's 54. Capped at 400 the post comes out whole.
+    Measured: WCXB dev +0.0001, Zyte unchanged -- a 400-word block is rare enough that
+    the cap changes nothing else -- where a trimmed mean, a median or a 150-word cap all
+    read as a lower ratio (WCXB +0.0005, Zyte -0.004) and were not taken."""
+
     block_cost: float = config.CONTENT_BLOCK_COST
     """Fixed per-block cost, used when `adaptive_cost` is False.
 
@@ -534,7 +545,8 @@ def select_main_content(
         return list(blocks)
 
     if config.adaptive_cost:
-        mean_words = sum(word_count(b.text) for b in blocks) / len(blocks)
+        capped = (min(word_count(b.text), config.cost_block_cap) for b in blocks)
+        mean_words = sum(capped) / len(blocks)
         cost = min(max(config.cost_ratio * mean_words, config.cost_floor), config.cost_ceiling)
         config = replace(config, block_cost=cost)
 
