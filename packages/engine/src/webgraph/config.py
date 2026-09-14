@@ -121,6 +121,12 @@ BLOCKING_STATUSES = {
 # are human") is refused as a block page. Longer pages merely mentioning those words are
 # pages.
 MAX_BLOCK_PAGE_CHARS = 1_500
+# When one of the two fetches (plain, browser) is served a wall, the other stands in for
+# the page only if it has at least this many words of its own. old.reddit.com answers the
+# browser with the wall and the plain fetch with a login redirect whose only words are
+# "Skip to main content"; that is not the page, and the merge is refused as the wall it
+# holds rather than returned as a two-block success.
+MIN_PAGE_BESIDE_WALL_WORDS = 20
 
 # ======================================================================================
 # Parsing markup into blocks

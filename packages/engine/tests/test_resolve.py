@@ -474,6 +474,15 @@ class TestAWallOnOneSide:
         )
         with pytest.raises(PageBlockedError):
             module.resolve_page("https://www.example.test/sample.html")
+        # The same redirect with its skip link (14 Sep, after the pre-CSS change made the
+        # bare link a block): a few words are not a page either.
+        self.stub(
+            monkeypatch,
+            static="<html><body><a href='#main'>Skip to main content</a><img src='/logo.png' alt=''></body></html>",
+            rendered=self.WALL,
+        )
+        with pytest.raises(PageBlockedError):
+            module.resolve_page("https://www.example.test/sample.html")
 
     def test_two_real_pages_still_merge(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph import resolve as module
