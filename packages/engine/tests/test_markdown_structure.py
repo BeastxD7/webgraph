@@ -9,6 +9,8 @@ were not there at all. Each test pins one of those shapes.
 
 from __future__ import annotations
 
+import pytest
+
 from webgraph.blockmodel import default_model, select_by_model
 from webgraph.content import select_content
 from webgraph.dom.blocks import parse_html
@@ -89,6 +91,11 @@ class TestHorizontalRule:
         assert kinds.count("rule") == 3  # the three between the four kept paragraphs
         assert all(b.text.startswith(PROSE) for b in kept if str(b.kind) == "paragraph")
 
+    def test_a_page_of_only_rules_selects_nothing(self) -> None:
+        doc = document("<hr><hr>")
+        assert [str(b.kind) for b in doc.blocks] == ["rule", "rule"]
+        assert select_main_content(list(doc.blocks), config=MainContentConfig()) == []
+
     def test_a_page_of_rules_and_a_link_list_selects_no_rule(self) -> None:
         doc = document("<hr><p><a href='/a'>one</a></p><hr><p><a href='/b'>two</a></p><hr>")
         kept = select_main_content(list(doc.blocks), config=MainContentConfig())
@@ -133,7 +140,7 @@ class TestHorizontalRule:
     def test_the_block_model_scores_around_a_rule(self) -> None:
         model = default_model()
         if model is None:
-            return
+            pytest.skip("no shipped block model")
         doc = document("".join(f"<p>{PROSE}Paragraph {i}.</p><hr>" for i in range(3)))
         kept = select_by_model(list(doc.blocks), model)
         assert kept and all(str(b.kind) in {"paragraph", "rule"} for b in kept)
