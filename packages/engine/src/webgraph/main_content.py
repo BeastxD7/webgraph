@@ -767,14 +767,38 @@ def _prune_other_sections(blocks: Sequence[Block], vocabulary: re.Pattern[str]) 
             and not _WRITE.match(block.text)
         ):
             level = block.level or 6
+            river = vocabulary is _RIVER_SECTION
             end = index + 1
+            same_level = -1  # first heading of the river's own level, if the walk passed one
             while end < n and not (
-                blocks[end].kind is BlockKind.HEADING and (blocks[end].level or 6) <= level
+                blocks[end].kind is BlockKind.HEADING
+                and (blocks[end].level or 6) <= (level - 1 if river else level)
             ):
                 # A river is teasers: headlines, blurbs, images, timestamps. A paragraph of
                 # prose is the article resuming -- cbsnews.com drops a "Trending News" box
                 # between the third and fourth paragraphs -- and ends the river there.
-                if vocabulary is _RIVER_SECTION and _is_prose(blocks[end]):
+                # Its teasers are headings of the river's own level as often as not (the
+                # Sun's "Most read in world news" is an <h3> over <h3> kickers), so a heading
+                # of the same level does not end it; the prose does, and the heading just
+                # before that prose is the article's own and is given back. A river that
+                # runs past `_MAX_RIVER_BLOCKS` through such headings is not a box but the
+                # page (bbc.com/news under "Latest", github.com/trending), and ends at the
+                # first of them as it always did.
+                if (
+                    river
+                    and same_level < 0
+                    and blocks[end].kind is BlockKind.HEADING
+                    and (blocks[end].level or 6) == level
+                ):
+                    same_level = end
+                if river and same_level >= 0 and end - index > _MAX_RIVER_BLOCKS:
+                    end = same_level
+                    break
+                resumed = _river_resumes_at(blocks, index, end) if river else -1
+                if resumed >= 0:
+                    end = resumed
+                    if end - 1 > index and blocks[end - 1].kind is BlockKind.HEADING:
+                        end -= 1  # the section heading over the resuming prose is the article's
                     break
                 end += 1
             if end - index <= _MAX_SECTION_BLOCKS:
@@ -784,6 +808,59 @@ def _prune_other_sections(blocks: Sequence[Block], vocabulary: re.Pattern[str]) 
         index += 1
     out = [block for i, block in enumerate(blocks) if i not in drop]
     return out if out else list(blocks)
+
+
+def _river_resumes_at(blocks: Sequence[Block], start: int, at: int) -> int:
+    """Where the article resumes after a river that began at `start`, judged at `at`; -1 if
+    it has not. A paragraph of prose is the article; so are two sentence-length paragraphs
+    in a row -- a teaser is one kicker and one blurb, and thesun.co.uk's paragraphs are
+    twenty words, under the prose floor, but come in runs. When the paragraph before `at`
+    is itself a blurb (a heading sits right above it) the article resumes at `at`;
+    otherwise it resumed at that earlier paragraph."""
+    block = blocks[at]
+    if block.kind is not BlockKind.PARAGRAPH:
+        return -1
+    if _is_prose(block):
+        return at
+    if not _is_sentence(block):
+        return -1
+    previous = at - 1
+    while previous > start and _is_river_furniture(blocks[previous]):
+        previous -= 1
+    if not (previous > start and _is_sentence(blocks[previous])):
+        return -1
+    above = previous - 1
+    while above > start and _is_river_furniture(blocks[above]):
+        above -= 1
+    return at if blocks[above].kind is BlockKind.HEADING else previous
+
+
+def _is_sentence(block: Block) -> bool:
+    """A paragraph of at least a sentence's worth of words, ending like one, that is not a
+    list of links (github.com/trending's language menu is 1,073 words of them). A headline
+    set as a paragraph -- worldfutureawards.com's "More news" is twelve-word titles over
+    images -- has the words and not the full stop."""
+    return (
+        block.kind is BlockKind.PARAGRAPH
+        and word_count(block.text) >= _RIVER_SENTENCE_WORDS
+        and link_density(block) < 0.5
+        and block.text.rstrip().endswith(_SENTENCE_END)
+    )
+
+
+_SENTENCE_END: Final[tuple[str, ...]] = (".", "!", "?", '"', "\u201d", "\u2019", ")", "\u3002")
+
+
+def _is_river_furniture(block: Block) -> bool:
+    """An image, or a label like "Warning" or "Exclusive": neither a blurb nor a kicker."""
+    return block.kind is BlockKind.IMAGE or (
+        block.kind is BlockKind.PARAGRAPH and word_count(block.text) < _RIVER_LABEL_WORDS
+    )
+
+
+_RIVER_SENTENCE_WORDS: Final[int] = 12
+_MAX_RIVER_BLOCKS: Final[int] = 30
+_RIVER_LABEL_WORDS: Final[int] = 4
 
 
 def _is_prose(block: Block) -> bool:
