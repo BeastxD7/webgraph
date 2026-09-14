@@ -545,3 +545,206 @@ class TestHiddenInRender:
         assert hidden.holds("thelonghiddensentence", min_chars=12)  # past the guard, a substring
         assert not hidden.holds("home", min_chars=12)  # short, and not a hidden line of its own
         assert not hidden.holds("nothere", min_chars=12)
+
+
+class TestLoginWalls:
+    """A fetch redirected to a login page is a wall, named as one.
+
+    old.reddit.com/r/programming/comments/1b2x1yq/ sends both fetches to
+    `/login/?reason=lor2&dest=…`; www.linkedin.com/feed/ sends the plain fetch to
+    `/uas/login?session_redirect=…` and the browser to `/login/?session_redirect=…`. Before
+    this the reddit page was refused only because Cloudflare also walled the browser on the
+    login page, and the linkedin one came back as twenty blocks of "Sign in", "Email or
+    phone", "Password" with a green tick.
+    """
+
+    THREAD = "https://www.example.test/r/programming/comments/1b2x1yq/"
+    LOGIN = "https://www.example.test/login/?reason=lor2&dest=https%3A%2F%2Fwww.example.test%2Fr%2Fprogramming%2Fcomments%2F1b2x1yq%2F"
+
+    SHELL = "<html><body><a href='#main'>Skip to main content</a><img src='/logo.png' alt=''></body></html>"
+    FORM = (
+        "<html><body><h1>Sign in</h1><p>New here? Join now</p><form><label>Email or phone"
+        "</label><input type='email'><label>Password</label><input type='password'>"
+        "<button>Sign in</button></form><p>Forgot password?</p></body></html>"
+    )
+    WALL = TestAWallOnOneSide.WALL
+    PAGE = TestAWallOnOneSide.PAGE
+    LONG = "<html><body>" + "".join(f"<p>Paragraph {i} of a page with plenty of words in it.</p>" for i in range(40)) + "</body></html>"
+
+    @staticmethod
+    def stub(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        static: str,
+        rendered: str,
+        static_final: str | None = None,
+        rendered_final: str | None = None,
+    ) -> None:
+        """Like `TestAWallOnOneSide.stub`, with each fetch able to end on another URL."""
+        from webgraph import resolve as module
+        from webgraph.fetch.render import RenderResult
+        from webgraph.fetch.static import FetchResult
+
+        monkeypatch.setattr(module, "PLAYWRIGHT_AVAILABLE", True)
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=static_final or url,
+                requested_url=url,
+                status=200,
+                html=static,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=True,
+            ),
+        )
+        monkeypatch.setattr(
+            module,
+            "render_page",
+            lambda url, config=None: RenderResult(  # noqa: ARG005
+                url=rendered_final or url, html=rendered, rects={}, ok=True
+            ),
+        )
+
+    def test_a_login_redirect_on_both_sides_is_named_as_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """reddit's shape: the plain fetch lands on an empty login shell, the browser on
+        Cloudflare's wall at the same login URL. The redirect is the cause and is what
+        the error says; the wall is a consequence."""
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        self.stub(monkeypatch, static=self.SHELL, rendered=self.WALL, static_final=self.LOGIN, rendered_final=self.LOGIN)
+        with pytest.raises(PageBlockedError) as caught:
+            module.resolve_page(self.THREAD)
+        assert caught.value.kind == "login"
+        assert caught.value.login_url == self.LOGIN
+        assert f"redirected to a login page ({self.LOGIN})" in str(caught.value)
+        assert caught.value.url == self.THREAD
+
+    def test_a_password_field_marks_the_login_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """linkedin's shape: two different login URLs, each with a form."""
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        feed = "https://www.example.test/feed/"
+        plain = "https://www.example.test/uas/login?session_redirect=https%3A%2F%2Fwww.example.test%2Ffeed%2F"
+        browser = "https://www.example.test/login/?session_redirect=https%3A%2F%2Fwww.example.test%2Ffeed%2F"
+        self.stub(monkeypatch, static=self.FORM, rendered=self.FORM, static_final=plain, rendered_final=browser)
+        with pytest.raises(PageBlockedError) as caught:
+            module.resolve_page(feed)
+        assert "redirected to a login page (" in str(caught.value)
+
+    def test_the_static_only_path_refuses_it_too(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        self.stub(monkeypatch, static=self.SHELL, rendered=self.PAGE, static_final=self.LOGIN)
+        with pytest.raises(PageBlockedError) as caught:
+            module.resolve_page(self.THREAD, strategy=Strategy.STATIC_ONLY)
+        assert caught.value.kind == "login"
+
+    def test_a_login_redirect_on_one_side_is_a_wall_on_that_side(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A site that sends the plain fetch to sign in and serves the browser the page:
+        the login side is left out exactly as a bot wall would be, and the page is read
+        from the other side."""
+        from webgraph import resolve as module
+
+        self.stub(monkeypatch, static=self.FORM, rendered=self.PAGE, static_final=self.LOGIN)
+        resolved = module.resolve_page(self.THREAD)
+        assert resolved.strategy is Strategy.RENDERED_ONLY
+        assert "Password" not in resolved.document.text
+        assert "first paragraph of a real page" in resolved.document.text
+
+        self.stub(monkeypatch, static=self.PAGE, rendered=self.FORM, rendered_final=self.LOGIN)
+        resolved = module.resolve_page(self.THREAD)
+        assert resolved.strategy is Strategy.STATIC_ONLY
+        assert resolved.render_error is not None
+        assert "redirected to a login page" in resolved.render_error
+
+    def test_a_login_redirect_beside_a_wall_still_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        self.stub(monkeypatch, static=self.FORM, rendered=self.WALL, static_final=self.LOGIN)
+        with pytest.raises(PageBlockedError):
+            module.resolve_page(self.THREAD)
+
+    def test_a_long_page_with_a_sign_in_box_is_a_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A shop's header carries a password field; nothing redirected anywhere."""
+        from webgraph import resolve as module
+
+        shop = self.LONG.replace("<body>", "<body><form><input type='password'></form>")
+        self.stub(monkeypatch, static=shop, rendered=shop)
+        assert module.resolve_page("https://shop.example.test/products/").strategy is Strategy.UNION
+
+    def test_a_page_that_links_to_its_login_is_a_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """news.ycombinator.com: a "login" link on the front page, no redirect."""
+        from webgraph import resolve as module
+
+        front = self.LONG.replace("<body>", "<body><a href='/login?goto=news'>login</a>")
+        self.stub(monkeypatch, static=front, rendered=front)
+        assert module.resolve_page("https://news.example.test/").strategy is Strategy.UNION
+
+    def test_a_login_page_asked_for_is_the_login_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Asking for /login and getting /login/ is not a wall: it is what was asked for."""
+        from webgraph import resolve as module
+
+        self.stub(
+            monkeypatch,
+            static=self.FORM,
+            rendered=self.FORM,
+            static_final="https://www.example.test/login/",
+            rendered_final="https://www.example.test/login/",
+        )
+        assert module.resolve_page("https://www.example.test/login").strategy is Strategy.UNION
+
+    def test_a_trailing_slash_is_not_a_redirect(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """/docs/auth -> /docs/auth/ on a short page with a sign-in box: the same page."""
+        from webgraph import resolve as module
+
+        self.stub(
+            monkeypatch,
+            static=self.FORM,
+            rendered=self.FORM,
+            static_final="https://www.example.test/docs/auth/",
+            rendered_final="https://www.example.test/docs/auth/",
+        )
+        assert module.resolve_page("http://example.test/docs/auth").strategy is Strategy.UNION
+
+    def test_a_login_word_inside_a_path_segment_is_not_a_marker(self) -> None:
+        """/blog/how-to-login is a post; /uas/login and /login/ are login pages."""
+        from webgraph.resolve import _path_is_login
+
+        assert not _path_is_login("/blog/how-to-login")
+        assert not _path_is_login("/logins/")
+        assert _path_is_login("/uas/login")
+        assert _path_is_login("/login/")
+        assert _path_is_login("/LOGIN")
+        assert _path_is_login("/users/sign_in")
+        assert _path_is_login("/wp-login.php")
+        assert not _path_is_login("/session")
+        assert _path_is_login("/session/new")
+
+    def test_a_return_parameter_names_the_page_asked_for(self) -> None:
+        """`?next=` at an unmarked path counts only when it names the requested page."""
+        from webgraph.resolve import _returns_to
+
+        asked = "https://www.example.test/r/programming/"
+        assert _returns_to("https://www.example.test/accounts/?next=%2Fr%2Fprogramming%2F", asked)
+        assert _returns_to("https://www.example.test/accounts/?returnUrl=https%3A%2F%2Fwww.example.test%2Fr%2Fprogramming", asked)
+        assert _returns_to("https://www.example.test/accounts/?session_redirect=https://www.example.test/r/programming/", asked)
+        assert not _returns_to("https://www.example.test/accounts/?next=%2Fsomewhere-else%2F", asked)
+        assert not _returns_to("https://www.example.test/accounts/?utm_source=x", asked)
+
+    def test_a_login_redirect_is_only_that_when_the_page_is_short_or_has_a_field(self) -> None:
+        from webgraph.resolve import login_redirect
+
+        asked = "https://www.example.test/feed/"
+        short = build_document(self.SHELL, "https://www.example.test/login/?next=%2Ffeed%2F")
+        assert login_redirect(short, asked) == "https://www.example.test/login/?next=%2Ffeed%2F"
+        with_field = build_document(self.LONG.replace("<body>", "<body><input type='password'>"), "https://www.example.test/login/")
+        assert login_redirect(with_field, asked) == "https://www.example.test/login/"
+        long_without = build_document(self.LONG, "https://www.example.test/login/")
+        assert login_redirect(long_without, asked) is None
+        assert login_redirect(short, None) is None

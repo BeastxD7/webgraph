@@ -127,6 +127,35 @@ MAX_BLOCK_PAGE_CHARS = 1_500
 # "Skip to main content"; that is not the page, and the merge is refused as the wall it
 # holds rather than returned as a two-block success.
 MIN_PAGE_BESIDE_WALL_WORDS = 20
+# A fetch that ends on a different URL than it asked for, and whose final path holds one of
+# these segments, was redirected to a login page: old.reddit.com's thread pages go to
+# `/login/?reason=lor2&dest=…`, linkedin.com/feed to `/uas/login?session_redirect=…` (plain)
+# and `/login/?session_redirect=…` (browser). Matched on whole path segments, so
+# `/blog/how-to-login` is a post and `/uas/login` a login page; a marker with two segments
+# (`/session/new`) has to appear as those two segments in that order. The redirect has to be
+# a real one -- a trailing slash, `www.` or scheme change is not a redirect to anything --
+# and a page asked for at a login URL is the login page, not a wall.
+LOGIN_PATH_MARKERS = (
+    "/login", "/login.php", "/login.aspx", "/signin", "/sign-in", "/sign_in", "/sso",
+    "/auth", "/authenticate", "/oauth", "/oauth2", "/authorize", "/accounts/login",
+    "/session/new", "/sessions/new", "/user/login", "/users/sign_in", "/wp-login.php",
+)
+# A login page also gives itself away by the parameter that says where to go afterwards:
+# `dest=` (reddit), `session_redirect=` (linkedin), `next=` (Django), `redirect_to=`
+# (WordPress), `returnUrl=` (ASP.NET), `continue=` (Google). Counted only when the value
+# names the URL that was asked for, so a `?redirect=` on an unrelated page is not a login.
+# Compared case-insensitively with `_` and `-` removed (`returnUrl`, `return_url`, `ReturnURL`).
+LOGIN_RETURN_PARAMS = (
+    "dest", "next", "redirect", "redirectto", "redirecturi", "redirecturl", "return",
+    "returnto", "returnurl", "continue", "sessionredirect", "goto",
+)
+# A login redirect is a wall when the document it lands on holds a password field, or has
+# fewer words than this: a login page has a form and a footer, not an article. Measured:
+# old.reddit.com's login shell 4 words (plain) and 26 (the browser's Cloudflare wall on it),
+# linkedin.com's 52-54 with two password fields; news.ycombinator.com's front page 711 and
+# github.com/python/cpython 1,684-2,031, neither redirected anywhere. A long page that
+# happens to hold a sign-in box (a shop's header) is a page.
+MAX_LOGIN_PAGE_WORDS = 150
 
 # ======================================================================================
 # Parsing markup into blocks
