@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #71)
+- An old MediaWiki `editsection` strip (`[edit]` beside every heading and table row on
+  cppreference.com, hidden by its stylesheet) is a heading control like `mw-editsection`:
+  a quarter of that page's words, and the member-function tables emitted twice.
+- A frameset's `<noframes>` body stands in only when no frame could be fetched; with the
+  frames read it is not on the page (cs.cmu.edu repeated the title frame and a second
+  table of contents).
+
 ### Fixed (2026-09-14, PR #69)
 - A table or code block a page shows more than once stays more than once on a page the
   browser could not measure (a static fetch, a browser refused by a wall):
