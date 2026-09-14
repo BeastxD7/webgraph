@@ -16,7 +16,9 @@ own view of the page:
   beside what the Markdown carries (`#`, pipe rows, list markers, `![`, `](http`).
 
 The oracle is cached beside the output (`<out>.pages/<site>.json`) so two runs score the
-same page; delete the cache to re-fetch. What matters is the **diff**:
+same page; delete the cache to re-fetch. The site list therefore avoids pages that turn
+over by the minute (a news front page scored against yesterday's oracle is noise, not a
+regression). What matters is the **diff**:
 
     uv run python benchmark/fidelity/run.py --out /tmp/main.json          # on main
     uv run python benchmark/fidelity/run.py --out /tmp/cand.json          # on the branch

@@ -1,4 +1,6 @@
-# Whole-page fidelity set: old, plain and ugly pages on purpose. name url
+# Whole-page fidelity set: old, plain and ugly pages on purpose, none that change by the
+# minute (the oracle is cached between runs; a front page that turns over makes noise).
+# name url
 # pre-CSS and frameset pages
 cmu-frameset https://www.cs.cmu.edu/~rgs/alice-table.html
 textfiles http://www.textfiles.com/
@@ -27,12 +29,8 @@ ibiblio-wm http://www.ibiblio.org/wm/paint/auth/
 # link- and table-shaped pages
 craigslist-best https://www.craigslist.org/about/best/all/
 craigslist-sites https://www.craigslist.org/about/sites
-hn https://news.ycombinator.com/
-drudge https://www.drudgereport.com/
 berkshire https://www.berkshirehathaway.com/
 arngren https://arngren.net/
-lite-cnn https://lite.cnn.com/
-text-npr https://text.npr.org/
 w3schools-tables https://www.w3schools.com/html/html_tables.asp
 # modern controls
 nasa-apollo11 https://www.nasa.gov/history/apollo-11-mission-overview/
