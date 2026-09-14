@@ -1382,6 +1382,17 @@ class TestCodeHeaders:
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
         assert [b.text for b in blocks] == ["x", "y", "z"]
 
+    def test_phpbbs_code_select_all_is_a_strip(self) -> None:
+        """forums.debian.net: `<p>Code: <a href="#">Select all</a></p>` above every `<pre>`
+        -- a paragraph, but one holding a control that goes nowhere. WebMainBench's truth
+        for that page has no "Code: Select all"."""
+        html = (
+            '<main><div class="codebox"><p>Code: <a href="#" onclick="selectCode(this)">Select all</a></p>'
+            "<pre><code>apt install foo</code></pre></div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://forum.test/")
+        assert [b.text for b in blocks] == ["apt install foo"]
+
     def test_a_word_that_is_not_a_label_stays_even_in_a_div(self) -> None:
         html = '<main><div>Output</div><pre>x</pre><div>Example:</div><pre>y</pre></main>'
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")

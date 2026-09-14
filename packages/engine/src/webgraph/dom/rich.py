@@ -1631,22 +1631,29 @@ def _is_code_header(element: HtmlElement, text: str) -> bool:
     button's word. Its length alone used to decide, and perldoc.perl.org/perlre lost "is
     made equivalent to", "For example, this program" and "will output the following:" --
     sixty words of prose in `<p>` tags of four words or fewer, each before a `<pre>`. A
-    `<p>` is never the strip: no site writes its copy button in a paragraph.
+    `<p>` without a control in it is never the strip; with one it can be (phpBB).
     """
     if not 0 < len(text.split()) <= _MAX_CODE_HEADER_WORDS:
-        return False
-    if element.tag == "p":
         return False
     following = element.getnext()
     while following is not None and not isinstance(following.tag, str):
         following = following.getnext()
     if following is None or following.tag != "pre":
         return False
+    # A control: a button, or an anchor that goes nowhere -- phpBB's "Code: Select all"
+    # is `<p>Code: <a href="#">Select all</a></p>` above every `<pre>`.
     if any(
-        isinstance(node.tag, str) and (node.tag == "button" or node.get("role") == "button")
+        isinstance(node.tag, str)
+        and (
+            node.tag == "button"
+            or node.get("role") == "button"
+            or (node.tag == "a" and (node.get("href") or "#").startswith(("#", "javascript:")))
+        )
         for node in element.iter()
     ):
         return True
+    if element.tag == "p":
+        return False
     language = (_code_language(following) or "").lower()
     tokens = [token.strip(":").lower() for token in text.split()]
     return all(
