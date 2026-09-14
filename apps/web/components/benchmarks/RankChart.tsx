@@ -13,6 +13,10 @@ import type { Board } from "@/lib/benchmarks";
  *
  * Labels are rotated rather than truncated: these are system names, and half of a system name
  * identifies nothing.
+ *
+ * An entry marked `reference` is not a system in the field -- a diagnostic variant, a ceiling --
+ * and is drawn as a dashed line across the plot at its score, never as a column, so it cannot
+ * be read as a rank.
  */
 const PAD = { left: 34, right: 8, top: 16, bottom: 56 };
 const COL_W = 20;
@@ -22,7 +26,9 @@ const PLOT_H = 132;
 const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 export default function RankChart({ board }: { board: Board }) {
-  const count = board.entries.length;
+  const columns = board.entries.filter((e) => !e.reference);
+  const references = board.entries.filter((e) => e.reference);
+  const count = columns.length;
   const plotW = count * COL_W + (count - 1) * GAP;
   const width = PAD.left + plotW + PAD.right;
   const height = PAD.top + PLOT_H + PAD.bottom;
@@ -38,9 +44,13 @@ export default function RankChart({ board }: { board: Board }) {
           className="h-auto w-full"
           style={{ minWidth: `${Math.min(width, 420)}px` }}
           role="img"
-          aria-label={`${board.name}: ${board.entries
+          aria-label={`${board.name}: ${columns
             .map((e) => `${e.name} ${e.score.toFixed(3)}`)
-            .join(", ")}.`}
+            .join(", ")}${
+            references.length
+              ? `. Reference lines: ${references.map((e) => `${e.name} ${e.score.toFixed(3)}`).join(", ")}`
+              : ""
+          }.`}
         >
           {TICKS.filter((t) => t <= board.max).map((tick) => (
             <g key={tick}>
@@ -64,7 +74,7 @@ export default function RankChart({ board }: { board: Board }) {
             </g>
           ))}
 
-          {board.entries.map((entry, i) => {
+          {columns.map((entry, i) => {
             const top = y(entry.score);
             const cx = columnX(i) + COL_W / 2;
             return (
@@ -105,6 +115,29 @@ export default function RankChart({ board }: { board: Board }) {
               </g>
             );
           })}
+
+          {references.map((entry) => (
+            <g key={entry.name}>
+              <line
+                x1={PAD.left}
+                x2={width - PAD.right}
+                y1={y(entry.score)}
+                y2={y(entry.score)}
+                stroke="currentColor"
+                strokeDasharray="3 3"
+                strokeWidth="1"
+                className="text-leaf-700/70"
+              />
+              <text
+                x={width - PAD.right}
+                y={y(entry.score) - 3}
+                textAnchor="end"
+                className="fill-leaf-700/80 font-mono text-[7.5px] italic"
+              >
+                {entry.name} {entry.score.toFixed(3)}
+              </text>
+            </g>
+          ))}
         </svg>
       </div>
 
