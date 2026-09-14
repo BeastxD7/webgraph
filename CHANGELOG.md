@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-14, PR #80) — docs
+- `docs/SESSION-18-WHOLE-PAGE.md` closes the evening: PRs #71–#79 in the merge table, the
+  standings at `main@f0b0ac4`, the fidelity suite on that commit recall 1.000 on 22 of 29 scored sites, sqlite.org 0.749 → 1.000, MDN extra 0.228 → 0.142; nothing below 0.945,
+  and the open items with their sites. CONTRIBUTING names the rule the night taught:
+  a change to table, code or Markdown rendering re-runs WebMainBench before merge.
+- Recorded late for PR #76: the fidelity oracle reads open shadow roots' visible text
+  beside `innerText` (a full DOM walk was measured and rejected — arngren.net recall
+  0.99 → 0.877 under it), joins a frameset's frames, and reports `ORACLE BLOCKED`
+  instead of a score when Chromium was served a wall.
+
 ### Changed (2026-09-14, PR #79)
 - Benchmarks page: WCXB dev routed 0.861 → 0.862 (per type: article .945, docs .929,
   service .846, forum .801, collection .695, listing .706, product .637), WebMainBench

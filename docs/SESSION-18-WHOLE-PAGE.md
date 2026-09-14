@@ -5,7 +5,7 @@ The owner's brief, restated on 14 September: the product is the full-page `markd
 browser hides may be added, the order is the page's, the structure stays, and the engine
 must never present a false output: a page it cannot read is a refusal, not a guess. The
 filtered `content_markdown` is secondary and must not regress. This is the record of the
-evening of 14 September (PRs #63–#70 and the ones that followed), continuing
+evening of 14 September (PRs #63–#79), continuing
 `SESSION-17-RESEARCH-LOOP.md`.
 
 ## 1. How the losses were found
@@ -17,7 +17,7 @@ None of the public boards measure the whole page. Two instruments did:
   spacejam.com/1996): word recall 0.99–1.00 on 20 of 21 fetched, with the remaining
   losses ranked by the markup construct that caused them.
 - **`benchmark/fidelity/run.py`** (this session): the same measure as a repo runner with a
-  fixed set of 36 sites, cached oracle, and a `--compare` — word recall, extra share, order
+  fixed set of 31 sites, cached oracle, and a `--compare` — word recall, extra share, order
   inversions, structure counts. It refuses to score a walled oracle and reads a
   frameset's frames.
 
@@ -33,6 +33,15 @@ None of the public boards measure the whole page. Two instruments did:
 | #68 | links inside table cells (`rich_rows`) and around images (`link`) | craigslist "best of", spacejam.com planets | WCXB =, Zyte = |
 | #69 | a table or code block a page repeats stays, on an unmeasured page | columbia.edu (four demo tables → four; recall 0.979 → 0.995) | WCXB +0.0001, Zyte = |
 | #70 | the runs dashboard pushes every second and lists the machine's engine processes | the owner: "it's junk and static" | tooling |
+| #71 | MediaWiki `editsection` strips are heading controls; `<noframes>` only when no frame was fetched | cppreference (`[edit]` ×56, tables twice), cs.cmu.edu (title frame repeated) | fidelity cppref extra 0.257 → 0.034 |
+| #72 | `benchmark/fidelity/run.py`, `make bench-fidelity`, this document | — | tooling |
+| #73 | a login redirect is a wall, named (`login_redirect`); a code editor (CodeMirror/Monaco/Ace) is one code block, its windows completed from the hidden source | twitter/x.com, reddit, MDN interactive example (token-per-paragraph) | WCXB =, Zyte = |
+| #74 | a skip link to `<main>` opens nothing inside it | MDN (every hidden tray became "openable") | WCXB = |
+| #75 | `<hr>` a rule, `<dl>` a definition list, merged-cell tables keep `<br>`/`<p>` apart, inline `<svg><text>` diagrams read | census: 6 sites lost rules, 3 flattened `<dl>`, sqlite.org railroad labels (recall 0.749) | WCXB −0.00004, Zyte =, WMB table = (pipes variant rejected) |
+| #76 | the fidelity oracle reads open shadow roots; a full DOM walk was rejected | arngren 0.99 → 0.877 under the walker, back with the hybrid | tooling |
+| #77 | a page of rules and nothing else selects nothing | follow-up to #75 | n/a |
+| #78 | table cells carry links only when the caller wants links | **a regression from #68 that no filtered board caught for six PRs**: WebMainBench table_edit 0.390 → 0.338 | WMB 0.7284 → 0.7331, table 0.395 |
+| #79 | benchmarks page at `main@19f601f` | — | docs |
 
 ## 3. Rejected, with numbers
 
@@ -54,11 +63,25 @@ hoisted), mdn 7/187, columbia 3/192 (repeated list-item text). gnu.org times out
 this network; w3.org walls the oracle's Chromium (the engine gets the page through the
 other fetch).
 
-## 5. Where it stands
+## 5. Where it stands (main@f0b0ac4, end of 14 September)
 
-Filtered content: WCXB dev 0.863 (first), WCXB test 0.875, Zyte 0.945 (10th of 35),
-WCEB content+comments 0.883 (first), WebMainBench 0.732. Whole page: the numbers above.
-Open: the structure losses (`<hr>`, `<dl>`, colspan tables, `<svg>`), login walls named
-as such, editor widgets and closed `<details>` on dynamic pages — in flight as separate
-PRs — and the fetch layer for sites that wall every headless fetch, which is an
-infrastructure decision, not an extraction fix.
+Filtered content: WCXB dev routed 0.862 (first; the official runner needs
+`WCXB_ROUTER_OOF=benchmark/train/artifacts/router_oof.json` or its routed column
+silently equals `content`, 0.838), WCXB test 0.875, Zyte 0.945 (10th of 35), WCEB
+content+comments 0.883 (first), WebMainBench 0.7331 (table 0.395). WCXB was measured at
+the #74 merge, WebMainBench at the #78 candidate; #75/#77 moved WCXB by −0.00004.
+
+Whole page, the fidelity suite on this commit: recall 1.000 on 22 of 29 scored sites,
+nothing below 0.945; sqlite.org 0.749 → 1.000 (#75), cppreference extra 0.257 → 0.034
+(#71), MDN extra 0.490 → 0.142 (#73/#74). Still open, each with its site: arxiv extra 0.294 (the abstract
+page's hidden bibliographic tooling), MDN recall 0.945 / extra 0.228 (Copy/Play labels,
+compatibility-table icon labels, per-tab code copies), berkshire extra 0.064,
+craigslist-best 0.040, unicode-faq's `<pre>` inside `<li>` hoisted (6 inversions),
+cameronsworld's JS marquee, cppreference's C++ version-tab words (8 missing). Repeated
+*prose* on an unmeasured page is still deduplicated — the measured trade-off in §3 — and
+the fetch layer for sites that wall every headless fetch (Stack Overflow, sec.gov,
+nyc.gov) is an infrastructure decision the owner has not yet taken, not an extraction fix.
+
+Lesson of the night, now a rule in CONTRIBUTING: anything that touches table, code or
+Markdown rendering re-runs WebMainBench before merge. Five PRs of "WCXB =, Zyte ="
+said nothing about a link rendered into cells the corpus scores with links off.
