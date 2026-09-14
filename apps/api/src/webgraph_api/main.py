@@ -55,6 +55,7 @@ from webgraph.resolve import (
     ResolvedPage,
     Strategy,
     resolve_page,
+    resolve_supplied,
 )
 from webgraph.settings import Settings, describe_config
 from webgraph.site import SiteConfig, stream_site
@@ -222,8 +223,23 @@ def _applied(dataclass_default: Any, options: BaseModel | None) -> Any:
 
 class TextRequest(BaseModel):
     url: str
-    render: bool = False
+    render: bool = Field(
+        default=False,
+        description="Fetch through a browser as well and merge the two. Ignored when `html` "
+        "is supplied: there is nothing to render.",
+    )
     rtl: bool = False
+    html: str | None = Field(
+        default=None,
+        description="The page's HTML, when the caller already has it -- from their own "
+        "signed-in browser, an extension, a saved file. Nothing is fetched: the engine reads "
+        "this instead, for the sites that refuse every automated fetch (a Cloudflare "
+        "challenge, a login wall). `url` is still required and is the page's address: links "
+        "and images are made absolute against it and a pasted login page is judged against "
+        "it. A pasted wall is refused (502) exactly like a fetched one. Reading order is "
+        "source order and text a browser would have hidden may appear; the stream's "
+        "`render_error` says so.",
+    )
     include_hidden_text: bool = Field(
         default=False,
         description="Keep the text a browser holds but a sighted reader never sees: "
@@ -489,9 +505,30 @@ def _resolve_blocking(request: TextRequest | ExtractRequest) -> ResolvedPage:
     return resolved
 
 
+def _supplied(request: TextRequest) -> ResolvedPage:
+    """The caller's own HTML, read in a worker thread: parsing a large page is CPU-bound
+    and the event loop should not wait on it. Nothing here touches the network."""
+    assert request.html is not None
+    return resolve_supplied(
+        request.html, request.url, include_hidden_text=request.include_hidden_text, rtl=request.rtl
+    )
+
+
 async def _resolve(request: TextRequest | ExtractRequest) -> ResolvedPage:
     if not request.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url must be http or https")
+
+    if isinstance(request, TextRequest) and request.html is not None:
+        # Nothing is fetched, so nothing needs a render slot or the shell escalation in
+        # `_resolve_blocking`; and the failure messages must not say "fetch", because no
+        # fetch happened -- an oversize paste or a paste with no readable text is the
+        # caller's HTML being refused, and the detail should say that.
+        try:
+            return await asyncio.to_thread(_supplied, request)
+        except PageBlockedError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     try:
         if request.render:
@@ -973,9 +1010,25 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
     # event instead.
     if not request.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=422, detail="url must be http or https")
-    guard.check_url(request.url)
+    supplied = request.html is not None
+    if not supplied:
+        # The guard exists to stop this process fetching addresses inside its own network,
+        # and it resolves the host to do so. With the HTML supplied nothing is fetched --
+        # `url` names the document and is the base for its links -- so there is nothing
+        # for it to stop, and a DNS lookup on a name that need not resolve would only fail
+        # a request that has everything it needs.
+        guard.check_url(request.url)
 
-    strategy = Strategy.UNION if request.render else Strategy.STATIC_ONLY
+    # The header reports the run, not the request: `render` on a supplied page is ignored
+    # (see `TextRequest.html`), and a log claiming a browser ran would be the small untruth
+    # `stream_page` takes care not to tell.
+    strategy = (
+        Strategy.SUPPLIED
+        if supplied
+        else Strategy.UNION
+        if request.render
+        else Strategy.STATIC_ONLY
+    )
     fetch_config = _applied(FetchConfig(), request.fetch)
     render_config = _applied(RenderConfig(), request.render_options)
 
@@ -988,7 +1041,12 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
         # the file left on the server now name each other, so the two can be put side by
         # side without anyone having to guess which run they are looking at.
         header = _run_header(
-            request.url, trace, mode="page", strategy=strategy.value, render=request.render
+            request.url,
+            trace,
+            mode="page",
+            strategy=strategy.value,
+            render=request.render and not supplied,
+            supplied=supplied,
         )
         trace.write(header)
         yield _sse(header)
@@ -1005,6 +1063,7 @@ async def text_stream(request: TextRequest) -> StreamingResponse:
                         fetch_config=fetch_config,
                         render_config=render_config,
                         include_hidden_text=request.include_hidden_text,
+                        html=request.html,
                     ),
                     trace,
                 ):

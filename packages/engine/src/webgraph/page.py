@@ -36,7 +36,13 @@ from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.resolve import PageBlockedError, PageMissingError, Strategy, resolve_page
+from webgraph.resolve import (
+    PageBlockedError,
+    PageMissingError,
+    Strategy,
+    resolve_page,
+    resolve_supplied,
+)
 from webgraph.types import BlockKind, Document, ReadingOrderMethod
 
 __all__ = ["stream_page"]
@@ -53,12 +59,18 @@ def stream_page(
     fetch_config: FetchConfig | None = None,
     render_config: RenderConfig | None = None,
     include_hidden_text: bool = False,
+    html: str | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Extract one page, yielding an event per stage as it completes.
 
     The stages are the same ones `/how-it-works` describes, minus the ones that only exist
     for a crawl: there is no queue to build and no cross-page chrome to learn from a single
     page, and saying otherwise would be theatre.
+
+    `html`, when given, is the page as the caller already has it: nothing is fetched,
+    `strategy`, `fetch_config` and `render_config` are not consulted, and the resolve stage
+    is `resolve_supplied` -- for the sites that refuse every automated fetch. Every stage
+    after it is the same.
     """
     started = time.monotonic()
 
@@ -71,19 +83,24 @@ def stream_page(
         # distrust the rest of the log.
         # Unset means complete, the same as UNION -- see `resolve_page`.
         "message": (
-            "Fetching as plain HTTP"
+            "Reading the HTML supplied by the caller"
+            if html is not None
+            else "Fetching as plain HTTP"
             if strategy is Strategy.STATIC_ONLY
             else "Fetching as plain HTTP and through a browser, then merging"
         ),
     }
     try:
-        resolved = resolve_page(
-            url,
-            strategy=strategy,
-            fetch_config=fetch_config,
-            render_config=render_config,
-            include_hidden_text=include_hidden_text,
-        )
+        if html is not None:
+            resolved = resolve_supplied(html, url, include_hidden_text=include_hidden_text)
+        else:
+            resolved = resolve_page(
+                url,
+                strategy=strategy,
+                fetch_config=fetch_config,
+                render_config=render_config,
+                include_hidden_text=include_hidden_text,
+            )
     except (PageMissingError, PageBlockedError) as exc:
         # Diagnosed failures: the message is the whole story, and a class name in front of
         # it is noise to the reader it is written for.
