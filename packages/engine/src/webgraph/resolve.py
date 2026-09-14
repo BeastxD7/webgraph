@@ -88,6 +88,25 @@ class PageMissingError(Exception):
         self.url = url
         self.status = status
 
+class PageShellError(ValueError):
+    """The response was a JavaScript shell: markup with no readable text until a browser
+    runs it, and the request did not render.
+
+    A `ValueError` like every other "could not resolve", carrying the shell's `document` for
+    the one caller that can use it: fact extraction reads a hydration payload
+    (`__NEXT_DATA__`, JSON-LD) that is complete in the shell, and a browser adds nothing.
+    """
+
+    def __init__(self, document: Document, *, status: int | None = None) -> None:
+        said = f"HTTP {status}, " if status else ""
+        super().__init__(
+            f"could not resolve {document.url}: the page is a JavaScript shell with no "
+            f"readable text until a browser runs it ({said}{len(document.html):,} bytes of "
+            "markup); rendering was not used for this request"
+        )
+        self.document = document
+
+
 class PageBlockedError(ValueError):
     """The server answered, but with a wall instead of the page.
 
@@ -476,7 +495,11 @@ def _frame_sources(html: str, base_url: str) -> list[str]:
 
 
 def _compose_frameset(
-    static_result: FetchResult, fetch_config: FetchConfig | None, include_hidden_text: bool, depth: int = 0
+    static_result: FetchResult,
+    fetch_config: FetchConfig | None,
+    include_hidden_text: bool,
+    depth: int = 0,
+    rtl: bool | None = None,
 ) -> Document | None:
     """Read a frameset page as the document a reader sees: its frames, in order.
 
@@ -504,7 +527,7 @@ def _compose_frameset(
         if not (result.ok and result.is_html and result.html.strip()):
             continue
         if depth + 1 < _MAX_FRAME_DEPTH and _FRAME.search(result.html):
-            nested = _compose_frameset(result, fetch_config, include_hidden_text, depth + 1)
+            nested = _compose_frameset(result, fetch_config, include_hidden_text, depth + 1, rtl)
             if nested is not None:
                 parts.append(f'<section data-frame="{source}">{nested.html}</section>')
             continue
@@ -544,12 +567,26 @@ def _compose_frameset(
     if not parts:
         return None
     html = f"<html><head><title>{title}</title></head><body>{''.join(parts)}</body></html>"
-    return build_document(html, static_result.url, headers=static_result.headers, include_hidden_text=include_hidden_text)
+    return build_document(
+        html,
+        static_result.url,
+        headers=static_result.headers,
+        include_hidden_text=include_hidden_text,
+        rtl=rtl,
+    )
+
+
+_SCRIPT_OR_STYLE: Final[re.Pattern[str]] = re.compile(
+    r"<(script|style)\b.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+)
 
 
 def _server_said(html: str, limit: int = 140) -> str:
-    """The server's own words, when it bothered to write any. Quoted, never paraphrased."""
-    text = _RUNS.sub(" ", _TAGS.sub(" ", html)).strip()
+    """The server's own words, when it bothered to write any. Quoted, never paraphrased.
+
+    Without its stylesheet: a block page's first 140 characters were its title and then
+    `html {height: 100%} body {margin:0 …`, which is not what it said."""
+    text = _RUNS.sub(" ", _TAGS.sub(" ", _SCRIPT_OR_STYLE.sub(" ", html))).strip()
     return text[:limit].strip() if len(text) >= 20 else ""
 
 
@@ -686,13 +723,9 @@ def _refuse_block_page(
     vendor = challenge_vendor(document.html)
     if vendor is not None:
         raise PageBlockedError(document.url, vendor, challenge=vendor)
-    said = f"HTTP {status}, " if status else ""
     if document.profile.requires_render:
-        raise ValueError(
-            f"could not resolve {document.url}: the page is a JavaScript shell with no "
-            f"readable text until a browser runs it ({said}{len(document.html):,} bytes of "
-            "markup); rendering was not used for this request"
-        )
+        raise PageShellError(document, status=status)
+    said = f"HTTP {status}, " if status else ""
     raise ValueError(
         f"could not resolve {document.url}: the response produced no readable text "
         f"({said}{len(document.html):,} bytes of markup, none of it visible)"
@@ -720,11 +753,13 @@ def resolve_page(
     fetch_config: FetchConfig | None = None,
     render_config: RenderConfig | None = None,
     include_hidden_text: bool = False,
+    rtl: bool | None = None,
 ) -> ResolvedPage:
     """Resolve a page as completely as possible.
 
     `include_hidden_text` is passed to `build_document`: keep screen-reader-only labels and
-    wiki edit controls rather than stripping them.
+    wiki edit controls rather than stripping them. `rtl` likewise: `None` detects the
+    reading direction from the document, a bool forces it.
 
     `strategy` means exactly what it says, and unset means **complete**:
 
@@ -757,7 +792,7 @@ def resolve_page(
     # each frame as a separate document the collector does not enter -- so the frames are
     # fetched and read in the order the frameset lays them out. See `_compose_frameset`.
     if static_result.ok and static_result.is_html and _FRAME.search(static_result.html):
-        composed = _compose_frameset(static_result, fetch_config, include_hidden_text)
+        composed = _compose_frameset(static_result, fetch_config, include_hidden_text, rtl=rtl)
         if composed is not None:
             _refuse_block_page(composed, status=static_result.status, requested_url=url)
             chars = len(composed.text)
@@ -782,13 +817,16 @@ def resolve_page(
                 static_result.url,
                 headers=static_result.headers,
                 include_hidden_text=include_hidden_text,
+                rtl=rtl,
             )
         except ValueError:
             static_doc = None
 
     if strategy is Strategy.STATIC_ONLY:
         if static_doc is None:
-            raise ValueError(f"static fetch produced no document for {url}: {static_result.error}")
+            # The same words the two-path failure uses: the status, what it means, and what
+            # the server said -- "HTTP 403" alone told a caller nothing about the wall.
+            raise ValueError(_both_failed(url, static_result, None))
         _refuse_block_page(static_doc, status=static_result.status, requested_url=url)
         chars = len(static_doc.text)
         return ResolvedPage(
@@ -853,6 +891,7 @@ def resolve_page(
         headers=static_result.headers,
         runtime=observed,
         include_hidden_text=include_hidden_text,
+        rtl=rtl,
     )
 
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:

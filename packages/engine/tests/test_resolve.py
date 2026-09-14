@@ -233,6 +233,52 @@ class TestMissingPagesAreNeverExtracted:
         assert "404" in str(error)
 
 
+class TestWhatTheServerSaid:
+    """A refusal quotes the server's own words. Its stylesheet is not among them."""
+
+    def test_the_quote_skips_scripts_and_styles(self) -> None:
+        from webgraph.resolve import _server_said
+
+        html = (
+            "<html><head><title>SEC.gov | Undeclared Automated Tool</title>"
+            "<style>html {height: 100%} body {margin:0; padding:0;} #header {b}</style>"
+            "<script>window.x = 1;</script></head><body><h1>Your Request Originates from "
+            "an Undeclared Automated Tool</h1><p>Please declare your traffic.</p></body></html>"
+        )
+        said = _server_said(html)
+        assert said.startswith("SEC.gov | Undeclared Automated Tool Your Request Originates")
+        assert "height" not in said and "window" not in said
+
+    def test_a_static_only_refusal_names_the_status_and_the_words(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`STATIC_ONLY` with nothing fetched used to say "HTTP 403" and no more; the
+        two-path failure already said what the status means and what the server wrote."""
+        from webgraph import resolve
+        from webgraph.fetch.static import FetchResult
+
+        wall = "<html><body><h1>Access denied: your request was refused</h1></body></html>"
+        monkeypatch.setattr(
+            resolve,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=403,
+                html=wall,
+                content_type="text/html",
+                elapsed_seconds=0.0,
+                ok=False,
+                error="HTTP 403",
+            ),
+        )
+        with pytest.raises(ValueError) as caught:
+            resolve.resolve_page("https://example.com/x", strategy=resolve.Strategy.STATIC_ONLY)
+        message = str(caught.value)
+        assert "HTTP 403" in message and "refused this client" in message
+        assert "Access denied: your request was refused" in message
+
+
 class TestBlockPages:
     """A wall served with a 200 is a failure, not a short page.
 
@@ -294,7 +340,7 @@ class TestBlockPages:
         monkeypatch.setattr(
             module,
             "fetch_static",
-            lambda url, config=None: FetchResult(  # noqa: ARG005
+            lambda url, config=None: FetchResult(  # noqa: ARG005  # noqa: ARG005
                 url=url,
                 requested_url=url,
                 status=200,
@@ -327,7 +373,7 @@ class TestChallengesAndEmptyPages:
         monkeypatch.setattr(
             module,
             "fetch_static",
-            lambda url, config=None: FetchResult(  # noqa: ARG005
+            lambda url, config=None: FetchResult(  # noqa: ARG005  # noqa: ARG005
                 url=url,
                 requested_url=url,
                 status=status,
@@ -408,7 +454,7 @@ class TestAWallOnOneSide:
         monkeypatch.setattr(
             module,
             "fetch_static",
-            lambda url, config=None: FetchResult(  # noqa: ARG005
+            lambda url, config=None: FetchResult(  # noqa: ARG005  # noqa: ARG005
                 url=url,
                 requested_url=url,
                 status=200,
@@ -589,7 +635,7 @@ class TestLoginWalls:
         monkeypatch.setattr(
             module,
             "fetch_static",
-            lambda url, config=None: FetchResult(  # noqa: ARG005
+            lambda url, config=None: FetchResult(  # noqa: ARG005  # noqa: ARG005
                 url=static_final or url,
                 requested_url=url,
                 status=200,

@@ -531,3 +531,52 @@ class TestPerRequestOptions:
             "/api/text", json={"url": f"{server}/docs_static.html", "fetch": {"timeout_seconds": 5, "colour": "red"}}
         )
         assert response.status_code == 200
+
+
+WALL = """<!doctype html><html><head><title>Attention Required! | Cloudflare</title></head>
+<body><h1>Sorry, you have been blocked</h1>
+<p>You are unable to access example.com</p>
+<h2>Why have I been blocked?</h2>
+<p>This website is using a security service to protect itself from online attacks. The
+action you just performed triggered the security solution. There are several actions that
+could trigger this block including submitting a certain word or phrase, a SQL command or
+malformed data.</p>
+<p>Cloudflare Ray ID: 8c1d2e3f4a5b6c7d</p></body></html>"""
+
+
+@pytest.fixture
+def wall_server(tmp_path: Path) -> Iterator[str]:
+    """A site that answers every request with a bot-management block page."""
+    (tmp_path / "wall.html").write_text(WALL, encoding="utf-8")
+    handler = partial(_QuietHandler, directory=str(tmp_path))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class TestWallsOnTheBlockingRoutes:
+    """`/api/text` and `/api/extract` used to fetch and parse on their own, without the
+    wall checks `resolve_page` runs for the streaming route -- so a Cloudflare block page
+    came back as a page of text with a green tick. Both routes now resolve the page the
+    same way, and a wall is a refusal."""
+
+    def test_text_refuses_a_block_page(self, client: TestClient, wall_server: str) -> None:
+        response = client.post("/api/text", json={"url": f"{wall_server}/wall.html"})
+        assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "block page" in detail and "you have been blocked" in detail.lower()
+
+    def test_extract_refuses_a_block_page(self, client: TestClient, wall_server: str) -> None:
+        response = client.post("/api/extract", json={"url": f"{wall_server}/wall.html"})
+        assert response.status_code == 502
+        assert "block page" in response.json()["detail"]
+
+    def test_a_real_page_still_reads(self, client: TestClient, server: str) -> None:
+        response = client.post("/api/text", json={"url": f"{server}/ecommerce_jsonld.html"})
+        assert response.status_code == 200
+        assert response.json()["text"]
