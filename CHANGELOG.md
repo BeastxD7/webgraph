@@ -13,7 +13,8 @@ Found by a census of 25 old and plain pages against Chromium's own text.
   ibiblio.org …). A rule has no text: it is not in `text`, not a block to the boundary
   step, the block model or the page-type router (each takes rules out and puts them back
   between kept neighbours), never content on its own, and never a duplicate. A rule the
-  browser gave no box is not a line the reader sees and is left out.
+  browser gave no box is not a line the reader sees and is left out. A page of rules and
+  nothing else selects nothing (PR #77).
 - `<dl>` renders as a definition list a reader can parse — `**term**` on one line, `:
   definition` on the next, the Markdown Extra / Pandoc / kramdown form — instead of
   alternating paragraphs (cl.cam.ac.uk's Unicode FAQ, every php.net parameter list). A

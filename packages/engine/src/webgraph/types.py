@@ -173,6 +173,8 @@ def restore_structure(original: Sequence[Block], kept: Iterable[Block]) -> list[
     edge of the selection, or between two dropped blocks, is not -- so a selection never
     begins or ends with a rule, and a page of rules and nothing else selects nothing."""
     kept = list(kept)
+    if not kept:
+        return []  # a page of rules and nothing else selects nothing
     survivors = {id(b) for b in kept}
     if len(survivors) == sum(1 for b in original if b.kind not in STRUCTURE_ONLY):
         return list(original)  # nothing was dropped, so nothing is an edge
