@@ -85,6 +85,13 @@ class ContentSelection:
     """Whether the boundary step cut the page's own title and it was put back."""
     """Blocks the trained per-block model dropped, when `select_content` was given one.
     Mutually exclusive with `main_content_removed`: the model replaces the boundary step."""
+    comments: tuple[Block, ...] = ()
+    """The comment thread the comments step removed from under the content, in document
+    order; empty when there was none or when the comments *are* the page and were kept.
+    Not part of `blocks` -- the article is the article -- but not thrown away either: the
+    discussion under a story is what a reader of a Hacker News or Slashdot page came for,
+    and two of WCEB's eight corpora count it as content. A consumer that wants it appends
+    it under its own heading; the API returns it as `comments_markdown`."""
 
     @property
     def kept(self) -> int:
@@ -176,10 +183,14 @@ def select_content(
     kept = strip_landmarks(list(blocks))
     landmarks_removed = total - len(kept)
 
+    comments: tuple[Block, ...] = ()
     if config is None or config.strip_comments:
-        before = len(kept)
+        with_comments = kept
         kept = strip_comments(kept, max_share=config.comments_max_share if config else 1.0)
-        landmarks_removed += before - len(kept)
+        if len(kept) != len(with_comments):
+            survivors = {id(block) for block in kept}
+            comments = tuple(block for block in with_comments if id(block) not in survivors)
+            landmarks_removed += len(comments)
 
     before = len(kept)
     kept = scope_to_main(kept)
@@ -246,6 +257,7 @@ def select_content(
         main_scoped_removed=main_scoped_removed,
         article_scoped_removed=article_scoped_removed,
         body_scoped_removed=body_scoped_removed,
+        comments=comments,
         chrome_removed=chrome_removed,
         main_content_removed=main_content_removed,
         block_model_removed=block_model_removed,

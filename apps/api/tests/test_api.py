@@ -147,6 +147,17 @@ class TestText:
         }
         assert 0.0 <= body["page_type_confidence"] <= 1.0
 
+    def test_the_comment_thread_comes_back_beside_the_content(
+        self, client: TestClient, server: str
+    ) -> None:
+        """An article with a thread under it: the thread is not in `content_markdown` and is
+        in `comments_markdown`, in page order."""
+        body = client.post("/api/text", json={"url": f"{server}/article_with_comments.html"}).json()
+        assert "Reply 0:" not in body["content_markdown"]
+        assert "Paragraph 7 of the story" in body["content_markdown"]
+        assert body["comments_markdown"].index("Reply 0:") < body["comments_markdown"].index("Reply 5:")
+        assert "Paragraph 7" not in body["comments_markdown"]
+
     def test_content_selection_names_the_step_that_drew_the_line(
         self, client: TestClient, server: str
     ) -> None:

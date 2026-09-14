@@ -385,6 +385,38 @@ class TestComments:
         assert not any("Reply" in b.text for b in kept)
         assert sum(1 for b in kept if b.text.startswith("Paragraph")) == 8
 
+    def test_the_stripped_thread_is_kept_aside_as_comments(self) -> None:
+        """The thread leaves the article and arrives in `ContentSelection.comments`, in page
+        order, so the API can return it as `comments_markdown`: the discussion under a story
+        is what a reader of a Slashdot page came for, and two of WCEB's eight corpora count
+        it as content."""
+        from webgraph.content import select_content
+        from webgraph.pipeline import build_document
+
+        document = build_document(self.story(), "https://news.test/story")
+        selection = select_content(list(document.blocks), model=None, title="Story")
+        replies = [b.text for b in selection.comments if b.text.startswith("Reply")]
+        assert replies == [f"Reply {i}: a paragraph of opinion long enough to read like the article itself." for i in range(6)]
+        assert all(b.widget == "comments" for b in selection.comments)
+        assert not any(b.text.startswith("Reply") for b in selection.blocks)
+
+    def test_a_forum_keeps_its_thread_and_reports_no_comments(self) -> None:
+        """A thread that is most of the page under the forum policy stays in the content, so
+        nothing is set aside."""
+        from webgraph.content import select_content
+        from webgraph.pagetype import policy_for
+        from webgraph.pipeline import build_document
+
+        replies = "".join(
+            f'<li class="comment"><p>Reply {i}: a paragraph of opinion long enough to read like the opening post itself, and then some.</p></li>'
+            for i in range(40)
+        )
+        html = f'<html><body><main><article><h1>Thread</h1><p>The opening post asks a question in two sentences. It is short.</p></article><section id="comments"><ol class="comment-list">{replies}</ol></section></main></body></html>'
+        document = build_document(html, "https://forum.test/t/1")
+        selection = select_content(list(document.blocks), model=None, config=policy_for("forum"), title="Thread")
+        assert selection.comments == ()
+        assert sum(1 for b in selection.blocks if b.text.startswith("Reply")) == 40
+
     def test_a_page_that_is_its_comments_keeps_them(self) -> None:
         """A Hacker News comment page: a login link, two comments, a footer. Without the
         comments there is nothing, whatever the router called the page."""

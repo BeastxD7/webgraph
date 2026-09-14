@@ -106,6 +106,7 @@ export default function SinglePageRun({ url }: { url: string }) {
       text: run.done.text,
       markdown: run.done.markdown,
       content_markdown: run.done.content_markdown,
+      comments_markdown: run.done.comments_markdown ?? "",
       content_methods: run.select?.methods ?? [],
       content_blocks: run.select?.kept ?? 0,
       page_type: run.classify?.page_type ?? "unknown",
@@ -206,6 +207,26 @@ export default function SinglePageRun({ url }: { url: string }) {
               {text.tables} tables
             </p>
           </section>
+
+          {text.comments_markdown && (
+            <details className="rounded-2xl border border-line bg-surface shadow-card">
+              <summary className="flex cursor-pointer flex-wrap items-center gap-3 p-4 text-[15px] font-extrabold tracking-tight">
+                Comments
+                <span className="tabular rounded-full bg-sunk px-2 py-0.5 text-[11.5px] font-semibold text-ink-soft">
+                  {compact(text.comments_markdown.length)} chars · left out of the content
+                </span>
+                <span className="ml-auto text-[12.5px] font-semibold text-ink-soft">
+                  The thread under the page, in page order
+                </span>
+              </summary>
+              <div className="flex justify-end border-t border-line px-4 py-2">
+                <CopyButton text={text.comments_markdown} label="Copy comments" />
+              </div>
+              <div className="max-h-[28rem] overflow-auto border-t border-line px-5 py-4 text-[14px]">
+                {renderMarkdown(text.comments_markdown)}
+              </div>
+            </details>
+          )}
 
           <section className="rounded-2xl border border-line bg-surface p-6 shadow-card">
             <div className="flex flex-wrap items-center gap-3">

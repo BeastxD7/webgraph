@@ -306,7 +306,15 @@ class TextResponse(BaseModel):
     content_methods: list[str] = Field(
         default_factory=list,
         description="Steps that removed something to produce `content_markdown`, in order: "
-        "any of `landmarks`, `main-landmark`, `block-model`, `main-content`.",
+        "any of `landmarks`, `main-landmark`, `article-element`, `article-body`, "
+        "`block-model`, `main-content`.",
+    )
+    comments_markdown: str = Field(
+        default="",
+        description="The comment thread found under the content and left out of "
+        "`content_markdown`, as Markdown in page order. Empty when the page has none, or "
+        "when the comments are the page (a forum thread, a Hacker News item) and are in "
+        "`content_markdown` already. The article is the article; the discussion is here.",
     )
     content_blocks: int = Field(
         default=0, description="Blocks kept in `content_markdown`, out of `page.blocks`."
@@ -477,12 +485,20 @@ async def get_text(request: TextRequest) -> TextResponse:
         if selection.changed
         else ""
     )
+    comments = (
+        to_markdown(
+            document.model_copy(update={"blocks": selection.comments}), options=MarkdownOptions()
+        )
+        if selection.comments
+        else ""
+    )
 
     return TextResponse(
         page=_page_info(document, bool(geometry)),
         text=document.text,
         markdown=to_markdown(document, options=MarkdownOptions()),
         content_markdown=content,
+        comments_markdown=comments,
         content_methods=list(selection.methods),
         content_blocks=selection.kept,
         page_type=str(routing.page_type) if routing else "unknown",

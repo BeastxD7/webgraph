@@ -200,6 +200,11 @@ def stream_page(
         "content_markdown": to_markdown(content, options=MarkdownOptions())
         if selection.changed
         else "",
+        "comments_markdown": to_markdown(
+            document.model_copy(update={"blocks": selection.comments}), options=MarkdownOptions()
+        )
+        if selection.comments
+        else "",
         "images": [b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href],
         "tables": sum(1 for b in document.blocks if b.kind is BlockKind.TABLE),
     }

@@ -105,8 +105,12 @@ export interface TextResponse {
   /** The page reduced to its content: `<nav>`/`<footer>` removed, then the main-content
    *  boundary drawn around the densest run of prose. Empty when nothing was removed. */
   content_markdown: string;
-  /** Steps that removed something, in order: "landmarks", "main-landmark", "block-model"
-   *  or "main-content". */
+  /** The comment thread found under the content and left out of `content_markdown`, as
+   *  Markdown in page order. Empty when there is none, or when the comments are the page
+   *  (a forum thread) and are in `content_markdown` already. */
+  comments_markdown: string;
+  /** Steps that removed something, in order: "landmarks", "main-landmark",
+   *  "article-element", "article-body", "block-model" or "main-content". */
   content_methods: string[];
   /** Blocks kept in `content_markdown`, out of `page.blocks`. */
   content_blocks: number;
@@ -623,6 +627,7 @@ export type PageStageEvent =
       text: string;
       markdown: string;
       content_markdown: string;
+      comments_markdown: string;
       images: string[];
       tables: number;
     }
