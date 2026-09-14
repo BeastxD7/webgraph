@@ -402,6 +402,103 @@ _TAGS: Final[re.Pattern[str]] = re.compile(r"<[^>]+>")
 _RUNS: Final[re.Pattern[str]] = re.compile(r"\s+")
 
 
+_FRAME: Final[re.Pattern[str]] = re.compile(r"<frame\b[^>]*\bsrc\s*=", re.I)
+_MAX_FRAMES: Final[int] = 8
+_MAX_FRAME_DEPTH: Final[int] = 2
+
+
+def _frame_sources(html: str, base_url: str) -> list[str]:
+    """The `<frame src>` addresses of a frameset page, in source order, absolute, same host."""
+    from urllib.parse import urljoin, urlsplit
+
+    from lxml import html as lxml_html
+
+    try:
+        root = lxml_html.fromstring(html)
+    except (ValueError, TypeError):
+        return []
+    host = urlsplit(base_url).netloc
+    sources: list[str] = []
+    for frame in root.iter("frame"):
+        src = (frame.get("src") or "").strip()
+        if not src or src.lower().startswith(("javascript:", "about:")):
+            continue
+        absolute = urljoin(base_url, src)
+        parts = urlsplit(absolute)
+        if parts.scheme in ("http", "https") and parts.netloc == host and absolute not in sources:
+            sources.append(absolute)
+        if len(sources) >= _MAX_FRAMES:
+            break
+    return sources
+
+
+def _compose_frameset(
+    static_result: FetchResult, fetch_config: FetchConfig | None, include_hidden_text: bool, depth: int = 0
+) -> Document | None:
+    """Read a frameset page as the document a reader sees: its frames, in order.
+
+    cs.cmu.edu/~rgs/alice-table.html (1994) is `<frameset rows="50,*">` with a table of
+    contents frame over a text frame and a `<noframes>` body for browsers without them.
+    The engine refused it as "a JavaScript shell with no readable text": the top document
+    has no words, and the browser's document is the frameset, not the frames.
+
+    Each frame is fetched statically (frames predate the JavaScript that would need a
+    render), its links made absolute against its own address, and its `<body>` inlined into
+    one document in frameset order under `<section data-frame="...">`, followed by the
+    `<noframes>` body when there is one. Nested framesets recurse to `_MAX_FRAME_DEPTH`;
+    at most `_MAX_FRAMES` frames are read; only same-host frames are followed. Returns
+    None when no frame could be read, so the caller's ordinary refusal applies.
+    """
+    from lxml import etree
+    from lxml import html as lxml_html
+
+    sources = _frame_sources(static_result.html, static_result.url)
+    if not sources:
+        return None
+    parts: list[str] = []
+    for source in sources:
+        result = fetch_static(source, config=fetch_config)
+        if not (result.ok and result.is_html and result.html.strip()):
+            continue
+        if depth + 1 < _MAX_FRAME_DEPTH and _FRAME.search(result.html):
+            nested = _compose_frameset(result, fetch_config, include_hidden_text, depth + 1)
+            if nested is not None:
+                parts.append(f'<section data-frame="{source}">{nested.html}</section>')
+            continue
+        try:
+            root = lxml_html.document_fromstring(result.html)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(root, lxml_html.HtmlElement):
+            root.make_links_absolute(result.url)
+        body = root.find("body")
+        inner = (
+            "".join(etree.tostring(child, encoding="unicode") for child in body)
+            if body is not None
+            else etree.tostring(root, encoding="unicode")
+        )
+        parts.append(f'<section data-frame="{source}">{(body.text or "") if body is not None else ""}{inner}</section>')
+    if not parts:
+        return None
+    try:
+        top = lxml_html.fromstring(static_result.html)
+        noframes = top.find(".//noframes")
+        if noframes is not None:
+            # Browsers parse `<noframes>` as raw text, and so does lxml on most pages: its
+            # markup arrives as a string and is parsed here; on the pages where it arrived as
+            # elements those are used.
+            if len(noframes):
+                inner = "".join(etree.tostring(child, encoding="unicode") for child in noframes)
+            else:
+                inner = noframes.text or ""
+            parts.append(f'<section data-frame="noframes">{inner}</section>')
+        title = top.findtext(".//title") or ""
+    except (ValueError, TypeError):
+        title = ""
+    html = f"<html><head><title>{title}</title></head><body>{''.join(parts)}</body></html>"
+    return build_document(html, static_result.url, headers=static_result.headers, include_hidden_text=include_hidden_text)
+
+
 def _server_said(html: str, limit: int = 140) -> str:
     """The server's own words, when it bothered to write any. Quoted, never paraphrased."""
     text = _RUNS.sub(" ", _TAGS.sub(" ", html)).strip()
@@ -506,6 +603,27 @@ def resolve_page(
     # this the engine extracts server error pages as though they were content.
     if static_result.status in MISSING_STATUSES:
         raise PageMissingError(url, static_result.status)
+
+    # A frameset is a page made of other pages. Neither fetch sees its words -- the static
+    # markup holds only the frame elements and a `<noframes>` apology, and a browser renders
+    # each frame as a separate document the collector does not enter -- so the frames are
+    # fetched and read in the order the frameset lays them out. See `_compose_frameset`.
+    if static_result.ok and static_result.is_html and _FRAME.search(static_result.html):
+        composed = _compose_frameset(static_result, fetch_config, include_hidden_text)
+        if composed is not None:
+            _refuse_block_page(composed, status=static_result.status)
+            chars = len(composed.text)
+            return ResolvedPage(
+                url=composed.url,
+                document=composed,
+                strategy=Strategy.STATIC_ONLY,
+                static_chars=chars,
+                rendered_chars=0,
+                union_chars=chars,
+                blocks_only_in_static=0,
+                blocks_only_in_rendered=0,
+                render_error="frameset: frames read statically, in frameset order",
+            )
 
     static_doc: Document | None = None
 

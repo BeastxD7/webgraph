@@ -23,7 +23,7 @@ from lxml import etree
 from lxml.html import HtmlElement
 
 from webgraph import config
-from webgraph.dom.blocks import SKIP_TAGS, normalize_text, strip_permalinks
+from webgraph.dom.blocks import LINE_BREAK, SKIP_TAGS, normalize_text, strip_permalinks
 from webgraph.markers import BREAK_ATTRIBUTE, FLOAT_ATTRIBUTE, HIDDEN_ATTRIBUTE
 from webgraph.types import Block, BlockKind
 
@@ -46,6 +46,14 @@ _TEXT_CONTAINERS: Final[frozenset[str]] = frozenset({
     # and its text was lost outright. Found by a test written for the shape rule that sends
     # more tables down the layout path than used to go there.
     "td", "th",
+    # The page itself, and the block wrappers of pre-CSS HTML. textfiles.com closes with
+    # `<CENTER><FONT>TEXTFILES.COM has been online for nearly 25 years…</FONT></CENTER>`
+    # straight under `<body>`; with neither element a container the sentence, and the
+    # donation line under it, were lost outright. `body` here means bare text between a
+    # page's blocks is read as the orphan run it is; a `<div>` wrapper always was.
+    "body", "center", "form", "fieldset",
+    # A `<blockquote>` that holds structure; the leaf case is caught before this branch.
+    "blockquote",
 })
 
 _ATOMIC: Final[frozenset[str]] = frozenset({"table", "pre", "blockquote", "img", "figure"})
@@ -120,7 +128,9 @@ def _inline_child(child: HtmlElement, base: str, *, orphan_only: bool) -> str:
     """One inline child as Markdown, without its tail; un-normalised, edges intact."""
     tag = child.tag if isinstance(child.tag, str) else ""
     parts: list[str] = []
-    if _breaks_line(child):
+    if tag == "br":
+        parts.append(LINE_BREAK)
+    elif _breaks_line(child):
         parts.append(" ")
     # The child's text with its edge whitespace intact. Normalising here, per child,
     # is what fused `<span>: </span>Connecting` into `:Connecting` -- the space that
@@ -178,8 +188,12 @@ def flowed_text(element: HtmlElement) -> str:
         # BREAK_ATTRIBUTE is stamped by the renderer (`fetch/js/collect.js`) on elements the
         # browser laid out as their own box. Absent on a static fetch, so this branch never
         # fires and the function behaves exactly as `text_content()` did -- a page nobody
-        # rendered gets no layout claims.
-        if _breaks_line(child):
+        # rendered gets no layout claims. A `<br>` is the one break the markup itself
+        # declares, and it is a line break rather than a space: an address, a verse, and the
+        # `<br><br>`-separated paragraphs of pre-CSS pages keep their lines (textfiles.com).
+        if child.tag == "br":
+            parts.append(LINE_BREAK)
+        elif _breaks_line(child):
             parts.append(" ")
         parts.append(flowed_text(child))
         parts.append(child.tail or "")
@@ -467,9 +481,15 @@ def _cell_text(cell: HtmlElement) -> str:
         if isinstance(child.tag, str) and child.tag == "table":
             parts.append(child.tail or "")
             continue
+        # The same line-box rule as `flowed_text`, which the loop here bypasses for the
+        # cell itself: `<td>a<br>b</td>` and `<td><span>x</span><div>y</div></td>` were
+        # `ab` and `xy`. A cell is one row of a grid, so the break is a space here rather
+        # than a newline; the rows of a *layout* table never reach this function.
+        if child.tag == "br" or _breaks_line(child):
+            parts.append(" ")
         parts.append(flowed_text(child))
         parts.append(child.tail or "")
-    return normalize_text("".join(parts))
+    return normalize_text("".join(parts).replace(LINE_BREAK, " "))
 
 
 def _expanded_rows(element: HtmlElement) -> list[list[str]]:
@@ -785,6 +805,19 @@ class _OrphanRun:
     ordinal: int
 
 
+def _paragraphs(text: str, rich: str) -> list[tuple[str, str]]:
+    """Split a block's text at the blank lines `<br><br>` left in it, keeping the rich
+    form in step when it splits the same way (it carries the same breaks) and falling back
+    to the plain text for the pieces when it does not."""
+    if "\n\n" not in text:
+        return [(text, rich)]
+    texts = text.split("\n\n")
+    riches = rich.split("\n\n")
+    if len(riches) != len(texts):
+        return [(piece, piece) for piece in texts]
+    return list(zip(texts, riches, strict=True))
+
+
 def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
     """`_orphan_text`, split at each child block and kept in its place.
 
@@ -797,9 +830,12 @@ def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
     children is its own block, emitted where the reader meets it and measured by its first
     element.
 
-    Splitting happens at the container's direct children. A block buried inside an inline
-    wrapper still splits the *text* (that walk is recursive) but not the *placement*: text
-    around it is one run anchored on the wrapper. Rare, and no worse than before.
+    Splitting happens at every block the walk meets, however deep it sits under inline
+    wrappers. AppleInsider's 2019 reviews put the whole `<br><br>`-separated article inside
+    one `<span>` with the `<h2>`s between the paragraphs; splitting at the container's
+    direct children only made the article one run placed after its last heading, so every
+    section heading came out ahead of every paragraph. A wrapper that holds a block is
+    walked into and its text joins the runs on either side of that block.
     """
     runs: list[_OrphanRun] = []
     text_parts: list[str] = [element.text or ""]
@@ -810,32 +846,76 @@ def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
         text = normalize_text("".join(text_parts))
         if text:
             rich = normalize_text("".join(rich_parts))
-            runs.append(_OrphanRun(text, rich, before, anchor, len(runs)))
+            # A `<br><br>` inside the run is a paragraph break -- the paragraphs of a
+            # pre-CSS page, of a forum post, of an email pasted into a `<div>` -- and each
+            # becomes a block of its own, as it would have with `<p>` tags.
+            for n, (piece, piece_rich) in enumerate(_paragraphs(text, rich)):
+                runs.append(_OrphanRun(piece, piece_rich, before, anchor if n == 0 else None, len(runs)))
 
-    for child in element:
-        tag = child.tag
-        if not isinstance(tag, str):
+    def walk(parent: HtmlElement) -> None:
+        nonlocal text_parts, rich_parts, anchor
+        for child in parent:
+            tag = child.tag
+            if not isinstance(tag, str):
+                text_parts.append(child.tail or "")
+                rich_parts.append(child.tail or "")
+                continue
+            if tag in _CARRIED_ELSEWHERE:
+                close(child)
+                text_parts = [child.tail or ""]
+                rich_parts = [child.tail or ""]
+                anchor = None
+                continue
+            if _holds_a_block(child):
+                # An inline wrapper around blocks: its text belongs to the runs around
+                # them, so the walk goes through it rather than around it.
+                if tag == "br":
+                    text_parts.append(LINE_BREAK)
+                    rich_parts.append(LINE_BREAK)
+                elif _breaks_line(child):
+                    text_parts.append(" ")
+                    rich_parts.append(" ")
+                text_parts.append(child.text or "")
+                rich_parts.append(child.text or "")
+                walk(child)
+                text_parts.append(child.tail or "")
+                rich_parts.append(child.tail or "")
+                continue
+            if anchor is None and tag != "br":
+                # A `<br>` has no box to measure; the first element that does stands for
+                # the run.
+                anchor = child
+            if tag == "br":
+                text_parts.append(LINE_BREAK)
+            elif _breaks_line(child):
+                text_parts.append(" ")
+            text_parts.append(child.text or "")
+            _orphan_parts(child, text_parts)
             text_parts.append(child.tail or "")
+            rich_parts.append(_inline_child(child, base, orphan_only=True))
             rich_parts.append(child.tail or "")
-            continue
-        if tag in _CARRIED_ELSEWHERE:
-            close(child)
-            text_parts = [child.tail or ""]
-            rich_parts = [child.tail or ""]
-            anchor = None
-            continue
-        if anchor is None and tag != "br":
-            # A `<br>` has no box to measure; the first element that does stands for the run.
-            anchor = child
-        if _breaks_line(child):
-            text_parts.append(" ")
-        text_parts.append(child.text or "")
-        _orphan_parts(child, text_parts)
-        text_parts.append(child.tail or "")
-        rich_parts.append(_inline_child(child, base, orphan_only=True))
-        rich_parts.append(child.tail or "")
+
+    walk(element)
     close(None)
     return runs
+
+
+def _holds_a_block(element: HtmlElement) -> bool:
+    """Whether some descendant is a block another emitter carries."""
+    return any(
+        isinstance(d.tag, str) and d.tag in _CARRIED_ELSEWHERE for d in element.iterdescendants()
+    )
+
+
+def _innermost_first(
+    held: list[tuple[HtmlElement, _OrphanRun]],
+) -> list[tuple[HtmlElement, _OrphanRun]]:
+    """Trailing runs keyed on one last descendant, inner container's first: an inner
+    container registered after the outer one it sits in, and its trailing text comes
+    before the outer container's. Each container's own runs keep their order -- the
+    paragraphs a `<br><br>` split one run into are not a nesting."""
+    order = list(dict.fromkeys(container for container, _ in held))[::-1]
+    return [pair for container in order for pair in held if pair[0] is container]
 
 
 def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
@@ -848,9 +928,11 @@ def _orphan_parts(element: HtmlElement, parts: list[str]) -> None:
             # It gets its own block(s); only the text after it is orphaned.
             parts.append(child.tail or "")
             continue
-        # Same line-box rule as `flowed_text`: a separator where the browser drew one, or
-        # where the tag says the browser would have.
-        if _breaks_line(child):
+        # Same line-box rule as `flowed_text`: a `<br>` is a line break, and a separator
+        # goes where the browser drew one or where the tag says the browser would have.
+        if tag == "br":
+            parts.append(LINE_BREAK)
+        elif _breaks_line(child):
             parts.append(" ")
         parts.append(child.text or "")
         _orphan_parts(child, parts)
@@ -870,6 +952,27 @@ def _list_context(element: HtmlElement) -> tuple[bool, int]:
                 ordered = tag == "ol"
         parent = parent.getparent()
     return ordered, max(level, 1)
+
+
+_QUOTE_STRUCTURE: Final[frozenset[str]] = frozenset(
+    {"table", "ul", "ol", "dl", "pre", "figure", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote"}
+)
+
+
+def _quote_has_structure(quote: HtmlElement) -> bool:
+    """Whether a `<blockquote>` holds blocks rather than a run of text: any structural
+    element, or two or more paragraphs / divs with text of their own."""
+    paragraphs = 0
+    for node in quote.iterdescendants():
+        if not isinstance(node.tag, str):
+            continue
+        if node.tag in _QUOTE_STRUCTURE:
+            return True
+        if node.tag in ("p", "div") and normalize_text(node.text_content()):
+            paragraphs += 1
+            if paragraphs >= 2:
+                return True
+    return False
 
 
 def _drop_closed_dialogs(root: HtmlElement) -> None:
@@ -1154,6 +1257,11 @@ def extract_rich_blocks(
         body = _body_of(element, body_cache)
         if body is not None:
             block = block.model_copy(update={"body_of": tree.getpath(body)})
+        depth = sum(1 for a in element.iterancestors() if a.tag == "blockquote")
+        if element.tag == "blockquote" and block.kind is not BlockKind.QUOTE:
+            depth += 1  # the quote's own text between its blocks, read as an orphan run
+        if depth:
+            block = block.model_copy(update={"quoted": depth})
         widget = _widget_of(element, widget_cache, body_words)
         if widget is not None:
             block = block.model_copy(update={"widget": widget})
@@ -1186,7 +1294,7 @@ def extract_rich_blocks(
         if previous is not None and previous in held_after:
             # Innermost first: an inner container registered after the outer one it sits
             # in, and its trailing text comes before the outer container's.
-            admit_orphans(held_after.pop(previous)[::-1])
+            admit_orphans(_innermost_first(held_after.pop(previous)))
         previous = element
         tag = element.tag
         if not isinstance(tag, str):
@@ -1238,7 +1346,12 @@ def extract_rich_blocks(
                 )
             consumed.update(element.iterdescendants())
 
-        elif tag == "blockquote":
+        elif tag == "blockquote" and not _quote_has_structure(element):
+            # A quote made of blocks -- a table, a list, code, several paragraphs -- takes
+            # the container branch below instead: it is walked into, its own text between
+            # the blocks read as orphan runs, and each block inside carries `quoted` so the
+            # Markdown can prefix it. Flattening it to one line lost the table's rows;
+            # skipping it lost a XenForo post, whose body *is* a `<blockquote>` (spigotmc).
             text = normalize_text(flowed_text(element))
             if text:
                 block = Block(
@@ -1310,12 +1423,32 @@ def extract_rich_blocks(
             if text:
                 ordered, level = _list_context(element) if tag == "li" else (False, 0)
                 rich = _inline_markdown(element, base_url, orphan_only=has_block_descendant)
+                kind = BlockKind.LIST_ITEM if tag == "li" else BlockKind.PARAGRAPH
+                # A `<br><br>` is a paragraph break: the paragraphs of a pre-CSS page, of a
+                # forum post, of an email pasted into a `<div>`. Each becomes a block of its
+                # own, as it would have with `<p>` tags; a list item stays one item.
+                pieces = _paragraphs(text, rich) if kind is BlockKind.PARAGRAPH else [(text, rich)]
+                for piece_text, piece_rich in pieces[:-1]:
+                    admit(
+                        Block(
+                            text=piece_text,
+                            tag=tag,
+                            xpath=tree.getpath(element),
+                            dom_index=index,
+                            kind=kind,
+                            level=level,
+                            ordered=ordered,
+                            rich_text=piece_rich if piece_rich != piece_text else None,
+                        ),
+                        element,
+                    )
+                text, rich = pieces[-1]
                 block = Block(
                     text=text,
                     tag=tag,
                     xpath=tree.getpath(element),
                     dom_index=index,
-                    kind=BlockKind.LIST_ITEM if tag == "li" else BlockKind.PARAGRAPH,
+                    kind=kind,
                     level=level,
                     ordered=ordered,
                     rich_text=rich if rich != text else None,
@@ -1324,7 +1457,7 @@ def extract_rich_blocks(
         if block is not None:
             admit(block, element)
     if previous is not None and previous in held_after:
-        admit_orphans(held_after.pop(previous)[::-1])
+        admit_orphans(_innermost_first(held_after.pop(previous)))
 
     return blocks
 
