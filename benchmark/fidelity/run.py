@@ -58,7 +58,7 @@ with sync_playwright() as p:
                 loc.click(timeout=2000); pg.wait_for_timeout(1000); break
         except Exception:
             pass
-    data = pg.evaluate('''() => {
+    VIEW = '''() => {
       const vis = el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
       const lines = [];
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -66,7 +66,18 @@ with sync_playwright() as p:
       while ((n = walker.nextNode())) { const t = n.textContent.trim(); if (t.length >= 25 && n.parentElement && vis(n.parentElement) && !['SCRIPT','STYLE','NOSCRIPT'].includes(n.parentElement.tagName)) lines.push(t.slice(0, 80)); }
       const count = (sel) => [...document.querySelectorAll(sel)].filter(vis).length;
       return { text: document.body.innerText, lines, headings: count('h1,h2,h3,h4,h5,h6'), tables: count('table'), lists: count('ul,ol'), images: count('img'), links: count('a[href]') };
-    }''')
+    }'''
+    # A frameset's own body has no text; the page a reader sees is its frames, in order.
+    data = {"text": "", "lines": [], "headings": 0, "tables": 0, "lists": 0, "images": 0, "links": 0}
+    for frame in pg.frames:
+        try:
+            part = frame.evaluate(VIEW)
+        except Exception:
+            continue
+        data["text"] += ("\n" if data["text"] else "") + part["text"]
+        data["lines"] += part["lines"]
+        for k in ("headings", "tables", "lists", "images", "links"):
+            data[k] += part[k]
     b.close()
 json.dump(data, open(out, "w"))
 """
@@ -140,7 +151,7 @@ def _markdown_counts(markdown: str) -> dict[str, int]:
 
 def run(sites: Path, out: Path) -> None:
     from webgraph.render_markdown import MarkdownOptions, to_markdown
-    from webgraph.resolve import resolve_page
+    from webgraph.resolve import block_page_evidence, resolve_page
 
     pages_dir = out.with_suffix(out.suffix + ".pages")
     results: dict[str, dict[str, object]] = {}
@@ -151,6 +162,14 @@ def run(sites: Path, out: Path) -> None:
         started = time.time()
         try:
             oracle = _oracle(url, pages_dir / f"{name}.json")
+            blocked = block_page_evidence(str(oracle["text"]))
+            if blocked is not None:
+                # The oracle got a wall, not the page; there is nothing to score against.
+                # (The engine may still have got the page through the other fetch.)
+                results[name] = {"url": url, "error": f"oracle blocked: {blocked[:120]}"}
+                print(f"{name:14} ORACLE BLOCKED: {blocked[:90]}", flush=True)
+                out.write_text(json.dumps(results, indent=1, ensure_ascii=False))
+                continue
             resolved = resolve_page(url)
             document = resolved.document
             markdown = to_markdown(document, options=MarkdownOptions())
