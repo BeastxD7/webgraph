@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-15, PR #85) — shadow DOM composed the way the browser paints it
+- A serialised shadow root (`<template shadowrootmode>`, how the browser hands over what
+  `outerHTML` omits) was unwrapped and the host's own children left behind it. That is not
+  what a reader sees: a `<slot>`'s fallback text ("Untitled card", "Nothing was slotted
+  here") came out although the browser had replaced it with the slotted content --
+  invented text -- the slotted children landed after the whole component instead of at
+  their slot, a title slotted into an `<h2>` stopped being a heading, and light children
+  assigned to no slot, which the browser never renders, were read as paragraphs. The flat
+  tree is now composed as the browser composes it: each slot replaced by what is assigned
+  to it (`slot="name"` to the first `<slot name>`, the rest and the light text to the
+  first unnamed slot), its fallback kept only when nothing is; what no slot takes is
+  dropped; nested components inside out. `flatten_shadow_roots`, `_compose_slots`. No
+  corpus page carries a shadow root (WCXB, Zyte, WCEB, WebMainBench: 0 files), so the
+  boards cannot move; measured on the live and fidelity suites: github.com's `<relative-time>`
+  no longer reads twice ("on Dec 5, 2022on Dec 5, 2022" → "on Dec 5, 2022", one duplicate
+  block gone), MDN and every other page unchanged.
+
 ### Added (2026-09-14, PR #84) — bring your own HTML
 - `/api/text` and `/api/text/stream` take `html`: the page as the caller already has it,
   from their own signed-in browser, an extension or a saved file. Nothing is fetched or
