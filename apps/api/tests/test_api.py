@@ -147,6 +147,20 @@ class TestText:
         }
         assert 0.0 <= body["page_type_confidence"] <= 1.0
 
+    def test_hidden_text_is_off_by_default_and_on_by_request(
+        self, client: TestClient, server: str
+    ) -> None:
+        """The swatch labels a screen reader announces are not in the default text; a
+        caller who wants every string in the DOM asks with `include_hidden_text`."""
+        default = client.post("/api/text", json={"url": f"{server}/hidden_labels.html"}).json()
+        assert "Option: BILLY" not in default["text"] and "Skip to main content" not in default["text"]
+        assert "BILLY bookcase, white" in default["text"]
+        full = client.post(
+            "/api/text", json={"url": f"{server}/hidden_labels.html", "include_hidden_text": True}
+        ).json()
+        assert "Option: BILLY, Bookcase, oak effect" in full["text"]
+        assert "Skip to main content" in full["text"] and "[edit]" in full["text"]
+
     def test_the_comment_thread_comes_back_beside_the_content(
         self, client: TestClient, server: str
     ) -> None:

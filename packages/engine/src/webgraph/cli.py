@@ -94,7 +94,13 @@ def _describe(document: Document) -> dict[str, Any]:
 
 def _cmd_text(args: argparse.Namespace) -> int:
     html, geometry, url = _load_source(args.url, render=args.render, quiet=args.quiet)
-    document = build_document(html, url, geometry=geometry, rtl=True if args.rtl else None)
+    document = build_document(
+        html,
+        url,
+        geometry=geometry,
+        rtl=True if args.rtl else None,
+        include_hidden_text=args.include_hidden_text,
+    )
 
     if args.content:
         # The same reduction the crawl applies -- landmarks, then the main-content boundary.
@@ -125,7 +131,13 @@ def _cmd_text(args: argparse.Namespace) -> int:
 def _cmd_extract(args: argparse.Namespace) -> int:
     schema = json.loads(Path(args.schema).read_text(encoding="utf-8"))
     html, geometry, url = _load_source(args.url, render=args.render, quiet=args.quiet)
-    document = build_document(html, url, geometry=geometry, rtl=True if args.rtl else None)
+    document = build_document(
+        html,
+        url,
+        geometry=geometry,
+        rtl=True if args.rtl else None,
+        include_hidden_text=args.include_hidden_text,
+    )
 
     facts = extract_facts(document.structured_data, schema, url)
     merged = merge_facts(facts)
@@ -367,6 +379,12 @@ def build_parser() -> argparse.ArgumentParser:
             "--rtl",
             action="store_true",
             help="force right-to-left reading order (otherwise detected from dir/lang)",
+        )
+        sub.add_argument(
+            "--include-hidden-text",
+            action="store_true",
+            help="keep screen-reader-only labels, skip links and wiki edit controls "
+            "(text the browser holds but a sighted reader never sees)",
         )
 
     text = subparsers.add_parser("text", help="print page text in reading order")

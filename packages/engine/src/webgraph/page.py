@@ -52,6 +52,7 @@ def stream_page(
     strategy: Strategy | None = None,
     fetch_config: FetchConfig | None = None,
     render_config: RenderConfig | None = None,
+    include_hidden_text: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """Extract one page, yielding an event per stage as it completes.
 
@@ -77,7 +78,11 @@ def stream_page(
     }
     try:
         resolved = resolve_page(
-            url, strategy=strategy, fetch_config=fetch_config, render_config=render_config
+            url,
+            strategy=strategy,
+            fetch_config=fetch_config,
+            render_config=render_config,
+            include_hidden_text=include_hidden_text,
         )
     except (PageMissingError, PageBlockedError) as exc:
         # Diagnosed failures: the message is the whole story, and a class name in front of

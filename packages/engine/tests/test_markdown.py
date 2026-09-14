@@ -1021,6 +1021,26 @@ class TestScreenReaderOnly:
         blocks = extract_rich_blocks(parse_html(html), "https://shop.test/")
         assert [b.text for b in blocks] == ["The complete guide to shelving units", "Body text of the guide."]
 
+    def test_include_hidden_text_keeps_the_labels_and_the_edit_controls(self) -> None:
+        """A caller that wants every string in the DOM asks for it; the default stays. The
+        permalink glyph goes either way: it is a control's glyph, not text."""
+        html = (
+            '<main><p><a href="/p/1"><span class="sr-only">Option: BILLY, Bookcase, white</span>'
+            '<img src="/b.jpg" alt=""></a> <span>$59.99</span></p>'
+            '<h2>Delivery <span class="mw-editsection">[edit]</span><a class="headerlink" href="#d">¶</a></h2>'
+            '<p><span class="visually-hidden">Skip to main content</span> Real sentence here.</p></main>'
+        )
+        kept = extract_rich_blocks(parse_html(html), "https://shop.test/", include_hidden_text=True)
+        texts = [b.text for b in kept if b.kind is not BlockKind.IMAGE]
+        assert texts == ["Option: BILLY, Bookcase, white $59.99", "Delivery [edit]", "Skip to main content Real sentence here."]
+        default = extract_rich_blocks(parse_html(html), "https://shop.test/")
+        assert [b.text for b in default if b.kind is not BlockKind.IMAGE] == ["$59.99", "Delivery", "Real sentence here."]
+
+    def test_the_flag_reaches_build_document(self) -> None:
+        html = '<main><p><span class="sr-only">Opens in a new window</span> Read the guide.</p></main>'
+        assert build_document(html, "https://x.test/").text == "Read the guide."
+        assert build_document(html, "https://x.test/", include_hidden_text=True).text == "Opens in a new window Read the guide."
+
 
 class TestDocumentText:
     def test_alt_text_and_placeholders_are_not_text(self) -> None:

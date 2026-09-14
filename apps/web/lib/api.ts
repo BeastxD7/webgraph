@@ -277,8 +277,14 @@ export const api = {
     rtl: boolean;
   }) => request<ExtractResponse>("/api/extract", input),
 
-  text: (input: { url: string; render: boolean; rtl: boolean }) =>
-    request<TextResponse>("/api/text", input),
+  text: (input: {
+    url: string;
+    render: boolean;
+    rtl: boolean;
+    /** Keep screen-reader-only labels, skip links and wiki edit controls -- text the
+     *  browser holds but a sighted reader never sees. Off by default. */
+    include_hidden_text?: boolean;
+  }) => request<TextResponse>("/api/text", input),
 };
 
 export const SCHEMA_PRESETS: ReadonlyArray<{

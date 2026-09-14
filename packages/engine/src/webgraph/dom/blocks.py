@@ -377,17 +377,30 @@ paragraph of its own in the Markdown right before the heading it belongs to.
 """
 
 
-def strip_permalinks(root: HtmlElement) -> None:
-    """Drop the permalink anchors documentation generators attach to headings, and the
-    edit-section controls a wiki does."""
+def strip_permalinks(root: HtmlElement, *, keep_hidden_text: bool = False) -> None:
+    """Drop the permalink anchors documentation generators attach to headings, the
+    edit-section controls a wiki does, and the screen-reader-only labels.
+
+    `keep_hidden_text` keeps the last two: the text a browser holds but a sighted reader
+    never sees -- "Option: BILLY, Bookcase, white" on every swatch, "Skip to main content",
+    "[edit]" beside every wiki heading. Off by default because that text is labels for
+    controls, not content, and a reader of the Markdown is better without it; on for a
+    caller that wants every string in the DOM. The permalink glyphs go either way: a `¶`
+    is a control's glyph, not text.
+    """
     permalinks = set(PERMALINK_CLASSES)
     controls = set(HEADING_CONTROL_CLASSES)
     for element in root.xpath(".//*[@class]"):
         classes = set((element.get("class") or "").lower().split())
         if not (
             (element.tag == "a" and classes & permalinks)
-            or classes & controls
-            or (classes & SR_ONLY_CLASSES and not _sr_only_is_content(element))
+            or (
+                not keep_hidden_text
+                and (
+                    classes & controls
+                    or (classes & SR_ONLY_CLASSES and not _sr_only_is_content(element))
+                )
+            )
         ):
             continue
         parent = element.getparent()

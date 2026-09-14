@@ -437,8 +437,12 @@ def resolve_page(
     strategy: Strategy | None = None,
     fetch_config: FetchConfig | None = None,
     render_config: RenderConfig | None = None,
+    include_hidden_text: bool = False,
 ) -> ResolvedPage:
     """Resolve a page as completely as possible.
+
+    `include_hidden_text` is passed to `build_document`: keep screen-reader-only labels and
+    wiki edit controls rather than stripping them.
 
     `strategy` means exactly what it says, and unset means **complete**:
 
@@ -471,7 +475,10 @@ def resolve_page(
     if static_result.ok and static_result.is_html and static_result.html.strip():
         try:
             static_doc = build_document(
-                static_result.html, static_result.url, headers=static_result.headers
+                static_result.html,
+                static_result.url,
+                headers=static_result.headers,
+                include_hidden_text=include_hidden_text,
             )
         except ValueError:
             static_doc = None
@@ -542,6 +549,7 @@ def resolve_page(
         geometry=geometry,
         headers=static_result.headers,
         runtime=observed,
+        include_hidden_text=include_hidden_text,
     )
 
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:
