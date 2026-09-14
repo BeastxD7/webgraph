@@ -373,6 +373,51 @@ class TestProductSheet:
         assert len(_prune_other_sections(blocks, _OTHER_SECTION)) == 301
 
 
+class TestMarketplaceSections:
+    """etsy.com: under the listing sit "Meet your seller", "Shop policies for …", "Did you
+    know?", a payment-methods box and a hidden "What's wrong with this listing?" report
+    dialog -- 860 words around a 132-word sheet (P 0.15). They are the marketplace, not the
+    product, and go the way reviews and related grids do. Shipping, delivery and returns
+    were tried in the same list and left out: newegg's "Return Policies" and zalando's
+    "Delivery" are in the annotators' sheet."""
+
+    @staticmethod
+    def listing() -> list[Block]:
+        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
+            return Block(text=text, tag="p", xpath=f"/html/body/main/div/p[{i + 1}]", dom_index=i, kind=kind, level=level, in_main=True, region="main")
+
+        blocks = [
+            b("What\u2019s wrong with this listing?", 0, kind=BlockKind.HEADING, level=2),
+            b("Share more specifics to help us review this item and protect our marketplace from bad actors.", 1),
+            b("It's not handmade, vintage, or craft supplies", 2),
+            b("Handmade Stoneware Coffee Mug", 3, kind=BlockKind.HEADING, level=1),
+            b("Price: USD 99.60", 4),
+            b("Item details", 5, kind=BlockKind.HEADING, level=2),
+            b("Materials: Ceramic", 6),
+            b("Capacity: 350 milliliters", 7),
+            b(f"{PROSE} A ceramic mug with a convenient handle, glazed in the folk style.", 8),
+            b("Return Policies", 9, kind=BlockKind.HEADING, level=2),
+            b("Returns and exchanges accepted within 14 days.", 10),
+            b("Did you know?", 11, kind=BlockKind.HEADING, level=2),
+            b(f"{PROSE} Purchase protection means you get what you ordered or your money back.", 12),
+            b("Meet your seller", 13, kind=BlockKind.HEADING, level=2),
+            b("Paul Fryman", 14),
+            b(f"{PROSE} Owner of the store, usually responds within a few hours.", 15),
+            b("Shop policies for PotteryParkStore", 16, kind=BlockKind.HEADING, level=2),
+            b(f"{PROSE} Cancellations accepted within 24 hours of purchase; secure payment options.", 17),
+        ]
+        return blocks
+
+    def test_seller_policy_and_report_sections_go_and_the_sheet_stays(self) -> None:
+        from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
+
+        texts = [x.text for x in _prune_other_sections(self.listing(), _OTHER_SECTION)]
+        assert texts[0] == "Handmade Stoneware Coffee Mug"
+        assert "Materials: Ceramic" in texts and "Return Policies" in texts
+        assert "Returns and exchanges accepted within 14 days." in texts
+        assert not any(t.startswith(("Did you know", "Meet your seller", "Paul Fryman", "Shop policies", "What")) for t in texts)
+        assert not any("Purchase protection" in t or "Cancellations accepted" in t or "responds within" in t for t in texts)
+
 class TestRivers:
     """cbsnews.com: a "Trending News" box dropped between the third and fourth paragraphs,
     and a "More World" river of teasers under the article. The box is teasers until the
