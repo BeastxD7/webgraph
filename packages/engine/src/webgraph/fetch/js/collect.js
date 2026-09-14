@@ -64,7 +64,11 @@
 
     if (style.display === 'none') { el.setAttribute(HIDDEN, 'display'); continue; }
     if (style.visibility === 'hidden') { el.setAttribute(HIDDEN, 'visibility'); continue; }
-    if (style.opacity === '0') { el.setAttribute(HIDDEN, 'opacity'); continue; }
+    // Opacity 0 is marked but still measured: the box is laid out, and content faded in
+    // by an entrance animation has to be ordered by where it sits, not by where it is in
+    // the source (apple.com/iphone's "iPhone 18 Pro" hero, unmeasured, was slotted after the
+    // other hero's image and before its heading).
+    if (style.opacity === '0') { el.setAttribute(HIDDEN, 'opacity'); }
     const box = el.getBoundingClientRect();
     // Screen-reader-only text, measured rather than named: the convention clips the element
     // to a 1px box with overflow hidden (or `clip: rect(0 0 0 0)` / `clip-path: inset(50%)`).
@@ -75,6 +79,24 @@
       /^inset\((?:50|100)%\)$/.test(style.clipPath || '');
     if (clipped && (el.textContent || '').trim()) { el.setAttribute(HIDDEN, 'clipped'); continue; }
     if (box.width <= 0 || box.height <= 0) continue;
+    // Inside a collapsed ancestor: an accordion tray is `overflow: hidden` at height 0 and
+    // its paragraphs keep their natural boxes underneath the next item's heading
+    // (apple.com/iphone, "Significant others"). Ordered by those boxes the trays zip with
+    // the headings; the text is real, but it has no position on the page. It is marked
+    // `overflow`, kept, and slotted after its heading like any unmeasured block. Only an
+    // ancestor that is itself collapsed (a box of no height or no width) counts: a carousel
+    // clips horizontally at full height and its later cards are reachable by scrolling, and
+    // their boxes say, correctly, that they come later.
+    let collapsed = false;
+    for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const as = window.getComputedStyle(a);
+      const ox = as.overflowX, oy = as.overflowY;
+      if (ox !== 'hidden' && ox !== 'clip' && oy !== 'hidden' && oy !== 'clip') continue;
+      const ab = a.getBoundingClientRect();
+      if (((oy === 'hidden' || oy === 'clip') && ab.height <= 1) ||
+          ((ox === 'hidden' || ox === 'clip') && ab.width <= 1)) { collapsed = true; break; }
+    }
+    if (collapsed && (el.textContent || '').trim()) { el.setAttribute(HIDDEN, 'overflow'); continue; }
 
     rects[id] = {
       // Page-relative, not viewport-relative: a scrolled viewport would otherwise

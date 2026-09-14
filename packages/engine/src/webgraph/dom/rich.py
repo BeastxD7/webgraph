@@ -941,10 +941,11 @@ def _drop_hidden_twins(root: HtmlElement) -> None:
             parent.remove(hidden)
 
 
-_ABSENT_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility"})
-"""The ways of hiding that mean "not on the page": `display: none` and `visibility: hidden`.
-`opacity` is not one -- a scroll animation starts its text at opacity 0 -- and `clipped`
-is handled by `_drop_clipped` before this runs."""
+_ABSENT_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility", "overflow"})
+"""The ways of hiding that mean "not on the page": `display: none`, `visibility: hidden`
+and `overflow` (clipped out entirely by an `overflow: hidden` ancestor -- a collapsed
+accordion tray). `opacity` is not one -- a scroll animation starts its text at opacity 0
+-- and `clipped` is handled by `_drop_clipped` before this runs."""
 
 
 def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
