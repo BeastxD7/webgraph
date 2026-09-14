@@ -1,0 +1,38 @@
+# Whole-page fidelity set: old, plain and ugly pages on purpose, none that change by the
+# minute (the oracle is cached between runs; a front page that turns over makes noise).
+# name url
+# pre-CSS and frameset pages
+cmu-frameset https://www.cs.cmu.edu/~rgs/alice-table.html
+textfiles http://www.textfiles.com/
+columbia-sample http://www.columbia.edu/~fdc/sample.html
+stallman https://stallman.org/
+pgraham https://www.paulgraham.com/articles.html
+w3c-1989 https://www.w3.org/History/1989/proposal.html
+gnu-free-sw https://www.gnu.org/philosophy/free-sw.html
+catb-smart-questions http://www.catb.org/~esr/faqs/smart-questions.html
+unicode-faq https://www.cl.cam.ac.uk/~mgk25/unicode.html
+gutenberg-84 https://www.gutenberg.org/files/84/84-h/84-h.htm
+tldp-index https://www.tldp.org/HOWTO/HOWTO-INDEX/howtos.html
+rfc2616 https://www.rfc-editor.org/rfc/rfc2616.html
+spacejam-1996 https://www.spacejam.com/1996/
+cameronsworld https://www.cameronsworld.net/
+mfw https://motherfuckingwebsite.com/
+# reference and documentation with old markup
+sqlite-lang https://sqlite.org/lang.html
+posix-awk https://pubs.opengroup.org/onlinepubs/9699919799/utilities/awk.html
+pgsql-select https://www.postgresql.org/docs/current/sql-select.html
+php-array-map https://www.php.net/manual/en/function.array-map.php
+perldoc-perlre https://perldoc.perl.org/perlre
+cppref-vector https://en.cppreference.com/w/cpp/container/vector
+hyperspec-mapc https://www.lispworks.com/documentation/HyperSpec/Body/f_mapc_.htm
+ibiblio-wm http://www.ibiblio.org/wm/paint/auth/
+# link- and table-shaped pages
+craigslist-best https://www.craigslist.org/about/best/all/
+craigslist-sites https://www.craigslist.org/about/sites
+berkshire https://www.berkshirehathaway.com/
+arngren https://arngren.net/
+w3schools-tables https://www.w3schools.com/html/html_tables.asp
+# modern controls
+nasa-apollo11 https://www.nasa.gov/history/apollo-11-mission-overview/
+mdn-table https://developer.mozilla.org/en-US/docs/Web/HTML/Element/table
+arxiv-1706 https://arxiv.org/abs/1706.03762

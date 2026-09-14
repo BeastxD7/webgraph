@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-14, PR #72)
+- `benchmark/fidelity/run.py` (`make bench-fidelity`): the whole-page Markdown scored
+  against Chromium on 32 old, plain and ugly pages — word recall (nothing lost), extra
+  share (nothing added), order inversions, structure counts — with a cached oracle and
+  `--compare`. It refuses to score a walled oracle and reads a frameset's frames. The PR
+  template and CONTRIBUTING name it as the measure for changes to blocks, the union,
+  ordering or rendering. `docs/SESSION-18-WHOLE-PAGE.md` records the session.
+
 ### Fixed (2026-09-14, PR #71)
 - An old MediaWiki `editsection` strip (`[edit]` beside every heading and table row on
   cppreference.com, hidden by its stylesheet) is a heading control like `mw-editsection`:
