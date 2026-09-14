@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #78)
+- A pipe table's cells carry their links only when the caller asked for links; #68 had
+  rendered `[text](href)` into every cell regardless of `include_links`, which cost
+  WebMainBench (scored with links off) table_edit 0.390 → 0.338 unnoticed. Back to 0.395;
+  overall 0.7284 → 0.7331.
+
 ### Fixed (2026-09-14, PR #75) — Markdown structure a reader sees
 Found by a census of 25 old and plain pages against Chromium's own text.
 - `<hr>` is a block (`BlockKind.RULE`, rendered `---`); it was dropped outright on 6 of
