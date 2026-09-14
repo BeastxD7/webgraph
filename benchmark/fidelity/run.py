@@ -8,7 +8,9 @@ resolved the way the API resolves it, rendered to Markdown, and compared with Ch
 own view of the page:
 
 - **word recall**: share of the page's visible words present in our `text` (1.0 = nothing
-  lost; this is the number that must not drop);
+  lost; this is the number that must not drop). The page's words are `innerText` plus the
+  visible text of every open shadow root -- `innerText` stops at a shadow boundary, and
+  MDN keeps its code examples and compatibility table inside one, on screen;
 - **extra share**: share of our words that are not on the page (hidden menus, walls);
 - **order inversions**: the page's visible text lines, sampled in DOM order, found in our
   text out of order (a monotone check, so a repeated phrase does not count);
@@ -62,12 +64,36 @@ with sync_playwright() as p:
             pass
     VIEW = '''() => {
       const vis = el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
-      const lines = [];
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let n;
-      while ((n = walker.nextNode())) { const t = n.textContent.trim(); if (t.length >= 25 && n.parentElement && vis(n.parentElement) && !['SCRIPT','STYLE','NOSCRIPT'].includes(n.parentElement.tagName)) lines.push(t.slice(0, 80)); }
-      const count = (sel) => [...document.querySelectorAll(sel)].filter(vis).length;
-      return { text: document.body.innerText, lines, headings: count('h1,h2,h3,h4,h5,h6'), tables: count('table'), lists: count('ul,ol'), images: count('img'), links: count('a[href]') };
+      const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE']);
+      const HEAD = /^H[1-6]$/;
+      const lines = [], counts = {headings: 0, tables: 0, lists: 0, images: 0, links: 0};
+      // The light DOM is what innerText says it is. Open shadow roots are walked as well:
+      // body.innerText stops at a shadow boundary, and MDN keeps every code example and
+      // its compatibility table inside one -- on screen, and 2,700 words "extra" without this.
+      const shadowText = [];
+      const walk = (root, inShadow) => {
+        for (const node of root.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            const el = node.parentElement; if (!el || SKIP.has(el.tagName) || !vis(el)) continue;
+            const t = node.textContent.trim(); if (!t) continue;
+            if (inShadow) shadowText.push(t);
+            if (t.length >= 25) lines.push(t.slice(0, 80));
+          } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (SKIP.has(node.tagName)) continue;
+            if (vis(node)) {
+              if (HEAD.test(node.tagName)) counts.headings++;
+              else if (node.tagName === 'TABLE') counts.tables++;
+              else if (node.tagName === 'UL' || node.tagName === 'OL') counts.lists++;
+              else if (node.tagName === 'IMG') counts.images++;
+              else if (node.tagName === 'A' && node.hasAttribute('href')) counts.links++;
+            }
+            if (node.shadowRoot) walk(node.shadowRoot, true);
+            walk(node, inShadow);
+          }
+        }
+      };
+      walk(document.body, false);
+      return Object.assign({ text: document.body.innerText + '\\n' + shadowText.join('\\n'), lines }, counts);
     }'''
     # A frameset's own body has no text; the page a reader sees is its frames, in order.
     data = {"text": "", "lines": [], "headings": 0, "tables": 0, "lists": 0, "images": 0, "links": 0}
