@@ -1348,6 +1348,73 @@ class TestCodeHeaders:
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
         assert len(blocks) == 2
 
+    def test_a_short_lead_in_before_code_is_prose(self) -> None:
+        """perldoc.perl.org/perlre: "is made equivalent to", "For example, this program",
+        "will output the following:" -- each a `<p>` of four words or fewer directly before
+        a `<pre>`, and each was dropped as if it were MDN's language-and-copy strip. Sixty
+        words of the page. A paragraph is prose whatever its length; the strip is a
+        container with a control in it, or a bare language label."""
+        html = (
+            "<main><pre><code>m{ a }x;</code></pre><p>is made equivalent to</p>"
+            "<pre><code>m{ b }x;</code></pre><p>For example, this program</p>"
+            "<pre><code>#!perl -l</code></pre><p>will output the following:</p>"
+            "<pre><code>hello</code></pre><div>Thus</div><pre><code>x</code></pre></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
+        assert [b.text for b in blocks] == [
+            "m{ a }x;",
+            "is made equivalent to",
+            "m{ b }x;",
+            "For example, this program",
+            "#!perl -l",
+            "will output the following:",
+            "hello",
+            "Thus",
+            "x",
+        ]
+
+    def test_a_bare_language_label_before_code_is_still_a_strip(self) -> None:
+        """No button, but the label is the block's own language: a strip, not a sentence."""
+        html = (
+            '<main><div class="header"><span>js</span></div><pre class="language-js">x</pre>'
+            "<div>Copy</div><pre>y</pre><div>Python</div><pre><code class=\"language-python\">z</code></pre></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
+        assert [b.text for b in blocks] == ["x", "y", "z"]
+
+    def test_phpbbs_code_select_all_is_a_strip(self) -> None:
+        """forums.debian.net: `<p>Code: <a href="#">Select all</a></p>` above every `<pre>`
+        -- a paragraph, but one holding a control that goes nowhere. WebMainBench's truth
+        for that page has no "Code: Select all"."""
+        html = (
+            '<main><div class="codebox"><p>Code: <a href="#" onclick="selectCode(this)">Select all</a></p>'
+            "<pre><code>apt install foo</code></pre></div></main>"
+        )
+        blocks = extract_rich_blocks(parse_html(html), "https://forum.test/")
+        assert [b.text for b in blocks] == ["apt install foo"]
+
+    def test_a_word_that_is_not_a_label_stays_even_in_a_div(self) -> None:
+        html = '<main><div>Output</div><pre>x</pre><div>Example:</div><pre>y</pre></main>'
+        blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
+        assert [b.text for b in blocks] == ["Output", "x", "Example:", "y"]
+
+
+class TestNotALanguage:
+    def test_a_highlighters_undefined_is_no_language(self) -> None:
+        """highlight.js labels a block it could not classify `language-undefined`, and
+        perldoc's fences came out as ```undefined -- a word the page never showed."""
+        from webgraph.render_markdown import MarkdownOptions, to_markdown
+
+        for token in ("undefined", "none", "plaintext", "text", "nohighlight"):
+            html = f'<main><pre><code class="hljs language-{token}">m{{ a }}x;</code></pre></main>'
+            document = build_document(html, "https://docs.test/")
+            assert document.blocks[0].language is None, token
+            assert "```\n" in to_markdown(document, options=MarkdownOptions())
+
+    def test_a_declared_language_still_counts(self) -> None:
+        html = '<main><pre><code class="hljs language-perl">m{ a }x;</code></pre></main>'
+        assert build_document(html, "https://docs.test/").blocks[0].language == "perl"
+
 
 class TestCodeEditors:
     """A browser-side code editor's DOM is one code block: its lines, not its gutter.

@@ -136,6 +136,59 @@ class TestSelection:
         assert [b.dom_index for b in selected] == sorted(b.dom_index for b in selected)
 
 
+class TestCodeCaptions:
+    """A tutorial is prose, then a dozen "Start the service:" / `code` pairs. Each caption
+    is a one-to-three-word paragraph that, valued on its own, pays the block cost and
+    nothing back; a dozen in a row outweigh the code between them (floored at zero) and
+    Kadane ends the run before the tutorial's last commands. WebMainBench 0ed88efa
+    (hrace009.com's LAMP guide): code_edit 1.000 → 0.874 the moment PR #86 started reading
+    those captions at all. A caption is as deliberate as its code and costs nothing."""
+
+    @staticmethod
+    def tutorial() -> list[Block]:
+        blocks = [block(PROSE, index=0), block(PROSE + " More.", index=1)]
+        index = 2
+        for step in range(12):
+            blocks.append(block(f"Step {step}:", index=index))
+            blocks.append(block(f"service thing{step} start", kind=BlockKind.CODE, index=index + 1))
+            index += 2
+        blocks.append(block("Terms Privacy", rich="[Terms](/t) [Privacy](/p)", index=index))
+        return blocks
+
+    def test_the_last_commands_of_a_tutorial_are_kept(self) -> None:
+        selected = select_main_content(self.tutorial(), config=MainContentConfig(block_cost=5.0))
+        texts = [b.text for b in selected]
+        assert "service thing11 start" in texts, "the run reached the end of the tutorial"
+        assert "Step 11:" in texts
+        assert "Terms Privacy" not in texts
+
+    def test_a_short_paragraph_before_prose_still_costs(self) -> None:
+        """Only a caption -- a short paragraph *before code* -- is floored; a stray short
+        line before a paragraph is judged as it always was."""
+        from webgraph.main_content import _introduces_code
+
+        blocks = [block("Then", index=0), block(PROSE, index=1), block("Then", index=2), block("x = 1", kind=BlockKind.CODE, index=3)]
+        assert _introduces_code(blocks, 0) is False
+        assert _introduces_code(blocks, 2) is True
+
+    def test_a_link_strip_before_code_is_not_a_caption(self) -> None:
+        """exploit-db: "« Previous Paper Next Paper »" above the paper's `<pre>` -- short,
+        before code, and all links. Navigation, not a caption."""
+        from webgraph.main_content import _introduces_code
+
+        blocks = [
+            block("« Previous Paper Next Paper »", rich="« [Previous Paper](/p) [Next Paper](/n) »", index=0),
+            block("x = 1", kind=BlockKind.CODE, index=1),
+        ]
+        assert _introduces_code(blocks, 0) is False
+
+    def test_a_long_paragraph_before_code_is_not_a_caption(self) -> None:
+        from webgraph.main_content import _introduces_code
+
+        blocks = [block(PROSE, index=0), block("x = 1", kind=BlockKind.CODE, index=1)]
+        assert _introduces_code(blocks, 0) is False
+
+
 class TestGuards:
     """A selector that returns a fragment is worse than one that returns everything."""
 

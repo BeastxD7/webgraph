@@ -221,6 +221,10 @@ CONTENT_COST_CEILING = 18.0
 CONTENT_COST_BLOCK_CAP = 400
 CONTENT_BLOCK_COST = 13.0  # the fixed cost, when CONTENT_ADAPTIVE_COST is False
 
+# A paragraph of at most this many words directly before a code block is the code's caption
+# ("Start the service:", "for 64bit:") and, like the code, never costs the run (floored at 0).
+CODE_CAPTION_MAX_WORDS = 8
+
 # Words credited to a heading beyond its own count -- headings are short and are content.
 CONTENT_HEADING_BONUS = 4.0
 # Share of a table's or code block's words credited even when they look link-dense.

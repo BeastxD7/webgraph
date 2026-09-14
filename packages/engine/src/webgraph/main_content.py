@@ -64,6 +64,8 @@ from typing import Final
 from webgraph import config
 from webgraph.types import STRUCTURE_ONLY, Block, BlockKind, restore_structure, without_structure
 
+CODE_CAPTION_MAX_WORDS = config.CODE_CAPTION_MAX_WORDS
+
 __all__ = [
     "MainContentConfig",
     "content_value",
@@ -450,6 +452,29 @@ def content_value(block: Block, config: MainContentConfig) -> float:
     return free - config.block_cost
 
 
+def _introduces_code(blocks: Sequence[Block], index: int) -> bool:
+    """Whether block `index` is a short paragraph directly before a code block."""
+    block = blocks[index]
+    if block.kind is not BlockKind.PARAGRAPH or word_count(block.text) > CODE_CAPTION_MAX_WORDS:
+        return False
+    # A caption is prose. "« Previous Paper Next Paper »" above an exploit-db listing is
+    # short and before a `<pre>` too, and it is navigation: floored, it bridged the page's
+    # metadata table into the run (WebMainBench 5814e2e6, a table column at 0.000 that
+    # was not there before).
+    if link_density(block) > 0.5:
+        return False
+    return index + 1 < len(blocks) and blocks[index + 1].kind is BlockKind.CODE
+
+
+def _neutral_code(blocks: Sequence[Block], unit: tuple[int, int, float]) -> bool:
+    """A single-block unit worth exactly nothing that is a code block or its caption."""
+    start, end, value = unit
+    if end - start != 1 or value != 0.0:
+        return False
+    block = blocks[start]
+    return block.kind is BlockKind.CODE or _introduces_code(blocks, start)
+
+
 _INDEX: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")
 
 
@@ -574,6 +599,15 @@ def select_main_content(
             return list(blocks)
 
     values = [content_value(block, config) for block in blocks]
+    # A short paragraph introducing a code block -- "for 64bit:", "Start the service:",
+    # "Then" -- is the code's caption and as deliberate as the code; it is floored at zero
+    # for the same reason the code is (see `content_value`). Left negative, a tutorial's
+    # dozen captions paid the block cost a dozen times along the article and Kadane cut
+    # the run before its last commands: WebMainBench 0ed88efa (hrace009.com's LAMP guide)
+    # code_edit 1.000 → 0.874 the moment those captions were read at all (PR #86).
+    values = [
+        max(v, 0.0) if _introduces_code(blocks, i) else v for i, v in enumerate(values)
+    ]
     if config.product_sheet:
         values = [
             max(v, _SPEC_VALUE) if _is_spec(block) else v
@@ -628,6 +662,13 @@ def select_main_content(
         first += 1
     while last - 1 > first and units[last - 1][2] <= 0:
         last -= 1
+    # …and forward again over the code that closes it. A code block or its caption is
+    # floored at zero, and zero neither raises Kadane's best nor survives the trim above,
+    # so a tutorial whose last words are "Start the service:" and a command lost exactly
+    # those -- the run ended at the last paragraph. Neutral blocks that *follow* the run
+    # directly are kept as far as they go, up to the first block worth anything else.
+    while last < len(units) and _neutral_code(blocks, units[last]):
+        last += 1
     best = (units[first][0], units[last - 1][1])
 
     # A run worth nothing is not a run. When every block scores negative -- a sitemap, an
