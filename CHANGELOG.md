@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PR #65)
+- What the browser hid stays hidden through the static+rendered union: a block only the
+  static fetch had, whose text the renderer laid out as `display: none` / `visibility:
+  hidden`, is not "content the render lost" and stays out (php.net's hidden manual TOC,
+  cppreference's hover menus, nasa.gov's mega-menu: 330 → 233, 254 → 135, 299 → 153
+  blocks; live suite: allbirds precision 0.11 → 0.75, ikea 348 → 205 blocks, recall
+  unchanged on every page).
+- A fragment-href anchor whose text is only a permalink glyph (`¶`, `#`, `§`, `🔗`) is a
+  permalink whatever its class; php.net's script-added `¶` no longer duplicates every
+  heading.
+
+### Added (2026-09-14, PR #65)
+- `tools/runs_dashboard.py`: a dependency-free local page (`http://127.0.0.1:8765/`)
+  showing every benchmark run on the machine — running / finished / failed, elapsed,
+  a progress bar from the runner's own counter lines, the last output and the result
+  tables. `tools/run_logged.py <label> -- <command>` starts a run with its command, pid,
+  start and exit recorded beside the log so the state is exact.
+
 ### Fixed (2026-09-14, PR #64)
 - A bot wall served to one of the two fetches (plain or browser) while the other got the
   real page is left out and named in `render_error`, instead of being merged into the
