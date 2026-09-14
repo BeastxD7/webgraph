@@ -107,7 +107,7 @@ export const BOARDS: readonly Board[] = [
       "First by 0.002 over an entry whose author tuned it on this split and discloses so; a margin that small is a tie. On the 511-page held-out test split, never used for any decision here, this engine scores 0.875 (routed) and 0.864 (unrouted); rs-trafilatura's author reports 0.893 there, so the test split still has the published entry ahead.",
     max: 1,
     entries: [
-      { name: "webgraph", score: 0.861, self: true, note: "run here 14 Sep 2026, routed by page type; 0.836 unrouted; was 0.855" },
+      { name: "webgraph", score: 0.862, self: true, note: "run here 14 Sep 2026 (evening), routed by page type; 0.838 unrouted; was 0.861" },
       { name: "rs-trafilatura", score: 0.859, note: "published; author's own, tuned on this split" },
       { name: "MinerU-HTML", score: 0.827, note: "published 2026; not re-run here" },
       { name: "trafilatura 2.2.0", score: 0.813, note: "run here, same harness" },
@@ -131,7 +131,7 @@ export const BOARDS: readonly Board[] = [
     max: 1,
     entries: [
       { name: "MinerU-HTML", score: 0.826 },
-      { name: "webgraph", score: 0.646, self: true, note: "column mean, comparable to the published rows; was 0.631" },
+      { name: "webgraph", score: 0.646, self: true, note: "column mean, comparable to the published rows; overall 0.733, table_edit 0.395 after a rendering regression (#68) was found by re-running this board and fixed (#78)" },
       { name: "magic-html", score: 0.5 },
       { name: "trafilatura (md)", score: 0.401 },
       { name: "trafilatura (txt)", score: 0.372 },
@@ -266,12 +266,13 @@ export const PROGRESSION: readonly Step[] = [
   { label: "main by script, prose guard", score: 0.85, why: "a Japanese <main> behind a mega-menu; a short story keeps losing its thread" },
   { label: "rails, <article>, quotes, forum furniture", score: 0.855, why: "tickers and share bars; the dominant article; repeated quotes; signatures and user cards" },
   { label: "restated wholes, named chrome, cost re-swept, article body", score: 0.861, why: "an article repeated as one block; div#footer and div.nav; the boundary cost re-swept for the stripped page; the declared article body" },
+  { label: "the whole page: pre-CSS markup, walls, hidden menus, lists, repeats, structure", score: 0.862, why: "framesets, <br>, <li><p>, <dl>, <hr>, table-cell links; a wall on one fetch left out; what the browser hid stays hidden; measured on the boards to stay flat while the whole-page suite moved" },
 ];
 
 /** When and against what the rows marked as this engine were measured. */
 export const MEASURED = {
-  date: "14 September 2026",
-  commit: "2232c10",
+  date: "14 September 2026 (evening)",
+  commit: "19f601f",
 } as const;
 
 /**
@@ -296,13 +297,13 @@ export const TYPE_SYSTEMS: readonly TypeSystem[] = [
 ];
 
 export const TYPE_ROWS: readonly TypeRow[] = [
-  { type: "article", n: 793, scores: { webgraph: 0.944, rs: 0.932, mineru: 0.928, hydra: 0.9289, traf: 0.924 } },
+  { type: "article", n: 793, scores: { webgraph: 0.945, rs: 0.932, mineru: 0.928, hydra: 0.9289, traf: 0.924 } },
   { type: "documentation", n: 91, scores: { webgraph: 0.929, rs: 0.931, mineru: 0.838, hydra: 0.9231, traf: 0.888 } },
-  { type: "service", n: 165, scores: { webgraph: 0.842, rs: 0.843, mineru: 0.824, hydra: 0.7993, traf: 0.751 } },
-  { type: "forum", n: 113, scores: { webgraph: 0.8, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
-  { type: "collection", n: 117, scores: { webgraph: 0.692, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
+  { type: "service", n: 165, scores: { webgraph: 0.846, rs: 0.843, mineru: 0.824, hydra: 0.7993, traf: 0.751 } },
+  { type: "forum", n: 113, scores: { webgraph: 0.801, rs: 0.792, mineru: 0.794, hydra: 0.7275, traf: 0.575 } },
+  { type: "collection", n: 117, scores: { webgraph: 0.695, rs: 0.713, mineru: 0.506, hydra: 0.6093, traf: 0.518 } },
   { type: "listing", n: 99, scores: { webgraph: 0.706, rs: 0.704, mineru: 0.71, hydra: 0.6612, traf: 0.55 } },
-  { type: "product", n: 119, scores: { webgraph: 0.639, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
+  { type: "product", n: 119, scores: { webgraph: 0.637, rs: 0.67, mineru: 0.619, hydra: 0.5895, traf: 0.562 } },
 ];
 
 /** Benchmarks a reader would expect here, and why they are not. */
