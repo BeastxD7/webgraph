@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint check check-clean bench bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
+.PHONY: help install api web dev test lint check check-clean bench bench-live bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
 
 help:
 	@echo "webgraph — development commands"
@@ -12,6 +12,7 @@ help:
 	@echo "  make lint      Lint and type-check everything"
 	@echo "  make bench     Score schema extraction against the benchmark corpus"
 	@echo "  make bench-content Score main-content extraction against three other tools"
+	@echo "  make bench-live    Score a fixed set of live sites against Chromium's own text (diff two runs)"
 	@echo "  make bench-routes  Score route discovery against a real-browser oracle"
 	@echo "  make bench-union   Score union block placement (needs bench-union-fetch once)"
 	@echo "  make bench-reading-order  Score reading order vs a DOM walk"
@@ -66,6 +67,9 @@ check-clean:
 
 check-responsive:
 	uv run --package webgraph python tools/check_responsive.py
+
+bench-live:
+	uv run --package webgraph python benchmark/live/run.py --out live-suite.json
 
 bench-content:
 	cd packages/engine && uv run --group bench python ../../benchmark/content_quality/run.py

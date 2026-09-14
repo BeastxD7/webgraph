@@ -121,9 +121,15 @@ The most useful contribution is a URL. Open an
 it asks for the page, what a reader sees, and what webgraph produced. Every extraction fix
 in `docs/SESSION-16-LIVE-HARDENING.md` began as exactly that.
 
-To diagnose one yourself: `uv run webgraph text <url>` prints the blocks in reading order;
-the web UI's "Copy run logs" carries every decision the engine made for that page; and
-`benchmark/wcxb/analyze.py` explains a corpus page block by block.
+To diagnose one yourself: `uv run python tools/inspect_page.py <url>` prints a live page
+block by block through the production path -- chosen or not, the value the boundary step
+gave it, landmark, widget, whether the browser measured it; `tools/inspect_corpus_page.py`
+does the same for a WCXB or Zyte page beside its ground truth; the web UI's "Copy run logs"
+carries every decision the engine made for that page. To check a change against the web
+rather than the corpora, `benchmark/live/run.py` scores a fixed set of live sites through
+the production path against Chromium's own text and diffs two runs; a page that moves is
+a page to open. These are the tools the pull-request template's "how to reproduce"
+section expects -- nothing that lives only on one machine.
 
 ## Where decisions are recorded
 

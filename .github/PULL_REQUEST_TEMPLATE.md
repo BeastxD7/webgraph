@@ -39,12 +39,19 @@ on it, and what webgraph produced instead. For a feature: what could not be done
 
 ## How to reproduce (before this change)
 
-<!-- Exact steps a reviewer can run on `main` to see the problem. Commands, not prose. -->
+<!--
+Exact steps a reviewer can run on `main`, from a fresh clone, to see the problem. Commands,
+not prose, and only tools that are in this repository -- nothing from a local scratch
+directory. Corpus paths are the `--corpus` clone the runner README names.
+-->
 
 ```bash
-# e.g.
-uv run webgraph text "https://example.com/page" | head -40
-# or
+# a live page, block by block through the production path (chosen / value / landmark / widget)
+uv run python tools/inspect_page.py "https://example.com/page" --chosen
+# a benchmark page against its ground truth (T = in the truth): WCXB by id, Zyte by id prefix
+uv run python tools/inspect_corpus_page.py wcxb 0617 --corpus <wcxb clone> --disagree
+uv run python tools/inspect_corpus_page.py zyte e372e42c --corpus <zyte clone>
+# or the API
 curl -s -X POST localhost:8000/api/text -H 'content-type: application/json' -d '{"url":"..."}' | jq .content_markdown
 ```
 
@@ -85,11 +92,13 @@ Required for extraction, reading-order, routing, discovery and performance chang
 
 | benchmark | before | after |
 |---|---:|---:|
-| WCXB dev, routed — overall | | |
-| WCXB dev — the page types this touches | | |
-| Zyte article-extraction (anything touching articles) | | |
-| reading order — discriminating / stacked / side-by-side | | |
+| WCXB dev, routed — overall (`benchmark/wcxb/run.py`) | | |
+| WCXB dev — the page types this touches (`benchmark/wcxb/per_page.py dump` on `main` and here, then `diff`) | | |
+| Zyte article-extraction (anything touching articles; `benchmark/article_extraction/run.py`) | | |
+| WCEB production path (anything touching comments, landmarks or the boundary; `benchmark/wceb/run.py`) | | |
+| reading order — discriminating / stacked / side-by-side (`benchmark/reading_order/run.py`) | | |
 | WebMainBench (anything touching tables, code, Markdown rendering) | | |
+| Live suite (`benchmark/live/run.py` on `main` and here, then `--compare`): pages that moved | | |
 
 Live pages re-checked (URL → what was verified):
 -->
