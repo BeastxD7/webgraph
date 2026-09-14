@@ -377,3 +377,90 @@ class TestChallengesAndEmptyPages:
         assert challenge_vendor("<script src='/cdn-cgi/challenge-platform/h/b'></script>") == "Cloudflare"
         assert challenge_vendor("<script>var _pxhd='x'</script>") == "PerimeterX"
         assert challenge_vendor("<p>Hello</p>") is None
+
+
+class TestAWallOnOneSide:
+    """Cloudflare let a plain fetch of columbia.edu/~fdc/sample.html through and answered
+    the browser with "Performing security verification … Ray ID". The union merged the
+    wall's sentences into a 4,000-word page, where the block-page check could not see
+    them. Each side is judged alone: the wall is left out and named, the page is the page.
+    """
+
+    PAGE = (
+        "<html><body><h1>Sample page</h1><p>The first paragraph of a real page, long "
+        "enough to be a paragraph.</p><p>And a second one, so the page has some words in "
+        "it.</p></body></html>"
+    )
+    WALL = (
+        "<html><body><h1>www.example.test</h1><p>Performing security verification</p>"
+        "<p>This website uses a security service to protect against malicious bots. This "
+        "page is displayed while the website verifies you are not a bot.</p>"
+        "<p>Ray ID: a3afa223992eaf9e</p></body></html>"
+    )
+
+    @staticmethod
+    def stub(monkeypatch: pytest.MonkeyPatch, *, static: str, rendered: str) -> None:
+        from webgraph import resolve as module
+        from webgraph.fetch.render import RenderResult
+        from webgraph.fetch.static import FetchResult
+
+        monkeypatch.setattr(module, "PLAYWRIGHT_AVAILABLE", True)
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=200,
+                html=static,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=True,
+            ),
+        )
+        monkeypatch.setattr(
+            module,
+            "render_page",
+            lambda url, config=None: RenderResult(  # noqa: ARG005
+                url=url, html=rendered, rects={}, ok=True
+            ),
+        )
+
+    def test_a_wall_served_to_the_browser_is_left_out_and_named(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import resolve as module
+
+        self.stub(monkeypatch, static=self.PAGE, rendered=self.WALL)
+        resolved = module.resolve_page("https://www.example.test/sample.html")
+        assert resolved.strategy is Strategy.STATIC_ONLY
+        assert "Ray ID" not in resolved.document.text
+        assert "first paragraph of a real page" in resolved.document.text
+        assert resolved.render_error is not None
+        assert "wall" in resolved.render_error and "Ray ID" in resolved.render_error
+
+    def test_a_wall_served_to_the_plain_fetch_is_left_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import resolve as module
+
+        self.stub(monkeypatch, static=self.WALL, rendered=self.PAGE)
+        resolved = module.resolve_page("https://www.example.test/sample.html")
+        assert resolved.strategy is Strategy.RENDERED_ONLY
+        assert "Ray ID" not in resolved.document.text
+        assert "first paragraph of a real page" in resolved.document.text
+
+    def test_walls_on_both_sides_still_raise(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        self.stub(monkeypatch, static=self.WALL, rendered=self.WALL)
+        with pytest.raises(PageBlockedError):
+            module.resolve_page("https://www.example.test/sample.html")
+
+    def test_two_real_pages_still_merge(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph import resolve as module
+
+        self.stub(monkeypatch, static=self.PAGE, rendered=self.PAGE)
+        resolved = module.resolve_page("https://www.example.test/sample.html")
+        assert resolved.strategy is Strategy.UNION

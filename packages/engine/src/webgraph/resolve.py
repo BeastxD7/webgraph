@@ -408,6 +408,22 @@ def _server_said(html: str, limit: int = 140) -> str:
     return text[:limit].strip() if len(text) >= 20 else ""
 
 
+def wall_evidence(document: Document) -> str | None:
+    """What gives this document away as a wall rather than a page, or None for a page.
+
+    The two shapes `_refuse_block_page` refuses, as a question rather than an exception:
+    a wall with words, or an empty document whose markup carries a bot-management
+    vendor's script. Asked of each side of a union separately -- see `resolve_page`.
+    """
+    evidence = block_page_evidence(document.text)
+    if evidence is not None:
+        return evidence
+    if document.text.strip() or any(b.kind is not BlockKind.PARAGRAPH for b in document.blocks):
+        return None
+    vendor = challenge_vendor(document.html)
+    return f"{vendor} bot challenge" if vendor is not None else None
+
+
 def _refuse_block_page(document: Document, *, status: int | None = None) -> None:
     """Raise rather than return a wall -- or nothing -- as if it were the page.
 
@@ -583,6 +599,42 @@ def resolve_page(
             # What the static fetch held is still reported when it was obtained: a caller
             # asking for the browser's view alone is entitled to know what it declined.
             static_chars=len(static_doc.text) if static_doc is not None else 0,
+            rendered_chars=chars,
+            union_chars=chars,
+            blocks_only_in_static=0,
+            blocks_only_in_rendered=0,
+            runtime=observed,
+        )
+
+    # A wall on one side only is that side's failure, not part of the page. Cloudflare
+    # let a plain fetch of columbia.edu/~fdc/sample.html through and answered the browser
+    # with "Performing security verification … Ray ID"; merged, the union carried the
+    # wall's sentences into the page's Markdown, and the block-page check could not see
+    # them inside a 4,000-word document. Each side is judged alone: the side that is a
+    # wall is left out and named, the other is the page. Both walls still raise.
+    static_wall = wall_evidence(static_doc)
+    rendered_wall = wall_evidence(rendered_doc)
+    if rendered_wall is not None and static_wall is None:
+        chars = len(static_doc.text)
+        return ResolvedPage(
+            url=static_doc.url,
+            document=static_doc,
+            strategy=Strategy.STATIC_ONLY,
+            static_chars=chars,
+            rendered_chars=0,
+            union_chars=chars,
+            blocks_only_in_static=0,
+            blocks_only_in_rendered=0,
+            render_error=f'the browser was served a wall, left out: "{rendered_wall}"',
+            runtime=observed,
+        )
+    if static_wall is not None and rendered_wall is None:
+        chars = len(rendered_doc.text)
+        return ResolvedPage(
+            url=rendered_doc.url,
+            document=rendered_doc,
+            strategy=Strategy.RENDERED_ONLY,
+            static_chars=0,
             rendered_chars=chars,
             union_chars=chars,
             blocks_only_in_static=0,
