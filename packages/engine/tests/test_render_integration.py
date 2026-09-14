@@ -232,3 +232,36 @@ class TestRenderFailure:
 
         assert result.ok
         assert result.url == f"{base}/real/page"
+
+
+class TestHiddenBoxes:
+    """apple.com/iphone, read in Chrome beside the engine.
+
+    A collapsed accordion tray is `overflow: hidden` at height 0 and its paragraph keeps a
+    natural box underneath the *next* item's heading, so an order by boxes zips trays with
+    headings. A hero faded in by an entrance animation is opacity 0 at load and used to go
+    unmeasured, so it was slotted by source position instead of where it sits. A copy of a
+    heading clipped to a 1px box is screen-reader-only whatever its class is called.
+    """
+
+    def test_collapsed_trays_follow_their_headings(self) -> None:
+        geometric, _ = render_fixture("hidden_boxes")
+        texts = [b.text for b in geometric.blocks]
+        assert texts.index("Item two") < texts.index("Tray two is collapsed; this paragraph has a box under item three.") < texts.index("Item three")
+        assert texts.index("Item three") < texts.index("Tray three is collapsed as well.")
+
+    def test_a_faded_hero_is_measured_where_it_sits(self) -> None:
+        geometric, _ = render_fixture("hidden_boxes")
+        texts = [b.text for b in geometric.blocks]
+        assert texts[:4] == [
+            "First hero, faded in later",
+            "Tagline of the first hero.",
+            "Second hero, visible at load",
+            "Tagline of the second hero.",
+        ]
+        faded = next(b for b in geometric.blocks if b.text == "First hero, faded in later")
+        assert faded.rect is not None
+
+    def test_a_clipped_copy_of_a_heading_is_dropped(self) -> None:
+        geometric, _ = render_fixture("hidden_boxes")
+        assert [b.text for b in geometric.blocks if b.text.startswith("Significant")] == ["Significant others"]

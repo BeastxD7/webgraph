@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Hidden boxes</title>
+<style>
+  body { margin: 0; width: 1000px; }
+  main { padding: 20px; }
+  .accordion { margin: 0; padding: 0; width: 320px; }
+  .accordion li { list-style: none; margin: 0; }
+  .accordion h3 { margin: 0; }
+  .tray { overflow: hidden; height: 0; }
+  .tray p { margin: 24px 0 0; }
+  .tray.open { height: auto; }
+  .hero { display: flex; flex-direction: column; }
+  .fade { opacity: 0; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style></head>
+<body>
+<main>
+  <div class="hero">
+    <h2 class="fade">First hero, faded in later</h2>
+    <p class="fade">Tagline of the first hero.</p>
+    <h2>Second hero, visible at load</h2>
+    <p>Tagline of the second hero.</p>
+  </div>
+  <h2>Significant others<span class="sr">Significant others</span></h2>
+  <ul class="accordion">
+    <li><h3>Item one</h3><div class="tray open"><p>Tray one is open and its paragraph is on the page.</p></div></li>
+    <li><h3>Item two</h3><div class="tray"><p>Tray two is collapsed; this paragraph has a box under item three.</p></div></li>
+    <li><h3>Item three</h3><div class="tray"><p>Tray three is collapsed as well.</p></div></li>
+  </ul>
+</main>
+</body>
+</html>
