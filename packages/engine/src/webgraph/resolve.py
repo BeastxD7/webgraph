@@ -612,9 +612,13 @@ def resolve_page(
     # wall's sentences into the page's Markdown, and the block-page check could not see
     # them inside a 4,000-word document. Each side is judged alone: the side that is a
     # wall is left out and named, the other is the page. Both walls still raise.
+    # The other side has to be a page with words of its own: old.reddit.com answers the
+    # browser with a wall and the plain fetch with a login redirect holding one empty
+    # image, and that is not the page either -- it falls through to the merge, which is
+    # refused as the wall it contains.
     static_wall = wall_evidence(static_doc)
     rendered_wall = wall_evidence(rendered_doc)
-    if rendered_wall is not None and static_wall is None:
+    if rendered_wall is not None and static_wall is None and static_doc.text.strip():
         chars = len(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
@@ -628,7 +632,7 @@ def resolve_page(
             render_error=f'the browser was served a wall, left out: "{rendered_wall}"',
             runtime=observed,
         )
-    if static_wall is not None and rendered_wall is None:
+    if static_wall is not None and rendered_wall is None and rendered_doc.text.strip():
         chars = len(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,

@@ -458,6 +458,23 @@ class TestAWallOnOneSide:
         with pytest.raises(PageBlockedError):
             module.resolve_page("https://www.example.test/sample.html")
 
+    def test_a_wall_beside_a_page_with_no_words_still_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """old.reddit.com: the browser gets the wall, the plain fetch a login redirect
+        holding one empty image. Neither is the page; returning the image as the page
+        would be a false output."""
+        from webgraph import resolve as module
+        from webgraph.resolve import PageBlockedError
+
+        self.stub(
+            monkeypatch,
+            static="<html><body><img src='/logo.png' alt=''></body></html>",
+            rendered=self.WALL,
+        )
+        with pytest.raises(PageBlockedError):
+            module.resolve_page("https://www.example.test/sample.html")
+
     def test_two_real_pages_still_merge(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph import resolve as module
 
