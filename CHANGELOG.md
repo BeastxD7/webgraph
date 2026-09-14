@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-14, PRs #66, #68)
+- `<li><p>…</p></li>` (DocBook, Sphinx, MediaWiki) yields list items: the item's first
+  paragraph is the item, later paragraphs its continuation, indented under the bullet
+  (catb.org's eight lists, tldp.org's HOWTO index) (#66; WCXB +0.0001).
+- Links inside table cells survive into the pipe table (`Block.rich_rows`; craigslist's
+  "best of" is a table of links) and a link that wraps nothing but an image keeps its
+  target (`Block.link`, rendered `[![alt](src)](link)`; spacejam.com/1996's planets) (#68).
+
 ### Fixed (2026-09-14, PR #65)
 - What the browser hid stays hidden through the static+rendered union: a block only the
   static fetch had, whose text the renderer laid out as `display: none` / `visibility:
