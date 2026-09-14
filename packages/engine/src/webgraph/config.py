@@ -166,7 +166,7 @@ ORDER_MIN_MEASURED_SHARE = 0.3
 # Per-block cost scales with the page's own mean block length instead of a constant.
 # Measured on WCXB: +0.035 F1 over a fixed cost, better on all seven page types.
 CONTENT_ADAPTIVE_COST = True
-CONTENT_COST_RATIO = 0.70  # cost = clamp(ratio * mean block words, floor, ceiling)
+CONTENT_COST_RATIO = 0.60  # cost = clamp(ratio * mean block words, floor, ceiling)
 CONTENT_COST_FLOOR = 5.0
 CONTENT_COST_CEILING = 18.0
 CONTENT_BLOCK_COST = 13.0  # the fixed cost, when CONTENT_ADAPTIVE_COST is False
