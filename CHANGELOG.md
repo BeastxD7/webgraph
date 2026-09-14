@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed (2026-09-15, PR #86) — shadow DOM composed the way the browser paints it
+### Fixed (2026-09-15, PR #85) — shadow DOM composed the way the browser paints it
 - A serialised shadow root (`<template shadowrootmode>`, how the browser hands over what
   `outerHTML` omits) was unwrapped and the host's own children left behind it. That is not
   what a reader sees: a `<slot>`'s fallback text ("Untitled card", "Nothing was slotted
