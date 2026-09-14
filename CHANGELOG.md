@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-14, login walls)
+- A fetch redirected to a login page is refused as the wall it is, named as one:
+  `PageBlockedError` says `redirected to a login page (<final url>)` and carries
+  `login_url` and `kind` (`login` / `challenge` / `block`). The final URL has to hold a
+  `LOGIN_PATH_MARKERS` segment (`/login`, `/uas/login`, `/signin`, `/sso`, `/auth`,
+  `/session/new`, `/wp-login.php`, …) or a `LOGIN_RETURN_PARAMS` parameter naming the page
+  that was asked for (`?dest=…`, `?session_redirect=…`, `?next=…`), and the document has
+  to be a login page rather than a page with a login on it: a password field, or fewer
+  than `MAX_LOGIN_PAGE_WORDS` (150) words. old.reddit.com's threads
+  (`/login/?reason=lor2&dest=…`, 4 words) and www.linkedin.com/feed/
+  (`/uas/login?session_redirect=…`, 52 words, two password fields) are refused;
+  news.ycombinator.com (a "login" link, 711 words) and github.com/python/cpython are
+  pages. A login redirect on one fetch beside the real page on the other is left out
+  like a bot wall, and the page is read from the other side.
+
+### Fixed (2026-09-14, code editors)
+- A browser-side code editor's DOM (CodeMirror 5 and 6, Monaco, Ace) is one `code` block:
+  its lines in order, the gutter's line numbers, cursor and measuring layers left out,
+  the language from the widget (`data-language`, `data-mode-id`, a `language=` attribute
+  on the host). developer.mozilla.org's `<interactive-example>` came out as one
+  paragraph per line number and one per line, with the other tab's lines scattered among
+  them. An editor that draws only the lines in view (CodeMirror 6 shows 30 of MDN's 40)
+  takes the whole text from the hidden `<pre>` the page holds beside it, once, so the
+  demo's source appears whole and where the editor is (MDN's `<table>` page: 713 → 625
+  rendered blocks; whole-page extra_share against Chromium's innerText 0.492 → 0.477,
+  recall 1.0).
+
 ### Added (2026-09-14, PR #72)
 - `benchmark/fidelity/run.py` (`make bench-fidelity`): the whole-page Markdown scored
   against Chromium on 32 old, plain and ugly pages — word recall (nothing lost), extra
