@@ -1,27 +1,17 @@
-import Capabilities from "@/components/landing/Capabilities";
-import Evidence from "@/components/landing/Evidence";
 import Hero from "@/components/landing/Hero";
 import Pipeline from "@/components/landing/Pipeline";
-import SiteFooter from "@/components/site/SiteFooter";
-import SiteHeader from "@/components/site/SiteHeader";
-import HeroBackdrop from "@/components/ui/HeroBackdrop";
+import ProofStrip from "@/components/landing/ProofStrip";
+import RefusesDrops from "@/components/landing/RefusesDrops";
+import Standings from "@/components/landing/Standings";
 
 export default function LandingPage() {
   return (
-    <>
-      <section className="relative isolate overflow-hidden">
-        <HeroBackdrop priority />
-        <SiteHeader />
-        <Hero />
-      </section>
-
-      <main>
-        <Capabilities />
-        <Pipeline />
-        <Evidence />
-      </main>
-
-      <SiteFooter />
-    </>
+    <main>
+      <Hero />
+      <ProofStrip />
+      <RefusesDrops />
+      <Pipeline />
+      <Standings />
+    </main>
   );
 }

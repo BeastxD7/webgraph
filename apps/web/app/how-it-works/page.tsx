@@ -2,8 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import StageList from "@/components/pipeline/StageList";
-import SiteFooter from "@/components/site/SiteFooter";
-import SiteHeader from "@/components/site/SiteHeader";
 import { PRINCIPLES, STAGES } from "@/lib/pipeline";
 
 export const metadata: Metadata = {
@@ -15,10 +13,6 @@ export const metadata: Metadata = {
 export default function HowItWorksPage() {
   return (
     <>
-      <div className="border-b border-line bg-surface">
-        <SiteHeader />
-      </div>
-
       <main className="mx-auto w-full max-w-5xl px-5 pb-24 sm:px-8">
         <header className="max-w-3xl py-16">
           <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-ink-faint">
@@ -77,7 +71,6 @@ export default function HowItWorksPage() {
         </section>
       </main>
 
-      <SiteFooter />
     </>
   );
 }

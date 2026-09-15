@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 
 import SettingsPanel from "@/components/settings/SettingsPanel";
-import SiteFooter from "@/components/site/SiteFooter";
-import SiteHeader from "@/components/site/SiteHeader";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -12,7 +10,6 @@ export const metadata: Metadata = {
 export default function SettingsPage() {
   return (
     <>
-      <SiteHeader />
       <main className="mx-auto w-full max-w-4xl px-5 pb-20 sm:px-8">
         <header className="pt-6 pb-8">
           <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-faint">Settings</p>
@@ -28,7 +25,6 @@ export default function SettingsPage() {
         </header>
         <SettingsPanel />
       </main>
-      <SiteFooter />
     </>
   );
 }
