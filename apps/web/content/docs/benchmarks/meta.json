@@ -1,6 +1,10 @@
 {
-  "title": "Benchmarks",
+  "title": "Benchmarks and measurement",
   "pages": [
-    "..."
+    "public-boards",
+    "fidelity-suite",
+    "live-suite",
+    "random-web",
+    "running-them"
   ]
 }

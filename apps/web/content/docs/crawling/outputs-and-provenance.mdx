@@ -1,0 +1,127 @@
+---
+title: Outputs and provenance
+description: The page event field by field, the done totals, the site graph built as the crawl runs, and the trace file every run leaves behind.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Everything a crawl reports should be answerable with "and how do you know". The `page`
+event holds that answer per page; `done` totals the run; the graph and the trace outlive
+the stream.
+
+## The event sequence
+
+`stream_site` yields, in order: `stage` → `analysis` → `stage` → `discovery` → `frontier`
+→ `stage` → then `fetching` and `page` events, with `warning` where it applies → `done`. An
+`error` event ends a run that could not start. Over
+[`/api/site/stream`](/docs/api/site-stream) the events arrive as server-sent events behind
+a `run` header frame recording the options *actually applied*
+after the host's caps, the engine version and the trace file's name.
+
+- **`analysis`** — Stage 0's measurement of the root: `root` (after redirects),
+  `frameworks`, `technologies` (name, category, version, confidence, evidence),
+  `render_required`, `render_loses_content`, `static_chars`, `rendered_chars`,
+  `union_chars`, `static_coverage`, and the `strategy` the crawl will use.
+- **`discovery`** — `robots` (found, url, fetched_status, group, rules_for_us, crawl_delay,
+  the file's text capped at `DISCOVERY_ROBOTS_TEXT_CHARS = 4000`), `sitemaps` (every
+  attempt with url / status / ok / urls / index / source, plus `found` and `total_urls`),
+  `seeds`.
+- **`frontier`** — the queue after seeding: `queued`, `discovered`, `depth_counts`,
+  `discovered_kinds`, `from_sitemap`, and `new_urls`. Clients rebuild the discovered set
+  from these deltas rather than receiving the whole frontier each time.
+- **`fetching`** — the `urls` of the batch about to go out, so a live view can show work
+  in flight and not only work finished.
+
+## The `page` event
+
+One per URL the crawl attempted, refused or not, grouped here by the question each field
+answers.
+
+**Which page, and why is it here**
+
+| field | meaning |
+|---|---|
+| `index` | Position in the run, counting refusals. |
+| `url` | The URL as served (after redirects). |
+| `citation` | `{via, found_on, anchor, depth}` — how the address entered the crawl: `seed` (the root), `sitemap`, or `link` from `found_on` through the words in `anchor`. Recorded for the first acceptance only. |
+| `depth` | Link distance from the root. |
+| `title` | The first `h1`/`h2`, else the document title minus the Open Graph site name. |
+
+**Did it work**
+
+| field | meaning |
+|---|---|
+| `ok` | `true` when a document was produced. |
+| `error` | The refusal, in words, when `ok` is false. See [what is refused](/docs/crawling/discovery-and-politeness#what-is-refused-and-why-each-refusal-is-honest). |
+| `strategy` | `static-only`, `rendered-only` or `union` — how this page was actually obtained; `null` on a refusal. |
+
+**What kind of page**
+
+| field | meaning |
+|---|---|
+| `page_type` | `article`, `documentation`, `service`, `forum`, `collection`, `listing`, `product`, or `unknown` below `ROUTER_MIN_CONFIDENCE = 0.5`. |
+| `page_type_confidence` | The classifier's confidence. |
+| `page_type_reasons` | `[{says, weight}]`, strongest first — measured by withholding each signal, not narrated. |
+| `page_type_runner_up` | `{type, confidence}` — the type it nearly chose. |
+
+**The content**
+
+| field | meaning |
+|---|---|
+| `markdown` | The whole page. |
+| `content_markdown` | The filtered page; empty when nothing was removed. |
+| `content_blocks` | How many blocks the selection kept. |
+| `content_methods` | Which steps fired: `landmarks`, `main-landmark`, `site-chrome`, `block-model`, `main-content`. |
+| `chars`, `blocks`, `images`, `tables` | Text length, block count, the image URLs, the table count. |
+
+**Where the crawl stands** — `queued`, `discovered`, `depth_counts`, `discovered_kinds`,
+`extracted`, `failed`, `newly_queued` and `new_urls` (what this page added), `pages_per_minute`,
+running `totals`, and the `graph` counts so far.
+
+<Callout type="info" title="A real one">
+From the vtu.ac.in run: `url: https://vtu.ac.in/wp-content/uploads/2025/12/12B.pdf`,
+`citation: {via: link, found_on: https://vtu.ac.in/, anchor: "12 ಬಿ", depth: 1}`,
+`ok: false`, `error: "could not resolve ...12B.pdf: browser: the server returned a file
+download rather than a page"`. The refusal names what the server sent; the citation names
+the page and the link text that led there.
+</Callout>
+
+## The `done` event
+
+`pages_ok`, `pages_total`, `failed`, `discovered`, `remaining_queued`, `exhausted` (the
+frontier drained), `stopped` (the caller's `should_stop` fired), the four totals,
+`largest_identical_group` (distinct URLs that produced identical text — 1 is healthy) and
+`identical_content_groups`, `chrome_blocks` and `chrome_slots`, `entities` (distinct
+JSON-LD / microdata entities with the count of pages publishing each — the same
+`Organization` block on 90 pages is one entity seen 90 times), `site_facts` and
+`fact_sources` when a schema was supplied, the final `graph` counts, and `duration_seconds`.
+
+## The site graph
+
+When the caller passes a `GraphBuilder` (the API always does), it is filled in as pages
+arrive — `webgraph.graph.build` is incremental on purpose, so the graph is usable during
+the crawl and survives a stopped one. Each page becomes a node with its sections; links are
+recorded whether or not the target has been crawled yet; anchor text becomes the edge
+label, written by the site's author rather than inferred.
+
+The API keeps the four most recent graphs in memory and writes each finished graph to disk
+(`GraphStore`, at `WEBGRAPH_GRAPH_DIR` or `~/.cache/webgraph/graphs`, pruned to the newest
+32). `GET /api/site/graph?url=...` streams it as JSON Lines, the format `webgraph ask
+--graph` reads; `GET /api/site/graph/summary` returns counts, top entities, hubs ranked by
+inbound links with a `specificity` figure, and the deepest pages; `POST /api/site/context`
+assembles a bounded context for a question. All three answer 404 "Crawl it first" when no
+graph exists for the URL.
+
+## Traces
+
+Every API run leaves a file behind. `webgraph.trace` writes the same events the stream
+carries, one JSON object per line, with `run` (a stable id), `seq`, `at` (seconds since the
+run began) and `type` on each record. Output fields — `markdown`, `content_markdown`,
+`comments_markdown`, `html`, `text` — are dropped whole, long strings cut at
+`TRACE_MAX_VALUE_CHARS = 2000`, lists capped at 200 items.
+
+Files land in `WEBGRAPH_TRACE_DIR` (or the system temp directory) under `webgraph-runs/`,
+named `<host>-<timestamp>-<run id>.jsonl` so two tabs on one site in the same second cannot
+overwrite each other. The last line is a `trace-closed` record with `stopped` true or false
+— "stopped at page 40" is a different fact from "finished". The web UI's **Copy run log**
+pastes the same event stream from the client side.

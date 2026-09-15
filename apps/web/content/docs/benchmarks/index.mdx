@@ -1,11 +1,93 @@
 ---
-title: Benchmarks
-description: The corpora webgraph is measured on, the runners in benchmark/, and how a change is scored.
+title: Why measure
+description: The rule that keeps only what measures better, what each suite can see, and what the oracles cannot.
 ---
 
-Every extraction change is measured before it is merged. The boards, the runners and the standings live here.
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
-<Callout title="Placeholder">
-  This section is being written. Its pages arrive in the same pull request series that
-  added the documentation site.
+The project has one rule about changes to extraction: **a claim is a measurement.**
+`CONTRIBUTING.md` states it — a change to extraction, reading order, routing or discovery
+carries before-and-after numbers from the runners in `benchmark/`, and a neutral or
+negative result is recorded as rejected so the next person does not repeat it. The
+engineering journal (`MEMORY.md`) is mostly a list of obvious-looking improvements that
+were tried and measured as neutral or harmful.
+
+The rule exists because intuition about extraction is unreliable in a specific way. The
+whole-page session of 14 September (`docs/SESSION-18-WHOLE-PAGE.md`) records the case: a
+change that rendered links inside table cells was correct on the pages it was written for,
+passed "WCXB =, Zyte =" for six pull requests, and had cost WebMainBench's table score
+0.390 → 0.338 the whole time, because those two boards score plain text and cannot see a
+table. Nothing caught it until the board that could see it was re-run.
+
+## Two products, two kinds of measure
+
+The engine returns two things per page, and they need different instruments.
+
+**Filtered content** (`content_markdown`) is what the public boards score: WCXB, Zyte's
+article-extraction benchmark, WCEB and WebMainBench each ship cached HTML and a
+human-annotated main content. They are comparable across systems — the other rows are
+published figures or runs of the corpus's own scorer — and they are blind to everything
+that needs a network or a second page: geometric reading order (no browser, so every page
+falls back to DOM order, and the runners print that distribution rather than assert it) and
+cross-page chrome detection (one page per site). See
+[Public boards](/docs/benchmarks/public-boards).
+
+**The whole page** (`markdown`) has no public board. Three suites in this repository
+measure it against Chromium's own visible text on live pages: the
+[fidelity suite](/docs/benchmarks/fidelity-suite) (31 old, plain and ugly pages, chosen
+because pre-CSS markup is where whole-page loss hides), the
+[live suite](/docs/benchmarks/live-suite) (23 modern pages, scoring the filtered content
+against the page's main region), and the [random web](/docs/benchmarks/random-web) (300
+pages drawn at random from the Tranco top million, because a failure rate on chosen pages
+is a failure rate on chosen pages).
+
+| suite | scores | against | comparable across systems? |
+|---|---|---|---|
+| WCXB, Zyte, WCEB, WebMainBench, CleanEval | filtered content, plain text (WebMainBench: Markdown) | human annotation on cached HTML | yes |
+| Fidelity | whole-page `text` | Chromium `innerText` + open shadow roots, live | no — a diff between two runs |
+| Live | filtered content | Chromium `innerText` of `main`/`article`, live | no — a diff between two runs |
+| Random web | whole-page `text` | the fidelity oracle on a random sample | no — a distribution |
+
+## What the oracles cannot see
+
+The live-page suites use a browser as ground truth, and a browser's `innerText` is a crude
+annotator. The blind spots that are documented in the runners and the run reports:
+
+- **Off-screen text is counted.** `innerText` includes text positioned far outside the
+  page. On vtu.ac.in every page carries about sixty gambling links at `left: -2×10¹³ px`;
+  the oracle has those words and a correct extractor does not, so they appear as "missing"
+  on every page (the vtu.ac.in run report, in
+  [Limits and large sites](/docs/crawling/limits-and-large-sites)). Recall below 1.0 on
+  such a page is the oracle's error, not the engine's.
+- **Every frame is joined.** The fidelity oracle evaluates its script in every frame of the
+  page — a frameset's frames, which is the point, but also any embedded `iframe`. Text
+  inside an embedded frame is in the oracle's word set.
+- **Structure is invisible to `innerText`.** The live suite's docstring says it plainly:
+  the oracle "cannot see code blocks, and `innerText` includes the comment thread under
+  an article". The fidelity suite counts headings, tables, lists, images and links from the
+  DOM separately for that reason.
+- **Walls.** A site that blocks the oracle's Chromium produces no ground truth. The
+  fidelity runner refuses to score it (`ORACLE BLOCKED`) rather than scoring against a
+  block page; w3.org does this on the fidelity set, and 12 of the 300 random pages did.
+- **Time.** The page the oracle saw and the page the engine fetched are seconds apart.
+  Both suites cache the oracle beside the output so two runs score the same text, but a
+  page that changes between the oracle fetch and the engine fetch is noise, not a
+  regression — the [live suite](/docs/benchmarks/live-suite) page has the amazon example.
+
+`SCRIPT`, `STYLE`, `NOSCRIPT` and `TEMPLATE` contents are excluded from the oracle's walk.
+
+<Callout type="info" title="How to read any number here">
+Every figure on these pages names the commit it was measured at and the file it came from.
+The public-board numbers are from `apps/web/lib/benchmarks.ts` (measured 14 September
+2026, `main@19f601f`) and `CHANGELOG.md` for later commits. A number without a source does
+not belong in these docs.
 </Callout>
+
+<Cards>
+  <Card title="Public boards" href="/docs/benchmarks/public-boards" description="WCXB, Zyte, WCEB, WebMainBench: the numbers, the field, and each board's caveat." />
+  <Card title="Fidelity suite" href="/docs/benchmarks/fidelity-suite" description="Whole-page recall, extra, inversions and structure on 31 old and ugly pages." />
+  <Card title="Live suite" href="/docs/benchmarks/live-suite" description="23 modern pages; the diff between two runs is the signal." />
+  <Card title="Random web" href="/docs/benchmarks/random-web" description="300 pages nobody picked, from the Tranco top million via Common Crawl." />
+  <Card title="Running them" href="/docs/benchmarks/running-them" description="Commands, corpora, run times, the runs dashboard, and the WebMainBench rule." />
+</Cards>

@@ -1,0 +1,187 @@
+---
+title: Running them
+description: Commands and flags for every runner, where the corpora come from, how long each takes, the runs dashboard for long boards, and the WebMainBench rule.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+None of the public corpora is vendored — each is somebody else's dataset on somebody else's
+release cadence — so every board runner takes `--corpus` pointing at a local clone. The
+live suites need only Playwright's Chromium (`uv run --package webgraph playwright install
+chromium`). Every runner here is deterministic given its inputs; pin the source before
+quoting a score (`git archive HEAD | tar -x -C /tmp/pinned`, as the Zyte runner's docstring
+shows — a working-tree edit landing mid-run once moved a variant from 0.623 to 0.643).
+
+## Make targets
+
+```bash
+make bench-fidelity      # benchmark/fidelity/run.py --out fidelity.json
+make bench-live          # benchmark/live/run.py --out live-suite.json
+make bench               # schema extraction over benchmark/corpus-v0 (the CI gate)
+make bench-content       # main content vs trafilatura / readability / jusText (needs the bench group)
+make bench-routes        # route discovery vs a real-browser oracle; bench-routes-quick for 10 sites
+make bench-union         # union placement (bench-union-fetch once first)
+make bench-reading-order # geometric order vs a DOM walk
+```
+
+The four public boards have no make target; run them as below.
+
+## The board runners
+
+<Tabs items={['WCXB', 'Zyte', 'WCEB', 'WebMainBench', 'CleanEval']}>
+<Tab value="WCXB">
+
+```bash
+git clone --depth 1 https://github.com/Murrough-Foley/web-content-extraction-benchmark   # CC-BY-4.0, 192 MB
+export WCXB_ROUTER_OOF=benchmark/train/artifacts/router_oof.json   # or routed == content
+uv run --package webgraph python benchmark/wcxb/run.py --corpus <clone>
+uv run --package webgraph python benchmark/wcxb/run.py --corpus <clone> --split test
+uv run --package webgraph python benchmark/wcxb/run.py --corpus <clone> --worst product
+```
+
+Flags: `--split dev|test`, `--jobs N` (CPUs minus one), `--limit N` for a smoke run,
+`--out` to write per-variant predictions. For the per-type diff the PR template asks for:
+`benchmark/wcxb/per_page.py dump` on `main` and on the branch, then `diff`.
+
+</Tab>
+<Tab value="Zyte">
+
+```bash
+git clone https://github.com/scrapinghub/article-extraction-benchmark    # 181 pages, MIT
+uv run --package webgraph python benchmark/article_extraction/run.py --corpus <clone>
+cd <clone> && python3 evaluate.py    # scores every output/*.json, ours beside the 34 others
+```
+
+Flags: `--limit N`, `--ablate` (each block-kind exclusion separately), `--oracle` (the
+ceiling for main-content selection over the engine's own blocks).
+
+</Tab>
+<Tab value="WCEB">
+
+```bash
+git clone https://github.com/chatnoir-eu/web-content-extraction-benchmark
+cd web-content-extraction-benchmark/datasets && tar xf combined.tar.xz
+cd ../outputs && tar xf metrics-computed.tar.xz
+uv run --package webgraph python benchmark/wceb/run.py --corpus <clone> --validate   # first
+uv run --package webgraph python benchmark/wceb/run.py --corpus <clone>
+uv run --package webgraph python benchmark/wceb/run.py --corpus <clone> -d cleaneval -d dragnet
+```
+
+Needs `rouge-score` importable (Apache-2.0; not an engine dependency). Run `--validate`
+before believing any number: it rescores upstream's own extractor outputs against
+upstream's own per-page CSVs. Flags: `-d` to pick datasets, `--jobs`, `--limit N` per
+dataset.
+
+</Tab>
+<Tab value="WebMainBench">
+
+```bash
+git clone --depth 1 https://github.com/opendatalab/WebMainBench     # Apache-2.0
+huggingface-cli download opendatalab/WebMainBench --repo-type dataset \
+    --include 'WebMainBench_545.jsonl' --local-dir <clone>/data       # 109 MB
+uv run --package webgraph python benchmark/webmainbench/run.py \
+    --corpus <clone> --dataset <clone>/data/WebMainBench_545.jsonl
+    … --calibrate        # also trafilatura(md) and resiliparse through the same harness
+    … --ablate-links     # the measured cost of include_links / include_images
+    … --worst table_TEDS # lowest-scoring pages of one column
+```
+
+The metric is imported from the clone (apted, rapidfuzz, beautifulsoup4, jieba — all
+`bench`-group dependencies), so run it from a venv that has them. Quote the **column
+mean** against the published rows, never `overall`; see
+[Public boards](/docs/benchmarks/public-boards).
+
+</Tab>
+<Tab value="CleanEval">
+
+```bash
+# a directory holding finalrun-input/ (740 HTML files) and GoldStandard/ (681 .txt)
+uv run --package webgraph python benchmark/cleaneval/run.py --corpus <dir> --validate
+uv run --package webgraph python benchmark/cleaneval/run.py --corpus <dir>
+uv run --package webgraph python benchmark/cleaneval/run.py --corpus <dir> --official 24
+```
+
+`--official N` runs the 2007 Perl scorer on a seeded sample of N pages (about seventy
+seconds a page); `--seed`, `--timeout`, `--jobs`, `--limit` as elsewhere. CleanEval is also
+one of WCEB's eight corpora, which is where it is normally quoted from.
+
+</Tab>
+</Tabs>
+
+## Live suites
+
+```bash
+uv run python benchmark/fidelity/run.py --out /tmp/main.json          # on main
+uv run python benchmark/fidelity/run.py --out /tmp/cand.json          # on the branch
+uv run python benchmark/fidelity/run.py --compare /tmp/main.json /tmp/cand.json
+uv run python benchmark/live/run.py     --out /tmp/main.json          # same shape
+uv run python benchmark/live/run.py     --compare /tmp/main.json /tmp/cand.json
+```
+
+Both take `--sites` for another list (that is how the [random web](/docs/benchmarks/random-web)
+sample is scored) and cache the oracle beside `--out` in a `.pages` directory.
+
+## Run times
+
+Measured on the owner's machine from `runs/*.meta.json` (start, end and exit code recorded
+by `tools/run_logged.py`; only runs with exit code 0 counted):
+
+| runner | pages | time |
+|---|---:|---:|
+| fidelity suite | 31 | 6.9–8.1 min |
+| live suite | 23 | 2.9–4.3 min |
+| WCXB dev, `per_page.py dump` | 1,497 | 2.5–5.3 min |
+| WebMainBench 545 | 545 | 10.4–18.6 min |
+| Zyte article-extraction | 181 | 12–18 s |
+| random-web score (fidelity runner) | 300 | 66 min |
+| random-web sample | 300 of 644 domains | 30 min |
+| WCEB, all eight corpora | 3,985 | about two hours (`run_logged.py`: "a two-hour board run") |
+
+## Long runs: `run_logged.py` and the dashboard
+
+A board run prints its progress to a terminal nobody is watching, and a laptop on battery
+sleeps mid-run — `run_logged.py`'s docstring: "a two-hour board run on a laptop that sleeps
+on battery is a run that stops at 17:18 and looks like a hang the next morning". Two
+stdlib-only tools:
+
+```bash
+uv run python tools/run_logged.py wceb-main -- \
+    uv run python benchmark/wceb/run.py --corpus <clone>
+uv run python tools/runs_dashboard.py            # http://localhost:8765, watches ./runs
+```
+
+`run_logged.py` writes `runs/<label>.log` (stdout and stderr as they arrive) and
+`runs/<label>.meta.json` (command, cwd, pid, start; then end and exit code), and on macOS
+runs the command under `caffeinate -i` (`--no-caffeinate` to turn that off). A second run
+with the same label gets a numbered suffix. `runs_dashboard.py` serves one page showing
+every run — running, finished or failed — with elapsed time, a progress bar read from the
+runner's own `N/M` counter lines, and the result lines once they land; it updates live and
+lists the machine's engine processes (PR #70). Nothing is installed and nothing is written.
+
+## The WebMainBench rule
+
+<Callout type="warn" title="From CONTRIBUTING.md">
+"A change to table, code or Markdown rendering also re-runs WebMainBench before merge,
+whatever WCXB and Zyte say: they score plain text, and a link rendered into every table
+cell cost WebMainBench's table score for six pull requests unnoticed (#68, fixed in #78)."
+</Callout>
+
+The mechanism is worth knowing, because it recurs. WCXB, Zyte, WCEB and CleanEval tokenize
+to words; a `|` or a `](url)` is invisible to them, so a rendering change that is wrong
+can measure as "=" on all four. WebMainBench scores character edit distance on Markdown
+and is the only board that can see structure. Its column figures have different N per
+column (printed per run), and the 15 September rounds each found a second-order effect
+where adding or removing short blocks near code moved the content boundary
+(`SESSION-18` §5, CHANGELOG #86). Run it for anything that touches `render_markdown.py`,
+table or code handling, or short blocks around code.
+
+## What the PR template asks for
+
+The Measurement table in `.github/PULL_REQUEST_TEMPLATE.md` has one row per instrument:
+WCXB dev routed overall; WCXB dev by the page types the change touches (`per_page.py dump`
++ `diff`); Zyte for anything touching articles; WCEB production path for comments,
+landmarks or the boundary; the reading-order benchmark for `dom/reading_order.py`;
+WebMainBench for tables, code, Markdown rendering; the live suite's pages that moved; and
+the fidelity suite's recall / extra / inversions on pages that moved. "Not applicable" is
+an answer for a docs or UI change; a blank row is not.
