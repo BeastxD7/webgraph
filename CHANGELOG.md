@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-15, PR #89) — a browser answered with a server error is not a page
+- flipkart.com/mobiles: the plain fetch returned the listing (200, 560 KB) and Chromium,
+  seconds later, a 503 "No server is available to handle this request". The render
+  reported `ok` -- it navigated and measured -- and the union merged the error page's
+  sentence into the listing. `RenderResult.status` now carries the response's status
+  (None for a salvaged timeout), and `resolve_page` treats a 5xx render as a failed side:
+  the static page stands alone with `render_error` saying what the browser was told; both
+  sides 5xx is a refusal. A 4xx render is still judged on its words, as before.
+
 ### Fixed (2026-09-15, PR #88) — text pushed off the page is not on the page
 - vtu.ac.in (the owner's first live whole-site test) carries ~60 injected gambling links
   on every page, each in `<div style="position:absolute; left:-20914565266523px">`. The
