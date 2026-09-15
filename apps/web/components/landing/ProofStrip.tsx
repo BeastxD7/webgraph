@@ -1,14 +1,14 @@
 import Link from "next/link";
 
 import StatTile from "@/components/ui/StatTile";
-import { board, MEASURED, ROUTE_RECALL, selfScore } from "@/lib/benchmarks";
+import { board, MEASURED, ROUTE_RECALL, runnerUp, selfScore } from "@/lib/benchmarks";
 
 const WCXB = board("wcxb");
 const WCEB = board("wceb");
 const WCEB_CONTENT_ONLY = WCEB.entries.find(
   (entry) => entry.self && entry.name.endsWith("content only"),
 );
-const WCXB_MARGIN = (selfScore(WCXB) - (WCXB.entries[1]?.score ?? 0)).toFixed(3);
+const WCXB_MARGIN = (selfScore(WCXB) - runnerUp(WCXB).score).toFixed(3);
 
 const MEASURED_DAY = MEASURED.date.replace(/\s*\(.*\)$/, "");
 

@@ -1,14 +1,21 @@
 import Link from "next/link";
 
-import { board, leaderScore, selfScore, WCXB_TEST } from "@/lib/benchmarks";
+import { board, leaderScore, runnerUp, selfScore, WCXB_TEST } from "@/lib/benchmarks";
 
 /**
  * Five boards in one table, this engine's row against the leader's, with the place said in
  * words. The self column is marked by a rule-strong edge, not a colour: the same form for a
  * first and a tenth (DESIGN.md §1.4). Every score is read from `lib/benchmarks.ts`.
  */
+const WCXB_RUNNER_UP = runnerUp(board("wcxb"));
+
 const ROWS: ReadonlyArray<{ id: string; label: string; pages: string; place: string }> = [
-  { id: "wcxb", label: "WCXB (dev)", pages: "1,497", place: "1st of 7 (tie: rs-trafilatura 0.859)" },
+  {
+    id: "wcxb",
+    label: "WCXB (dev)",
+    pages: "1,497",
+    place: `1st of 7 (tie: ${WCXB_RUNNER_UP.name} ${WCXB_RUNNER_UP.score.toFixed(3)})`,
+  },
   { id: "wceb", label: "WCEB", pages: "3,985", place: "1st of 7 systems, content + comments" },
   { id: "zyte", label: "Zyte article", pages: "181", place: "10th of 35" },
   {

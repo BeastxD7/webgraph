@@ -23,7 +23,7 @@ const REFUSES: ReadonlyArray<{ label: string; value: string; source?: string; mo
   },
   {
     label: "Block page",
-    value: "it said: “You’ve been blocked…”",
+    value: 'it said: "You\'ve been blocked…"',
     source: "The block page's own words, quoted; never passed off as the page.",
     mono: true,
   },
@@ -59,7 +59,6 @@ const DROPS: ReadonlyArray<{ label: string; value: string; source?: string }> = 
   {
     label: "Consent dialogs, share bars, “most read” rails",
     value: "Left out of content.",
-    source: "Kept in the whole-page output, named as chrome.",
   },
   {
     label: "Alt text, screen-reader-only text",

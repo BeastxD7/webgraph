@@ -369,6 +369,12 @@ export function leaderScore(board: Board): number {
   return Math.max(...board.entries.filter((entry) => !entry.reference).map((entry) => entry.score));
 }
 
+/** The best entry that is not this engine: what the margin is measured against. */
+export function runnerUp(board: Board): Entry {
+  const others = board.entries.filter((entry) => !entry.self && !entry.reference);
+  return others.reduce((best, entry) => (entry.score > best.score ? entry : best));
+}
+
 export function board(id: string): Board {
   const found = BOARDS.find((candidate) => candidate.id === id);
   if (!found) throw new Error(`no board ${id}`);

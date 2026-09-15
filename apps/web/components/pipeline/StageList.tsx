@@ -14,7 +14,7 @@ export default function StageList() {
       {STAGES.map((stage, index) => (
         <li key={stage.id} id={stage.id} className="grid scroll-mt-20 grid-cols-[2.6rem_1fr] gap-x-5 sm:grid-cols-[3.2rem_1fr] sm:gap-x-7">
           <div className="flex flex-col items-center">
-            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-leaf-600 font-mono text-[12px] font-bold text-white">
+            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-leaf-600 font-mono text-[12px] font-bold text-inverse">
               {index + 1}
             </span>
             {index < STAGES.length - 1 ? (
