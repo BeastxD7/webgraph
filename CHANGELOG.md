@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #92) — documentation site
+- The web app serves documentation at `/docs`, built with Fumadocs from MDX files under
+  `apps/web/content/docs/`. The sidebar has seven sections in a fixed order -- getting
+  started, API, how it reads a page, crawling, benchmarks, deployment, contributing --
+  each a placeholder page for now; the content follows in this pull request series. The
+  landing page carries the README's opening and a card per section. Built-in full-text
+  search (`/api/search`), a table of contents per page, light and dark themes, and a
+  "Docs" link in the site header.
+- The docs use the site's own palette and type (haze, ink, leaf; Manrope, JetBrains Mono,
+  Instrument Serif for the title) and are styled by a stylesheet loaded only under
+  `/docs`; the dark palette applies only while the docs layout is on the page, so the
+  rest of the site renders exactly as before, also after navigating away from the docs.
+  `apps/web/content/docs/_authoring.md` says how to add a page, what frontmatter it takes
+  and which components are available.
+
 ### Fixed (2026-09-15, PR #90) — a block's XPath is the geometry map's
 - The browser's measurements are keyed by each element's XPath in a fresh parse; the
   block walk removes hidden twins, clipped labels, permalinks and unreachable trays and

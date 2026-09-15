@@ -9,4 +9,8 @@ packages:
 # Approved by name rather than by a blanket setting, so a *new* dependency that wants to run
 # a script still stops the install and gets looked at.
 allowBuilds:
+  # esbuild's postinstall only verifies the native binary that its platform package
+  # (@esbuild/<os>-<arch>) already ships; fumadocs-mdx pulls it in. Denied: the binary
+  # works without the script, and nothing else needs to run at install time.
+  esbuild: false
   unrs-resolver: true

@@ -1,0 +1,35 @@
+---
+title: webgraph documentation
+description: Universal web content extraction with provenance and recovered reading order.
+---
+
+webgraph takes a website — not a page, a *website* — and returns every public page as
+clean, ordered Markdown, together with an account of where each piece of information came
+from and how it was obtained. It detects the site's technology stack, discovers every
+public route, and extracts rich Markdown with reading order recovered from the rendered
+layout rather than guessed from the HTML. These pages cover the API, the engine's stages,
+crawling, the benchmarks it is measured on, and how to deploy or contribute.
+
+<Cards>
+  <Card href="/docs/getting-started" title="Getting started">
+    Install the engine and the API, run the web app, and extract a first site.
+  </Card>
+  <Card href="/docs/api" title="API">
+    The HTTP endpoints, their request and response shapes, and the streamed crawl.
+  </Card>
+  <Card href="/docs/how-it-reads-a-page" title="How it reads a page">
+    Fetching, the union of static and rendered DOM, reading order, and Markdown.
+  </Card>
+  <Card href="/docs/crawling" title="Crawling">
+    Technology detection, route discovery, politeness, and cross-page analysis.
+  </Card>
+  <Card href="/docs/benchmarks" title="Benchmarks">
+    The corpora, the runners in `benchmark/`, and how a change is measured.
+  </Card>
+  <Card href="/docs/deployment" title="Deployment">
+    Running the API and the web app in production.
+  </Card>
+  <Card href="/docs/contributing" title="Contributing">
+    Branches, commits, tests, and what a pull request has to carry.
+  </Card>
+</Cards>
