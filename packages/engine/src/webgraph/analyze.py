@@ -19,7 +19,12 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit
 
-from webgraph.crawl.discovery import RobotsPolicy, discover_sitemap_urls, load_robots
+from webgraph.crawl.discovery import (
+    RobotsPolicy,
+    SitemapAttempt,
+    discover_sitemaps,
+    load_robots,
+)
 from webgraph.crawl.frontier import normalize_url
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
 from webgraph.fetch.static import FetchConfig
@@ -58,7 +63,17 @@ class SiteAnalysis:
 
     robots_found: bool = False
     crawl_delay: float | None = None
+    robots_rules: tuple[str, ...] = ()
+    """The Allow / Disallow / Crawl-delay lines robots.txt sets for this client, verbatim.
+    Empty when there is no file or no group applies -- which means everything is allowed,
+    and a reader should see that it was the site's choice rather than the engine's."""
+
     sitemap_urls: tuple[str, ...] = ()
+    sitemap_attempts: tuple[dict[str, Any], ...] = ()
+    """Every sitemap address tried and what came back (`SitemapAttempt.as_dict`), in the
+    order tried. A site with no sitemap shows two or three 404s here, which is the whole
+    explanation for a page count of "unknown"."""
+
     public_page_count: int | None = None
     """Pages advertised by the site's sitemaps. None when no sitemap was published, in which
     case the page count is unknown until a crawl discovers it by following links."""
@@ -126,7 +141,14 @@ class SiteAnalysis:
         lines.append(f"    robots.txt        {'found' if self.robots_found else 'not found'}")
         if self.crawl_delay:
             lines.append(f"    Crawl-delay       {self.crawl_delay}s")
+        for rule in self.robots_rules:
+            lines.append(f"      {rule}")
         lines.append(f"    Sitemaps          {len(self.sitemap_urls)}")
+        for attempt in self.sitemap_attempts:
+            outcome = (
+                "index" if attempt["index"] else f"{attempt['urls']} URLs"
+            ) if attempt["ok"] else "not a sitemap"
+            lines.append(f"      {attempt['status']:>3}  {attempt['url']}  ({outcome})")
         if self.public_page_count is None:
             lines.append("    Public pages      unknown (no sitemap; discoverable by crawling)")
         else:
@@ -168,6 +190,9 @@ class SiteProbe:
     sitemap_pages: tuple[str, ...] = ()
     """Page URLs the sitemaps advertise, up to the caller's limit. Unfiltered by host: the
     analysis reports how many pointed elsewhere, and the frontier applies its own scope."""
+
+    sitemap_attempts: tuple[SitemapAttempt, ...] = ()
+    """What the sitemap walk tried, for the crawl's discovery report."""
 
 
 def probe_site(
@@ -215,7 +240,7 @@ def probe_site(
         notes.append(f"render failed: {resolved.render_error}")
 
     policy: RobotsPolicy = load_robots(normalized, config=fetch_config)
-    sitemap_pages = discover_sitemap_urls(
+    sitemap_pages, sitemap_attempts = discover_sitemaps(
         normalized, policy=policy, config=fetch_config, limit=sitemap_limit
     )
 
@@ -289,7 +314,9 @@ def probe_site(
         render_loses_content=resolved.render_lost_content,
         robots_found=policy.fetched,
         crawl_delay=policy.crawl_delay,
+        robots_rules=policy.rules,
         sitemap_urls=policy.sitemaps,
+        sitemap_attempts=tuple(attempt.as_dict() for attempt in sitemap_attempts),
         public_page_count=len(on_site) if on_site else None,
         sample_pages=tuple(on_site[:8]),
         notes=tuple(notes),
@@ -299,6 +326,7 @@ def probe_site(
         resolved=resolved,
         policy=policy,
         sitemap_pages=tuple(sitemap_pages),
+        sitemap_attempts=tuple(sitemap_attempts),
     )
 
 

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import {
   type AnalysisEvent,
+  type DiscoveredKinds,
+  type DiscoveryEvent,
   type DoneEvent,
   type PageEvent,
   type SiteEvent,
@@ -64,6 +66,12 @@ interface RunState {
   /** Insertion-ordered: the phases that have actually started, in the order they started. */
   timings: Partial<Record<Phase, PhaseTiming>>;
   analysis: AnalysisEvent | null;
+  /** What robots.txt said and which sitemaps were tried: the reason discovery looks the
+   *  way it does. Null until Stage 0 reports it. */
+  discovery: DiscoveryEvent | null;
+  /** Discovered addresses by kind, as the engine last counted them. Replaced on every
+   *  `frontier` and `page` event -- it is a tally the engine keeps, not a delta. */
+  kinds: DiscoveredKinds | null;
   pages: PageEvent[];
   /** Every URL the crawl has accepted, in discovery order, rebuilt from `new_urls` deltas. */
   discoveredUrls: string[];
@@ -87,6 +95,8 @@ const INITIAL: RunState = {
   phase: "analyzing",
   timings: { analyzing: { startedAt: Date.now(), endedAt: null } },
   analysis: null,
+  discovery: null,
+  kinds: null,
   pages: [],
   discoveredUrls: [],
   origins: {},
@@ -140,6 +150,8 @@ function reduce(state: RunState, action: Action): RunState {
     }
     case "analysis":
       return { ...state, analysis: event };
+    case "discovery":
+      return { ...state, discovery: event };
     case "frontier": {
       // The seed frontier: the root itself, and the sitemap's addresses hang off the root
       // at depth 1. A `frontier` event carries no per-URL parent, and the engine's rule
@@ -159,6 +171,7 @@ function reduce(state: RunState, action: Action): RunState {
         root,
         origins,
         depthCounts: event.depth_counts ?? state.depthCounts,
+        kinds: event.discovered_kinds ?? state.kinds,
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: { ...state.live, discovered: event.discovered, queued: event.queued },
       };
@@ -187,6 +200,7 @@ function reduce(state: RunState, action: Action): RunState {
         origins,
         root: state.root ?? (event.depth === 0 ? event.url : null),
         depthCounts: event.depth_counts ?? state.depthCounts,
+        kinds: event.discovered_kinds ?? state.kinds,
         inFlight: state.inFlight.filter((url) => url !== event.url),
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: {

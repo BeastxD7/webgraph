@@ -6,6 +6,12 @@ where link-following is worst -- paginated catalogues and JavaScript navigation.
 
 robots.txt is honoured rather than merely parsed. An extraction engine that ignores it will
 get blocked, and deserves to be.
+
+Both are also *reported*, not only consulted. The owner watched two whole-site crawls
+(vtu.ac.in, sode-edu.in, 14 Sep 2026) whose only word on discovery was `from_sitemap: 0`:
+nothing said whether robots.txt existed, what it asked, which sitemap addresses were tried
+and what came back. So the policy keeps the file's text and the rules that apply to this
+client, and the sitemap walk keeps a record of every address it tried (`SitemapAttempt`).
 """
 
 from __future__ import annotations
@@ -19,7 +25,7 @@ from urllib.robotparser import RobotFileParser
 
 from webgraph import config
 from webgraph.crawl.frontier import reconcile_scheme
-from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, fetch_static
+from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, FetchResult, fetch_static
 
 ROBOTS_AGENT_TOKEN = config.ROBOTS_AGENT_TOKEN
 
@@ -27,16 +33,84 @@ MAX_SITEMAP_DOCUMENTS = config.MAX_SITEMAP_DOCUMENTS
 MAX_ANCHOR_CHARS = config.MAX_ANCHOR_CHARS
 
 __all__ = [
+    "RobotsGroup",
     "RobotsPolicy",
+    "SitemapAttempt",
     "discover_by_crawling",
     "discover_sitemap_urls",
+    "discover_sitemaps",
     "extract_links",
+    "group_for_client",
     "load_robots",
+    "policy_from",
 ]
 
 _SITEMAP_LINE: Final[re.Pattern[str]] = re.compile(r"^\s*sitemap:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
 _LOC: Final[re.Pattern[str]] = re.compile(r"<loc>\s*([^<]+?)\s*</loc>", re.IGNORECASE)
 _SITEMAP_INDEX: Final[re.Pattern[str]] = re.compile(r"<sitemapindex", re.IGNORECASE)
+
+@dataclass(frozen=True, slots=True)
+class RobotsGroup:
+    """The `User-agent:` group of a robots.txt that applies to this client.
+
+    `agents` are the lowercased names the group was declared for; `rules` the
+    `(allow|disallow, path)` pairs `rule_that_applied` decides with; `lines` the same
+    directives as the file wrote them -- Allow, Disallow and Crawl-delay, comments stripped
+    -- so a screen can quote the site's own words rather than a paraphrase.
+    """
+
+    agents: tuple[str, ...] = ()
+    rules: tuple[tuple[str, str], ...] = ()
+    lines: tuple[str, ...] = ()
+
+    @property
+    def label(self) -> str:
+        """The name the group was chosen by: the client's own if it was named, else `*`."""
+        token = ROBOTS_AGENT_TOKEN.lower()
+        return next((a for a in self.agents if token in a), None) or "*"
+
+
+def group_for_client(robots: str) -> RobotsGroup | None:
+    """The group of `robots` that governs this client, read the way `urllib.robotparser`
+    reads it: the group naming the client first, `*` otherwise, None when neither exists.
+
+    One parser for two readers. `fetch.robots.rule_that_applied` quotes the rule that
+    refused a page and the crawl's discovery report lists the rules that apply; both
+    used to be, or would have been, a second copy of this loop.
+    """
+    groups: list[RobotsGroup] = []
+    agents: list[str] = []
+    rules: list[tuple[str, str]] = []
+    lines: list[str] = []
+
+    def flush() -> None:
+        if lines:
+            groups.append(RobotsGroup(tuple(agents), tuple(rules), tuple(lines)))
+
+    for raw in robots.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key, value = key.strip().lower(), value.strip()
+        if key == "user-agent":
+            if lines:
+                flush()
+                agents, rules, lines = [], [], []
+            agents.append(value.lower())
+        elif key in ("allow", "disallow"):
+            rules.append((key, value))
+            lines.append(line)
+        elif key == "crawl-delay":
+            lines.append(line)
+    flush()
+
+    token = ROBOTS_AGENT_TOKEN.lower()
+    chosen = next((g for g in groups if any(token in a for a in g.agents)), None)
+    if chosen is None:
+        chosen = next((g for g in groups if "*" in g.agents), None)
+    return chosen
+
 
 @dataclass
 class RobotsPolicy:
@@ -49,6 +123,22 @@ class RobotsPolicy:
     fetched: bool = False
     """False when robots.txt was unreachable. A missing file means *allow*, per convention --
     but it is recorded so the distinction stays visible."""
+
+    status: int = 0
+    """The HTTP status the fetch of robots.txt returned; 0 when nothing came back at all.
+    A 404 and a 503 both mean *allow* today and different things about the site."""
+
+    text: str = ""
+    """The file as served. Kept so a reader can see what the site asked, not only whether
+    the engine obeyed; the trace drops it (`text` is output, not evidence) and keeps `rules`."""
+
+    rules: tuple[str, ...] = ()
+    """The Allow / Disallow / Crawl-delay lines of the group that governs this client,
+    verbatim. Empty for a file with no group for us, or no file."""
+
+    group: str | None = None
+    """Which `User-agent:` the rules came from -- `webgraph` when the site names this
+    client, `*` when it does not, None when no group applies."""
 
     def allows(self, url: str, user_agent: str = DEFAULT_USER_AGENT) -> bool:
         """Whether robots.txt lets this client fetch `url`.
@@ -74,21 +164,26 @@ def load_robots(root: str, *, config: FetchConfig | None = None) -> RobotsPolicy
     parts = urlsplit(root)
     origin = f"{parts.scheme}://{parts.netloc}"
     robots_url = urljoin(origin, "/robots.txt")
+    return policy_from(origin, fetch_static(robots_url, config=config))
 
-    result = fetch_static(robots_url, config=config)
+
+def policy_from(origin: str, result: FetchResult) -> RobotsPolicy:
+    """The policy a fetched robots.txt implies. Shared with `fetch.robots.policy_for`, which
+    fetches the file through its own per-host cache and must not construct a different
+    policy from the same bytes."""
+    robots_url = urljoin(origin, "/robots.txt")
     if not result.ok or not result.html.strip():
-        return RobotsPolicy(origin=origin, fetched=False)
+        return RobotsPolicy(origin=origin, fetched=False, status=result.status)
 
+    text = result.html
     parser = RobotFileParser()
     parser.set_url(robots_url)
     try:
-        parser.parse(result.html.splitlines())
+        parser.parse(text.splitlines())
     except Exception:
-        return RobotsPolicy(origin=origin, fetched=True)
+        return RobotsPolicy(origin=origin, fetched=True, status=result.status, text=text)
 
-    sitemaps = tuple(
-        urljoin(origin, match.group(1)) for match in _SITEMAP_LINE.finditer(result.html)
-    )
+    sitemaps = tuple(urljoin(origin, match.group(1)) for match in _SITEMAP_LINE.finditer(text))
 
     delay: float | None = None
     try:
@@ -98,13 +193,47 @@ def load_robots(root: str, *, config: FetchConfig | None = None) -> RobotsPolicy
     except Exception:
         delay = None
 
+    group = group_for_client(text)
     return RobotsPolicy(
         origin=origin,
         parser=parser,
         sitemaps=sitemaps,
         crawl_delay=delay,
         fetched=True,
+        status=result.status,
+        text=text,
+        rules=group.lines if group is not None else (),
+        group=group.label if group is not None else None,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SitemapAttempt:
+    """One sitemap address the discovery walk tried, and what came of it.
+
+    `source` says why it was tried: `robots` for a `Sitemap:` line, `conventional` for
+    `/sitemap.xml` and `/sitemap_index.xml`, `index` for an address a sitemap index listed.
+    `ok` means the response parsed as a sitemap -- fetched *and* carried a `<loc>`; a 200
+    that serves the site's HTML 404 page is not ok. `urls` is what it contributed to the
+    page set; an index contributes sitemaps, not pages, so its `urls` is 0 and `index` True.
+    """
+
+    url: str
+    status: int
+    ok: bool
+    urls: int
+    index: bool
+    source: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "url": self.url,
+            "status": self.status,
+            "ok": self.ok,
+            "urls": self.urls,
+            "index": self.index,
+            "source": self.source,
+        }
 
 
 def discover_sitemap_urls(
@@ -114,27 +243,46 @@ def discover_sitemap_urls(
     config: FetchConfig | None = None,
     limit: int = 5000,
 ) -> list[str]:
-    """Collect page URLs from a site's sitemaps.
+    """Collect page URLs from a site's sitemaps. `discover_sitemaps` with the record of
+    what was tried left out, for callers that only want the pages."""
+    return discover_sitemaps(root, policy=policy, config=config, limit=limit)[0]
 
-    Tries the locations robots.txt advertises first, then the conventional `/sitemap.xml`.
-    Sitemap indexes are followed one level, bounded by `MAX_SITEMAP_DOCUMENTS`.
+
+def discover_sitemaps(
+    root: str,
+    *,
+    policy: RobotsPolicy | None = None,
+    config: FetchConfig | None = None,
+    limit: int = 5000,
+) -> tuple[list[str], list[SitemapAttempt]]:
+    """Collect page URLs from a site's sitemaps, and the record of every address tried.
+
+    Tries the locations robots.txt advertises first, then the conventional `/sitemap.xml`
+    and `/sitemap_index.xml`. Sitemap indexes are followed one level, bounded by
+    `MAX_SITEMAP_DOCUMENTS`.
+
+    The attempts are the answer to "why is discovery by links only": on vtu.ac.in and
+    sode-edu.in every address came back 404 and the crawl's report said `from_sitemap: 0`
+    and nothing else. Each attempt records the status, whether it parsed, how many URLs it
+    gave and whether it was an index, in the order they were tried.
     """
     parts = urlsplit(root)
     origin = f"{parts.scheme}://{parts.netloc}"
 
-    candidates: list[str] = list(policy.sitemaps) if policy else []
+    candidates: list[tuple[str, str]] = [(url, "robots") for url in policy.sitemaps] if policy else []
     for conventional in ("/sitemap.xml", "/sitemap_index.xml"):
         candidate = urljoin(origin, conventional)
-        if candidate not in candidates:
-            candidates.append(candidate)
+        if candidate not in {url for url, _ in candidates}:
+            candidates.append((candidate, "conventional"))
 
     found: list[str] = []
+    attempts: list[SitemapAttempt] = []
     visited: set[str] = set()
     queue = list(candidates)
     documents = 0
 
     while queue and documents < MAX_SITEMAP_DOCUMENTS and len(found) < limit:
-        sitemap_url = queue.pop(0)
+        sitemap_url, source = queue.pop(0)
         if sitemap_url in visited:
             continue
         visited.add(sitemap_url)
@@ -142,6 +290,9 @@ def discover_sitemap_urls(
         result = fetch_static(sitemap_url, config=config)
         documents += 1
         if not result.ok or "<loc" not in result.html.lower():
+            attempts.append(
+                SitemapAttempt(sitemap_url, result.status, ok=False, urls=0, index=False, source=source)
+            )
             continue
 
         # Sitemaps often advertise a scheme the site no longer serves. Reconcile against
@@ -151,11 +302,21 @@ def discover_sitemap_urls(
         ]
         if _SITEMAP_INDEX.search(result.html):
             # An index lists sitemaps, not pages.
-            queue.extend(location for location in locations if location not in visited)
+            queue.extend(
+                (location, "index") for location in locations if location not in visited
+            )
+            attempts.append(
+                SitemapAttempt(sitemap_url, result.status, ok=True, urls=0, index=True, source=source)
+            )
         else:
             found.extend(locations)
+            attempts.append(
+                SitemapAttempt(
+                    sitemap_url, result.status, ok=True, urls=len(locations), index=False, source=source
+                )
+            )
 
-    return found[:limit]
+    return found[:limit], attempts
 
 
 @dataclass
