@@ -25,7 +25,7 @@ from lxml.html import HtmlElement
 
 from webgraph import config
 from webgraph.dom.blocks import LINE_BREAK, SKIP_TAGS, normalize_text, strip_permalinks
-from webgraph.markers import BREAK_ATTRIBUTE, FLOAT_ATTRIBUTE, HIDDEN_ATTRIBUTE
+from webgraph.markers import BREAK_ATTRIBUTE, FLOAT_ATTRIBUTE, HIDDEN_ATTRIBUTE, PATH_ATTRIBUTE
 from webgraph.types import Block, BlockKind
 
 LONG_CELL_CHARS = config.LONG_CELL_CHARS
@@ -252,7 +252,7 @@ def _image_block(element: HtmlElement, base: str, index: int, tree: object) -> B
     return Block(
         text=alt or title or "",
         tag="img",
-        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        xpath=_path(element, tree),
         dom_index=index,
         kind=BlockKind.IMAGE,
         href=src,
@@ -373,7 +373,7 @@ def _media_block(
     return Block(
         text=sentence,
         tag=tag,
-        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        xpath=_path(element, tree),
         dom_index=index,
         kind=BlockKind.MEDIA,
         href=src,
@@ -451,7 +451,7 @@ def _svg_block(element: HtmlElement, index: int, tree: object) -> Block | None:
     return Block(
         text=_SVG_LABEL_SEPARATOR.join(labels),
         tag="svg",
-        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        xpath=_path(element, tree),
         dom_index=index,
         kind=BlockKind.PARAGRAPH,
         alt=title or None,
@@ -890,7 +890,7 @@ def _table_block(
     return Block(
         text=text,
         tag="table",
-        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        xpath=_path(element, tree),
         dom_index=index,
         kind=BlockKind.TABLE,
         rows=tuple(rows),
@@ -1033,7 +1033,7 @@ def _editor_block(element: HtmlElement, index: int, tree: object) -> Block | Non
     return Block(
         text=text,
         tag=element.tag,
-        xpath=tree.getpath(element),  # type: ignore[attr-defined]
+        xpath=_path(element, tree),
         dom_index=index,
         kind=BlockKind.CODE,
         language=language,
@@ -1727,6 +1727,20 @@ def _last_descendant(element: HtmlElement) -> HtmlElement:
     return last
 
 
+def _stamp_paths(root: HtmlElement) -> None:
+    """Record every element's XPath before the tree is edited -- see `PATH_ATTRIBUTE`."""
+    tree = root.getroottree()
+    for element in root.iter():
+        if isinstance(element.tag, str):
+            element.set(PATH_ATTRIBUTE, tree.getpath(element))
+
+
+def _path(element: HtmlElement, tree: object) -> str:
+    """The element's XPath as the geometry map knows it: the stamped one, or -- for an
+    element created after the stamp, or a tree nobody stamped -- the current one."""
+    return str(element.get(PATH_ATTRIBUTE) or tree.getpath(element))  # type: ignore[attr-defined]
+
+
 def extract_rich_blocks(
     root: HtmlElement, base_url: str, *, min_chars: int = 1, include_hidden_text: bool = False
 ) -> list[Block]:
@@ -1736,6 +1750,7 @@ def extract_rich_blocks(
     `strip_permalinks`."""
     # Media survives this strip so it can become a placeholder; see `MEDIA_TAGS`. Its own
     # children (`<source>`, `<track>`) are read by `_media_block` and never emitted.
+    _stamp_paths(root)
     keep = MEDIA_TAGS | _MEDIA_CHILDREN | {"svg"}
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
@@ -1777,10 +1792,10 @@ def extract_rich_blocks(
             block = block.model_copy(update={"region": region, "in_main": in_main})
         floated = _float_of(element, float_cache)
         if floated is not None:
-            block = block.model_copy(update={"float_of": tree.getpath(floated)})
+            block = block.model_copy(update={"float_of": _path(floated, tree)})
         body = _body_of(element, body_cache)
         if body is not None:
-            block = block.model_copy(update={"body_of": tree.getpath(body)})
+            block = block.model_copy(update={"body_of": _path(body, tree)})
         depth = sum(1 for a in element.iterancestors() if a.tag == "blockquote")
         if element.tag == "blockquote" and block.kind is not BlockKind.QUOTE:
             depth += 1  # the quote's own text between its blocks, read as an orphan run
@@ -1796,9 +1811,9 @@ def extract_rich_blocks(
         for container, run in held:
             source = run.anchor if run.anchor is not None else container
             xpath = (
-                tree.getpath(run.anchor)
+                _path(run.anchor, tree)
                 if run.anchor is not None
-                else f"{tree.getpath(container)}/text()[{run.ordinal + 1}]"
+                else f"{_path(container, tree)}/text()[{run.ordinal + 1}]"
             )
             admit(
                 Block(
@@ -1843,7 +1858,7 @@ def extract_rich_blocks(
                 block = Block(
                     text="",
                     tag=tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=BlockKind.RULE,
                 )
@@ -1887,7 +1902,7 @@ def extract_rich_blocks(
                 block = Block(
                     text=text,
                     tag=tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=BlockKind.CODE,
                     language=_code_language(element),
@@ -1907,7 +1922,7 @@ def extract_rich_blocks(
                 block = Block(
                     text=text,
                     tag=tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=BlockKind.QUOTE,
                 )
@@ -1920,7 +1935,7 @@ def extract_rich_blocks(
                 block = Block(
                     text=text,
                     tag=tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=BlockKind.HEADING,
                     level=int(tag[1]),
@@ -1933,7 +1948,7 @@ def extract_rich_blocks(
                 block = Block(
                     text=text,
                     tag=tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=BlockKind.FIGURE_CAPTION,
                 )
@@ -2006,7 +2021,7 @@ def extract_rich_blocks(
                         Block(
                             text=piece_text,
                             tag=block_tag,
-                            xpath=tree.getpath(element),
+                            xpath=_path(element, tree),
                             dom_index=index,
                             kind=kind,
                             level=level,
@@ -2019,7 +2034,7 @@ def extract_rich_blocks(
                 block = Block(
                     text=text,
                     tag=block_tag,
-                    xpath=tree.getpath(element),
+                    xpath=_path(element, tree),
                     dom_index=index,
                     kind=kind,
                     level=level,

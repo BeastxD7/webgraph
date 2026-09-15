@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-15, PR #90) — a block's XPath is the geometry map's
+- The browser's measurements are keyed by each element's XPath in a fresh parse; the
+  block walk removes hidden twins, clipped labels, permalinks and unreachable trays and
+  only then computes a block's XPath -- and lxml writes `div[2]` while there are sibling
+  divs and plain `div` once a removal leaves one, so every block below a removed sibling
+  got a path the map did not hold. allbirds.com/collections/mens: 641 `display: none`
+  elements first, 161 of 217 blocks without a rectangle, the page in source order, and the
+  repeated product-card titles deduplicated as unmeasured text. Every element's path is now
+  stamped (`PATH_ATTRIBUTE`) before the tree is edited and blocks read the stamp.
+- Measured, whole page: nextjs.org/docs 0.940 → 0.979 recall, flipkart.com/mobiles 0.470
+  → 0.975, allbirds collection 0.685 → 0.887 (219 of 304 blocks measured, all 34 cards),
+  react.dev 0.996 → 1.000; fidelity suite cppreference 0.985 → 0.990, w3schools 0.994 →
+  0.998, cameronsworld 0.992 → 1.000. Live suite: simonwillison.net R 0.75 → 0.92 / P 0.74
+  → 0.84, discourse R 0.31 → 0.38, github issue P 0.00 → 0.25, astro +0.02. Boards (no
+  geometry in the corpora): WCXB 0.8632 = 0.8632, Zyte 0.945 = 0.945, WebMainBench 0.7335
+  → 0.7336.
+- Known and open: ar.wikipedia's "القاهرة" now measures its 16-picture mid-article
+  gallery, and the content boundary ends the article there (kept 654 → 274; whole-page
+  output unaffected). Scoring a run of pictures and short captions as one unit fixed it
+  and was rejected twice on the boards -- any short caption: WCXB −0.0016, WebMainBench
+  −0.009; unlinked captions only: WCXB −0.0006, WebMainBench −0.005 (product-variant and
+  related-story strips are galleries by that shape too).
+
 ### Fixed (2026-09-15, PR #89) — a browser answered with a server error is not a page
 - flipkart.com/mobiles: the plain fetch returned the listing (200, 560 KB) and Chromium,
   seconds later, a 503 "No server is available to handle this request". The render

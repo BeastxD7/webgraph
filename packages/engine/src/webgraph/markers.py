@@ -21,6 +21,7 @@ __all__ = [
     "GATE_ATTRIBUTE",
     "HIDDEN_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
+    "PATH_ATTRIBUTE",
     "marker_arguments",
 ]
 
@@ -30,6 +31,18 @@ so each element can be found again after parsing and rekeyed by whatever XPath l
 produces (`fetch.render.geometry_by_xpath`). Recomputing an XPath in JavaScript to match
 lxml's `getpath()` output would be fragile -- the formats differ over when an index is
 emitted -- and a mismatch yields no geometry at all. Stamped by `fetch/js/collect.js`."""
+
+PATH_ATTRIBUTE: Final[str] = "data-wg-path"
+"""Each element's XPath in the tree *as parsed*, stamped by `dom.rich.extract_rich_blocks`
+before anything is removed from that tree. The geometry map (`fetch.render.geometry_by_xpath`)
+is keyed by the XPath of a fresh parse; the block walk removes hidden twins, clipped labels,
+permalinks and unreachable trays before it computes a block's XPath -- and lxml's `getpath`
+writes `div[2]` when there are sibling divs and plain `div` when the removal left one, so
+every block below a removed sibling got a path the geometry map did not hold. On
+allbirds.com/collections/mens, 641 `display: none` elements came out first and 161 of 217
+blocks -- every product card -- had no rectangle; the page fell back to source order and
+its repeated card titles were deduplicated as unmeasured text. Set by the Python side, not
+the browser; never serialised into output (preserved tables whitelist their attributes)."""
 
 BREAK_ATTRIBUTE: Final[str] = "data-wg-brk"
 """Stamped on elements the browser lays out as their own box, so the parser can tell a line
