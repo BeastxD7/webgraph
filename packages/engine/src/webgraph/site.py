@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
+from urllib.parse import urljoin
 
 from webgraph import config
 from webgraph.analyze import SiteAnalysis, SiteProbe, probe_site
@@ -30,6 +31,7 @@ from webgraph.boilerplate import SiteChrome, detect_site_chrome
 from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
     RobotsPolicy,
+    SitemapAttempt,
     discover_by_crawling,
     discover_sitemap_urls,
     extract_links,
@@ -52,6 +54,7 @@ from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_p
 from webgraph.types import BlockKind, Document, Fact, PayloadSource
 
 IDENTICAL_CONTENT_WARNING = config.IDENTICAL_CONTENT_WARNING
+DISCOVERY_ROBOTS_TEXT_CHARS = config.DISCOVERY_ROBOTS_TEXT_CHARS
 
 __all__ = [
     "IDENTICAL_CONTENT_WARNING",
@@ -752,6 +755,42 @@ def _fetched(page: PageExtraction, depth: int, requested: str, root: str) -> _Fe
     return _Fetched(_without_html(page), depth, links, canonical, anchored, requested)
 
 
+def _discovery_event(
+    policy: RobotsPolicy,
+    attempts: Iterable[SitemapAttempt],
+    advertised: int,
+    seeds: int,
+) -> dict[str, Any]:
+    """What the crawl learned about how this site wants to be found.
+
+    The robots.txt text is capped so one event cannot be the size of a page; the rules that
+    apply to this client are never cut, because they are the part that decides anything.
+    The trace drops `text` anyway (`trace._SKIP_KEYS`) and keeps the rest.
+    """
+    cap = DISCOVERY_ROBOTS_TEXT_CHARS
+    attempts = list(attempts)
+    return {
+        "type": "discovery",
+        "robots": {
+            "found": policy.fetched,
+            "url": urljoin(policy.origin, "/robots.txt"),
+            "fetched_status": policy.status,
+            "group": policy.group,
+            "rules_for_us": list(policy.rules),
+            "crawl_delay": policy.crawl_delay,
+            "text": policy.text[:cap],
+            "text_truncated": len(policy.text) > cap,
+            "text_chars": len(policy.text),
+        },
+        "sitemaps": {
+            "attempts": [attempt.as_dict() for attempt in attempts],
+            "found": sum(1 for attempt in attempts if attempt.ok and not attempt.index),
+            "total_urls": advertised,
+        },
+        "seeds": seeds,
+    }
+
+
 def stream_site(
     root: str,
     *,
@@ -771,8 +810,19 @@ def stream_site(
     With `max_pages = 0` the crawl is unbounded: it runs until the frontier is exhausted.
     Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
 
-    Events carry a `type`: `stage`, `analysis`, `frontier`, `fetching`, `page`, `warning`, `done`,
-    `error`.
+    Events carry a `type`: `stage`, `analysis`, `discovery`, `frontier`, `fetching`, `page`,
+    `warning`, `done`, `error`.
+
+    `discovery` follows `analysis` and the sitemap seeding, before the first `frontier`: what
+    robots.txt said (`robots`: found, url, fetched_status, group, rules_for_us, crawl_delay,
+    text -- capped at `DISCOVERY_ROBOTS_TEXT_CHARS`, with `text_truncated` and `text_chars`
+    saying so), every sitemap address tried and what came back (`sitemaps.attempts`, each
+    `url` / `status` / `ok` / `urls` / `index` / `source`, plus `total_urls`), and `seeds`,
+    the sitemap URLs the frontier accepted. Two whole-site crawls the owner watched
+    (vtu.ac.in, sode-edu.in) reported `from_sitemap: 0` and nothing about why; this is the
+    why. `frontier` and `page` events then carry `discovered_kinds`, the running tally of
+    discovered addresses by `url_kind` -- on vtu.ac.in 7,907 of 17,126 were PDFs, which the
+    crawl fetched one by one to refuse, and no event said so.
 
     `builder`, when supplied, is filled in as pages arrive. It belongs to the caller rather
     than being returned, because a generator has no way to hand back an object mid-stream and
@@ -853,11 +903,14 @@ def stream_site(
     )
     seeded = frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
+    yield _discovery_event(policy, probe.sitemap_attempts, len(probe.sitemap_pages), len(seeded))
+
     yield {
         "type": "frontier",
         "queued": len(frontier),
         "discovered": frontier.seen_count,
         "depth_counts": frontier.depth_counts(),
+        "discovered_kinds": dict(frontier.kinds),
         "from_sitemap": len(seeded),
         "extracted": 0,
         # The root plus everything the sitemap contributed. Clients rebuild the discovered
@@ -1046,6 +1099,9 @@ def stream_site(
                     "queued": len(frontier),
                     "discovered": frontier.seen_count,
                     "depth_counts": frontier.depth_counts(),
+                    # Copied, like `depth_counts`: the API serialises events on another
+                    # thread after this one has moved on and the frontier has grown.
+                    "discovered_kinds": dict(frontier.kinds),
                     "extracted": extracted,
                     "failed": failed,
                     "newly_queued": len(discovered_here),

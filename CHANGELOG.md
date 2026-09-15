@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-15, PR #87) — discovery is visible
+- The site run shows what robots.txt said and which sitemaps were tried. Two whole-site
+  crawls the owner watched (vtu.ac.in, sode-edu.in, 14 Sep) reported `from_sitemap: 0`
+  and nothing else: neither site publishes a sitemap, and no event said whether robots.txt
+  existed, what it asked, or which addresses had been tried. `stream_site` now emits a
+  `discovery` event after `analysis` -- `robots` (found, url, fetched_status, group,
+  rules_for_us, crawl_delay, the file's text capped at `DISCOVERY_ROBOTS_TEXT_CHARS` with
+  `text_truncated`/`text_chars`), `sitemaps` (every attempt with url / status / ok / urls /
+  index / source, plus `found` and `total_urls`) and `seeds`. `RobotsPolicy` keeps `text`,
+  `status`, `rules` and `group`; `discover_sitemaps` returns `(urls, attempts)` beside the
+  unchanged `discover_sitemap_urls`; `SiteAnalysis` carries `robots_rules` and
+  `sitemap_attempts` and prints them. One robots parser for both readers: the group
+  selection in `fetch.robots.rule_that_applied` moved to `crawl.discovery.group_for_client`
+  and `policy_for` builds its policy with the same `policy_from` the crawl uses.
+- `frontier` and `page` events carry `discovered_kinds`: a running tally of discovered
+  addresses by `url_kind` -- page, pdf, image, other_file, archive (`/2024/06/`,
+  `/date/…`; a dated post permalink is a page), category, tag. On vtu.ac.in 7,907 of the
+  17,126 discovered URLs were PDFs, which the crawl fetched one at a time to refuse each as
+  not HTML -- a third of six hours -- and nothing on screen said so. Images and other files
+  are counted once even though `normalize_url` never queues them, so the tally says what
+  the site is rather than what the frontier holds. O(new URLs) per event.
+- Web: a **How the site can be discovered** panel under the technology panel, three
+  collapsed rows that open to their evidence -- "robots.txt · found · 1 rule applies to us
+  · crawl-delay 1s" (the rules, then the file, monospace and scrollable), "Sitemaps · none
+  published — discovery is by links only" (the table of attempts), "URLs found by kind"
+  (live counts with a warning line when files outnumber pages). Extraction output is
+  untouched: WCXB, Zyte, WCEB and WMB cannot move.
+
 ### Fixed (2026-09-15, PR #86) — prose before a code block
 - A paragraph of four words or fewer directly before a `<pre>` was dropped as MDN's
   language-and-copy strip ("js Copy"). perldoc.perl.org/perlre lost "is made equivalent
