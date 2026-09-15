@@ -307,3 +307,43 @@ class TestSlotsEndToEnd:
             "SHADOW FOOTER",
         ]
         assert "FALLBACK" not in document.text
+
+
+_OFFSCREEN_PAGE = """<!doctype html><html><head><title>Offscreen</title></head><body>
+<div style="position: absolute; left: -20914565266523px; top: 0px;"><a href="https://x.test/">SPAM LINK ONE</a></div>
+<div style="position: absolute; top: -9999px;"><a href="https://x.test/">SPAM LINK TWO</a></div>
+<h1>REAL HEADING</h1>
+<p style="position: relative; left: -20px;">NUDGED PARAGRAPH that is still on the page.</p>
+<nav id="side" style="position: fixed; top: 0; left: 0; width: 200px; height: 120px; overflow-y: auto;">
+<p style="height: 400px;">SIDEBAR FILLER pushing the rest down.</p>
+<p>SIDEBAR ENTRY scrolled out of the panel but one wheel tick away.</p>
+</nav>
+<script>document.getElementById('side').scrollTop = 1000;</script>
+<p>REAL BODY TEXT of the page.</p>
+</body></html>"""
+
+
+@pytest.mark.skipif(not PLAYWRIGHT_AVAILABLE, reason="needs the 'render' extra")
+class TestOffscreenEndToEnd:
+    """The renderer marks a box lying entirely off the page as `offscreen`, and the
+    document built from its HTML has no trace of it -- while a nudged box stays."""
+
+    def test_offscreen_text_is_not_on_the_page(self, tmp_path: Path) -> None:
+        target = tmp_path / "offscreen.html"
+        target.write_text(_OFFSCREEN_PAGE, encoding="utf-8")
+        result = render_page(target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False))
+        assert result.ok
+        assert result.html.count('data-wg-hidden="offscreen"') >= 2  # the div and its anchor, twice
+        document = build_document(result.html, target.as_uri())
+        texts = [b.text for b in document.blocks]
+        assert "SPAM LINK ONE" not in texts and "SPAM LINK TWO" not in texts
+        for kept in (
+            "REAL HEADING",
+            "NUDGED PARAGRAPH that is still on the page.",
+            "SIDEBAR FILLER pushing the rest down.",
+            "REAL BODY TEXT of the page.",
+        ):
+            assert kept in texts, kept
+        # w3schools / php.net: an entry scrolled above a scroll container's top has a
+        # negative box and is reachable by scrolling the container. Not off the page.
+        assert any(t.startswith("SIDEBAR ENTRY") for t in texts)

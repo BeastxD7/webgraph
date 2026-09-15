@@ -1534,3 +1534,69 @@ class TestCodeEditors:
     def test_an_empty_editor_is_nothing(self) -> None:
         html = '<div class="cm-editor"><div class="cm-scroller"><div class="cm-content"></div></div></div>'
         assert blocks(html) == []
+
+
+class TestOffscreen:
+    """Text pushed off the page is not on the page.
+
+    vtu.ac.in (15 Sep 2026): every page carries ~60 injected gambling links, each in
+    `<div style="position:absolute; left:-20914565266523px">` -- twenty trillion pixels
+    to the left, where no reader can scroll. The browser still reports a box for them, the
+    collector read "has a box" as "visible", and the whole-page Markdown opened with sixty
+    lines of spam before "About VTU". A box lying entirely at negative page coordinates is
+    hidden the way `display: none` is (`offscreen`); on a plain fetch the inline style that
+    puts it there is the same signal.
+    """
+
+    def test_a_box_the_renderer_put_off_the_page_is_dropped(self) -> None:
+        found = blocks(
+            '<main><div data-wg-hidden="offscreen"><a href="https://x.test/">situs slot</a></div>'
+            "<h1>About VTU</h1><p>VTU is one of the largest technological universities.</p></main>"
+        )
+        assert [b.text for b in found] == ["About VTU", "VTU is one of the largest technological universities."]
+
+    def test_an_inline_style_that_pushes_text_off_the_page_is_dropped_statically(self) -> None:
+        html = (
+            '<main><div style="position: absolute; left: -20914565266523px; top: 0px;">'
+            '<a href="https://x.test/">TERMINAL4D</a></div>'
+            '<div style="position:absolute;top:-9999px"><a href="https://x.test/">sudirman168</a></div>'
+            '<p style="text-indent:-9999px">Hidden by indent</p>'
+            "<h1>About VTU</h1><p>VTU is one of the largest technological universities.</p></main>"
+        )
+        text = build_document(f"<html><body>{html}</body></html>", BASE).text
+        assert "TERMINAL4D" not in text and "sudirman168" not in text and "indent" not in text
+        assert "About VTU" in text
+
+    def test_a_small_negative_offset_is_still_on_the_page(self) -> None:
+        """`left: -20px` is a design nudge, not a hiding place; and a negative offset without
+        `position` does nothing at all."""
+        html = (
+            '<main><p style="position:relative; left:-20px">Nudged heading text</p>'
+            '<p style="left:-9999px">No position, so this is where it looks</p>'
+            '<p style="position:absolute; left:-9999px">Gone</p></main>'
+        )
+        text = build_document(f"<html><body>{html}</body></html>", BASE).text
+        assert "Nudged heading text" in text
+        assert "No position" in text
+        assert "Gone" not in text
+
+    def test_include_hidden_text_keeps_offscreen_text(self) -> None:
+        """Off-screen positioning is also the oldest screen-reader-only technique; a caller
+        who asked for every string in the DOM gets it."""
+        html = (
+            '<main><span style="position:absolute; left:-9999px">Skip to content</span>'
+            "<p>Body text of the page.</p></main>"
+        )
+        document = build_document(f"<html><body>{html}</body></html>", BASE, include_hidden_text=True)
+        assert "Skip to content" in document.text
+
+    def test_offscreen_matter_stays_hidden_through_the_union(self) -> None:
+        """The static fetch holds the spam without any marker; the union must not put back
+        what the browser hid. `hidden_matter` reports `offscreen` like `display`."""
+        from webgraph.fetch.render import hidden_matter
+
+        rendered = (
+            '<html><body><div data-wg-hidden="offscreen"><a href="https://x.test/">situs slot</a></div>'
+            "<p>Body text of the page.</p></body></html>"
+        )
+        assert hidden_matter(rendered).holds("situsslot", min_chars=0)

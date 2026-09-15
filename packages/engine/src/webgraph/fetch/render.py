@@ -550,9 +550,11 @@ def hidden_matter(html: str) -> HiddenMatter:
     from the rendered document and put straight back by the union from the static one.
     `union_documents` checks a static-only block against this.
 
-    Only the two kinds a reader cannot see. Clipped (screen-reader-only) text is the
-    `include_hidden_text` option's business, and a collapsed `overflow` tray is in the flow
-    of the page.
+    Only the kinds a reader cannot see: `display`, `visibility` and `offscreen` (a box
+    entirely at negative page coordinates -- vtu.ac.in's injected links, which the static
+    fetch holds without any marker and the union must not put back). Clipped
+    (screen-reader-only) text is the `include_hidden_text` option's business, and a
+    collapsed `overflow` tray is in the flow of the page.
     """
     from webgraph.dom.blocks import parse_html
     from webgraph.markers import HIDDEN_ATTRIBUTE
@@ -561,7 +563,8 @@ def hidden_matter(html: str) -> HiddenMatter:
     lines: set[str] = set()
     wholes: list[str] = []
     for element in root.xpath(
-        f"//*[@{HIDDEN_ATTRIBUTE}='display' or @{HIDDEN_ATTRIBUTE}='visibility']"
+        f"//*[@{HIDDEN_ATTRIBUTE}='display' or @{HIDDEN_ATTRIBUTE}='visibility'"
+        f" or @{HIDDEN_ATTRIBUTE}='offscreen']"
     ):
         whole = "".join(element.text_content().split()).casefold()
         if not whole:
