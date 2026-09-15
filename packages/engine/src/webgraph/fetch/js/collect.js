@@ -106,8 +106,17 @@
     // `position:absolute; left:-20914565266523px`; they have a box, and the box is
     // twenty trillion pixels to the left. Hidden the way `display: none` is -- not
     // measured, not on the page -- and, like `clipped`, only when there is text to hide.
+    // Not inside a scroll container, though: w3schools' fixed sidebar and php.net's
+    // manual index scroll themselves to the current entry, and the entries above it sit
+    // at negative coordinates while being one wheel-tick away. Only the document's own
+    // negative space is unreachable.
     if ((px + box.width <= 0 || py + box.height <= 0) && (el.textContent || '').trim()) {
-      el.setAttribute(HIDDEN, 'offscreen'); continue;
+      let scrollable = false;
+      for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+        const as = window.getComputedStyle(a);
+        if (/(auto|scroll)/.test(as.overflowX + ' ' + as.overflowY)) { scrollable = true; break; }
+      }
+      if (!scrollable) { el.setAttribute(HIDDEN, 'offscreen'); continue; }
     }
     rects[id] = { x: px, y: py, width: box.width, height: box.height };
   }

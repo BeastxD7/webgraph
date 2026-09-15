@@ -314,6 +314,11 @@ _OFFSCREEN_PAGE = """<!doctype html><html><head><title>Offscreen</title></head><
 <div style="position: absolute; top: -9999px;"><a href="https://x.test/">SPAM LINK TWO</a></div>
 <h1>REAL HEADING</h1>
 <p style="position: relative; left: -20px;">NUDGED PARAGRAPH that is still on the page.</p>
+<nav id="side" style="position: fixed; top: 0; left: 0; width: 200px; height: 120px; overflow-y: auto;">
+<p style="height: 400px;">SIDEBAR FILLER pushing the rest down.</p>
+<p>SIDEBAR ENTRY scrolled out of the panel but one wheel tick away.</p>
+</nav>
+<script>document.getElementById('side').scrollTop = 1000;</script>
 <p>REAL BODY TEXT of the page.</p>
 </body></html>"""
 
@@ -330,8 +335,15 @@ class TestOffscreenEndToEnd:
         assert result.ok
         assert result.html.count('data-wg-hidden="offscreen"') >= 2  # the div and its anchor, twice
         document = build_document(result.html, target.as_uri())
-        assert [b.text for b in document.blocks] == [
+        texts = [b.text for b in document.blocks]
+        assert "SPAM LINK ONE" not in texts and "SPAM LINK TWO" not in texts
+        for kept in (
             "REAL HEADING",
             "NUDGED PARAGRAPH that is still on the page.",
+            "SIDEBAR FILLER pushing the rest down.",
             "REAL BODY TEXT of the page.",
-        ]
+        ):
+            assert kept in texts, kept
+        # w3schools / php.net: an entry scrolled above a scroll container's top has a
+        # negative box and is reachable by scrolling the container. Not off the page.
+        assert any(t.startswith("SIDEBAR ENTRY") for t in texts)
