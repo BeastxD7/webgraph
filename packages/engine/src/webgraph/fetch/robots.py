@@ -19,10 +19,9 @@ from __future__ import annotations
 import threading
 import time
 from urllib.parse import urljoin, urlsplit
-from urllib.robotparser import RobotFileParser
 
 from webgraph import config
-from webgraph.crawl.discovery import RobotsPolicy
+from webgraph.crawl.discovery import RobotsPolicy, group_for_client, policy_from
 from webgraph.fetch.static import FetchConfig, fetch_static
 
 __all__ = ["allowed", "forget", "policy_for", "rule_that_applied", "sanctioned_source"]
@@ -40,9 +39,10 @@ def forget() -> None:
 def policy_for(url: str, *, fetch_config: FetchConfig | None = None) -> tuple[RobotsPolicy, str]:
     """The robots policy for `url`'s origin and the file's text, fetched once per host.
 
-    The file is fetched here rather than through `load_robots` because the refusal quotes
-    the rule and `load_robots` keeps only the parser; the policy it returns is the same
-    type the crawl uses, so `allows` is one function for both.
+    The file is fetched here rather than through `load_robots` so the per-host cache owns
+    the fetch; the policy is built by the same `policy_from` the crawl uses, so `allows`,
+    the quoted rules and the kept text are one implementation for both. The text is
+    returned beside the policy as it always was; it is also on `policy.text` now.
     """
     parts = urlsplit(url)
     origin = f"{parts.scheme}://{parts.netloc}"
@@ -51,18 +51,8 @@ def policy_for(url: str, *, fetch_config: FetchConfig | None = None) -> tuple[Ro
         cached = _cache.get(origin)
         if cached is not None and now - cached[0] < config.ROBOTS_CACHE_SECONDS:
             return cached[1], cached[2]
-    result = fetch_static(urljoin(origin, "/robots.txt"), config=fetch_config)
-    if result.ok and result.html.strip():
-        parser = RobotFileParser()
-        parser.set_url(urljoin(origin, "/robots.txt"))
-        try:
-            parser.parse(result.html.splitlines())
-            policy = RobotsPolicy(origin=origin, parser=parser, fetched=True)
-        except Exception:
-            policy = RobotsPolicy(origin=origin, fetched=True)
-        text = result.html
-    else:
-        policy, text = RobotsPolicy(origin=origin, fetched=False), ""
+    policy = policy_from(origin, fetch_static(urljoin(origin, "/robots.txt"), config=fetch_config))
+    text = policy.text
     with _lock:
         _cache[origin] = (now, policy, text)
     return policy, text
@@ -93,36 +83,16 @@ def rule_that_applied(robots: str, url: str) -> tuple[str, str] | None:
     quoted from the file. None when no rule in the file forbids it.
 
     `urllib.robotparser` decides but does not say why; this reads the file the way it does
-    -- the group naming this client first, `*` otherwise, the longest matching path wins,
-    `Allow` beating `Disallow` at equal length -- so the quoted rule is the one that decided.
+    -- the group naming this client first, `*` otherwise (`group_for_client`), the longest
+    matching path wins, `Allow` beating `Disallow` at equal length -- so the quoted rule is
+    the one that decided.
     """
     path = urlsplit(url).path or "/"
-    groups: list[tuple[list[str], list[tuple[str, str]]]] = []
-    agents: list[str] = []
-    rules: list[tuple[str, str]] = []
-    for raw in robots.splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line or ":" not in line:
-            continue
-        key, _, value = line.partition(":")
-        key, value = key.strip().lower(), value.strip()
-        if key == "user-agent":
-            if rules:
-                groups.append((agents, rules))
-                agents, rules = [], []
-            agents.append(value.lower())
-        elif key in ("allow", "disallow"):
-            rules.append((key, value))
-    if rules:
-        groups.append((agents, rules))
-    token = config.ROBOTS_AGENT_TOKEN.lower()
-    chosen = next((g for g in groups if any(token in a for a in g[0])), None)
-    if chosen is None:
-        chosen = next((g for g in groups if "*" in g[0]), None)
+    chosen = group_for_client(robots)
     if chosen is None:
         return None
     winner: tuple[str, str] | None = None
-    for key, value in chosen[1]:
+    for key, value in chosen.rules:
         if not value and key == "disallow":
             continue  # `Disallow:` with nothing is "allow everything"
         pattern = value.rstrip("$")
@@ -131,8 +101,7 @@ def rule_that_applied(robots: str, url: str) -> tuple[str, str] | None:
             winner = (key, value)
     if winner is None or winner[0] == "allow":
         return None
-    label = next((a for a in chosen[0] if token in a), None) or "*"
-    return f"User-agent: {label}", f"Disallow: {winner[1]}"
+    return f"User-agent: {chosen.label}", f"Disallow: {winner[1]}"
 
 
 def _wildcard(path: str, pattern: str) -> bool:

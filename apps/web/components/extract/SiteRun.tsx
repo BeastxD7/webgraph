@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import AskPanel from "./AskPanel";
 import DepthTree from "./DepthTree";
+import DiscoveryPanel from "./DiscoveryPanel";
 import GraphPanel from "./GraphPanel";
 import PageList from "./PageList";
 import LivePipeline from "./LivePipeline";
@@ -168,6 +169,13 @@ export default function SiteRun({
       <RunLog log={run.log} meta={logMeta} />
 
       {run.analysis && <TechnologyPanel analysis={run.analysis} />}
+
+      {/* Why discovery looks the way it does: what robots.txt asked, which sitemaps were
+          tried, and what kind of thing the addresses are. Shown the moment Stage 0 reports
+          it, and the kinds tally moves with every page. */}
+      {run.discovery && (
+        <DiscoveryPanel discovery={run.discovery} kinds={run.kinds} live={run.running} />
+      )}
 
       {run.summary && <RunSummary summary={run.summary} />}
 

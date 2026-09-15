@@ -384,6 +384,71 @@ export interface AnalysisEvent {
   strategy: string;
 }
 
+/**
+ * How the site wants to be found, as the crawl learned it in Stage 0.
+ *
+ * Two whole-site crawls the owner watched (vtu.ac.in, sode-edu.in) reported `from_sitemap: 0`
+ * and nothing about why: neither site publishes a sitemap, and nothing on screen said what
+ * robots.txt asked or which sitemap addresses had been tried. This is the why, sent once,
+ * right after `analysis` and before the first `frontier`.
+ */
+export interface DiscoveryEvent {
+  type: "discovery";
+  robots: {
+    /** False when the file could not be fetched -- which means *allow*, by convention. */
+    found: boolean;
+    url: string;
+    /** The HTTP status the fetch returned; 0 when nothing came back at all. */
+    fetched_status: number;
+    /** Which `User-agent:` the rules came from: "webgraph" when the site names this client,
+     *  "*" when it does not, null when no group applies. */
+    group: string | null;
+    /** The Allow / Disallow / Crawl-delay lines of that group, as the file wrote them. */
+    rules_for_us: string[];
+    crawl_delay: number | null;
+    /** The file as served, capped server-side; `text_truncated` says when it was cut. */
+    text: string;
+    text_truncated: boolean;
+    text_chars: number;
+  };
+  sitemaps: {
+    /** Every address tried, in the order tried. `source` is "robots" for a `Sitemap:` line,
+     *  "conventional" for /sitemap.xml and /sitemap_index.xml, "index" for one an index
+     *  listed. `ok` means it parsed as a sitemap; a 200 that is the site's HTML 404 is not. */
+    attempts: Array<{
+      url: string;
+      status: number;
+      ok: boolean;
+      /** Page URLs it contributed; 0 for an index, which lists sitemaps rather than pages. */
+      urls: number;
+      index: boolean;
+      source: "robots" | "conventional" | "index";
+    }>;
+    /** Sitemaps that parsed and listed pages (indexes excluded). */
+    found: number;
+    /** Page URLs the sitemaps advertised, before scope and deduplication. */
+    total_urls: number;
+  };
+  /** Sitemap URLs the frontier accepted -- what `from_sitemap` on `frontier` reports. */
+  seeds: number;
+}
+
+/**
+ * What kind of thing each discovered address points at, judged from the URL alone, as a
+ * running tally. On vtu.ac.in 7,907 of 17,126 discovered URLs were PDFs, which the crawl
+ * fetched one by one to refuse; a count of addresses alone hid that for six hours. Every
+ * key is present on every event, zeros included.
+ */
+export interface DiscoveredKinds {
+  page: number;
+  pdf: number;
+  image: number;
+  other_file: number;
+  archive: number;
+  category: number;
+  tag: number;
+}
+
 export interface InventoryEvent {
   type: "inventory";
   source: string;
@@ -408,6 +473,8 @@ export interface FrontierEvent {
    *  deltas; resending the whole frontier on every event would be quadratic. */
   new_urls: string[];
   depth_counts?: DepthCounts;
+  /** The running tally of discovered addresses by kind; replaces, never adds to, the last. */
+  discovered_kinds?: DiscoveredKinds;
 }
 
 /**
@@ -478,6 +545,8 @@ export interface PageEvent {
   /** URLs this page contributed to the frontier. */
   new_urls: string[];
   depth_counts?: DepthCounts;
+  /** The running tally of discovered addresses by kind; replaces, never adds to, the last. */
+  discovered_kinds?: DiscoveredKinds;
   pages_per_minute: number;
   totals: { chars: number; markdown: number; images: number; tables: number };
   /** Null when graph building is disabled. */
@@ -555,6 +624,7 @@ export type SiteEvent =
   | RunEvent
   | StageEvent
   | AnalysisEvent
+  | DiscoveryEvent
   | InventoryEvent
   | FrontierEvent
   | FetchingEvent

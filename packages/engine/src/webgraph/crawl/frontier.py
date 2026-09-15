@@ -16,6 +16,7 @@ from typing import Final
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 __all__ = [
+    "KINDS",
     "CrawlScope",
     "Discovery",
     "Frontier",
@@ -23,6 +24,7 @@ __all__ = [
     "normalize_url",
     "reconcile_scheme",
     "same_site",
+    "url_kind",
 ]
 
 TRACKING_PARAMS: Final[frozenset[str]] = frozenset({
@@ -42,6 +44,27 @@ NON_PAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
 })
 """Skipped by the crawler. PDFs are deliberately absent -- they are documents worth
 extracting, and belong to the document pipeline rather than being discarded here."""
+
+IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".ico", ".bmp", ".tiff",
+})
+
+KINDS: Final[tuple[str, ...]] = (
+    "page", "pdf", "image", "other_file", "archive", "category", "tag",
+)
+"""What a discovered address looks like, from its URL alone. Every key is reported on
+every event, zeros included, so a consumer gets a closed shape rather than a sparse one."""
+
+_DATE_ARCHIVE: Final[re.Pattern[str]] = re.compile(
+    r"/(?:date/.*|(?:19|20)\d{2}/(?:0[1-9]|1[0-2])(?:/(?:0[1-9]|[12]\d|3[01]))?)$"
+)
+"""A WordPress date archive: `/2024/06/`, `/2024/06/15/`, or anything under `/date/`. Only
+when the path *ends* at the date -- `/2024/06/my-post/` is a post with a date-based
+permalink, not an archive of them -- and only when the digits read as a date: a bare
+`/thread/1234` or `/product/2019` is an id, and a forum crawl that called every thread an
+archive would be a row nobody trusted."""
+
+_TAXONOMY: Final[re.Pattern[str]] = re.compile(r"/(categor(?:y|ies)|tags?)/[^/]")
 
 _DEFAULT_PORTS: Final[dict[str, str]] = {"http": "80", "https": "443"}
 _INDEX_FILE: Final[re.Pattern[str]] = re.compile(r"/index\.(html?|php|aspx?)$", re.IGNORECASE)
@@ -97,6 +120,40 @@ def normalize_url(url: str, *, base: str | None = None) -> str | None:
     )
 
     return urlunsplit((parts.scheme.lower(), host, path, query, ""))
+
+
+def url_kind(url: str) -> str:
+    """What kind of thing an address points at, judged from the URL alone.
+
+    The crawl on vtu.ac.in discovered 17,126 URLs of which 7,907 were PDFs, and spent a
+    third of six hours fetching them one at a time to refuse each as not HTML. Nothing on
+    screen said so, because a frontier counts addresses and an address is an address. This
+    is the cheap classifier behind the running tally the stream reports: extension first
+    (`pdf`, `image`, `other_file`), then the WordPress shapes that are lists of pages
+    rather than pages (`archive`, `category`, `tag`), else `page`. It never decides what is
+    fetched -- `normalize_url` and the scope do that -- it only says what was found.
+    """
+    try:
+        path = urlsplit(url).path or "/"
+    except ValueError:
+        return "page"
+    lowered = path.lower()
+    suffix = lowered.rsplit("/", 1)[-1]
+    if "." in suffix:
+        extension = "." + suffix.rsplit(".", 1)[-1]
+        if extension == ".pdf":
+            return "pdf"
+        if extension in IMAGE_SUFFIXES:
+            return "image"
+        if extension in NON_PAGE_SUFFIXES:
+            return "other_file"
+    trimmed = lowered.rstrip("/")
+    if _DATE_ARCHIVE.search(trimmed):
+        return "archive"
+    taxonomy = _TAXONOMY.search(lowered)
+    if taxonomy is not None:
+        return "category" if taxonomy.group(1).startswith("categor") else "tag"
+    return "page"
 
 
 def reconcile_scheme(url: str, root: str) -> str:
@@ -250,6 +307,16 @@ class Frontier:
     _depths: dict[str, int] = field(default_factory=dict)
     """Link distance from the root for every accepted address, by canonical key."""
 
+    kinds: dict[str, int] = field(default_factory=lambda: dict.fromkeys(KINDS, 0))
+    """How many distinct addresses of each `url_kind` this crawl has found -- accepted ones
+    and, for images and other files, the ones `normalize_url` refuses before they can be
+    accepted. A frontier that counts only what it queues reports 0 images on a site whose
+    every page links to twenty, and the point of the tally is to say what the site *is*."""
+
+    _seen_files: set[str] = field(default_factory=set)
+    """Image and file addresses already tallied. They never reach `_seen` (they are not
+    pages) and would otherwise be counted once per page that links to them."""
+
     origin: dict[str, Discovery] = field(default_factory=dict)
     """How each address came to be in this crawl, for whoever accepted it first.
 
@@ -275,7 +342,36 @@ class Frontier:
         self._seen.add(key)
         self._lanes.setdefault(depth, deque()).append(normalized)
         self._depths[key] = depth
+        self._tally(normalized)
         return True
+
+    def _tally(self, url: str) -> None:
+        kind = url_kind(url)
+        self.kinds[kind] = self.kinds.get(kind, 0) + 1
+
+    def _tally_file(self, url: str, base: str | None) -> None:
+        """Count an address `normalize_url` refused, when it is a file on this site.
+
+        Refusal has several causes -- off-site, `mailto:`, a template's `/undefined` -- and
+        only one of them is worth reporting: a same-site image or download. Those are the
+        addresses that make a site look bigger than it reads."""
+        try:
+            resolved = urljoin(base, url) if base else url
+            parts = urlsplit(resolved)
+        except ValueError:
+            return
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            return
+        kind = url_kind(resolved)
+        if kind not in {"image", "other_file"}:
+            return
+        if not same_site(resolved, self.scope.root, allow_subdomains=self.scope.allow_subdomains):
+            return
+        key = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ""))
+        if key in self._seen_files:
+            return
+        self._seen_files.add(key)
+        self.kinds[kind] = self.kinds.get(kind, 0) + 1
 
     def extend(
         self,
@@ -306,7 +402,10 @@ class Frontier:
         accepted: list[str] = []
         for url in urls:
             normalized = normalize_url(url, base=base)
-            if normalized is not None and self.add(normalized, depth):
+            if normalized is None:
+                self._tally_file(url, base)
+                continue
+            if self.add(normalized, depth):
                 accepted.append(normalized)
                 label = (anchors or {}).get(url)
                 self.origin.setdefault(
@@ -344,6 +443,7 @@ class Frontier:
         self._seen.add(key)
         # The page the caller holds is the root, and the root is depth 0.
         self._depths.setdefault(key, 0)
+        self._tally(normalized)
         return True
 
     def pop(self) -> tuple[str, int] | None:

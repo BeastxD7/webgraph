@@ -357,6 +357,11 @@ ROBOTS_AGENT_TOKEN = "webgraph"
 # How long a host's robots.txt is trusted before it is fetched again.
 ROBOTS_CACHE_SECONDS = 3600
 
+# How much of a site's robots.txt the crawl's `discovery` event carries, so a reader can
+# see the file itself. Enough for any real file (Wikipedia's, the longest seen, is ~24k;
+# most are under 1k); the rules that apply to this client are always sent whole.
+DISCOVERY_ROBOTS_TEXT_CHARS = 4_000
+
 # Where a site that disallows automated reading offers its content instead, named in the
 # refusal. Only the ones that could be cited; a hint the engine cannot stand behind is noise.
 ROBOTS_SANCTIONED_SOURCES = {
