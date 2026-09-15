@@ -1408,7 +1408,10 @@ def _drop_closed_dialogs(root: HtmlElement) -> None:
         parent.remove(element)
 
 
-_UNSHOWN_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility"})
+_UNSHOWN_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility", "offscreen"})
+"""Hidden in a way a control could undo -- `display: none`, `visibility: hidden`, or a
+box parked off the page (an off-canvas menu at `left: -100%` is opened by a hamburger; a
+spam div at `left: -2e13px` by nothing, and is dropped)."""
 _OPENER_ATTRIBUTES: Final[tuple[str, ...]] = (
     "aria-controls", "aria-owns", "data-target", "data-bs-target", "data-toggle-target",
     "data-tab", "data-panel", "for",
@@ -1492,6 +1495,58 @@ def _drop_unreachable_hidden(root: HtmlElement) -> None:
             parent.remove(element)
 
 
+_OFFSCREEN_STYLE: Final[re.Pattern[str]] = re.compile(
+    r"(?:^|;)\s*(?P<prop>left|top|right|bottom|text-indent|margin-left|margin-top)\s*:\s*"
+    r"-(?P<px>\d+(?:\.\d+)?)px",
+    re.IGNORECASE,
+)
+_POSITIONED_STYLE: Final[re.Pattern[str]] = re.compile(
+    r"(?:^|;)\s*position\s*:\s*(absolute|fixed)\b", re.IGNORECASE
+)
+_OFFSCREEN_MIN_PX: Final[int] = 999
+
+
+def _styled_off_the_page(element: HtmlElement) -> bool:
+    """Whether an inline style puts this element where no reader can scroll.
+
+    The plain fetch has no boxes; it has the style attribute the page wrote. `position:
+    absolute` with `left`/`top` at -999px or beyond, or a `text-indent` that far, is
+    the oldest way to hide text from readers while showing it to search engines --
+    vtu.ac.in's `left: -20914565266523px` -- and the oldest screen-reader-only technique.
+    A `left: -20px` nudge, or a negative offset with no `position`, stays: the first is
+    design and the second does nothing.
+    """
+    style = element.get("style") or ""
+    if not style:
+        return False
+    for match in _OFFSCREEN_STYLE.finditer(style):
+        if float(match.group("px")) < _OFFSCREEN_MIN_PX:
+            continue
+        prop = match.group("prop").lower()
+        if prop in ("left", "top", "right", "bottom") and _POSITIONED_STYLE.search(style) is None:
+            continue
+        return True
+    return False
+
+
+def _drop_offscreen_styled(root: HtmlElement) -> None:
+    """Remove elements an inline style pushes off the page (`_styled_off_the_page`) --
+    the static counterpart of the renderer's `offscreen` marker. Text only: an image
+    sprite positioned off-screen has nothing to say either way."""
+    doomed = [
+        element
+        for element in root.xpath(".//*[@style]")
+        if isinstance(element.tag, str)
+        and _styled_off_the_page(element)
+        and (element.text_content() or "").strip()
+    ]
+    for element in doomed:
+        parent = element.getparent()
+        if parent is not None:
+            _carry_tail(parent, element)
+            parent.remove(element)
+
+
 def _drop_clipped(root: HtmlElement) -> None:
     """Remove the elements the renderer measured as screen-reader-only -- clipped to a 1px
     box -- whatever their class is called. The same text the `SR_ONLY_CLASSES` rule removes
@@ -1561,11 +1616,13 @@ def _drop_hidden_twins(root: HtmlElement) -> None:
             parent.remove(hidden)
 
 
-_ABSENT_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility", "overflow"})
-"""The ways of hiding that mean "not on the page": `display: none`, `visibility: hidden`
-and `overflow` (clipped out entirely by an `overflow: hidden` ancestor -- a collapsed
-accordion tray). `opacity` is not one -- a scroll animation starts its text at opacity 0
--- and `clipped` is handled by `_drop_clipped` before this runs."""
+_ABSENT_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility", "overflow", "offscreen"})
+"""The ways of hiding that mean "not on the page": `display: none`, `visibility: hidden`,
+`overflow` (clipped out entirely by an `overflow: hidden` ancestor -- a collapsed
+accordion tray) and `offscreen` (a box lying entirely at negative page coordinates --
+vtu.ac.in's injected links at `left: -20914565266523px`). `opacity` is not one -- a
+scroll animation starts its text at opacity 0 -- and `clipped` is handled by
+`_drop_clipped` before this runs."""
 
 
 def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
@@ -1686,6 +1743,7 @@ def extract_rich_blocks(
     strip_permalinks(root, keep_hidden_text=include_hidden_text)
     if not include_hidden_text:
         _drop_clipped(root)
+        _drop_offscreen_styled(root)
     _drop_closed_dialogs(root)
     _drop_hidden_twins(root)
     _drop_unreachable_hidden(root)

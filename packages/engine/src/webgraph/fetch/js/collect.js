@@ -98,14 +98,18 @@
     }
     if (collapsed && (el.textContent || '').trim()) { el.setAttribute(HIDDEN, 'overflow'); continue; }
 
-    rects[id] = {
-      // Page-relative, not viewport-relative: a scrolled viewport would otherwise
-      // report negative coordinates for content above the fold.
-      x: box.left + window.scrollX,
-      y: box.top + window.scrollY,
-      width: box.width,
-      height: box.height,
-    };
+    // Page-relative, not viewport-relative: a scrolled viewport would otherwise
+    // report negative coordinates for content above the fold.
+    const px = box.left + window.scrollX, py = box.top + window.scrollY;
+    // A box lying entirely at negative page coordinates is somewhere no reader can
+    // scroll to. vtu.ac.in carries sixty injected gambling links per page, each in
+    // `position:absolute; left:-20914565266523px`; they have a box, and the box is
+    // twenty trillion pixels to the left. Hidden the way `display: none` is -- not
+    // measured, not on the page -- and, like `clipped`, only when there is text to hide.
+    if ((px + box.width <= 0 || py + box.height <= 0) && (el.textContent || '').trim()) {
+      el.setAttribute(HIDDEN, 'offscreen'); continue;
+    }
+    rects[id] = { x: px, y: py, width: box.width, height: box.height };
   }
   // Library versions are frequently only available at runtime. `jquery.min.js` carries no
   // version in its filename, but `jQuery.fn.jquery` reports it exactly. Reading these while
