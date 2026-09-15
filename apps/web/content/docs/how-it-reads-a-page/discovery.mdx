@@ -1,0 +1,124 @@
+---
+title: Discovery
+description: robots.txt first, then every sitemap, then the links on every page — each address with the citation that brought it in.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+A single-page extractor is handed its URL. A site crawler has to find them, and the two
+usual sources are both unreliable on their own: on one site measured here the sitemap
+advertised **4 URLs** while the site served **75 live pages**; against a two-level
+real-browser oracle, following links from the homepage alone finds **31.0%** of what is
+reachable. So the frontier is fed from every source there is, and each address remembers
+how it got in.
+
+<Steps>
+<Step>
+
+### robots.txt, asked by name
+
+The first request to any host is `/robots.txt` (`crawl/discovery.py`, and for a single
+page `fetch/robots.py`, which caches one fetch per host for `ROBOTS_CACHE_SECONDS`, an
+hour). The file is honoured, not merely parsed — an extraction engine that ignores it gets
+blocked, and deserves to be. A file that cannot be fetched means *allow*, by the
+convention every crawler follows, and the policy records that it was never read.
+
+Rules are asked for by this client's name, `ROBOTS_AGENT_TOKEN = "webgraph"`, not by its
+User-Agent header. That distinction was a bug (PR #83): `urllib.robotparser` matches the
+first `/`-split token of whatever string it is given, and the engine's browser-shaped
+User-Agent made every rule for `webgraph` a rule for `mozilla`, which no robots.txt
+names. `group_for_client` picks the `User-agent:` group naming `webgraph` first and `*`
+otherwise, the way the parser itself does, so the rule the engine quotes in a refusal is
+the rule that decided.
+
+The policy keeps the file's text, the `Allow` / `Disallow` / `Crawl-delay` lines of the
+group that governs this client, verbatim, and any `Sitemap:` lines. A site run emits a
+`discovery` event carrying all of it (`found`, `status`, `group`, `rules_for_us`,
+`crawl_delay`, the text capped at `DISCOVERY_ROBOTS_TEXT_CHARS`). Empty rules mean
+everything is allowed, and a reader should see that it was the site's choice.
+
+</Step>
+<Step>
+
+### Sitemaps, every address tried on record
+
+`discover_sitemaps` tries, in order: the addresses `robots.txt` advertises (`source:
+robots`), then the conventional `/sitemap.xml` and `/sitemap_index.xml` (`source:
+conventional`). A response counts as a sitemap only if it fetched *and* carried a
+`<loc>` — a 200 that serves the site's HTML 404 page is not one. A sitemap index
+contributes sitemaps, not pages; its entries are queued (`source: index`) and followed one
+level, bounded by `MAX_SITEMAP_DOCUMENTS`.
+
+Two corrections are applied to what comes back. Advertised URLs are rewritten to the
+root's scheme when the host matches (`reconcile_scheme`): a sitemap advertising `http://`
+on an https-only host would otherwise yield zero live pages. Off-host URLs are counted
+and excluded.
+
+Every attempt is recorded as a `SitemapAttempt` — url, status, ok, urls, index, source —
+because the attempts are the answer to "why is discovery by links only". Two whole-site
+crawls the owner watched on 14 September (vtu.ac.in, sode-edu.in) reported
+`from_sitemap: 0` and nothing else; neither site publishes a sitemap, and nothing said
+which addresses had been tried (PR #87). Now the run shows two or three 404s, which is
+the whole explanation.
+
+</Step>
+<Step>
+
+### Links, with citations
+
+Every extracted page's `<a href>` (minus `rel="nofollow"`) extends the frontier, so the
+crawl reaches everything reachable and is never capped at what the sitemap happened to
+list. Discovery and extraction are interleaved, not sequential: the first result arrives
+in seconds and the frontier grows as pages are read.
+
+Each accepted address carries a `Discovery`: `via` (`seed`, `sitemap` or `link`),
+`found_on` (the page that produced it), `anchor` (the text a reader would have clicked)
+and `depth`. It is kept for the *first* acceptance only — a URL linked from twenty pages
+is one page, and the citation that matters is the one that brought it in. A failed page is
+reported with its citation, because "could not fetch X" is not actionable without knowing
+which page linked to X.
+
+</Step>
+</Steps>
+
+## Normalisation
+
+`example.com/a`, `example.com/a/`, `example.com/a#top` and `example.com/a?utm_source=x`
+are one page. The frontier deduplicates on a canonical key — scheme and host lowercased,
+default port dropped, fragment dropped, `TRACKING_PARAMS` (`utm_*`, `gclid`, `fbclid`, …)
+stripped, remaining query sorted, `/index.html` collapsed to `/` — while queueing the URL
+the site actually linked to. `/undefined` and `/null` paths are refused outright: they
+are a template interpolating a missing value, and every Vue or React storefront has one.
+The frontier is breadth-first by construction, one FIFO per depth, so a bounded budget is
+spent near the root rather than inside one blog archive.
+
+## URL kinds
+
+`url_kind` classifies each discovered address from its URL alone into one of seven
+`KINDS`: `page`, `pdf`, `image`, `other_file`, `archive` (`/2024/06/`, `/date/…` — a
+dated post permalink is still a page), `category`, `tag`. It never decides what is
+fetched; it only says what was found, and every `frontier` and `page` event carries the
+running tally as `discovered_kinds`.
+
+<Callout type="warn">
+On vtu.ac.in, 7,907 of the 17,126 discovered URLs were PDFs, which the crawl fetched one
+at a time to refuse each as not HTML — a third of six hours — and nothing on screen said
+so. The tally exists so that a site whose files outnumber its pages is visible as such
+(PR #87).
+</Callout>
+
+## What "no sitemap" means for a page count
+
+`SiteAnalysis.public_page_count` is the number of on-host URLs the sitemaps advertise. When
+no sitemap was published it is `None`, not `0`: the page count is *unknown* until a crawl
+discovers it by following links, and the report says so — "Public pages: unknown (no
+sitemap; discoverable by crawling)". A sitemap is advertising, not inventory; even where
+one exists the crawl verifies each URL with a real GET rather than trusting it, because
+sitemaps list pages that 404 today.
+
+Measured against a real-browser oracle across 96 sites: **98.1% mean route recall**,
+perfect on 77. Four of the crawl's own bugs were found by that benchmark — literal
+hostname scoping that rejected `www.`, scoping on the requested root rather than the
+landed one (`docs.pydantic.dev` → `pydantic.dev`, 2 pages to 2,073), the sitemap scheme
+mismatch, and soft-404s extracted as "# Not Found".

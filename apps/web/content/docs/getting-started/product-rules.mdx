@@ -1,0 +1,107 @@
+---
+title: Product rules
+description: The rules the owner set for the whole-page output, stated as the engine's contract, each with the case that made it a rule.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The owner's brief, as `docs/SESSION-18-WHOLE-PAGE.md` restates it: the product is the
+full-page `markdown` / `text`. Nothing a reader sees may be lost — "not even a single
+character" — nothing the browser hides may be added, the order is the page's, the structure
+stays, and the engine must never present a false output. The filtered `content_markdown` is
+secondary and must not regress. Each rule below has the case that made it one; every case is
+in `CHANGELOG.md` under its PR number.
+
+## 1. Never a false output
+
+A page the engine cannot read is a refusal with the reason, not a page of text.
+
+- **A one-sided wall is left out and named** (PR #64). Cloudflare let a plain fetch of
+  `columbia.edu/~fdc/sample.html` through and answered the browser with "Performing security
+  verification … Ray ID"; merged, the wall's sentences became content. Each side is now
+  judged alone; the wall side is dropped and quoted in `render_error`.
+- **A login redirect is a wall** (PRs #67, #73). `old.reddit.com` sends a thread's reader to
+  `/login/?dest=…` — four words and an empty logo. A fetch that lands on a login URL holding
+  a password field or under 150 words is refused as `redirected to a login page (…)`.
+- **A browser answered with a 503 is not a page** (PR #89). On `flipkart.com/mobiles` the
+  plain fetch returned the listing (200, 560 KB) and Chromium, seconds later, "No server is
+  available to handle this request" — which, having navigated and measured, reported `ok`
+  and was merged in. A 5xx render is now a failed side; both sides 5xx is a refusal.
+The refusal types and their `kind` are in [Concepts](/docs/getting-started/concepts#refusals).
+
+## 2. Nothing hidden is added
+
+What the browser hid is not on the page, and the union must not put it back from the
+static copy.
+
+- **Text pushed off the page is not on the page** (PR #88). `vtu.ac.in` carries about sixty
+  injected gambling links on every page, each in
+  `<div style="position:absolute; left:-20914565266523px">`. The browser reports a box for
+  them — twenty trillion pixels to the left — and "has a box" had been read as "visible", so
+  the Markdown opened with sixty lines of spam before "About VTU". A box entirely at negative
+  coordinates is now hidden like `display: none`; `/about-vtu` went from 202 to 148 blocks.
+- **What the render hid stays hidden through the union** (PR #65). php.net's manual TOC
+  (`nav#trick`, about 100 links, `display: none`) was dropped by the render and put straight
+  back from the static copy: 330 → 233 blocks once `hidden_matter` was consulted.
+
+The exception is deliberate and opt-in: `include_hidden_text` keeps screen-reader-only
+labels for a caller who wants every string in the DOM.
+
+## 3. The page's order is kept
+
+Reading order is measured from the rendered layout where there is one, and source order —
+labelled as such — where there is not.
+
+- Measuring against Chromium's own text found split paragraphs reversed and, when an
+  article sat inside one `<span>`, every heading ahead of every paragraph (AppleInsider,
+  PR #63).
+- A block's XPath is the geometry map's key and must be computed before the tree is edited
+  (PR #90). On `allbirds.com/collections/mens`, removing 641 `display: none` elements first
+  left 161 of 217 blocks without a rectangle and the page in source order; recall 0.685 →
+  0.887 once paths were stamped before editing.
+
+## 4. Real repeats are kept
+
+A page that shows two identical headings has two. Deduplication exists for hidden twins —
+the mobile grid beside the desktop grid — not for content a page really repeats.
+
+- On a rendered page, repeats are kept through their rectangles: two boxes, two blocks.
+- On a page the browser could not measure, a table or code block that repeats stays
+  (PR #69): `columbia.edu/~fdc/sample.html` shows one demo table four times and came out
+  with one; recall 0.979 → 0.995 with all four.
+
+<Callout type="warn">
+Repeated *prose* on an unmeasured page is still deduplicated, and that is a measured
+trade-off rather than an oversight. Keeping it by the same neighbour rule cost WCXB −0.0017
+and Zyte −0.003; businessinsider.com carries its article three times interleaved with
+different furniture and fell from 0.998 to 0.471 (SESSION-18 §3). On a page nobody
+measured, repeated prose is a hidden copy far more often than a deliberate repeat.
+</Callout>
+
+## 5. Structure is kept
+
+Tables stay tables, code stays code, lists nest, and the separators a reader sees survive.
+
+- `<hr>` is a block (`BlockKind.RULE`, rendered `---`); it was dropped outright on 6 of the
+  14 census sites whose markup was inspected. `<dl>` renders as a definition list instead of
+  alternating paragraphs (the Cambridge Unicode FAQ, every php.net parameter list). Merged-cell
+  tables keep their own markup because a pipe table cannot say that a cell spans three
+  columns (PR #75).
+- `<li><p>…</p></li>` lists are lists (PR #66; catb.org's eight lists, tldp.org's HOWTO index).
+- A browser-side code editor (CodeMirror, Monaco, Ace) is one `code` block, gutter and
+  cursor layers left out (PR #73; MDN's interactive examples had come out as one paragraph
+  per line number).
+
+## 6. Filtered content must not regress
+
+`content_markdown` is secondary, and a change to the whole page may not lower it on the
+public boards: at `main@f0b0ac4` (SESSION-18 §5) WCXB dev 0.862 (first), WCXB test 0.875,
+Zyte 0.945, WCEB 0.883 (first), WebMainBench 0.7331. Every whole-page PR in the session
+table carries its board deltas.
+
+The cautionary case: PR #68 rendered `[text](href)` into every table cell regardless of
+`include_links`, and WebMainBench — scored with links off — fell from table_edit 0.390 to
+0.338. Five PRs of "WCXB =, Zyte =" said nothing, because those corpora do not score links
+in cells; PR #78 fixed it six PRs later. `CONTRIBUTING.md` now says: anything that touches
+table, code or Markdown rendering re-runs WebMainBench before merge. See
+[Benchmarks](/docs/benchmarks) for the runners.

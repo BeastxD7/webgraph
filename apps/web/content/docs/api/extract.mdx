@@ -1,0 +1,123 @@
+---
+title: POST /api/extract
+description: Facts under a JSON Schema, each with its provenance, read from the page's own structured data and never guessed.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+`POST /api/extract` maps a page's structured data - JSON-LD, microdata, Open Graph, `__NEXT_DATA__`, RSC flight data, Nuxt and `__INITIAL_STATE__` payloads - onto a JSON Schema and returns one fact per matched path. Every fact says where it came from and how confident the engine is; a fact without a source cannot be checked by whoever consumes it.
+
+## Request
+
+```json
+{
+  "url": "https://shop.example.com/p/desk-lamp",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "offers": {
+        "type": "object",
+        "properties": {
+          "price": { "type": "number" },
+          "priceCurrency": { "type": "string" }
+        }
+      }
+    }
+  },
+  "render": false,
+  "rtl": false
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `url` | string | required | Page to extract from; `http://` or `https://` |
+| `schema` | object | `null` | A JSON Schema object with `properties`. Omit it and the engine classifies the page and uses the schema for that type |
+| `render` | boolean | `false` | Force a browser render; needed for client-rendered pages whose payload is only present after hydration |
+| `rtl` | boolean | `false` | Reading direction for block ordering; `false` forces left-to-right, `true` right-to-left. Never detected on this route |
+
+`ExtractRequest` has no `html`, `fetch`, `renderOptions` or `include_hidden_text`: this route always fetches, with the engine's defaults. A schema that is not an object or lacks `properties` is `422` with `schema must be a JSON Schema object with 'properties'`.
+
+### Matching
+
+Keys are matched cheapest and most certain first: exact key, then an alias you declared with the `x-webgraph-aliases` schema extension, then a normalised key (`priceAmount`, `price_amount` and `Price Amount` all match `price_amount`), then a known schema.org alias, then a bounded descent into nested objects, nearest match first. Confidence falls with each step because each is a weaker claim about what the page meant.
+
+## Response
+
+```json
+{
+  "page": { "url": "https://shop.example.com/p/desk-lamp", "reading_order": "dom-fallback", "reading_order_measured": false, "blocks": 212, "frameworks": ["next"], "requires_render": false, "payloads": ["json-ld", "open-graph", "next-data"], "content_hash": "…", "dom_order_differs": false },
+  "facts": {
+    "name": { "value": "Arc desk lamp", "confidence": 0.95, "extractor": "structured-data", "modality": "dom-json", "source": "json-ld:exact", "source_xpath": "/html/head/script[3]" },
+    "offers.price": { "value": 89.0, "confidence": 0.9215, "extractor": "structured-data", "modality": "dom-json", "source": "json-ld:nested", "source_xpath": "/html/head/script[3]" },
+    "offers.priceCurrency": { "value": "EUR", "confidence": 0.9215, "extractor": "structured-data", "modality": "dom-json", "source": "json-ld:nested", "source_xpath": "/html/head/script[3]" }
+  },
+  "schema_choice": null
+}
+```
+
+`page` is the same [`PageInfo`](/docs/api/text#page) the text route returns. `facts` is keyed by dotted schema path, sorted; array items appear as `plans.0.price`.
+
+### `FactOut`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `value` | any | The coerced value, typed as the schema asked |
+| `confidence` | number | `base(match) × weight(source) × 0.97^depth`, capped at 1.0. Bases: exact 0.95, declared alias 0.92, normalised 0.88, known alias 0.80, nested 0.72. Source weights: JSON-LD 1.0, microdata 0.98, `__NEXT_DATA__` 0.95, RSC/Nuxt 0.93, initial state 0.90, Open Graph 0.85 |
+| `extractor` | string | Which mechanism produced it. Today always `structured-data`; `llm` is declared for a path not yet built |
+| `modality` | string | How the content reached the engine. Every fact today is `dom-json`, lifted verbatim from a payload; the enum also defines `text` for values read from DOM text |
+| `source` | string \| null | `<payload source>:<how>`, e.g. `json-ld:exact`, `next-data:nested`. Auto-schema gap fills append ` (page wrapper)` or ` (social preview)` |
+| `source_xpath` | string \| null | XPath of the element that carried the payload |
+
+## No schema: the engine chooses
+
+With `schema` omitted the router types the page and the engine uses the built-in schema for that type - `article`, `product`, `forum`, `service`, `collection`/`listing`, `documentation`. It then reads **only the structured-data node that describes the page**: not the site's `Organization`, not its breadcrumbs. Without that gate a category page reports the shop's name as its own product 46% of the time. Fields no node about the page supplied are filled, at a discount, from the page's `WebPage` wrapper and then from its Open Graph tags, and each such fact's `source` says so.
+
+`schema_choice` explains the choice:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `page_type` | string | The type the router chose |
+| `confidence` | number | Its probability |
+| `fields` | string[] | Properties of the schema that was used |
+| `subject_types` | string[] | The `@type` of each node accepted as describing this page. Empty means the page shipped data about its site or breadcrumbs but nothing about itself - the common case on category pages |
+| `payloads_considered`, `payloads_used` | integer | Payloads seen and payloads read |
+| `filled_from_fallback` | string[] | Paths taken from the wrapper or social preview because no node about the page had them |
+
+The gate runs only on an auto-chosen schema. A caller who wrote a schema may be reaching for the `Organization` on purpose.
+
+## Refusing to guess
+
+Nothing here infers semantics. If no key matches a path, no fact is emitted; a missing value is recoverable downstream and a wrong one silently poisons everything built on it. Likewise, a page the router types as `unknown` gets an empty schema and no facts rather than a vocabulary picked at random, and `schema_choice.fields` is then `[]`. "No price" therefore means different things depending on `schema_choice.page_type`, which is why it is returned.
+
+## JavaScript shells
+
+A page whose static HTML is a shell - markup with no readable text until a script runs - is a refusal for `/api/text`, which would have nothing to say. It is a document for this route: the hydration payload (`__NEXT_DATA__`, a flight stream, JSON-LD) is complete in the shell and is the whole point of the page. With `render: false` the route tries a browser once if Playwright is installed; if the page stays empty, the facts are read from the shell's payload and `page.blocks` may be `0`.
+
+<Tabs items={['Your schema', 'Auto schema']}>
+<Tab value="Your schema">
+
+```bash
+curl -s http://127.0.0.1:8000/api/extract \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://shop.example.com/p/desk-lamp",
+       "schema": {"type": "object", "properties": {"name": {"type": "string"}}}}'
+```
+
+</Tab>
+<Tab value="Auto schema">
+
+```bash
+curl -s http://127.0.0.1:8000/api/extract \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com/blog/post"}' | jq .schema_choice
+```
+
+</Tab>
+</Tabs>
+
+<Callout type="warn">
+Status codes are those of `/api/text`: `422` for a bad URL or schema, `502` when the page could not be obtained or was a wall. See [errors](/docs/api/errors).
+</Callout>

@@ -1,0 +1,113 @@
+---
+title: Technology detection
+description: Seven kinds of evidence, why a runtime global beats a filename, and what a confidence number means.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The first thing the engine learns about a site is what it is built with. The answer is a
+list of technologies, each with a category, a version where one is exposed, a confidence,
+and the piece of evidence that produced it. The evidence is the point: a reader who
+disagrees with a detection can see exactly what it was inferred from.
+
+## What counts as evidence
+
+`profile/technology.py` matches hand-written rules (the maintained Wappalyzer rulesets are
+all GPL-3.0, verified through the GitHub API, so none is vendored). A rule can look at any
+of seven sources. A plain fetch can evaluate headers, markup, same-origin assets and
+`Set-Cookie`; the browser adds the globals, the network log, the cookie jar and the
+bundle:
+
+| source | matched against | what only it can see |
+|---|---|---|
+| `header` | a named response header | the server stack: `Apache/2.4.37`, `PHP/7.4.33`, `OpenSSL/1.1.1k` |
+| `html` | the raw markup | classes and attributes the page emits (`elementor-widget`) |
+| `asset` | a `src`/`href` that resolves to *this* site | `/wp-content/themes/…` |
+| `js` | the name of a global the page added to `window` | bundled frameworks with no markup trace |
+| `request` | any URL the page requested while loading | services invisible in the markup (`us-assets.i.posthog.com`) |
+| `cookie` | a cookie name from the browser jar or `Set-Cookie` | what a third-party script set (`__cf_bm`) |
+| `source` | the text of the page's own JavaScript bundles | libraries that mount only on interaction (`@radix-ui/`) |
+
+Three of these carry most of the story: markup and headers, which are free with the
+plain fetch, and the runtime globals the browser adds. An early version read only HTML and
+reported "none detected" for a site running Apache, PHP and OpenSSL, all three visible in
+headers it never looked at; a later one read markup and headers and found 4 technologies
+where Wappalyzer found 17. On `persyn.ai` the runtime evidence took detection from 4 to
+23, covering all 17.
+
+## Why a runtime global beats a filename
+
+`jquery.min.js` carries no version in its name. `jQuery.fn.jquery` reports it exactly.
+The collector (`fetch/js/collect.js`) runs on the live page after load and does two
+things.
+
+It **probes** libraries where they keep a version, which is often not a bare `.version`:
+Facebook Pixel in `fbq.version`, core-js in `__core-js_shared__.versions[0].version`,
+Bootstrap in `bootstrap.Tooltip.VERSION`. A library that is loaded but exposes no version
+returns the sentinel `present`, and the Python side treats any value that does not start
+with a digit as "present, version unknown".
+
+It **diffs `window` against a pristine one**. A blank same-origin iframe supplies the
+browser's own set of globals, and every key on the real `window` that is not in that set
+is something the page added. Hand-written probes only find what someone thought to name;
+the diff found `Tinybird` and `lenisVersion` with nobody naming them first. The list is
+capped at 400 names.
+
+Bundled frameworks are the hard case: a Vite build of React exposes no `window.React` and
+mentions React nowhere in the markup. It does leave private properties on the DOM nodes it
+owns (`__reactContainer$…`, `__reactFiber$…`), so the collector scans the first forty
+elements under `body`, `#root` and `#app` for those prefixes. The same idea covers
+Preact, Vue, Svelte and React Router.
+
+## An example
+
+<Callout type="info">
+The repository records no per-site technology table for a live crawl, so this one is
+assembled from the rules in `TECH_RULES` and the probes in `collect.js`. Each row is a
+rule that exists; the site is a stand-in.
+</Callout>
+
+| detected | evidence string | source | confidence |
+|---|---|---|---|
+| Apache HTTP Server 2.4.37 | `header server: Apache/2.4.37 (OpenSSL/1.1.1k)` | header | 100 |
+| PHP 7.4.33 | `header x-powered-by: PHP/7.4.33` | header | 100 |
+| WordPress | `asset: /wp-content/themes/…` | asset | 100 |
+| jQuery 3.6.0 | `runtime global` | probe | 100 |
+| Google Analytics | `global: window.dataLayer` | js | 100 |
+| Facebook Pixel 2.9.390 | `runtime global` (`fbq.version`) | probe | 100 |
+| Cloudflare Bot Management | `cookie: __cf_bm` | cookie | 100 |
+| PostHog | `request: https://us-assets.i.posthog.com/…` | request | 100 |
+| Radix UI | `bundle: @radix-ui/` | source | 90 |
+| shadcn/ui | `implied by Radix UI, Tailwind CSS, Lucide` | implication | 65 |
+
+## Confidence
+
+Confidence is not a probability. It is a statement about the kind of evidence.
+
+- **A direct match is 100** unless the rule says otherwise. Header, global, request,
+  cookie and asset rules all default to 100: a `Server: nginx` header is nginx.
+- **Bundle-source rules run lower**, 70 to 90, because the bundle names a dependency
+  rather than something running on this page.
+- **A runtime global always wins.** The probe results are written last with confidence
+  100 and evidence `runtime global`, overriding whatever a rule concluded from markup.
+- **Implications lower confidence and say so.** Some technologies have no fingerprint at
+  all. shadcn/ui copies its components into the project's own source, so there is no
+  package, global, request or attribute that says "shadcn"; what there reliably is, is
+  the set of packages its registry installs. `IMPLICATIONS` states those combinations
+  explicitly (Radix *and* Tailwind *and* one of Sonner / cmdk / Vaul /
+  class-variance-authority / Lucide → shadcn/ui at 65), with an evidence string that
+  names what the inference came from. Next.js implies React at 95, Turbo implies Rails
+  at 70.
+- **Within one name, a version beats no version, then the higher confidence.** That is
+  `merge_technologies`, which also unions the per-page pass with the once-per-site bundle
+  pass so that an implication can see Tailwind from the markup and Radix from the bundle.
+
+## The hardest part is not matching
+
+A bare keyword fires on a page that *writes about* a technology. `docs.astro.build` was
+once reported as running Strapi and Alpine.js because its sidebar links to
+`/guides/cms/strapi/`. Every rule is therefore anchored to something a page can only emit
+by using the technology: a `src` or `href`, a generator meta tag, a namespaced class, a
+data attribute, a global. Asset rules match only same-origin references, because Hacker
+News was reported as running WordPress when its front page linked to a PDF hosted on one.
+Anchoring host rules to `src`/`href` cut one site from 35 detections to 15, all real.

@@ -1,0 +1,130 @@
+---
+title: Filtered content
+description: How content_markdown is drawn from the whole page — landmarks, scopes, site chrome, then a boundary — and why it must not regress.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Step, Steps } from 'fumadocs-ui/components/steps';
+
+`markdown` is the whole page and loses nothing. `content_markdown` is the part a reader
+came for — the article, the product, the docs page — and it is drawn by **throwing
+content away on purpose**. That is a different promise, so it is a separate field.
+`content.py` holds the one decision, `select_content`, and both the API and the crawl call
+it; before it existed the two had different definitions of "content", and the step with
+the largest measured gain was called by nothing but benchmarks.
+
+## The steps, in order
+
+The order is load-bearing: the boundary step's per-block cost adapts to the page's mean
+block length, and a page still carrying its navigation has a shorter mean.
+
+<Steps>
+<Step>
+**Landmarks.** Blocks whose `region` is `nav`, `footer` or `aside` go, and so do the
+named widgets: `filter`, `consent`, `rail` (a "most read" strip, a share bar, an ad slot),
+`post-furniture` (a forum signature). Landmarks are declared on the page, so this applies
+from a crawl's first result; it removes MDN's several-hundred-link sidebar, worth +8
+points of F with recall unchanged.
+</Step>
+<Step>
+**Comments.** The thread under an article (`widget == "comments"`) is removed and returned
+separately as `comments_markdown` — two of WCEB's eight corpora count it as content.
+Forums keep theirs when they hold more than half the page's words: the thread *is* the
+page.
+</Step>
+<Step>
+**The `main` landmark.** The author's strongest statement. Kept alone when it holds at
+least 100 words and 20% of the page — otherwise the whole list stands, because asahi.com's
+`<main>` held nothing against its mega-menu once words were counted for Japanese.
+</Step>
+<Step>
+**The dominant `<article>`, then the declared body.** A news page is one `<article>`
+holding the story and twenty small ones holding teasers (cbsnews.com). The largest is
+trusted when it holds 100 words, 15% of the page and three times the runner-up. Then
+`itemprop="articleBody"`, `entry-content`, `story-body` and their kin, the statement news
+CMSs make most often (PR #52).
+</Step>
+<Step>
+**Site chrome.** Once a crawl has six pages, blocks on 90% of them, or in a template slot
+whose text never varies across 60%, are removed — unless more than half the page would go
+(docs.pytest.org's version archive looks exactly like chrome). A page's own leading heading
+is never removed.
+</Step>
+<Step>
+**The boundary.** A contiguous run of the surviving blocks, chosen by Kadane's maximum
+subarray; the title and lead are put back if the run cut them.
+</Step>
+</Steps>
+
+`content_methods` on the response names the steps that removed something, in order:
+`landmarks`, `main-landmark`, `article-element`, `article-body`, `site-chrome`,
+`main-content`, `block-model`.
+
+## The boundary
+
+Measured on Zyte's 181 articles, an oracle picking the best *contiguous run* of the
+engine's own blocks scores F1 0.968 against 0.647 for keeping everything. The article is
+already present and in order; a line needs drawing. Each block gets a value in words —
+unlinked words minus a block cost — and the run with the greatest total wins.
+
+**The block cost adapts.** Swept per type on WCXB dev the optimum is 11–13 for articles
+and 3–7 for everything else, and a constant chosen on articles is *worse than not running*
+on listings. What generalises is the ratio: `cost = clamp(0.60 × mean block words, 5, 18)`,
+with any single block contributing at most 400 words to the mean so a 2,100-word
+contributor list cannot price the page (PR #54). The ratio was re-swept from 0.70 after
+the structural steps changed what the boundary sees (PR #50).
+
+**Some blocks can never end a run.** A heading gets a 4-word bonus. A table or code
+block is floored at zero: a short snippet went negative against the cost and Kadane cut
+the run at it — turning the selector on cost WebMainBench −0.126 on code, eight pages
+falling to 0.000. Floored, code extends a run without anchoring a stray one from a footer.
+A prose caption of at most `CODE_CAPTION_MAX_WORDS` (8) before a code block is floored the
+same way, and a run extends forward over the neutral code that closes it: a tutorial's
+dozen "Start the service:" lines each paid the cost and the run ended before the last
+commands (PR #86). A caption must be prose — link density at most 0.5 — or exploit-db's
+"« Previous Paper Next Paper »" bridges a metadata table in.
+
+**Repeated groups pay once.** On a collection page each card is a short block paying a
+full cost, and no run survives forty of them though the grid *is* the page. Blocks under
+one repeated sibling container (`…/ul/li[*]`, three or more indices) are scored as one
+unit paying the cost once — when the group holds at least 30% of the page's words, so a
+related-products rail beside an article stays individually scored.
+
+**Fail open.** When every block scores negative (a sitemap, an index) the page has no
+main content and everything is returned; so is a run under `min_run_share` (2%; 25% on
+product and collection pages). Each step returns its input when it would remove
+everything.
+
+## Page-type policies
+
+A router (`pagetype.py`, a gradient-boosted ensemble over URL, payload and block features)
+labels the page, and `policy_for` picks that type's settings:
+
+| type | grouping | other |
+|---|---|---|
+| article | off | article scope on |
+| documentation, service | all, 30% | |
+| listing | all, 30% | no article scope |
+| collection | all, 30% | `min_run_share` 0.25, no article scope |
+| product | off | prune reviews, "you may also like", seller sections (PR #56); keep `Label: value` lines; `min_run_share` 0.25 |
+| forum | off | comments kept above 50% of the page |
+
+Grouping lifts listings 0.558 → 0.649 and costs articles 0.920 → 0.897, every time; the
+pages disagree about what content is.
+
+<Callout type="warn">
+A trained per-block model exists (`blockmodel.py`, `SHIPPED_MODEL`) and scores +0.029 on
+WCXB dev. It is **not the default**: on WebMainBench, which scores Markdown by edit
+distance, it is worse, 0.622 → 0.586, dropping most of a 13,591-character recipe and
+keeping comment furniture the boundary's contiguity excludes.
+</Callout>
+
+## The rule
+
+The product is the whole page; `content_markdown` is secondary and **must not regress**.
+Every change to blocks, the union, ordering or rendering is measured on the fidelity suite
+(whole-page word recall against Chromium) *and* the filtered boards — WCXB, Zyte, WCEB,
+WebMainBench — before merge. CONTRIBUTING adds the rule the whole-page session taught:
+anything touching table, code or Markdown rendering re-runs WebMainBench whatever WCXB and
+Zyte say, because they score plain text, and a link rendered into every table cell cost
+WebMainBench's table score for six pull requests unnoticed (#68, fixed in #78).

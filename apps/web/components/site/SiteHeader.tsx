@@ -5,6 +5,7 @@ const REPO = "https://github.com/BeastxD7/webgraph";
 
 const LINKS: ReadonlyArray<{ label: string; href: Route }> = [
   { label: "How it works", href: "/how-it-works" },
+  { label: "Docs", href: "/docs" },
   { label: "Capabilities", href: "/#capabilities" },
   { label: "Evidence", href: "/#evidence" },
   { label: "Benchmarks", href: "/benchmarks" },
@@ -12,7 +13,7 @@ const LINKS: ReadonlyArray<{ label: string; href: Route }> = [
 ];
 
 /** Brand mark: a page reduced to the three blocks the engine keeps. */
-function Mark() {
+export function Mark() {
   return (
     <span
       aria-hidden

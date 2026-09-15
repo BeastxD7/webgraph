@@ -1,0 +1,145 @@
+---
+title: POST /api/text/stream
+description: One page, streamed stage by stage over Server-Sent Events, with the measurements behind each stage.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`POST /api/text/stream` runs the same pipeline as [`/api/text`](/docs/api/text) and reports each stage as it completes. Behind a browser render a single page can take ten seconds, and a request that says nothing until then is indistinguishable from one that has hung.
+
+The request body is the same `TextRequest`: `url`, `render`, `include_hidden_text`, `fetch`, `renderOptions`, `html`. Two differences from the blocking route:
+
+- `render: false` is strictly `static-only`. A JavaScript shell is reported as an `error` at the `resolve` stage rather than escalated to a browser.
+- `rtl` is accepted by the model but not forwarded to the stream; the reading direction is always detected.
+
+## Framing
+
+The response is `text/event-stream` with `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Every frame is one line, `data: <JSON>`, followed by a blank line. There are no `event:` names; the event's `type` field says what it is. Every pipeline event carries `type` and `stage`; most also carry `at`, seconds since the run began.
+
+Before the first byte the route checks two things and answers with a status instead of a stream: a URL that is not `http`/`https` is `422`, and a URL the [private-host guard](/docs/api#the-private-host-guard) refuses is `403` with `{"detail": "refused: ..."}`. The guard is skipped when `html` is supplied, since nothing is fetched. Everything after that arrives as events.
+
+## The run header
+
+The first frame identifies the run. The same object is the first line of the trace file on the server.
+
+```json
+{
+  "type": "run",
+  "run": "9f2c1a7d3e0b",
+  "trace": "example.com-20260916T101502-9f2c1a7d3e0b.jsonl",
+  "url": "https://example.com/blog/post",
+  "engine": "0.1.0",
+  "started": 1789552502.31,
+  "mode": "page",
+  "strategy": "union",
+  "render": true,
+  "supplied": false
+}
+```
+
+`strategy` is what this run does, not what was asked: `supplied` when `html` was given (and then `render` is `false` whatever the request said), `union` for `render: true`, `static-only` otherwise.
+
+## Events
+
+### `stage`
+
+Announces a stage starting. `stage` is `resolve` or `classify`, `state` is `running`, and `message` says what this run is doing: `Fetching as plain HTTP`, `Fetching as plain HTTP and through a browser, then merging`, `Reading the HTML supplied by the caller`, `Reading the page type`.
+
+### `resolve`
+
+How the page was obtained and how much each fetch contributed.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | string | Final URL after redirects |
+| `strategy` | string | `static-only`, `rendered-only`, `union` or `supplied` as actually run; a union whose render failed reports `static-only` |
+| `static_chars`, `rendered_chars`, `union_chars` | integer | Characters of text from each representation and from the merge |
+| `static_coverage` | number | `static_chars / union_chars`, clamped to 1.0: how much the plain fetch alone would have given you |
+| `blocks_only_in_static`, `blocks_only_in_rendered` | integer | Blocks one side had and the other lacked; a rendered page that *lost* content (a consent wall) shows in the first |
+| `render_error` | string \| null | Why the result is one representation: `rendering not available`, a browser error, or the supplied-HTML note. Not a failure |
+| `identity_declared` | boolean | The site asked automated clients to say who runs them and this fetch did, with `WEBGRAPH_CONTACT` |
+
+### `parse`
+
+The parsed document: `blocks`, `words`, `reading_order`, `reading_order_measured`, `dom_order_differs`, `content_hash`, `frameworks`, `requires_render`, `kinds` (block counts by kind, largest first) and `payloads` (structured-data sources). See the [`page` fields](/docs/api/text#page) for meanings.
+
+### `classify`
+
+```json
+{
+  "type": "classify", "stage": "classify", "state": "done", "at": 2.412,
+  "page_type": "article", "confidence": 0.9312,
+  "reasons": [
+    { "says": "an Article node in JSON-LD", "weight": 0.31 },
+    { "says": "one dominant <article> holding most of the words", "weight": 0.22 }
+  ],
+  "runner_up": { "type": "documentation", "confidence": 0.041 },
+  "available": true
+}
+```
+
+`reasons` are measured by withholding each signal from the model, strongest first. `runner_up` is the type it nearly chose. `available: false` means no router model is installed and `page_type` is `unknown`.
+
+### `select`
+
+What content selection removed: `kept`, `total`, `methods` (the steps that fired), and `removed` with a count per step: `landmarks`, `main_landmark`, `article_element`, `article_body`, `site_chrome`, `boundary`, `block_model`.
+
+### `done`
+
+The finished document: `url`, `title` (first `h1`/`h2`), `text`, `markdown`, `content_markdown` (empty when nothing was removed), `comments_markdown`, `images`, `tables`. The stream closes after it.
+
+### `error`
+
+Ends the stream and is the only event that can arrive out of order.
+
+```json
+{ "type": "error", "stage": "resolve", "at": 1.207,
+  "message": "could not resolve https://example.com/x: the site served a block page instead of the content; it said: \"Sorry, you have been blocked\"" }
+```
+
+A diagnosed refusal (a missing page, a wall) carries the bare message. Other failures at `resolve` are prefixed with the exception class, `PageDisallowedError: could not resolve ...`. A failure outside the pipeline has `stage: "unknown"` and no `at`. Every message is listed on the [errors page](/docs/api/errors).
+
+## Reading the stream
+
+`EventSource` cannot send a `POST` body, so use `fetch` and read the body incrementally.
+
+```javascript
+const response = await fetch("http://127.0.0.1:8000/api/text/stream", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ url: "https://example.com/blog/post", render: true }),
+});
+if (!response.ok) throw new Error((await response.json()).detail);
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+for (;;) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  let end;
+  while ((end = buffer.indexOf("\n\n")) !== -1) {
+    const frame = buffer.slice(0, end);
+    buffer = buffer.slice(end + 2);
+    if (!frame.startsWith("data: ")) continue;
+    const event = JSON.parse(frame.slice(6));
+    if (event.type === "error") throw new Error(event.message);
+    if (event.type === "done") console.log(event.markdown);
+  }
+}
+```
+
+```bash
+curl -N http://127.0.0.1:8000/api/text/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com/blog/post"}'
+```
+
+## The trace file
+
+Every run writes a JSON Lines file under `WEBGRAPH_TRACE_DIR` (the system temp directory when unset), in a `webgraph-runs/` folder, named `<host>-<timestamp>-<run id>.jsonl`. The header's `trace` field is that file name. Each line is an event with `run`, `seq` and `at` added; `text`, `markdown`, `content_markdown`, `comments_markdown` and `html` are dropped and strings are capped at `TRACE_MAX_VALUE_CHARS` (`2000`), so the trace is evidence, not a second copy of the output. The last line is `{"type": "trace-closed"}`. The stream's events do not carry `seq`; only the file does.
+
+<Callout type="info">
+Paste the header's `trace` name into a bug report. It names the exact file on the server holding the same events, so nobody has to guess which run they are looking at.
+</Callout>

@@ -1,0 +1,121 @@
+---
+title: Reading order
+description: Order measured from layout rather than assumed from source, labelled by how much of it was measured.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Source order is not reading order. CSS reorders content freely — `order` on flex children,
+`flex-direction: row-reverse`, explicit `grid-row` / `grid-column`, floats, absolute
+positioning — so a depth-first walk of the DOM produces *silently* jumbled text on exactly
+the pages where sequence matters: documentation, news, papers, anything multi-column.
+Sorting by `y` does not fix it; on a two-column page it interleaves the columns line by
+line, which is worse than source order.
+
+## Boxes → cuts → order
+
+The browser measures a page-relative bounding box for every element it lays out
+(`collect.js`), and `dom/reading_order.py` recovers order from the boxes by **recursive
+XY-cut**, the algorithm PDF tools use:
+
+1. Find the widest band of whitespace on each axis — horizontal bands that split the
+   region into stacked rows, vertical bands that split it into columns.
+2. Cut on whichever axis has the **wider** band, at that band only, and recurse. Rows are
+   read top to bottom, columns left to right (right to left when `rtl`).
+3. When neither axis has a qualifying band, the region is atomic: sort by `y`, then `x`.
+
+Two details carry most of the correctness, and both were bugs first. Always cutting rows
+first read a grid-aligned two-column layout *across*, producing row-major garbage; a
+genuine column gutter is wider than inter-paragraph leading, so comparing widths picks
+the axis. Cutting at *every* qualifying gap sliced a header-over-columns page into rows
+before the columns were seen; taking the widest band first (and anything within 5% of it)
+lets the recursion find the columns beneath.
+
+Gap thresholds are multiples of the page's *line height*, estimated as the lower quartile
+of block heights. It used to be the median block height: on docs.python.org the typical
+block is a two-line paragraph 51 px tall, so the 36 px sidebar gutter was never a cut and
+"Previous topic" was read between the article's first two paragraphs. Rows are grouped by
+overlap against the *taller* block's height — measured over 592,520 precedence assertions
+on 39 pages, right on 99.2% of the pairs where geometric and source order disagree,
+against 94.0% for the alternative, with no regression.
+
+| layout | source order | recovered |
+|---|---|---|
+| `order:` on flex children | GAMMA, ALPHA, BETA | **ALPHA, BETA, GAMMA** |
+| `flex-direction: row-reverse` | HEADER, RIGHT×3, LEFT×3 | **HEADER, LEFT×3, RIGHT×3** |
+| explicit grid placement | B1, A1, B2, A2 | **A1, B1, A2, B2** |
+| `column-count: 2` | ONE…SIX | **ONE…SIX** (correctly unchanged) |
+
+## What the DOM knows that geometry does not
+
+**Cards.** A product grid defeats a cut twice: its cards nearly touch (an 11 px gutter
+between 312 px cards on allbirds.com, narrower than any row gap), and the row gap between
+a card's image and its title *is* found, so the page read as a row of images, then titles,
+then prices. `_cut_with_cards` collapses each repeated sibling container (`/main/ul/li[3]`:
+a template with at least three distinct indices, bounded in size) to one block, cuts, then
+expands each card by its own geometry.
+
+**Floats.** The browser marks floated elements (`data-wg-float`) and every block inside
+one carries `float_of`. Everything sharing that value is read as one thing: en.wikipedia's
+"Computer" has a right-floated gallery of five images and their caption list that was
+dealt out one piece at a time between the lead's paragraphs.
+
+**Rails.** A block no wider than a line and eight lines tall is furniture standing *in* a
+gutter — the « handle that collapses docs.python.org's sidebar, 12 px wide and 901 px
+tall. Left measured, it splits the gutter into two gaps too narrow to cut and bridges
+every row. `_demote_rails` strips its measurement so it is anchored where the DOM puts it
+and the gutter is whole again.
+
+## The three labels
+
+Every document says how its order was obtained (`reading_order_method`), and the weaker
+claim always gets a different name.
+
+- **`geometric-xy-cut`** — every block was measured.
+- **`geometric-anchored`** — most blocks were measured; each unmeasured one (a collapsed
+  `<details>`, a tray behind a disclosure, a static-only block from the union) is placed
+  immediately after its nearest preceding measured block in source order. That is the
+  right answer for the case that produces them: the body of a collapsed disclosure belongs
+  after the control that opens it, which is where the DOM already puts it.
+- **`dom-fallback`** — no geometry, or too little to lead. Source order, and the document
+  says so: `reading_order_measured: false`.
+
+(`single-block` exists for a one-block document.)
+
+The original rule abandoned geometry if *any* block lacked a rectangle, so one collapsed
+`<details>` downgraded a whole page: geometry was used on **1 of 18** real pages, against
+18 of 18 with anchoring, and no metric said so.
+
+<Callout type="info">
+The threshold for leading with geometry is `ORDER_MIN_MEASURED_SHARE = 0.3`, not the half
+the README describes. It was guessed at 0.5 and then measured by blinding clustered runs
+of blocks on fully measured pages: anchoring beats source order (0.89 pair accuracy) down
+to about 30% measured and loses below roughly 25%. At 0.5, four sites in a robustness
+sweep — lemonde.fr, shopify.com, ar.wikipedia, aljazeera — sat between 0.34 and 0.47
+measured and read in source order.
+</Callout>
+
+## Why the XPath has to be stable
+
+The browser's measurements are keyed by each element's XPath in a fresh parse. The block
+walk then removes hidden twins, clipped labels, permalinks and unreachable trays — and
+lxml writes `div[2]` while there are sibling divs and plain `div` once a removal leaves
+one. So every block below a removed sibling got a path the geometry map did not hold.
+On allbirds.com/collections/mens, 641 `display: none` elements came first, 161 of 217
+blocks had no rectangle, the page was in source order, and the repeated product-card
+titles were deduplicated as unmeasured text.
+
+Since PR #90 every element's path is stamped as `data-wg-path` *before* the tree is
+edited, and blocks read the stamp. Measured, whole page: nextjs.org/docs recall 0.940 →
+0.979, flipkart.com/mobiles 0.470 → 0.975, the allbirds collection 0.685 → 0.887 (219 of
+304 blocks measured, all 34 cards), react.dev 0.996 → 1.000. The filtered boards, whose
+corpora carry no geometry, did not move.
+
+## Right to left
+
+`rtl` reverses column order. It is read from the document — `dir` on `<html>` or `<body>`
+wins outright, else `lang` (`ynet.co.il` has no `dir` anywhere; its `lang="he"` is the
+sole signal) — and never from character frequency, or a page that merely *quotes* Arabic
+would flip. Getting it wrong reads the columns backwards while reporting
+`geometric-xy-cut`, the failure this engine least tolerates; it used to default to `False`
+on every production path.

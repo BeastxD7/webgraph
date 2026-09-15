@@ -1,0 +1,122 @@
+---
+title: POST /api/text
+description: One page as text and Markdown in recovered reading order, with the page's type, images and tables.
+---
+
+`POST /api/text` resolves one page and returns it as plain text, structure-preserving Markdown, and a content-only reduction. It is the blocking form of [`/api/text/stream`](/docs/api/text-stream); both run the same pipeline.
+
+## Request
+
+```json
+{
+  "url": "https://example.com/blog/post",
+  "render": false,
+  "rtl": false,
+  "include_hidden_text": false,
+  "fetch": { "respect_robots": true },
+  "renderOptions": { "settle_ms": 900 }
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `url` | string | required | The page's address; `http://` or `https://`. With `html` supplied it is the base for links and is not fetched. |
+| `render` | boolean | `false` | Fetch through a browser as well and merge the two documents (`strategy: union`). Ignored when `html` is supplied. |
+| `rtl` | boolean | `false` | Reading direction for block ordering. `false` (the default) forces left-to-right, `true` right-to-left; this route never detects it from the document. Only the streaming route, which does not forward `rtl`, detects direction. |
+| `include_hidden_text` | boolean | `false` | Keep text a browser holds but a sighted reader never sees: `sr-only` labels, skip links, wiki edit controls. |
+| `fetch` | [`FetchOptions`](/docs/api/options#fetchoptions) | `null` | Per-request overrides for the plain HTTP fetch. |
+| `renderOptions` / `render_options` | [`RenderOptions`](/docs/api/options#renderoptions) | `null` | Per-request overrides for the browser. |
+| `html` | string | `null` | The page's HTML when you already have it. Nothing is fetched. See [supplied HTML](/docs/api/supplied-html). |
+
+### What `render: false` does here
+
+With `render: false` the route fetches over plain HTTP. If the static document is a JavaScript shell, or its profile says `requires_render`, and Playwright is installed, the route escalates to a browser fetch on its own and returns the union. The streaming route does not: there `render: false` is strictly static-only and a shell is an `error` event. `render: true` requests the union up front and takes one of the host's render slots.
+
+## Response
+
+```json
+{
+  "page": {
+    "url": "https://example.com/blog/post",
+    "content_hash": "3f9c1e0a7b2d4c6e",
+    "reading_order": "dom-fallback",
+    "reading_order_measured": false,
+    "dom_order_differs": false,
+    "blocks": 148,
+    "frameworks": ["wordpress"],
+    "requires_render": false,
+    "payloads": ["json-ld", "open-graph"]
+  },
+  "text": "Why we moved to static hosting\nBy Ana Ruiz ...",
+  "markdown": "# Why we moved to static hosting\n\nBy Ana Ruiz · 12 March 2026\n\n...",
+  "content_markdown": "# Why we moved to static hosting\n\n...",
+  "content_methods": ["landmarks", "main-landmark", "main-content"],
+  "comments_markdown": "",
+  "content_blocks": 61,
+  "page_type": "article",
+  "page_type_confidence": 0.9312,
+  "images": ["https://example.com/img/hero.webp"],
+  "tables": 1
+}
+```
+
+### `page`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | string | Final URL after redirects. Relative links were resolved against this. |
+| `content_hash` | string | Hash of the extracted text; two URLs with the same hash served the same page. |
+| `reading_order` | `geometric-xy-cut` \| `geometric-anchored` \| `dom-fallback` \| `single-block` | How the block sequence was decided. |
+| `reading_order_measured` | boolean | `true` when order came from a rendered layout (`geometric-xy-cut` or `geometric-anchored`); `false` means source order was assumed. |
+| `dom_order_differs` | boolean | The page uses CSS to place content away from its source order. |
+| `blocks` | integer | Blocks in the full document. |
+| `frameworks` | string[] | Front-end frameworks the profiler fingerprinted. |
+| `requires_render` | boolean | The static HTML is a shell that needs a browser to show its content. |
+| `payloads` | string[] | Structured-data sources found: `json-ld`, `microdata`, `open-graph`, `next-data`, `rsc-flight`, `nuxt`, `initial-state`. |
+
+### Content fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | Plain text of every block, in reading order. |
+| `markdown` | string | Structure-preserving Markdown: headings, images, links, tables, code. |
+| `content_markdown` | string | The page reduced to its content: landmarks removed, then the main-content boundary drawn around the densest run of prose. **Empty when nothing was removed**. Cross-page chrome removal needs a crawl and is not applied here. |
+| `content_methods` | string[] | Steps that removed something, in order: any of `landmarks`, `main-landmark`, `article-element`, `article-body`, `block-model`, `main-content`. |
+| `comments_markdown` | string | The comment thread left out of `content_markdown`. Empty when there is none, or when the comments *are* the page (a forum thread). |
+| `content_blocks` | integer | Blocks kept in `content_markdown`, out of `page.blocks`. |
+| `page_type` | string | `article`, `documentation`, `service`, `forum`, `collection`, `listing`, `product`, or `unknown` below the router's confidence floor (`ROUTER_MIN_CONFIDENCE = 0.5`). The content-selection policy is chosen per type; nothing else branches on it. |
+| `page_type_confidence` | number | Probability the classifier gave `page_type`; `0.0` when unknown. |
+| `images` | string[] | Absolute image URLs found in the document. |
+| `tables` | integer | Tables extracted with their rows intact. |
+
+## Example
+
+```bash
+curl -s http://127.0.0.1:8000/api/text \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://example.com/blog/post", "render": true}' \
+  | jq '{type: .page_type, order: .page.reading_order, blocks: .page.blocks, kept: .content_blocks}'
+```
+
+```json
+{ "type": "article", "order": "geometric-xy-cut", "blocks": 148, "kept": 61 }
+```
+
+## Status codes
+
+| Status | When | `detail` |
+|---|---|---|
+| `200` | The page was obtained and has readable text. | – |
+| `422` | `url` is not `http`/`https`, or the body fails validation. | `"url must be http or https"` or FastAPI's validation array |
+| `502` | The page was not obtained: missing, fetch failed, a wall, disallowed by robots.txt, or no readable text. | see below |
+
+The 502 `detail` is the engine's own message. A missing page and a failed fetch carry the prefix `could not fetch page: `; a wall does not.
+
+```text
+could not fetch page: HTTP 404: page does not exist
+could not resolve https://old.reddit.com/r/python/comments/abc: redirected to a login page (https://old.reddit.com/login/?dest=...); the page requires a sign-in and nothing of it was served
+could not resolve https://stackoverflow.com/questions/1: the site answered with a Cloudflare bot challenge -- a script a browser must run before the page is served -- and no page
+could not fetch page: could not resolve https://stackoverflow.com/questions/1: https://stackoverflow.com/robots.txt disallows /questions/1 for this client (`User-agent: *` / `Disallow: /`): the site does not want automated readers here. The site offers the Stack Exchange API (https://api.stackexchange.com/docs); or supply the HTML you already have (`html` on /api/text) and the engine reads that.
+```
+
+A refused private address surfaces here as a 502 containing `plain fetch: BlockedHostError: refusing to fetch a non-public address: ...`; the 403 `refused:` answer belongs to the streaming route, which checks the URL before any work. The [errors page](/docs/api/errors) maps every class to its status and the way out.

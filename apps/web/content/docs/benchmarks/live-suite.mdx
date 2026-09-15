@@ -1,0 +1,100 @@
+---
+title: The live suite
+description: 23 live sites, the filtered content against Chromium's main region, recall and precision by sentence — where the diff between two runs is the signal and the absolute numbers are not.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The corpora are cached HTML from a fixed moment; `benchmark/live/run.py` (`make bench-live`)
+is the web today. It exists because a page shape that was never in any corpus — a login
+redirect served as a page, a Cloudflare interstitial merged into an article, a product page
+whose hidden variants were counted as content — is found on live sites first. Every fix in
+`docs/SESSION-17-RESEARCH-LOOP.md` was gated on this suite's diff.
+
+## The pages
+
+`benchmark/live/sites.txt` holds **23 sites** at the current commit (the CHANGELOG entry
+for PR #83 says 24 at the time it was measured; the file now lists 23). They span the
+page types the router knows: news (BBC, the Guardian, the Sun, Asahi), a
+personal blog (simonwillison.net) and a newsletter (Astral Codex Ten), documentation (MDN,
+Python, Django, Astro, the Rust book), encyclopaedia (English and Arabic Wikipedia), forums
+and threads (Discourse meta, Hacker News, a GitHub issue, old.reddit, Stack Overflow), a
+repository page, products and a listing (Allbirds, Amazon, IKEA), and a WordPress post.
+
+## What is scored
+
+Each site is fetched **the way the API fetches it** — `resolve_page` with the default
+union — routed by the trained page-type classifier, and reduced to content by the same
+`select_content` and per-type policy the API uses. That text is compared to Chromium's
+`innerText` of the page's main region: `document.querySelector('main, article,
+[role=main]')`, falling back to `body`.
+
+Both texts are split into sentences of 40 or more characters, punctuation stripped and
+lower-cased.
+
+- **recall** — the share of the page's sentences found in our content (1 − missing / page
+  sentences).
+- **precision** — the share of our sentences found on the page (1 − extra / our sentences).
+
+The runner prints one line per site — `mdn  documentation  R 0.94 P 0.88 kept 61/187
+('landmarks', 'main-landmark')` — and writes recall, precision, block counts, the selection
+methods, and the first six missing and extra sentences to the `--out` JSON.
+
+<Callout type="warn" title="The absolute numbers are not a benchmark">
+The runner's own docstring: "The oracle is crude on purpose — it cannot see code blocks,
+and `innerText` includes the comment thread under an article — so the absolute numbers are
+not a benchmark. What matters is the diff between two runs." A `main` element that holds
+the whole page, a site with no landmark at all, a page whose "main" is a login form: each
+gives a number that means nothing on its own and everything when it changes.
+</Callout>
+
+## The diff is the signal
+
+```bash
+uv run python benchmark/live/run.py --out /tmp/main.json         # on main
+uv run python benchmark/live/run.py --out /tmp/candidate.json    # on the branch
+uv run python benchmark/live/run.py --compare /tmp/main.json /tmp/candidate.json
+```
+
+`--compare` prints recall and precision for both runs, the kept block count as `a->b`, the
+selection methods the candidate added, and flags with `<<` any site whose recall or
+precision moved by **three points or more**. A flagged page is a page to open: it is either
+a fix, a regression, or noise, and the runner cannot tell you which — only the page can.
+
+The browser text is cached beside the output (`<out>.pages/<site>.txt`), so a base run and
+a candidate run compare against the *same* oracle text. Delete the cache to re-fetch.
+
+## Noise, and how to recognise it
+
+Pages change between fetches, and the oracle and the engine fetch at different moments.
+Two documented cases from the CHANGELOG:
+
+- **PR #83** (single pages honour robots.txt), measured on the live suite: two pages
+  flipped to a refusal as intended — thesun.co.uk (`User-agent: * / Disallow: /`, 189 blocks
+  read before) and old.reddit.com — and every other page was identical, *except* that
+  "amazon's recall moved 0.69 → 0.27 on an oracle that served 566 vs 1,548 words to the two
+  runs; our 1,163 words were the same". The engine's output had not changed; Amazon had
+  served a different page to the oracle. That is noise, and the way to see it is that our
+  word count was constant while the oracle's was not.
+- **PR #88** (text pushed off the page is not on the page): "bbc's skip link likewise
+  [dropped]; every other column identical or page noise". Here the movement on bbc was real
+  and tiny — a skip link the class rule already dropped elsewhere — and the rest was noise
+  the author names as such.
+
+The habit that makes the suite usable: when a line is flagged, compare `words` and `blocks`
+between the two runs before reading the sentences. Equal words on our side and a changed
+recall means the oracle moved. Run the two sides close together in time.
+
+## Where the suite has been decisive
+
+From `docs/SESSION-18-WHOLE-PAGE.md` and the CHANGELOG: old.reddit's login redirect
+served as a page, "found by the live suite" (PR #67, then named as a wall in #73);
+Allbirds' hidden product variants counted as content (live precision 0.11 → 0.75 once the
+browser's hidden text stayed hidden, #65); and the XPath geometry bug of PR #90, whose live
+columns moved simonwillison.net R 0.75 → 0.92 / P 0.74 → 0.84, discourse R 0.31 → 0.38 and
+the GitHub issue P 0.00 → 0.25 while every public board stayed flat.
+
+## Cost
+
+Playwright's Chromium and the network. On the owner's machine a run takes three to four
+minutes (`runs/live-*.meta.json`: 2.9–4.3 min for 23 sites).

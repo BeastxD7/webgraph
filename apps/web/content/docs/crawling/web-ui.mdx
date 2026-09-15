@@ -1,0 +1,148 @@
+---
+title: The web UI
+description: The site run screen — stages, technology, discovery, pages, depth tree, graph and run log — and the single-page run with its paste-HTML box.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+The web app (`apps/web`) is a Next.js client that talks only to the API from the browser.
+`/extract?url=...` runs a whole site; `&mode=page` runs one page; `&complete=false` asks for
+`static-only`; `&max=N` sets the page cap. Everything on screen is drawn from the stream
+in [Outputs and provenance](/docs/crawling/outputs-and-provenance).
+
+## The site run
+
+<Steps>
+<Step>
+
+### Status line and the stop button
+
+A dot and a phrase name the phase — "Detecting the technology stack", "Seeding routes
+from sitemap and links", "Crawling and extracting", "Complete", "Stopped", "Failed"; a
+capped run that did not drain the frontier reads "Reached the page cap · N pages not
+crawled". **Stop** sets the server's stop flag; everything already streamed stays.
+
+</Step>
+<Step>
+
+### Progress rail
+
+Completion against the frontier as it stands, or against the page cap when there is one.
+For an unbounded crawl the denominator grows, so the bar can move backwards — honest, and
+better than a bar implying a total nobody knows.
+
+</Step>
+<Step>
+
+### The stages
+
+`LivePipeline.tsx` draws the engine's three stages as they happen — **Look at the front
+door, once**, **Build the queue**, **Crawl, classify and extract** — each lighting up when
+it starts and filling in what it found when it ends. A stage is never shown finished before
+its evidence arrives, and one that has not started shows nothing rather than zeros: "a zero
+reads as a measurement, and 'not yet' is not a measurement".
+
+</Step>
+<Step>
+
+### Technology detected
+
+`TechnologyPanel.tsx` groups the `analysis` event's technologies by category, each chip
+carrying its evidence and confidence on hover and its version where one was read. Below:
+the strategy in use, static coverage, and the flags **rendering required** and **rendering
+loses content** when Stage 0 measured them.
+
+</Step>
+<Step>
+
+### How the site can be discovered
+
+`DiscoveryPanel.tsx`: three collapsed rows, each a one-line verdict that opens to its
+evidence.
+
+- **robots.txt** — "not found (HTTP 404) — everything allowed", or "found · 1 rule applies
+  to us · crawl-delay 1s". Open: which `User-agent:` group was read and why, the rules
+  (Disallow in red, Allow in green), and the file itself.
+- **Sitemaps** — "none published — discovery is by links only", or the sitemaps found, their
+  URLs, and how many are in scope. Open: every address tried, in order, with its status,
+  and "· not a sitemap" against a 200 that carried no `<loc>`.
+- **URLs found by kind** — a live tally of pages, PDFs, images, other files, date archives,
+  categories and tags. When files outnumber pages the collapsed row warns: "Files outnumber
+  pages (7,907 PDFs). PDFs are counted and fetched, then refused as not HTML; images and
+  other files are counted but never fetched."
+
+</Step>
+<Step>
+
+### Tabs
+
+**Discovered** and **Queued** list URLs (queued includes the batch in flight); **Extracted**
+is the page list; **Failed** lists each refusal with its full error and its citation — the
+page that sent the crawl there and the link text. Three views sit beside them: Pages, Depth
+tree, Site graph.
+
+</Step>
+<Step>
+
+### The page list
+
+`PageList.tsx` searches URLs, titles *and* page content. Each row shows character, image
+and table counts and the share of the page identified as chrome; open it for the Markdown,
+with two independent switches — **content only** (filtered vs whole page) and preview vs
+source. **Copy all** and **Download .md** hand over every successful page as one document
+headed by its URL, following the same checkbox.
+
+</Step>
+<Step>
+
+### Depth tree
+
+`DepthTree.tsx` draws the site as the crawl found it, one level per link away from the
+root. Each node sits under the page that *first* linked to it — "the tree draws what the
+frontier did rather than a prettier fiction" — and a per-depth bar shows a breadth-first
+crawl filling one level before the next.
+
+</Step>
+<Step>
+
+### Site graph and Ask
+
+`GraphPanel.tsx` shows hubs (what the site links to most, with a specificity figure
+separating navigation from topics) and subjects (what pages call each other, from anchor
+text). `AskPanel.tsx` appears once three pages exist and returns a bounded context for a
+question, every section saying why it is there.
+
+</Step>
+<Step>
+
+### Run log
+
+Collapsed by default, above the page lists so a 1,600-URL crawl does not bury it. It shows
+the *tail* of the event stream — the end is where a run went wrong — and **Copy run log**
+pastes the whole run, header and every event, at any moment including mid-run. This is the
+paste an issue report needs.
+
+</Step>
+</Steps>
+
+## The single-page run
+
+`SinglePageRun.tsx` runs one URL through `/api/text/stream` with the same shape of
+timeline, one page deep: **Fetch it both ways**, **Turn markup into blocks**, **Read the
+page type**, **Decide what counts as content**, **Hand it back**. Each finished stage lists
+what it measured — strategy, plain HTTP vs browser characters, blocks, reading order, the
+type with its reasons, what the selection kept.
+
+### Paste the page's HTML instead
+
+For the sites that refuse every automated fetch — a Cloudflare challenge, a login wall —
+a disclosure opens on its own when the fetch failed. Paste the page source from your own
+browser and press **Read it**: nothing is fetched, links are made absolute against the
+address above, and the resolve stage reads "Read the HTML you supplied". The output is the
+same `text` / `markdown` / `content_markdown`.
+
+<Callout type="warn" title="What a paste cannot do">
+Reading order is source order, text a browser would have hidden may appear, and a pasted
+wall is refused exactly like a fetched one. Schema mapping is off for a supplied run.
+</Callout>

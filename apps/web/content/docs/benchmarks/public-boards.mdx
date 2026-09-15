@@ -1,0 +1,167 @@
+---
+title: Public boards
+description: WCXB, Zyte article extraction, WCEB and WebMainBench — current numbers with their commit, the published field, and what each board cannot see.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+Four public corpora, each run here with the corpus's own scorer over the cached HTML it
+ships. Unless a row says otherwise, figures are from `apps/web/lib/benchmarks.ts`, measured
+**14 September 2026 (evening) at `main@19f601f`**; each later CHANGELOG entry records the
+board movement, and PR #90 (`main@b618443`) reports WCXB 0.8632 = 0.8632, Zyte 0.945 =
+0.945, WebMainBench 0.7335 → 0.7336. Other systems' rows are their authors' published
+figures unless marked "run here".
+
+<Callout type="warn" title="What every board shares">
+Cached HTML, no network, one page per site. That switches off geometric reading order
+(every page falls back to DOM order; each runner prints the distribution) and cross-page
+chrome detection (WCXB has 1,613 domains over 2,008 pages; seven clear the six-page
+threshold). What is measured is the single-page half of the engine.
+</Callout>
+
+<Tabs items={['WCXB', 'Zyte', 'WCEB', 'WebMainBench']}>
+<Tab value="WCXB">
+
+**Web Content Extraction Benchmark** (Murrough Foley): 2,008 human-reviewed pages across
+seven page types, the only public board that labels type. Metric: per-page word-level F1,
+averaged (not F1 of corpus-wide P and R, which would not match the leaderboard). Scored on
+`document.text`: the tokenizer is `\w+`, and Markdown syntax would be charged as words.
+
+**Dev split, 1,497 pages** — routed by page type, the production path:
+
+| system | F1 | note |
+|---|---:|---|
+| **webgraph** | **0.862** | run here; 0.838 unrouted; was 0.861 |
+| rs-trafilatura | 0.859 | published; author's own, tuned on this split |
+| MinerU-HTML | 0.827 | published 2026 |
+| trafilatura 2.2.0 | 0.813 | run here, same harness |
+| trafilatura 2.0.0 | 0.791 | the paper's figure |
+| ReaderLM-v2 | 0.741 | published |
+| magic-html | 0.719 | published |
+
+First by 0.002 over an entry tuned on this split — a tie. On the **511-page held-out test
+split**, never used for any decision, the engine scores **0.875** routed and 0.864
+unrouted; rs-trafilatura's author reports **0.893** there, so the published entry is still
+ahead on test.
+
+**By page type** (dev; rs-trafilatura from the paper's Table 7):
+
+| type | n | webgraph | rs-trafilatura |
+|---|---:|---:|---:|
+| article | 793 | 0.945 | 0.932 |
+| documentation | 91 | 0.929 | 0.931 |
+| service | 165 | 0.846 | 0.843 |
+| forum | 113 | 0.801 | 0.792 |
+| collection | 117 | 0.695 | 0.713 |
+| listing | 99 | 0.706 | 0.704 |
+| product | 119 | 0.637 | 0.670 |
+
+**Routed vs content.** The router's out-of-fold predictions choose a per-type selection
+policy; the runner reads them from `$WCXB_ROUTER_OOF`
+(`benchmark/train/artifacts/router_oof.json`), and without the variable `routed-oof`
+silently equals the unrouted `content` column, 0.838 (`SESSION-18` §5). `routed-truth` — the
+annotated type — is a ceiling, never a score.
+
+</Tab>
+<Tab value="Zyte">
+
+**Zyte article-extraction-benchmark**: 181 cached news and blog pages with a hand-checked
+`articleBody`. Metric: 4-gram shingle P/R/F1, normalised per document and macro-averaged.
+The strongest comparison here: every competing row comes from the corpus's own
+`evaluate.py` over the outputs those systems committed, in the same command that scores
+this engine.
+
+| system | F1 |
+|---|---:|
+| AutoExtract | 0.970 |
+| rs-trafilatura | 0.970 |
+| go-trafilatura | 0.960 |
+| trafilatura | 0.958 |
+| Diffbot | 0.951 |
+| newspaper | 0.949 |
+| readability.js | 0.947 |
+| **webgraph** | **0.945** (10th of 35; was 0.934) |
+| go-readability | 0.934 |
+
+Every leader is built for news articles and nothing else; this engine is general-purpose,
+which is the trade. One trap the runner guards: `evaluate.py` averages precision only over
+non-empty predictions, so a page that crashes to `""` *raises* precision; failure and
+empty counts are printed beside the scores.
+
+</Tab>
+<Tab value="WCEB">
+
+**Webis Web Content Extraction Benchmark** (Bevendorff et al., SIGIR 2023): eight existing
+annotated datasets — CleanEval, Dragnet, CETD, L3S-GN1, Google-Trends-2017, Readability,
+Scrapinghub, CleanPortalEval — 3,985 pages, twenty-two extractors, **ROUGE-LSum F1**, by a
+group with no extractor in the field. Baselines are computed from the authors' own
+per-page CSVs.
+
+| system | F1 |
+|---|---:|
+| **webgraph, content + comments** | **0.883** |
+| trafilatura | 0.867 |
+| **webgraph, content only** | 0.856 |
+| readability | 0.855 |
+| boilerpipe | 0.825 |
+| resiliparse | 0.819 |
+| jusText | 0.806 |
+| BeautifulSoup | 0.692 |
+
+Dragnet (1,379 pages) and CETD (700) count the comment thread as content, so
+`content_markdown` and `comments_markdown` joined is like-for-like there and an over-count
+on the other six; joined they place first, content alone second. On **CETD** alone the
+joined fields score 0.925 against trafilatura 2.2.0's 0.911 run here (0.907 published);
+content alone 0.897, level with readability. The metric is restated rather than imported
+(upstream pulls in a GPL dependency); `--validate` rescores upstream's own outputs against
+upstream's CSVs first.
+
+</Tab>
+<Tab value="WebMainBench">
+
+**WebMainBench** (OpenDataLab): the 545-page calibrated subset with element-by-element
+Markdown ground truth. The only board that grades tables, code and equations apart:
+`text_edit`, `code_edit`, `formula_edit`, `table_edit` (character edit distance) and
+`table_TEDS`. Scored on `to_markdown()` with links and images off — plain text scores 0.0
+on code and tables by construction. Offline (`use_llm: false`), which changes only the
+formula column.
+
+The comparable figure is the **mean of the five columns**, which is how the published rows
+are computed:
+
+| system | column mean |
+|---|---:|
+| MinerU-HTML | 0.826 |
+| **webgraph** | **0.646** |
+| magic-html | 0.500 |
+| trafilatura (md) | 0.401 |
+| trafilatura (txt) | 0.372 |
+| resiliparse | 0.290 |
+
+| column | pages | webgraph | best (MinerU-HTML) |
+|---|---:|---:|---:|
+| text | 545 | 0.774 | 0.862 |
+| code | 91 | 0.847 | 0.909 |
+| table | 121 | 0.404 | 0.678 |
+| table structure (TEDS) | 121 | 0.601 | 0.739 |
+| formula | 145 | 0.605 | 0.940 |
+
+The runner also prints an `overall` — per-sample mean then averaged, 0.733 at `19f601f`,
+0.7336 at `b618443` — which is *not* comparable to the published 0.826 and must not be
+placed beside it. Every column has a different N, printed per run. The board's own caveat:
+built by the team behind the first- and second-place systems, with table ground truth
+taken from the source HTML.
+
+</Tab>
+</Tabs>
+
+## Boards deliberately not run
+
+`benchmarks.ts` lists them with reasons: Firecrawl's CrawlBench (LLM structured extraction;
+dataset not published), the Hydrafetch benchmark (the WCXB dev split under another name),
+and the Dragnet and Boilerpipe corpora (inside WCEB). Firecrawl's scrape-evals *was* run —
+1,000 live URLs, this engine 0.446 best-window F1 from one address with no proxy — but is
+marked `not-compared`: the published figures are from November 2025 against a web that has
+since lost 90 of those URLs, and seven of the thirteen published engines fetch through
+commercial anti-bot infrastructure.

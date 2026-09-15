@@ -61,6 +61,9 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      // The docs theme switch writes a class onto <html> before hydration; nothing else
+      // on the site changes this element, so the warning would only ever be that.
+      suppressHydrationWarning
     >
       <body className="min-h-dvh antialiased">{children}</body>
     </html>

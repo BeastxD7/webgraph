@@ -1,0 +1,106 @@
+---
+title: Limits and large sites
+description: A real six-hour whole-site run as the worked example, why an unbounded crawl is expensive, what memory it holds, and what to set.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The engine's default is `max_pages: 0` — crawl until the frontier is exhausted. On most
+sites that is a few hundred pages in minutes. On a large site it is hours and gigabytes,
+and the crawl cannot tell you in advance which you have. This is the run that made that
+concrete.
+
+## The worked example: vtu.ac.in, 15 September 2026
+
+A whole-site run of a university's WordPress site through the production pipeline
+(`stream_site`, `union`, 4 workers), started at 00:41 and stopped by hand at 06:43 — 6 h
+2 min — when the machine ran short of memory. The numbers are from the run's report and its
+`events.jsonl`.
+
+**What the site was.** WordPress 5.1.1 (February 2019), jQuery 1.12.4, Bootstrap, behind
+Apache and Cloudflare. robots.txt: `Disallow: /wp-admin/` only. No sitemap published, so
+the page count had to be discovered by following links.
+
+**What was discovered: 17,126 URLs in six hours**, each with a citation.
+
+| kind | count |
+|---|---:|
+| PDF files (circulars, results, syllabi) | 7,907 |
+| WordPress posts `/YYYY/MM/<id>/`, in Kannada and English | 7,655 |
+| date archives | 1,034 |
+| category pages | 80 |
+| fixed pages (about, departments, schemes) | ~450 |
+
+The queue still held 4,370 URLs when the run was stopped; the true total is somewhat above
+17,000. The English mirror under `/en/` alone was 4,704 URLs.
+
+**What was extracted: 12,761 URLs processed — 7,025 pages read, 5,736 refused.** Every
+refusal was named: 5,730 PDFs (`the server returned a file download rather than a page`),
+6 HTTP 404s the site itself linked to. Throughput at the end was 35 pages a minute, each
+page fetched twice and merged. Depth: 1 root, 122 at depth 1, 616 at 2, 2,879 at 3, 3,407
+at 4. Median page 4,078 characters over 166 blocks; the largest 63,902.
+
+**What it cost.** After six hours the crawl process held 1.2 GB and its browsers 5 GB, and
+the operating system was killing background tasks. Stopping lost nothing: every `page`
+event was on disk.
+
+**Two lessons**, both in the report's last section: a page cap or a memory ceiling should be
+the default for an unbounded crawl, and PDF links should be counted but not fetched. The
+second is half built — the discovery panel counts PDFs as they are found (PR #87) — and
+half not: PDFs are still queued and fetched.
+
+<Callout type="warn" title="Not yet built">
+No default page cap, no memory ceiling (`CRAWL_MAX_PAGES = 0`), no skip-PDFs switch. The
+Docker image's `WEBGRAPH_MAX_PAGES=50` is the only cap in the repository today.
+</Callout>
+
+## Why `max_pages: 0` is expensive
+
+Three things grow without a cap.
+
+1. **Time.** Under `union` every page costs a plain fetch and a browser render, plus the
+   per-worker delay. At 35 pages a minute, 17,000 URLs is eight hours.
+2. **Wasted fetches.** The frontier queues every same-site address that is not an image,
+   stylesheet, script, media or office file (`NON_PAGE_SUFFIXES`). PDFs are deliberately
+   not in that set, so a document-heavy site spends a large share of its budget fetching
+   files to refuse them — a third of the six hours above.
+3. **Memory.** Each page's HTML is dropped after its links are read, but its blocks stay
+   for chrome detection and aggregation, and the graph builder holds every section. The
+   crawl process alone reached 1.2 GB.
+
+A site's shape matters more than its page count: WordPress publishes one URL per post per
+language, plus a date archive per month and a category page per term. The report puts
+vtu.ac.in at about ten times its first estimate.
+
+## Memory: browsers
+
+Each Chromium is roughly 150 MB resident (`Settings.max_browsers`). The engine keeps one
+browser per worker thread (`fetch/browser.py`), capped process-wide at
+`WEBGRAPH_MAX_BROWSERS` (default 6, 4 in the Docker image); a thread that cannot get a slot
+launches a private short-lived browser rather than blocking. The vtu.ac.in browsers reached
+5 GB over six hours — far above 4 × 150 MB — because a long-lived browser accumulates.
+
+## What to set
+
+| setting | where | what it bounds |
+|---|---|---|
+| `max_pages` | `SiteConfig`, `/api/site/stream` body, `--max-pages` | Pages attempted, refusals included. The `webgraph site` CLI defaults to 40. |
+| `WEBGRAPH_MAX_PAGES` | environment, API | A hard ceiling whatever a client asks. A request of `0` clamps *down* to the cap, not through it (`_effective_max_pages`). |
+| `concurrency` | `SiteConfig`, request body | Workers, and therefore browsers, per crawl. 4 is the engine default; the API request defaults to 6. |
+| `WEBGRAPH_MAX_CONCURRENCY` | environment, API | Ceiling on per-crawl workers. The image sets 4. |
+| `max_depth` | `SiteConfig`, `crawl.max_depth` | Link distance. Breadth-first, so a small budget still spends its pages near the root. |
+| `strict_domain` | `SiteConfig`, `crawl.strict_domain` | Leave `true` unless the subdomains are the site. |
+| `complete: false` | request body | `static-only`: no browsers, several times faster; right only when static coverage is full. |
+
+For a site of unknown size, start with a few hundred `max_pages` and read the `done`
+event: `exhausted: false` with `remaining_queued` in the thousands says the site is larger
+than the run, and `discovered_kinds` says whether the remainder is pages or files.
+
+## PDFs
+
+A PDF link is queued, fetched, and refused with the server's own words; it is counted under
+`discovered_kinds.pdf` from the moment it is discovered. There is no PDF text extraction
+in the engine and no switch to leave PDFs out of the queue; the `NON_PAGE_SUFFIXES` comment
+states the intent — they "belong to the document pipeline" — but that pipeline is not
+built. Where PDFs outnumber pages the discovery panel says so, and the honest budget is
+`max_pages` set for pages plus PDFs together.
