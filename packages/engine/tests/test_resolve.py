@@ -963,3 +963,89 @@ class TestDeclaredIdentity:
         )
         assert resolved.identity_declared is False
         assert seen == [FetchConfig().user_agent]
+
+
+PRODUCTS = (
+    "<html><body><main><h1>Mobiles</h1>"
+    "<p>Samsung Galaxy M14 (Icy Silver, 128 GB) 6 GB RAM, 50 MP camera, 6000 mAh battery.</p>"
+    "<p>Redmi 13C (Stardust Black, 128 GB) 6 GB RAM, MediaTek Helio G85 processor.</p>"
+    "<p>Add to Compare. Bank offer 10% off on select cards. Free delivery.</p></main></body></html>"
+)
+BUSY = (
+    "<html><head><title>503 Service Unavailable</title></head><body>"
+    "<h1>503 Service Unavailable</h1><p>No server is available to handle this request.</p>"
+    "</body></html>"
+)
+
+
+class TestAServerErrorInTheBrowser:
+    """The browser can be answered with an error page while the plain fetch got the page.
+
+    flipkart.com/mobiles, 15 Sep 2026: the plain fetch returned the listing (200, 560 KB)
+    and Chromium, seconds later, a 503 "No server is available to handle this request".
+    The render reported `ok` -- it navigated and measured -- and the union merged the
+    error page's sentence into the listing. `RenderResult.status` is now the response's
+    status, and a 5xx render is a failed side: the static page stands alone and
+    `render_error` says what the browser was told. Both sides 5xx is a refusal.
+    """
+
+    @staticmethod
+    def stub(monkeypatch: pytest.MonkeyPatch, *, static_html: str, static_status: int, rendered_html: str, rendered_status: int) -> None:
+        from webgraph import resolve as module
+        from webgraph.fetch.render import RenderResult
+        from webgraph.fetch.static import FetchResult
+
+        monkeypatch.setattr(module, "PLAYWRIGHT_AVAILABLE", True)
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=static_status,
+                html=static_html,
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=static_status < 400,
+                error=None if static_status < 400 else f"HTTP {static_status}",
+            ),
+        )
+        monkeypatch.setattr(
+            module,
+            "render_page",
+            lambda url, config=None: RenderResult(  # noqa: ARG005
+                url=url, html=rendered_html, rects={}, ok=True, status=rendered_status
+            ),
+        )
+
+    def test_a_503_render_is_left_out_and_the_static_page_stands(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph.resolve import Strategy, resolve_page
+
+        self.stub(monkeypatch, static_html=PRODUCTS, static_status=200, rendered_html=BUSY, rendered_status=503)
+        resolved = resolve_page("https://shop.test/mobiles")
+        assert resolved.strategy is Strategy.STATIC_ONLY
+        assert "No server is available" not in resolved.document.text
+        assert "Samsung Galaxy" in resolved.document.text
+        assert resolved.render_error is not None and "503" in resolved.render_error
+
+    def test_both_sides_busy_is_a_refusal(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.resolve import resolve_page
+
+        self.stub(monkeypatch, static_html=BUSY, static_status=503, rendered_html=BUSY, rendered_status=503)
+        with pytest.raises(ValueError, match="503"):
+            resolve_page("https://shop.test/mobiles")
+
+    def test_a_200_render_is_still_the_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.resolve import Strategy, resolve_page
+
+        self.stub(monkeypatch, static_html=PRODUCTS, static_status=200, rendered_html=PRODUCTS, rendered_status=200)
+        assert resolve_page("https://shop.test/mobiles").strategy is Strategy.UNION
+
+    def test_a_render_with_no_status_is_judged_as_before(self) -> None:
+        """A timed-out navigation has no response; its salvaged document is judged on its
+        words, not on a status it never got."""
+        from webgraph.fetch.render import RenderResult
+
+        assert RenderResult(url="https://x.test/", html="<p>x</p>", rects={}, ok=True).status is None
