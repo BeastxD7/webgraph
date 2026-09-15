@@ -160,6 +160,12 @@ class RenderResult:
 
     ok: bool
     error: str | None = None
+    status: int | None = None
+    """The HTTP status of the document the browser landed on, None when the navigation
+    produced no response (a timeout salvaged from what the page already had). `ok` says
+    the browser navigated and measured; it does not say the server answered with a page --
+    flipkart.com answered Chromium 503 "No server is available" while the plain fetch got
+    the listing, and `resolve_page` needs the number to tell the two apart."""
     globals: dict[str, str] = field(default_factory=dict)
     """Library versions read from live JavaScript globals -- the only place most of them
     appear. `jquery.min.js` has no version in its filename; `jQuery.fn.jquery` has it exactly."""
@@ -443,6 +449,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             # all against the short-link domain, the crawl's scope rejected every one as
             # off-site, and a whole-site crawl of Amazon discovered exactly one page.
             payload["landed_url"] = page.url if page.url.startswith(("http://", "https://")) else url
+            payload["status"] = response.status if response is not None else None
             payload["gate_dismissed"] = gate_dismissed
             payload["gate_note"] = gate_note
             payload["navigation_note"] = navigation_note
@@ -502,6 +509,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             html=salvaged_html,
             rects=rects,
             ok=True,
+            status=int(payload["status"]) if payload.get("status") is not None else None,
             globals={str(k): str(v) for k, v in raw_globals.items()},
             custom_globals=tuple(str(name) for name in payload.get("customGlobals") or ()),
             requests=tuple(str(item) for item in payload.get("requests") or ()),

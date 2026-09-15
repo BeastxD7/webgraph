@@ -1011,6 +1011,16 @@ def _resolve_fetched(
 
     rendered = render_page(url, config=render_config)
 
+    # A browser that was answered with a server error navigated fine and measured a page
+    # of "No server is available to handle this request" -- flipkart.com/mobiles, 15 Sep
+    # 2026, while the plain fetch seconds earlier had the listing. `ok` means the render
+    # ran; the status says whether a page was served. A 5xx render is a failed side.
+    if rendered.ok and rendered.status is not None and rendered.status >= 500:
+        said = BLOCKING_STATUSES.get(rendered.status, "the server answered with an error")
+        rendered = replace(
+            rendered, ok=False, error=f"HTTP {rendered.status} -- {said}"
+        )
+
     if not rendered.ok:
         if static_doc is None:
             # Both paths failed and they usually failed for *different* reasons. Reporting
