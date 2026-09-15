@@ -6,6 +6,29 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-15, PR #88) — text pushed off the page is not on the page
+- vtu.ac.in (the owner's first live whole-site test) carries ~60 injected gambling links
+  on every page, each in `<div style="position:absolute; left:-20914565266523px">`. The
+  browser reports a box for them -- twenty trillion pixels to the left -- and the collector
+  read "has a box" as "visible", so the whole-page Markdown opened with sixty lines of
+  spam before "About VTU" and the reading order put them first. A box lying entirely at
+  negative page coordinates is now hidden the way `display: none` is (`offscreen` in
+  `collect.js`, an `_ABSENT_KINDS` member, honoured by `hidden_matter` so the union does
+  not put the static copy back). Not inside a scroll container, though: w3schools' fixed
+  sidebar and php.net's manual index scroll themselves to the current entry, and the
+  entries above it have negative boxes while being one wheel tick away -- the first
+  version dropped a heading on each. On a plain fetch the inline style that puts an
+  element there (`position:absolute` with `left`/`top` ≤ -999px, or `text-indent` that
+  far) is the same signal (`_drop_offscreen_styled`); `include_hidden_text` keeps it, as
+  it keeps every other screen-reader-only string.
+- Measured: vtu.ac.in/about-vtu 202 → 148 blocks, zero spam tokens, opens with "Online
+  Fee Payment" as the screen does. Fidelity suite: unchanged except arxiv's off-screen
+  "Skip to main content" link (now dropped, as the class rule already drops it elsewhere).
+  Live suite: bbc's skip link likewise; every other column identical or page noise. WCXB
+  0.8632 = 0.8632 (jococups.com's colour swatches, `text-indent:-9999px` labels a reader
+  sees as coloured squares, move −0.074 on one page and +0.018 on another); Zyte
+  0.945 = 0.945.
+
 ### Added (2026-09-15, PR #87) — discovery is visible
 - The site run shows what robots.txt said and which sitemaps were tried. Two whole-site
   crawls the owner watched (vtu.ac.in, sode-edu.in, 14 Sep) reported `from_sitemap: 0`
