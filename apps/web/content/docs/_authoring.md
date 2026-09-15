@@ -66,7 +66,8 @@ URL, which survives a section being renamed. Link to the rest of the site the sa
 (`/benchmarks`, `/how-it-works`). Anchors are the heading text in lower case with hyphens:
 `/docs/api#streaming`.
 
-Images live in `apps/web/public/` and are referenced from the root (`/docs/crawl.png`);
+Images live in `apps/web/public/docs-images/` and are referenced from the root
+(`/docs-images/crawl.png`; keep them out of `public/docs/`, which shares the pages' URL space);
 record anything bundled in `apps/web/public/ASSETS.md`.
 
 ## Checking a page
