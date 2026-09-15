@@ -347,3 +347,39 @@ class TestOffscreenEndToEnd:
         # w3schools / php.net: an entry scrolled above a scroll container's top has a
         # negative box and is reachable by scrolling the container. Not off the page.
         assert any(t.startswith("SIDEBAR ENTRY") for t in texts)
+
+
+class TestGeometrySurvivesRemovals:
+    """A block's XPath must be the one the geometry map was keyed with.
+
+    `geometry_by_xpath` keys rectangles by the XPath of a fresh parse. The block walk then
+    removes hidden twins, clipped labels and unreachable trays before it computes each
+    block's XPath -- and lxml writes `div[2]` while there are sibling divs and plain `div`
+    once a removal leaves one, so every block below a removed sibling got a path the map
+    did not hold. allbirds.com/collections/mens: 641 `display: none` elements, 161 of 217
+    blocks without a rectangle, source order, and the repeated card titles deduplicated as
+    unmeasured text. Paths are now stamped before anything is removed.
+    """
+
+    def test_blocks_after_a_removed_hidden_sibling_keep_their_rectangles(self) -> None:
+        from webgraph.fetch.render import geometry_by_xpath
+        from webgraph.types import Rect
+
+        html = (
+            '<html><body><main data-wg-id="1">'
+            '<div data-wg-id="2" data-wg-hidden="display"><p data-wg-id="3">Mobile copy of the menu</p></div>'
+            '<div data-wg-id="4"><h1 data-wg-id="5">Men\'s Shoes</h1>'
+            '<p data-wg-id="6">Sustainable, supportive, and wildly comfortable sneakers.</p></div>'
+            "</main></body></html>"
+        )
+        rects = {
+            "5": Rect(x=10, y=100, width=300, height=40),
+            "6": Rect(x=10, y=150, width=300, height=60),
+        }
+        geometry = geometry_by_xpath(html, rects)
+        document = build_document(html, "https://shop.test/", geometry=geometry)
+        texts = {b.text: b.rect for b in document.blocks}
+        assert "Mobile copy of the menu" not in texts
+        assert texts["Men's Shoes"] is not None, "the heading below a removed sibling lost its box"
+        assert texts["Sustainable, supportive, and wildly comfortable sneakers."] is not None
+        assert document.reading_order_method.value != "dom-fallback"
