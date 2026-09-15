@@ -1,11 +1,111 @@
 ---
-title: Getting started
-description: Install webgraph, start the API and the web app, and extract a first site.
+title: What webgraph is
+description: An extraction engine that takes a website, returns every public page as ordered Markdown, and says how it knows.
 ---
 
-One `make install` sets up the Python engine, the API and the Next.js app; `make api` and `make web` run them on ports 8000 and 3000.
+import { Cards, Card } from 'fumadocs-ui/components/card';
 
-<Callout title="Placeholder">
-  This section is being written. Its pages arrive in the same pull request series that
-  added the documentation site.
-</Callout>
+webgraph takes a website — not a page, a *website* — and returns every public page as clean,
+ordered Markdown, together with an account of where each piece of information came from and
+how it was obtained.
+
+**It is** an extraction engine plus a service and a UI around it. Give it a domain and it
+will tell you what the site is built with, enumerate every page it can reach, and hand back
+each page's content as Markdown with the site's navigation and footer separated out.
+
+**It is not** a general-purpose scraping framework, a headless-browser rental, or an LLM
+wrapper. There is no model in the extraction path. Everything in it is deterministic and
+reproducible, which is what makes the benchmarks meaningful.
+
+One commitment shapes the design and shows up everywhere: **the engine reports how it knows
+something, and declines when it does not know.** A reading order that was measured from a
+rendered layout is labelled differently from one that was assumed from source order. A page
+the engine cannot read — a bot wall, a login redirect, a 503 — is a refusal with the reason,
+not a page of text. A schema field with no supporting evidence yields no value rather than a
+plausible one.
+
+## Who it is for
+
+- Anyone who needs the text of a whole site, in the order a reader sees it, without losing a
+  paragraph to a client-side framework or gaining sixty lines of hidden spam.
+- People feeding pages to an index, a knowledge graph or a model, who need the navigation
+  and footer out of the way (`content_markdown`) but also want the complete page
+  (`markdown`) kept untouched.
+- Engineers who want the failure modes named. Every refusal carries the wall's own words;
+  every measurement carries its method.
+
+The engine is a Python library (`packages/engine`, importable, `py.typed`), served by a
+FastAPI service (`apps/api`) and a Next.js front end (`apps/web`). You can use any layer on
+its own.
+
+## The three problems
+
+Most extraction tools solve the third problem and quietly assume the first two away.
+
+### 1. You do not know which pages exist
+
+`sitemap.xml` is advertising, not inventory. On one site measured in the README it listed
+4 URLs while the site served 75 live pages. On another the sitemap advertised URLs over
+`http://` while the server only answered on `https://`, so a naive reader would have
+retrieved zero pages. Sitemaps also list dead URLs: pages that 404 today are still
+advertised.
+
+Following links from the homepage is not enough either. Once the oracle looks two levels
+deep, static link following finds 31.0% of what is actually reachable (README, Stage 2).
+
+### 2. You do not know how much of the page you are getting
+
+Some pages are complete in their HTML. Some are an empty `<div id="root">`. Many are in
+between: server-rendered content plus client-inserted content, or — surprisingly often —
+content present in the HTML that a client-side framework then *removes* on hydration.
+
+The obvious answer is to predict which pages need a browser and render only those. Measured
+on pages that demonstrably lost content without rendering, prediction scored 0 out of 7.
+So the engine stopped predicting: it fetches both ways and merges. See
+[Concepts: static, render, union](/docs/getting-started/concepts#static-fetch-render-and-union).
+
+### 3. You do not know what order the content is in
+
+Source order is not reading order. CSS reorders content freely: `order` on flex children,
+`flex-direction: row-reverse`, explicit `grid-row` / `grid-column`, floats, absolute
+positioning. A depth-first DOM walk therefore produces *silently* jumbled text on exactly
+the pages where sequence matters most — documentation, news, papers, anything multi-column.
+
+Sorting blocks by their `y` coordinate does not fix it: on a two-column page it interleaves
+the columns line by line, which is worse than source order. The engine measures the boxes
+in a real browser and recovers the order with a recursive XY-cut, and labels the result.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Installation"
+    href="/docs/getting-started/installation"
+    description="uv, Playwright's Chromium, pnpm; make api and make web; the Docker image."
+  />
+  <Card
+    title="First run"
+    href="/docs/getting-started/first-run"
+    description="One page over curl, the streamed stages, a whole site in the web UI, and the block-by-block inspector."
+  />
+  <Card
+    title="Concepts"
+    href="/docs/getting-started/concepts"
+    description="Union, blocks, reading order, whole page versus filtered content, hidden matter, provenance, refusals."
+  />
+  <Card
+    title="Product rules"
+    href="/docs/getting-started/product-rules"
+    description="The engine's contract: never a false output, nothing hidden added, order and structure kept."
+  />
+  <Card
+    title="FAQ"
+    href="/docs/getting-started/faq"
+    description="Why a page was refused, why two fetches, Cloudflare, robots.txt, PDFs, speed, memory."
+  />
+  <Card
+    title="How it reads a page"
+    href="/docs/how-it-reads-a-page"
+    description="The pipeline in depth, stage by stage."
+  />
+</Cards>

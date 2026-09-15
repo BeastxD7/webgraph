@@ -1,6 +1,14 @@
 {
   "title": "How it reads a page",
   "pages": [
-    "..."
+    "technology-detection",
+    "discovery",
+    "fetching-the-union",
+    "what-the-browser-hides",
+    "blocks-and-structure",
+    "reading-order",
+    "markdown",
+    "filtered-content",
+    "refusals"
   ]
 }

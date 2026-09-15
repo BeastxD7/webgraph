@@ -1,0 +1,115 @@
+---
+title: What the browser hides
+description: The six ways an element can be hidden, the site that motivated each rule, and what stays in anyway.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A plain fetch has a tree and no idea what a reader sees. The browser knows, and the
+collector (`fetch/js/collect.js`) writes it onto every element as `data-wg-hidden=<kind>`
+before the DOM is serialised. The value says *how* the element is hidden, because the
+kinds mean different things: "not on the page", "on the page but not yet shown", and "on
+the page and about to appear".
+
+## The kinds
+
+| kind | how the collector decides | what the parser does |
+|---|---|---|
+| `display` | computed `display: none` | absent — dropped, and kept out of the union |
+| `visibility` | computed `visibility: hidden` | absent, as `display` |
+| `clipped` | a box of 1 × 1 px or less with `overflow: hidden`, or `clip: rect(0 0 0 0)`, or `clip-path: inset(50%)` | screen-reader-only; dropped unless `include_hidden_text` |
+| `overflow` | an ancestor with `overflow: hidden`/`clip` whose own box has no height or no width | in the flow; kept, unmeasured, after its heading |
+| `opacity` | computed `opacity: 0` | **measured and kept** where it sits, unless it is a bare `<button>` or a twin of a visible sibling |
+| `offscreen` | a box lying entirely at negative page coordinates, not inside a scroll container | absent, as `display` |
+
+**`display: none` — php.net.** The manual's hidden table of contents (`nav#trick`, about a
+hundred links) and cppreference's hover menus were rightly absent from the rendered
+document and then put straight back by the union from the static copy. `hidden_matter`
+now records every string the browser hid so the merge reads a static-only block as
+*hidden*, not *lost*: php.net 330 → 233 blocks, cppreference 254 → 135, nasa.gov's
+mega-menu 299 → 153 (PR #65).
+
+**`visibility: hidden`.** Marked and treated as `display` is. No motivating site is
+recorded for it; it is the second way CSS removes an element from view.
+
+**`clipped` — linear.app.** The screen-reader-only convention clips an element to a
+one-pixel box. Class names catch most of it on a plain fetch (`sr-only`,
+`visually-hidden`, `screen-reader-text`, …), but linear.app's `<h1>` carries a second copy
+of the headline in a CSS-module class the name rule cannot know
+(`Fzcv4W_visuallyHidden`); the measured box says what the class means (PR #59).
+
+**`overflow` — apple.com/iphone.** An accordion tray is `overflow: hidden` at height 0,
+and its paragraphs keep their natural boxes *underneath the next item's heading*. Ordered
+by those boxes, the trays zip with the headings. The text is real but has no position on
+the page, so it is marked `overflow`, kept, and slotted after its heading like any
+unmeasured block (PR #60). Only an ancestor that is itself collapsed counts: a carousel
+clips horizontally at full height and its later cards are reachable by scrolling, and
+their boxes say, correctly, that they come later.
+
+**`opacity` — apple.com/iphone again.** Content faded in by an entrance animation starts
+at opacity 0. It is on the page and about to be shown, so it is marked but still
+measured: the "iPhone 18 Pro" hero, when unmeasured, was slotted after the other hero's
+image and before its heading (PR #60). Opacity is not an *absent* kind — not in
+`hidden_matter`, not in the group pass of the twin rule. Two things still go: a standalone
+`<button>` the browser is not showing (sphinx-copybutton's "Copy", drawn at opacity 0 until
+hovered, came out as a one-word paragraph between "For example:" and the example on every
+docs.python.org page), and an opacity-0 element whose visible sibling says the same thing.
+
+**`offscreen` — vtu.ac.in.** The owner's first live whole-site test carries about sixty
+injected gambling links on every page, each in `<div style="position:absolute;
+left:-20914565266523px">`. The browser reports a box for them — twenty trillion pixels to
+the left — and the collector read "has a box" as "visible", so the whole-page Markdown
+opened with sixty lines of spam before "About VTU". A box entirely at negative page
+coordinates is now hidden the way `display: none` is (PR #88): vtu.ac.in/about-vtu
+202 → 148 blocks, zero spam tokens, opening with "Online Fee Payment" as the screen does.
+
+<Callout type="warn">
+Not inside a scroll container. w3schools' fixed sidebar and php.net's manual index scroll
+themselves to the current entry, and the entries above it have negative boxes while being
+one wheel-tick away. The first version of the rule dropped a heading on each. Only the
+document's own negative space is unreachable; an ancestor with `overflow: auto` or
+`scroll` exempts everything under it.
+</Callout>
+
+## Hidden but openable
+
+Hidden content that a control opens is content: an accordion tray, an inactive tab, a
+"Show more" body. `_drop_unreachable_hidden` keeps a `display`/`visibility`/`offscreen`
+container when something names it (`aria-controls`, `data-bs-target`, `data-tab`, `for`,
+an `href="#id"`), or the panel says what it is (`role="tabpanel"`, `menu`, `listbox`,
+`tree`), or it sits in a `<details>`. Those stay, unmeasured, where the source puts them.
+
+Hidden content nothing reaches is different: a ticker's source, a widget for another
+breakpoint, a template. karnataka.gov.in hides a 3,144-word "Recent Govt Announcements"
+div beside a 726-word page and nothing opens it (PR #62). A reference to the page's *main
+region* opens nothing inside it — MDN's skip link `href="#content"` names
+`<main id="content">`, an ancestor of everything, and made every hidden copy under it
+"reachable" (PR #74).
+
+**Dialogs are dropped.** A closed `<dialog>`, or a `role="dialog"` that is hidden by the
+renderer's measure, `aria-hidden="true"` or the `hidden` attribute, is not collapsed
+content in the sense an accordion is; it is a different screen. karnataka.gov.in's nine
+Bootstrap modals — Privacy Policy, Terms, Help, Site Map — were 2,100 words under
+`display: none`, three times the words the page shows (PR #62; the page went 9,270 → 726
+words). An open dialog stays and is judged like anything else.
+
+## Hidden twins
+
+Responsive markup renders one label twice — `<span class="md:hidden">NEW</span>
+<span class="hidden md:block">NEW</span>` — and the browser shows one. Both are inline, so
+they share a block, and the block read "NEW NEW". `_drop_hidden_twins` removes a hidden
+element whose *visible* sibling says the same thing, compared without whitespace; a first
+pass matches a parent's hidden children as a group against its shown ones, because
+linear.app's headline is held three ways and no single hidden span has a single visible
+twin (PR #59). A hidden element saying something of its own stays.
+
+## `include_hidden_text`
+
+The default output is what a sighted reader sees. Measured first: the whole-page `text` is
+0.99–1.00 word-complete against Chromium's body text on 21 live pages, and the missing 1%
+is screen-reader-only labels, skip links and `[edit]` controls (PR #57). A caller who wants
+every string passes `include_hidden_text` (`--include-hidden-text` on the CLI). It keeps
+exactly three things: `clipped` elements, inline-styled offscreen elements, and the
+sr-only / `editsection` branch of the class rule. Closed dialogs, hidden twins,
+unreachable trays and the union's `hidden_matter` are unaffected — that is not text a
+browser holds, it is text nobody was shown.

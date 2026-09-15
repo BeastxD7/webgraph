@@ -1,0 +1,112 @@
+---
+title: Refusals
+description: Every answer the engine gives instead of a page, the shape of its message, the story behind it, and what a caller can do.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A page the engine cannot read is a refusal, never a guess. The rule exists because the
+opposite used to happen: Reddit's "You've been blocked by network security" came back as
+three blocks, typed `listing` at 86% confidence, with a green tick; Amazon's WAF challenge
+— HTTP 202 and two kilobytes of `window.awsWafCookie` — was a successful extraction of
+zero blocks. Every refusal below is raised from `resolve.py` (or `fetch/robots.py`), quotes
+the server's own words where it wrote any (skipping its stylesheet, which used to be most
+of the quote), and reaches the API as a **502** with the message as `detail`.
+
+## The refusals
+
+**Block page** — `PageBlockedError`, kind `block`.
+`could not resolve <url>: the site served a block page instead of the content; it said:
+"<evidence>"`. Two conditions, both required: the page is under `MAX_BLOCK_PAGE_CHARS`
+(1,500) *and* says one of the things a wall says — "you have been blocked", "verify you
+are human", "just a moment...", "ray id:". Short pages exist, and long pages mention
+captchas.
+
+**Bot challenge** — kind `challenge`.
+`could not resolve <url>: the site answered with a Cloudflare bot challenge -- a script a
+browser must run before the page is served -- and no page`. A challenge page has no
+visible words, so the phrase test never fires; the evidence is the vendor's script in the
+markup (Cloudflare, AWS WAF, Akamai Bot Manager, DataDome, PerimeterX, Imperva, Kasada,
+Distil). Only an *empty* document is judged this way.
+
+**Login redirect** — kind `login` (PR #73).
+`could not resolve <url>: redirected to a login page (<final url>); the page requires a
+sign-in and nothing of it was served`. Three things at once: the fetch ended somewhere
+else; the final URL holds a `LOGIN_PATH_MARKERS` segment (`/login`, `/uas/login`, `/sso`,
+…) or a `LOGIN_RETURN_PARAMS` parameter naming the page asked for (`?dest=`, `?next=`);
+and the document is a login page — a password field, or under 150 words. old.reddit.com's
+threads (4 words) and linkedin.com/feed (52 words, two password fields) are refused;
+news.ycombinator.com, with a "login" link and 711 words, is a page.
+
+**Undeclared automated tool** — kind `undeclared` (PR #82).
+`could not resolve <url>: the site admits automated clients only when they declare who
+runs them -- a User-Agent naming an operator and a contact address -- and this deployment
+has nothing to declare; set WEBGRAPH_CONTACT='Name contact@example.com' and the site is
+asked again in the form it documents. It said: "<demand>"`. sec.gov answers the
+browser-shaped User-Agent with 403 and "Your Request Originates from an Undeclared
+Automated Tool … declare your traffic by updating your user agent". That is a question,
+not a wall, and with `WEBGRAPH_CONTACT` set it is answered: the page is fetched again,
+both ways, as `<contact> webgraph/0.1`. The contact goes only to a site that asked, and
+it is not a disguise — the client is still named webgraph.
+
+**robots.txt disallowed** — `PageDisallowedError` (PR #83).
+``could not resolve <url>: <origin>/robots.txt disallows <path> for this client
+(`User-agent: *` / `Disallow: /`): the site does not want automated readers here. The
+site offers the Stack Exchange API (…); or supply the HTML you already have (`html` on
+/api/text) and the engine reads that.`` The page is not fetched at all — reading it and
+then refusing would be the request the site asked not to receive. The group and rule
+quoted are the ones that decided; `ROBOTS_SANCTIONED_SOURCES` names the site's API where
+the engine can cite one (Stack Overflow, Reddit). `fetch.respect_robots` on the request is
+the caller's explicit override.
+
+**Missing** — `PageMissingError`.
+`HTTP 404: page does not exist` (also 410). A 404 page renders perfectly well, and without
+this gate a soft-404 became "# Not Found" in the output.
+
+**Non-HTML.** No dedicated message. The plain fetch yields no document when the content
+type is not HTML; the browser refuses the navigation as a download ("the server returned a
+file download rather than a page"); `_both_failed` composes the two. A PDF belongs to a
+document pipeline, not this one — which is why [discovery](/docs/how-it-reads-a-page/discovery)
+now counts them.
+
+**Empty shell** — `PageShellError`.
+`could not resolve <url>: the page is a JavaScript shell with no readable text until a
+browser runs it (HTTP 200, 12,345 bytes of markup); rendering was not used for this
+request`. Only on a static-only request; `/api/text` escalates to the browser when one is
+available, and `/api/extract` reads the shell's hydration payload, which is complete in
+the shell. A document with no text and no shell markers is refused as `the response
+produced no readable text (… bytes of markup, none of it visible)`.
+
+**Both fetches failed.** One message covering both paths, because they usually fail for
+*different* reasons: `could not resolve <url>: HTTP 403 -- the site refused this client;
+it said: "…"; browser: <first line of the render error>`. Reporting only the second cannot
+tell "the site refused us" from "the browser could not start". Statuses are said in words
+(`BLOCKING_STATUSES`: 401 requires a sign-in, 403 refused this client, 429 rate-limiting,
+451 legal, 503 too busy — which is also how several sites refuse bots).
+
+<Callout type="info">
+**A 5xx render on its own is not a refusal.** flipkart.com/mobiles gave the plain fetch
+the listing and Chromium a 503; the static page stands alone with
+`render_error: "HTTP 503 -- the site said it was too busy…"` (PR #89). Only both sides 5xx
+refuses. Likewise a wall on one side is left out and named while the other is read, so
+long as it has twenty words of its own (PRs #64, #67).
+</Callout>
+
+## What a caller can do
+
+**Bring your own HTML** (PR #84). `/api/text` and `/api/text/stream` take `html`: the
+page as the caller already has it, from their own signed-in browser, an extension or a
+saved file. Nothing is fetched or rendered; the paste is read as `Strategy.SUPPLIED` and
+returns the same `text` / `markdown` / `content_markdown`. This is the answer for sites that refuse every automated fetch — stackoverflow.com answers
+both with a Cloudflare challenge, nyc.gov with Akamai's — because the owner's decision is
+not to disguise the client; the reader who has the page hands it over.
+
+A paste is still never a false output: a pasted wall raises the same errors a fetch would,
+and a pasted login page is caught by its own `<link rel="canonical">` or `og:url` standing
+in for where a fetch would have ended. `render_error` says what the result is: "HTML
+supplied by the caller; not fetched or rendered -- reading order is source order, and what
+the browser would have hidden may appear".
+
+**Use the site's API** where the refusal names one. **Set `WEBGRAPH_CONTACT`** where the
+site asked who is calling. **Pass `fetch.respect_robots: false`** only deliberately — the
+default is the site's rule.
