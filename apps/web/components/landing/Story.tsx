@@ -190,7 +190,7 @@ export default function Story() {
         </article>
       </div>
 
-      <p className="mt-6 max-w-prose text-caption text-muted" data-reveal>
+      <p className="mt-6 max-w-prose text-small text-muted" data-reveal>
         Each example is a page this engine met while being measured; the recall is the suite
         in <code className="font-mono">benchmark/fidelity</code>, not yet a per-page score in
         the UI. The{" "}

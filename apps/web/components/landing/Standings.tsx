@@ -109,7 +109,7 @@ export default function Standings() {
         </table>
       </div>
 
-      <p className="mt-6 max-w-prose text-caption text-muted" data-reveal style={idx(5)}>
+      <p className="mt-6 max-w-prose text-small text-muted" data-reveal style={idx(5)}>
         On the held-out WCXB test split ({WCXB_TEST.pages} pages) this engine scores{" "}
         {WCXB_TEST.us}; {WCXB_TEST.rival}&rsquo;s author reports {WCXB_TEST.rivalScore} there.{" "}
         <Link href="/benchmarks" className="font-medium text-accent-ink underline underline-offset-2">

@@ -86,10 +86,7 @@ SIZES: Final[tuple[tuple[str, int, int], ...]] = (
 # under the header on phones and its chapter notes are set in caption size; both belong to
 # the landing's owner and are recorded here rather than silently passed. A waiver that no
 # finding uses fails the run, so an entry cannot outlive its fix and hide a regression.
-WAIVED: Final[dict[tuple[str, str], str]] = {
-    ("landing", "pinned"): "story stage sticky under the header on phones; components/landing, reported in PR #107",
-    ("landing", "text"): "chapter notes are text-caption prose; components/landing, reported in PR #107",
-}
+WAIVED: Final[dict[tuple[str, str], str]] = {}
 
 PHONE_MAX_WIDTH: Final[int] = 480
 PINNED_MAX_RATIO: Final[float] = 0.35

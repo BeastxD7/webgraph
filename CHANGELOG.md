@@ -59,6 +59,11 @@ All notable changes to this project are documented here. The format follows
   are `text-caption` prose at 13 px. Overflow stays enforced on the landing. Also out of
   scope: `RankChart`'s rotated labels clip at the SVG's left edge at every width (its
   `PAD.left`, not a layout matter).
+- After #105 replaced the sticky story stage, the landing needed no waivers: the two
+  `WAIVED` entries are gone and the note paragraphs under the story cards, proof strip and
+  standings (and `EvidenceRow`'s source line) are `text-small` (14px) instead of
+  `text-caption` (13px). 126 route × viewport checks pass with no waiver.
+
 ### Changed (2026-09-17, PR #106) — hero: the Earth by day and by night
 - The hero follows the page's theme, both photoreal, from the same orbit. Dark: the night
   scene as before, with the sun now rising from behind the limb -- half hidden, the rays and

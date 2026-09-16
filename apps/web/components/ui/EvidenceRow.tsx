@@ -29,7 +29,7 @@ export default function EvidenceRow({
         <p className={mono ? "break-words font-mono text-code text-ink" : "text-small text-ink"}>
           {value}
         </p>
-        {source && <p className="mt-0.5 text-caption text-muted">{source}</p>}
+        {source && <p className="mt-0.5 text-small text-muted">{source}</p>}
       </dd>
     </div>
   );
