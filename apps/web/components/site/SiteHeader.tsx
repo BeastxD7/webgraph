@@ -68,7 +68,7 @@ export default function SiteHeader() {
           ))}
         </nav>
 
-        <div className={`ml-auto flex items-center gap-1.5 ${floating ? `min-h-10 px-1 ${pill}` : ""}`}>
+        <div className={`ml-auto flex items-center gap-1 nav:gap-1.5 ${floating ? `min-h-10 px-1 ${pill}` : ""}`}>
           <ThemeToggle className={floating ? "rounded-pill" : ""} />
           {/* Wrapped: the button's own `inline-flex` would otherwise fight `hidden`. */}
           <div className="max-nav:hidden nav:block">
@@ -81,7 +81,7 @@ export default function SiteHeader() {
             aria-expanded={open}
             aria-controls={sheetId}
             onClick={() => setOpen(!open)}
-            className="h-9 items-center rounded-md px-3 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 max-nav:inline-flex nav:hidden"
+            className="h-9 items-center rounded-md px-2 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 max-nav:inline-flex nav:hidden"
           >
             {open ? "Close" : "Menu"}
           </button>
