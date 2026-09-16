@@ -496,6 +496,11 @@ class TestRetrieve:
         store, _, _ = built
         answer = list(KGRetriever(store, None, graph=graph).ask("TechFest 2026"))[-1]
         assert answer["citations"] and answer["usage"]["model"] == "none"
+        # One sentence per quote, each carrying its own citation -- a lowercase quote must not
+        # be glued onto the sentence before it.
+        assert len(answer["sentences"]) == len(answer["citations"]) >= 2
+        assert all(len(s["citations"]) == 1 for s in answer["sentences"]) and answer["unsupported"] == 0
+        assert all(s["text"].startswith("\u201c") for s in answer["sentences"])
 
 
 # -- export ------------------------------------------------------------------------------------

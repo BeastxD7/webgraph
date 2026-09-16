@@ -244,8 +244,10 @@ class KGRetriever:
         ]
         usage = Usage()
         if self.provider is None:
+            # One quoted sentence per row, so the sentence splitter sees a boundary between
+            # quotes that begin mid-sentence in lowercase.
             text = "Not stated on this site." if not chosen else " ".join(
-                f"{c.evidence.quote.rstrip('.')} [{n}]." for n, c in enumerate(chosen[:3], start=1)
+                f"\u201c{c.evidence.quote.rstrip('.')}\u201d [{n}]." for n, c in enumerate(chosen[:3], start=1)
             )
             model = "none"
         else:
