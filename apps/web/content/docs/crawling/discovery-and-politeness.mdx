@@ -60,26 +60,36 @@ event, zeros included:
 | kind | what it is | fetched? |
 |---|---|---|
 | `page` | anything not below | yes |
-| `pdf` | `.pdf` | **yes, and refused** — PDFs are deliberately absent from `NON_PAGE_SUFFIXES` ("documents worth extracting"), so they are queued, fetched, and refused as not HTML |
-| `image` | `.jpg`, `.png`, `.svg`, `.webp`, ... | no — counted only |
-| `other_file` | `.css`, `.js`, `.zip`, `.mp4`, `.docx`, ... | no — counted only |
+| `pdf` | `.pdf` | **no** — counted and cited, never requested, unless `fetch_files` is set (#94). PDFs are absent from `NON_PAGE_SUFFIXES` ("documents worth extracting") so they normalise like pages; the frontier recognises the kind and keeps the address without queuing it |
+| `image` | `.jpg`, `.png`, `.svg`, `.webp`, ... | no — counted and cited |
+| `other_file` | `.css`, `.js`, `.zip`, `.mp4`, `.docx`, ... | no — counted and cited |
 | `archive` | a WordPress date archive, `/2024/06/` or `/date/...`, only when the path *ends* at the date | yes |
 | `category`, `tag` | `/category/...`, `/tag/...` | yes |
 
-Images and other files never reach the frontier, but `_tally_file` counts each same-site
-one once, so the tally says what the site *is*; it travels as `discovered_kinds` on every
-`frontier` and `page` event. On vtu.ac.in, 7,907 of 17,126 discovered URLs were PDFs,
-fetched one at a time to refuse each — see
-[Limits and large sites](/docs/crawling/limits-and-large-sites).
+The three file kinds (`FILE_KINDS`) never reach the queue, but the frontier records each
+same-site one once with the page that linked to it (`skipped`, `skipped_urls`, and a
+citation in `origin`), so the tally says what the site *is*; it travels as
+`discovered_kinds` on every `frontier` and `page` event, and the `done` event carries the
+skipped list. On vtu.ac.in, 7,907 of 17,126 discovered URLs were PDFs, once fetched one at
+a time to refuse each — see [Limits and large sites](/docs/crawling/limits-and-large-sites).
 
 ## Concurrency and delay
 
 A crawl runs `concurrency` worker threads (default 4; the API's request defaults to 6,
-clamped by `WEBGRAPH_MAX_CONCURRENCY`). Before each fetch a worker sleeps
-`max(delay_seconds, crawl_delay)` — the configured 0.3 s or the site's `Crawl-delay`,
-whichever is larger. The sleep is **per worker**, so `Crawl-delay: 1` with four workers is
-up to four requests a second, not one. Under `union` each page is fetched twice and merged;
-vtu.ac.in ran at about 35 pages a minute with 4 workers.
+clamped by `WEBGRAPH_MAX_CONCURRENCY`). Two things space the requests:
+
+- **Per host, across every worker** (`host_interval_seconds`, default 1.0, or the site's
+  `Crawl-delay` when larger): a shared throttle (`crawl/politeness.py`) hands each worker
+  the next free slot for the host under a lock, so two workers that arrive together leave
+  one interval apart and the site sees at most one page a second from the whole crawl,
+  whatever the concurrency. Before #94 the delay was per worker, and `Crawl-delay: 1` with
+  four workers was up to four requests a second, not one.
+- **Per worker** (`delay_seconds`, default 0.3): a plain pause before each fetch, as before.
+
+Under `union` a page is two requests — plain and rendered — made together; the interval
+spaces pages, not requests. vtu.ac.in ran at about 35 pages a minute with 4 workers before
+the per-host interval, well under one page a second, so the interval binds only on a fast
+static-only crawl.
 
 ## What is refused, and why each refusal is honest
 

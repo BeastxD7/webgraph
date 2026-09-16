@@ -1,8 +1,35 @@
 import type { DoneEvent } from "@/lib/api";
 import { compact, duration } from "@/lib/format";
 
+/** Why the run ended, in the run's own words: which limit, or none. */
+export function endedBecause(summary: DoneEvent): string {
+  const queued = summary.remaining_queued.toLocaleString("en-US");
+  if (summary.stopped) return `stopped by you · ${queued} still queued`;
+  switch (summary.stopped_by) {
+    case "pages":
+      return `stopped at the page cap (${summary.limits.max_pages}) · ${queued} more pages are known and were not crawled`;
+    case "time":
+      return `stopped at the time limit (${duration(summary.limits.max_seconds)}) · ${queued} still queued`;
+    case "queue":
+      return `the queue cap (${summary.limits.max_queue.toLocaleString("en-US")}) turned ${summary.queue_refused.toLocaleString("en-US")} addresses away · not every page was reached`;
+    default:
+      return summary.exhausted ? "every reachable page crawled" : `${queued} still queued`;
+  }
+}
+
+/** Files the site links to that were counted and never fetched. Empty when there were none. */
+export function skippedFiles(summary: DoneEvent): string {
+  if (!summary.skipped_total) return "";
+  const parts: string[] = [];
+  if (summary.skipped.pdf) parts.push(`${summary.skipped.pdf.toLocaleString("en-US")} PDFs`);
+  if (summary.skipped.image) parts.push(`${summary.skipped.image.toLocaleString("en-US")} images`);
+  if (summary.skipped.other_file) parts.push(`${summary.skipped.other_file.toLocaleString("en-US")} other files`);
+  return `${parts.join(", ")} counted, not fetched`;
+}
+
 export default function RunSummary({ summary }: { summary: DoneEvent }) {
   const chrome = summary.chrome_blocks + summary.chrome_slots;
+  const skipped = skippedFiles(summary);
 
   return (
     <div className="flex flex-col gap-1.5 rounded-2xl border border-leaf-100 bg-leaf-50 px-5 py-4">
@@ -17,12 +44,8 @@ export default function RunSummary({ summary }: { summary: DoneEvent }) {
             template slots ·{" "}
           </>
         )}
-        {summary.exhausted
-          ? "every reachable page crawled"
-          : summary.stopped
-            ? `stopped by you · ${summary.remaining_queued.toLocaleString("en-US")} still queued`
-            : `stopped at the page cap · ${summary.remaining_queued.toLocaleString("en-US")} more pages are known and were not crawled`}{" "}
-        · {duration(summary.duration_seconds)}
+        {endedBecause(summary)} · {duration(summary.duration_seconds)}
+        {skipped && <> · {skipped}</>}
       </p>
     </div>
   );

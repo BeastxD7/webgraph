@@ -178,6 +178,7 @@ class TestIdenticalContentWarning:
             max_pages=4,
             concurrency=1,
             delay_seconds=0.0,
+            host_interval_seconds=0.0,
             strategy=Strategy.STATIC_ONLY,
             verify_inventory=False,
         )
@@ -201,6 +202,7 @@ class TestIdenticalContentWarning:
             max_pages=3,
             concurrency=1,
             delay_seconds=0.0,
+            host_interval_seconds=0.0,
             strategy=Strategy.STATIC_ONLY,
             verify_inventory=False,
         )

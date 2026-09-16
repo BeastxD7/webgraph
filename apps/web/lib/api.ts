@@ -679,7 +679,8 @@ export interface FrontierEvent {
 }
 
 /**
- * A batch about to be fetched, announced before the work starts.
+ * Everything in flight right now, sent whenever that set changes. The pool is kept full and
+ * refilled as each page lands (since #94; before, a batch of `concurrency` went out together).
  *
  * Completion events alone can only ever describe the past. This is what lets a live view show
  * the pages being fetched *now*, and remove each one as its result arrives.
@@ -762,6 +763,17 @@ export interface GraphStats {
   mentions: number;
 }
 
+export type StoppedBy = "pages" | "time" | "queue" | null;
+
+export interface SkippedUrl {
+  url: string;
+  kind: "pdf" | "image" | "other_file";
+  via?: string;
+  found_on?: string | null;
+  anchor?: string | null;
+  depth?: number;
+}
+
 export interface DoneEvent {
   type: "done";
   pages_ok: number;
@@ -776,6 +788,22 @@ export interface DoneEvent {
   exhausted: boolean;
   /** True when the crawl ended because the caller stopped it. */
   stopped: boolean;
+  /**
+   * Which limit ended the run: the page cap, the time limit, or a queue cap that turned
+   * addresses away. Null when the frontier ran dry or the caller stopped it.
+   */
+  stopped_by: StoppedBy;
+  /** The limits this run ran under; 0 means none. */
+  limits: { max_pages: number; max_seconds: number; max_queue: number };
+  /** Addresses the queue cap turned away. */
+  queue_refused: number;
+  /** Whether links to PDFs and other files were fetched, or only counted. */
+  fetch_files: boolean;
+  /** Same-site files counted and never fetched, by kind. */
+  skipped: { pdf: number; image: number; other_file: number };
+  skipped_total: number;
+  /** The first of those, each with the page that linked to it. Capped server-side. */
+  skipped_urls: SkippedUrl[];
   /** Repeated text blocks identified as site chrome. */
   chrome_blocks: number;
   /** Template slots that never vary across pages. */
@@ -1018,8 +1046,17 @@ async function streamFrames(
 }
 
 export async function streamSite(
-  input: { url: string; max_pages: number; concurrency: number; complete: boolean } &
-    Pick<RunOptions, "crawl" | "fetch" | "renderOptions">,
+  /**
+   * `max_pages` and `max_seconds` are optional: left out, the API applies the engine's
+   * caps (500 pages, an hour). Sending `0` is an explicit ask for an unbounded crawl.
+   */
+  input: {
+    url: string;
+    max_pages?: number;
+    max_seconds?: number;
+    concurrency: number;
+    complete: boolean;
+  } & Pick<RunOptions, "crawl" | "fetch" | "renderOptions">,
   onEvent: (event: SiteEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
