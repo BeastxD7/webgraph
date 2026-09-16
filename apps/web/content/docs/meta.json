@@ -8,6 +8,7 @@
     "crawling",
     "site-report",
     "watch",
+    "webgraph",
     "benchmarks",
     "deployment",
     "contributing"

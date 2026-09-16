@@ -498,6 +498,52 @@ GRAPH_MENTION_WEIGHT = 0.25  # weight of an entity mention against a text match
 GRAPH_HEADING_WEIGHT = 3  # a match in a heading counts this many times
 
 # ======================================================================================
+# WebGraph: the inferred knowledge graph (`webgraph.kg`, behind WEBGRAPH_KG)
+# ======================================================================================
+
+# A section shorter than this many characters is not sent to the model: too little text
+# to state a fact with a verifiable quote, and the prompt overhead dwarfs it.
+KG_MIN_SECTION_CHARS = 120
+
+# Sections extracted in parallel. Each is one model call; four keeps a laptop's local
+# model busy without tripping a hosted provider's rate limit.
+KG_CONCURRENCY = 4
+
+# Caps a build stops cleanly at, reporting truncated=true. 0 = no cap. Input tokens are
+# estimated at four characters each before any call is made (the `estimate` event).
+KG_MAX_PAGES = 0
+KG_MAX_SECTIONS = 0
+KG_MAX_INPUT_TOKENS = 2_000_000
+KG_MAX_USD = 0.0
+
+# Extra extraction passes over each section ("gleaning"). GraphRAG's default of one
+# doubles the bill for a few more relations; off here, and measured before it is turned on.
+KG_GLEANINGS = 0
+
+# Two names for one entity are merged when their 3-gram shingle sets overlap by at least
+# this Jaccard score and the type agrees. 0.9 catches typos and spacing, not synonyms.
+KG_MERGE_JACCARD = 0.9
+
+# An entity named on more than this share of pages is kept but never expanded through: it
+# is the site's own name, and a hop through it reaches everything, which reaches nothing.
+KG_GENERIC_PAGE_SHARE = 0.6
+
+# Retrieval: seeds from the entity and fact indexes, then this many hops of expansion,
+# capped so a hub cannot flood the evidence set; `decay` is the per-hop score multiplier.
+KG_MAX_HOPS = 2
+KG_HOP_DECAY = 0.5
+KG_MAX_ENTITIES = 60
+KG_MAX_RELATIONS = 150
+
+# Evidence handed to the answer model, and the share of it reserved for rows reached by
+# expansion rather than by the seed match (the `Budget.neighbour_share` lesson).
+KG_MAX_EVIDENCE = 24
+KG_GRAPH_EVIDENCE_SHARE = 0.35
+
+# Model output longer than this many characters per section is discarded as runaway.
+KG_MAX_OUTPUT_CHARS = 40_000
+
+# ======================================================================================
 # Technology profiling
 # ======================================================================================
 
@@ -568,6 +614,13 @@ DEPLOY_TRACE_FILE = None
 # WEBGRAPH_GRAPH_DIR: where crawled graphs are kept. None = ~/.cache/webgraph/graphs.
 DEPLOY_GRAPH_DIR = None
 
+# WEBGRAPH_KG: serve the knowledge-graph routes (/api/graph/*) and CLI. Off = the routes
+# answer 404 and say so. Off by default until the benchmark in benchmark/kg beats BM25.
+DEPLOY_KG = False
+
+# WEBGRAPH_KG_DIR: where per-site knowledge graphs (SQLite) are kept. None =
+# ~/.cache/webgraph/kg.
+DEPLOY_KG_DIR = None
 # WEBGRAPH_WATCH_DB: the SQLite file that holds watches, their runs, pages and changes.
 # None = ~/.cache/webgraph/watch.sqlite3 (XDG_CACHE_HOME respected).
 DEPLOY_WATCH_DB = None

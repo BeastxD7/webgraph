@@ -30,6 +30,9 @@ an environment variable named beside it, read **once at process start** by
 | `WEBGRAPH_TRACE` | unset | A single trace file for library and CLI runs. | Diagnosing a CLI run. |
 | `WEBGRAPH_GRAPH_DIR` | `~/.cache/webgraph/graphs` (`$XDG_CACHE_HOME` honoured); **`/tmp/webgraph-graphs` in the image** | Where finished site graphs are written so a restart does not discard minutes of crawling; pruned to the newest 32. | A persistent volume, if the graph must outlive the instance. On a scale-to-zero host it is a cache, not storage. |
 | `WEBGRAPH_CONTACT` | empty | `Name contact@example.com`, sent as `<contact> webgraph/0.1` **only** to a site that refuses undeclared automated clients and says so (sec.gov). Empty: such a site is refused and the refusal names this setting. | If you want sec.gov-style sites read, and are willing to be named. Never a disguise; the client is still called webgraph. |
+| `WEBGRAPH_KG` | unset (off) | Serve [WebGraph](/docs/webgraph): the `/api/graph/*` routes and `webgraph kg`. Off, every one of them answers 404 naming this variable. | Only when you want the knowledge-graph preview; it is behind a flag until its benchmark passes. |
+| `WEBGRAPH_KG_DIR` | `~/.cache/webgraph/kg` | Where per-site knowledge graphs (SQLite files, with the model cache) are kept. | A persistent volume: the cache is what makes a rebuild free. |
+| `WEBGRAPH_LLM_*` | unset | The default model provider for WebGraph -- `PROVIDER`, `BASE_URL`, `MODEL`, `ANSWER_MODEL`, `API_KEY` / `API_KEY_ENV`, `JSON_MODE`, `CONCURRENCY`, `PRICE_IN` / `PRICE_OUT`; see [providers](/docs/webgraph/providers). A request may override any of them. | A self-hosted deployment that owns a key or runs Ollama. Never set a key on a shared host that also accepts requests from strangers. |
 | `PORT` | `8080` in the image | The port uvicorn binds. | Cloud Run and most container hosts inject it. |
 
 <Callout type="info" title="Zero means no cap">

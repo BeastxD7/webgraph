@@ -6,6 +6,80 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
+- **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
+  model reads every heading-scoped section and states what it says -- entities of twelve
+  core types plus open ones, typed attributes (price, date, phone, email) and relations --
+  and every row is kept only if the model's verbatim quote is found in a block of that
+  section. The row then cites `url#xpath` and a character span (`Evidence`); a quote not
+  found is rejected and counted by reason. No unverified tier exists in the store.
+  `Section.blocks` (`BlockRef(xpath, kind, start, end)`) is the one change inside `graph/`
+  that makes this possible; section text is byte-identical to before.
+- **Bring your own key.** Three raw-`httpx` adapters (`kg/providers.py`): OpenAI-compatible
+  with a `base_url` (OpenAI, Groq, Together, OpenRouter, DeepSeek, Mistral, xAI, Ollama,
+  LM Studio, vLLM, any custom endpoint), Anthropic (`output_config` json_schema) and Gemini
+  (`responseJsonSchema`), with a `json_schema` → `json_object` → prompt ladder and retries
+  on 408/409/429/5xx. Config per request or from `WEBGRAPH_LLM_*`; the key is excluded from
+  `repr`, never persisted, never traced, and the API's new 422 handler redacts `api_key`
+  and `password` from validation errors (FastAPI echoes the whole body on a missing field).
+  A deterministic `FakeProvider` runs the tests and the CI benchmark.
+- **Build with the bill visible** (`kg/build.py`): the first event is `estimate` (sections,
+  cached sections, input tokens, output at a quarter, USD when prices are configured);
+  caps on pages, sections, input tokens (2M) and dollars stop the build cleanly with
+  `truncated: true`; the LLM cache (`llm_cache` in the site's SQLite file, keyed on prompt
+  version, model, section text and known entities) makes a second build free. Sections
+  are read by page in-degree, then depth. No gleaning, no build-time summaries.
+- **Deterministic merge** (`kg/merge.py`): `(type, norm(name))`, model-declared aliases,
+  open type into same-name core type, MinHash/LSH 3-gram Jaccard ≥ 0.9; JSON-LD/microdata
+  entities enter first and win on a type conflict; a name on more than 60% of pages is
+  `generic` and never expanded through. No LLM-judged dedup.
+- **Store**: one SQLite file per site under `WEBGRAPH_KG_DIR` (`kg/store.py`) with FTS5
+  over entity names and facts (pure-Python scan when FTS5 is missing), in-memory
+  adjacency, `build_runs`, a versioned schema.
+- **Ask, with the path streamed** (`kg/retrieve.py`): FTS5 BM25 seeds ∪ the crawl's
+  section BM25 → two mass-normalised hops → evidence with 35% of slots reserved for rows
+  reached by expansion → one answer call; every factual sentence carries `[n]` citations
+  to `url#xpath`, an uncited sentence is returned `unsupported: true` (never silently
+  kept), "Not stated on this site." is recognised as abstention. Events: `seeds`, `hop`,
+  `evidence`, `answer_delta`, `answer`.
+- **Exports and Neo4j**: JSONL, a portable `MERGE`-only Cypher script, JSON-LD with
+  `prov:wasQuotedFrom` and `oa:XPathSelector` + `oa:TextPositionSelector` per assertion
+  (`kg/export.py`); `kg/neo4j.py` pushes `UNWIND $rows MERGE` batches of 1,000 over bolt
+  (`RELATED {predicate, evidence_ids}` edges, typed edges behind a flag, no APOC) with the
+  official driver as the optional extra `webgraph[kg-neo4j]`.
+- **API** (`apps/api/src/webgraph_api/kg_routes.py`, `WEBGRAPH_KG=1`, otherwise 404
+  naming the flag): `POST /api/graph/build`, `POST /api/graph/query`, `GET
+  /api/graph/stats`, `GET /api/graph` (nodes and edges), `GET /api/graph/entity`, `GET
+  /api/graph/export?fmt=jsonl|cypher|jsonld`, `POST /api/graph/sync/neo4j` (credentials per
+  request, never stored), `DELETE /api/graph`; `/api/health` reports `webgraph`.
+- **CLI**: `webgraph kg build <site>` (from the stored crawl, `--graph` JSONL, `--pages`
+  a directory of saved HTML, or a fresh crawl), `kg ask <site> "question"`, `kg export
+  --format jsonl|cypher|jsonld`, `kg sync-neo4j` (password from `NEO4J_PASSWORD` only).
+- **Benchmark** `benchmark/kg/`: `generate.py` derives typed questions from a site's own
+  JSON-LD with the gold page and block located verbatim; `run.py` scores answer
+  correctness by type, citation precision/recall at page *and block* level,
+  unsupported-sentence rate, abstention, graph statistics and cost, in three modes
+  (`bm25` baseline, `kg`, `kg+sections`); a six-page fixture site with 23 questions
+  (three 2-hop, two not-on-site). **On the fixture with the fake provider the BM25
+  baseline beats the KG on answer correctness (0.86 vs 0.62)** -- the fake's quotes are
+  six-word windows -- and no real model was measured in this PR (no key in the
+  environment, Ollama up with no models). The flag stays on until `kg+sections` beats
+  `bm25` on typed and two-hop questions on three real sites.
+- Docs: `/docs/webgraph` (what it is, the provenance rule, cost controls, the benchmark,
+  what v1 does not do), `/docs/webgraph/providers`, `/docs/webgraph/neo4j`; the
+  deployment configuration table gains `WEBGRAPH_KG`, `WEBGRAPH_KG_DIR`, `WEBGRAPH_LLM_*`.
+- Config: `KG_*` in `config.py` (section "WebGraph"), `DEPLOY_KG`, `DEPLOY_KG_DIR`;
+  `Settings.kg_enabled`, `Settings.kg_dir`.
+- Not in this PR: the web UI (`/graph` with the sigma graph and the live query path) is
+  the next PR; the `/products` WebGraph card stays "coming".
+- Key hygiene over the API: `api_key_env` in a request body may name only the conventional
+  key variables (`kg.providers.KEY_ENVS_A_CALLER_MAY_NAME`; the CLI is unrestricted) -- a
+  free choice plus a caller-chosen `base_url` would have read any variable off the server
+  and posted it as a bearer token; and a preset's key resolves by the `base_url`'s scheme
+  and host, not a string prefix, so `https://api.openai.com.evil.example/v1` gets no key
+  (`TestProviders::test_a_preset_key_goes_only_to_the_preset_host`,
+  `::test_an_untrusted_body_may_not_name_an_arbitrary_variable`,
+  `test_kg_api.py::…::test_api_key_env_cannot_point_at_an_arbitrary_server_variable`).
 ### Added (2026-09-16, PR #102) — machine-readable site signals in the report
 - **What the site declares to machines** (`report/signals.py`; `SiteReport.signals`, the
   CLI's SIGNALS section, `signals` in `POST /api/site/report`, a section of `/report`, a

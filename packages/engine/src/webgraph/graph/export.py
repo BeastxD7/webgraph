@@ -26,7 +26,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from webgraph.graph.model import Entity, PageNode, Section, SiteGraph
+from webgraph.graph.model import BlockRef, Entity, PageNode, Section, SiteGraph
 
 __all__ = ["CYPHER_SCHEMA", "load_jsonl", "to_cypher", "to_jsonl", "write_jsonl"]
 
@@ -80,6 +80,8 @@ def to_jsonl(graph: SiteGraph) -> Iterator[str]:
                 "level": section.level,
                 "parent_id": section.parent_id,
                 "text": section.text,
+                # Compact: a page has hundreds of blocks and the names would dominate.
+                "blocks": [[b.xpath, b.kind, b.start, b.end] for b in section.blocks],
             }
         )
 
@@ -184,6 +186,12 @@ def load_jsonl(path: str | Path) -> SiteGraph:
                 level=int(record.get("level", 0)),
                 text=record.get("text", ""),
                 parent_id=record.get("parent_id"),
+                # Absent from graphs stored before block refs existed; such sections are
+                # still retrievable, they just cannot be cited block by block.
+                blocks=tuple(
+                    BlockRef(str(b[0]), str(b[1]), int(b[2]), int(b[3]))
+                    for b in record.get("blocks") or ()
+                ),
             )
         )
     return graph
