@@ -1,0 +1,98 @@
+---
+title: FAQ
+description: Refusals, the two fetches, Cloudflare, robots.txt, PDFs, JavaScript-only sites, right-to-left pages, speed and memory.
+---
+
+## Why was my page refused?
+
+Because the engine could not read it and will not pretend otherwise. The refusal names the
+cause in the site's own words where it has any: a block page ("you have been blocked"), a
+bot challenge with the vendor identified (Cloudflare, Akamai, DataDome, PerimeterX, AWS
+WAF…), a redirect to a login page, a `robots.txt` rule for this client, a 404 or 410, or a
+JavaScript shell that was not rendered. On `/api/text` that is HTTP 502 with the message as
+`detail`; on the streams it is an `error` event. The types and their `kind` values are in
+[Concepts: refusals](/docs/getting-started/concepts#refusals). If the page renders fine in
+your own browser, see the Cloudflare question below.
+
+## Why does it fetch every page twice?
+
+Because neither fetch is complete on its own and you cannot tell in advance which one will
+be short. Frameworks replace server-rendered markup on hydration; consent scripts remove
+articles (`bbc.co.uk/news`: 19,908 characters static, 9,279 rendered); lazy sections never
+mount. A `requires_render` heuristic was the original design and, on the seven sites that
+measurably lost content on the static path, returned `False` for all seven (README,
+Stage 3). So `UNION` fetches both and merges, and `static_coverage` on the `resolve` event
+tells you how much the plain fetch alone would have given. Leave `render` at its default
+`false` on `/api/text`, or pass `"complete": false` on a site, to choose one fetch and know
+what you chose.
+
+## Why not just use a headless browser for everything?
+
+Rendering *loses* content on several measured sites — the union beat rendered-alone on 4 of
+10 (README, Stage 3) — and a browser is the expensive half. Render alone is available as
+`Strategy.RENDERED_ONLY` for a page whose static HTML is known to be a decoy, but it is not
+the default.
+
+## Does it bypass Cloudflare or login walls?
+
+No. A site that refuses every automated fetch — stackoverflow.com answers both fetches with
+a Cloudflare challenge, nyc.gov with Akamai's — is refused, and the engine does not disguise
+the client to get past it; `resolve_supplied`'s docstring calls that "a contest the engine
+would lose to the next rule change anyway". What you can do (PR #84) is hand over the page
+you already have: send its source as `html` on `/api/text` or `/api/text/stream`, from your
+own signed-in browser, an extension or a saved file. Nothing is fetched; `url` stays
+required so links and images can be made absolute. The output is the same `text` /
+`markdown`, marked `strategy: supplied`, with `render_error` saying that reading order is
+source order and hidden text may appear. A pasted wall is refused exactly like a fetched
+one, including a pasted login page whose `<link rel="canonical">` gives it away.
+
+## Does it respect robots.txt?
+
+Yes. The crawl always has; since PR #83 a single page does too. `resolve_page` asks the
+host's `robots.txt` before fetching, one fetch of the file per host per hour, matching rules
+for the token `webgraph` (`ROBOTS_AGENT_TOKEN`). A disallowed page is not fetched at all
+and the refusal quotes the group and rule that decided and says what the site offers
+instead — the Stack Exchange or Reddit data API where the engine can cite one, or your own
+HTML. `Crawl-delay` is honoured on a crawl. `fetch.respect_robots: false` on the request is
+your explicit override.
+
+## Does it read PDFs?
+
+No. The engine reads HTML (`FetchResult.is_html`); a PDF URL is refused as a page rather
+than extracted. A crawl still discovers them: `discovered_kinds.pdf` counts them on every
+`frontier` and `page` event, and the UI's "URLs found by kind" row warns when files
+outnumber pages. On vtu.ac.in 7,907 of 17,126 discovered URLs were PDFs (PR #87).
+
+## What about JavaScript-only sites?
+
+An empty `<div id="root">` is a shell, and the union renders it. With `"render": false`,
+`/api/text` escalates a shell to the browser on its own; `/api/text/stream` does not, and
+reports `PageShellError` as an `error` event. With no browser available the page is refused
+on `/api/text` too, while `/api/extract` still reads the shell's hydration payload (`__NEXT_DATA__`, JSON-LD), which is often complete without a render. What a render
+cannot reach is interaction-gated content — accordions, modals, "load more" — which is
+invisible to the engine (README, Known limitations).
+
+## Does it handle other languages and right-to-left pages?
+
+Text in any language passes through unchanged. Reading order needs the direction, because
+XY-cut reads columns right to left on an RTL page: `dom.blocks.is_rtl_document` takes `dir`
+on `<html>` or `<body>` first and `lang` (`he`, `ar`, …) second, since sites such as
+`ynet.co.il` declare no `dir` at all. The streaming route and the crawl detect it. On
+`/api/text` the request's `rtl` field defaults to `false` and is passed through as a forced
+value, so pass `"rtl": true` for an RTL page there.
+
+## How fast is it?
+
+A single page behind a browser render can take about ten seconds (`webgraph.page`); the
+plain fetch alone is much faster. Defaults: 20 s fetch timeout, 30 s render timeout with a
+900 ms settle after `load` (`webgraph.config`). A crawl reuses one browser per worker
+thread; measured on 12 renders, one worker went from 8.5 to 11.6 pages a minute with reuse
+and six workers from 21.9 to 39.1 (README, Stage 3). `pages_per_minute` on every `page`
+event reports the live rate.
+
+## How much memory does it need?
+
+About 150 MB of resident memory per live Chromium, capped process-wide by
+`WEBGRAPH_MAX_BROWSERS` (6 by default, 4 in the container image). `docs/DEPLOY.md` budgets
+"roughly a gigabyte of memory before the Python process is counted" and sizes the
+container at 2 vCPU / 4 GiB. The image itself carries about 400 MB of browser.

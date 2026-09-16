@@ -6,8 +6,6 @@ import ProgressLine from "@/components/benchmarks/ProgressLine";
 import RankChart from "@/components/benchmarks/RankChart";
 import ScatterPlane from "@/components/benchmarks/ScatterPlane";
 import TypeTable from "@/components/benchmarks/TypeTable";
-import SiteFooter from "@/components/site/SiteFooter";
-import SiteHeader from "@/components/site/SiteHeader";
 import { BOARDS, MEASURED } from "@/lib/benchmarks";
 import type { Trust } from "@/lib/benchmarks";
 
@@ -36,11 +34,7 @@ export const metadata: Metadata = {
 export default function BenchmarksPage() {
   return (
     <>
-      <div className="border-b border-line bg-surface">
-        <SiteHeader />
-      </div>
-
-      <main className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-8">
+      <main className="page-col pb-24">
         <header className="max-w-3xl py-16">
           <p className="font-mono text-[12px] uppercase tracking-[0.14em] text-ink-faint">
             Measured, not claimed
@@ -202,7 +196,6 @@ export default function BenchmarksPage() {
         </section>
       </main>
 
-      <SiteFooter />
     </>
   );
 }

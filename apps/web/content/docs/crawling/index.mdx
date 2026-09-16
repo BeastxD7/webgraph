@@ -1,0 +1,129 @@
+---
+title: What a crawl does
+description: Discovery and extraction interleaved, one event per page, the SiteConfig knobs with their defaults, and how the fetch strategy is chosen.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+A crawl takes a root URL and returns every page it can reach on that site, each as
+whole-page Markdown plus a filtered copy, with the evidence for why that page is in the
+crawl at all (`packages/engine/src/webgraph/site.py`, `crawl/frontier.py`,
+`crawl/discovery.py`). There are two ways to run one.
+
+## Two entry points
+
+<Tabs items={['stream_site (API, web UI)', 'extract_site (webgraph site)']}>
+<Tab value="stream_site (API, web UI)">
+
+`stream_site` is what `POST /api/site/stream` and the web UI run. Discovery and extraction
+are **interleaved**: the root is measured once (Stage 0), the sitemap seeds the frontier,
+and every page that comes back has its links read and fed into the frontier before the
+next page is taken. The pool of `concurrency` workers is kept full and refilled as each
+page lands (since #94; before, pages went out in batches that ended when the slowest did).
+Enumerating a whole site first would mean minutes of no output and a crawl capped at
+whatever the sitemap lists; here the first result arrives in seconds.
+
+It yields one event per thing that happens — `stage`, `analysis`, `discovery`, `frontier`,
+`fetching`, `page`, `warning`, `done`, `error` — and the `page` event carries the whole
+document for one URL. See [Outputs and provenance](/docs/crawling/outputs-and-provenance).
+
+</Tab>
+<Tab value="extract_site (webgraph site)">
+
+`extract_site` is the batch path behind the `webgraph site` CLI command (default
+`--max-pages 40`). It runs Stage 0, builds a **page inventory** from the sitemap *and* a
+lightweight link-following pass (`build_inventory`), verifies the first
+`max(4 × max_pages, 40)` advertised URLs with a cheap GET each (sitemaps advertise pages
+that 404; liveness is reported against the checked count, not the advertised one), then
+fetches the live ones and aggregates structured data across pages into a `SiteExtraction`
+with a text `report()`.
+
+</Tab>
+</Tabs>
+
+## What comes back per page
+
+Every page the crawl reads produces a `PageExtraction`:
+
+- `markdown` — the whole page: headings, images, tables, code, in reading order. The
+  product; nothing a reader sees may be missing from it.
+- `content_markdown` — the same page reduced to its content: landmarks, cross-page site
+  chrome and the main-content boundary removed. Empty when nothing was removed;
+  `content_methods` names the steps that fired.
+- `page_type` with its confidence, reasons and runner-up — the trained classifier's
+  verdict. The type chooses the policy that draws the *filtered* boundary (`_content_of`
+  calls `policy_for(page.page_type)`); the whole-page Markdown does not depend on it.
+- `images`, `tables`, `title`, `text_chars`, `strategy`, and `error` when the page was refused.
+
+## The knobs
+
+`SiteConfig` takes its defaults from the "Crawling a whole site" section of `config.py`.
+Not every knob applies to both entry points.
+
+| field | default | applies to | meaning |
+|---|---|---|---|
+| `max_pages` | `500` | both | Pages to attempt, refusals included. `0` is unbounded: until the frontier is exhausted. |
+| `max_seconds` | `3600` | `stream_site` | Wall time before the run stops; `0` is no limit. The `done` event's `stopped_by` names the limit that ended a run. |
+| `max_queue` | `20_000` | `stream_site` | Queued addresses beyond which discovery stops accepting; `0` is no limit. |
+| `fetch_files` | `False` | both | Fetch `.pdf` links. Off, PDFs, images and downloads are counted and cited, never requested. |
+| `concurrency` | `4` | both | Worker threads fetching in parallel within one crawl. |
+| `delay_seconds` | `0.3` | both | Pause per worker before each fetch. |
+| `host_interval_seconds` | `1.0` | both | Minimum seconds between two pages from the same host, across every worker; the site's `Crawl-delay` replaces it when larger. |
+| `max_depth` | `12` | both | Links away from the root; `0` is the root alone. Breadth-first, so a bounded budget is spent near the root. |
+| `strict_domain` | `True` | both | Stay on the root's host (`www.` and bare are one). `False` also follows subdomains, never other sites. |
+| `sitemap_limit` | `50_000` | `stream_site` | URLs read from sitemaps, at most (`extract_site` uses `probe_site`'s own 5,000). |
+| `respect_robots` | `True` | both | Honour robots.txt. |
+| `remove_chrome` | `True` | both | Also emit `content_markdown`. |
+| `main_content` | `True` | both | Also draw the main-content boundary when producing `content_markdown`. |
+| `strategy` | `None` | both | Override the fetch strategy. `None` uses Stage 0's measured verdict. |
+| `verify_inventory` | `True` | `extract_site` only | GET a sample of advertised URLs before spending pages on them. |
+| `follow_links` | `True` | `extract_site` only | Harvest URLs by following links as well as reading the sitemap. |
+| `discovery_limit` | `400` | `extract_site` only | URLs harvested by link-following before verification. |
+
+<Callout type="warn" title="Three knobs do nothing on the streaming path">
+`CrawlOptions` on `/api/site/stream` accepts `verify_inventory`, `follow_links` and
+`discovery_limit`, but `stream_site` never reads them: it always follows links from every
+page and never pre-verifies. They shape `extract_site` only.
+</Callout>
+
+## Strategy: static-only, union, rendered-only
+
+`Strategy` (in `resolve.py`) has three fetchable values: `static-only` (plain HTTP),
+`rendered-only` (the browser's document alone) and `union` (both, merged — the
+completeness path). A fourth, `supplied`, means the caller handed over the HTML.
+
+Stage 0 (`probe_site` in `analyze.py`) fetches the root both ways and compares.
+`SiteAnalysis.recommended_strategy` is `union` whenever rendering added content
+(`render_required`) *or* dropped it (`render_loses_content`: a consent wall, a paywall, a
+lazy unmount), and `static-only` only when a real comparison found the static HTML
+complete — "never on assumption".
+
+Where that verdict is applied:
+
+- `webgraph site` (`extract_site`, `strategy=None`): the measured verdict decides.
+- `POST /api/site/stream` and the web UI: the request's `complete` flag decides — `union`
+  when true (the default), `static-only` when false. `main.py` sets `SiteConfig.strategy`
+  explicitly, and the `analysis` event's `strategy` reports the one applied; the measured
+  verdict is visible only through `render_required` and `render_loses_content` (union
+  whenever either is true).
+
+Use `union` when completeness matters. Use `static-only` when the analysis reports full
+static coverage and you want a crawl several times faster that holds no browsers.
+`rendered-only` is what the resolver reports when the static fetch failed or returned
+nothing usable; request it when the static HTML is known to be a decoy.
+
+## Scope
+
+`CrawlScope.permits` (in `frontier.py`) accepts a URL when its depth is at most `max_depth`
+and `same_site` holds. `same_site` strips `www.` from both sides — an exact comparison once
+rejected every link on a site whose canonical said `www.` while the page resolved bare.
+Subdomains are followed only with `strict_domain: false`. Scope is set on the URL the site
+*serves*: a cross-host redirect (`docs.pydantic.dev` to `pydantic.dev/docs/...`) otherwise
+rejected every link as off-site.
+
+URLs are normalised before they are queued: fragment dropped, default port removed,
+tracking parameters (`utm_*`, `gclid`, `fbclid`, ...) stripped, query sorted,
+`/index.html` collapsed to `/`, `/undefined` and `/null` paths refused. Membership is
+tested on a `canonical_key` that also ignores `www.` and a trailing slash, while the URL
+fetched stays the one the site linked to.

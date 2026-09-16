@@ -1,0 +1,73 @@
+---
+title: Configuration
+description: Every WEBGRAPH_* environment variable with its default, meaning and when to set it; the one frontend variable; and GET /api/config.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Every setting the engine has is a named constant in
+`packages/engine/src/webgraph/config.py`, with a comment saying what it does. Most are
+changed by editing that file or by passing a config object to a call. The "Deployment"
+section at the bottom of the file is the exception: each of those `DEPLOY_*` constants has
+an environment variable named beside it, read **once at process start** by
+`Settings.from_env()` in `webgraph/settings.py`. Two more variables are read by
+`fetch/guard.py`. Nothing has to be set for local development.
+
+## The variables
+
+| variable | default | meaning | when to set it |
+|---|---|---|---|
+| `WEBGRAPH_MAX_PAGES` | `0` (none); **`50` in the image** | Hard ceiling on pages per crawl, whatever a client asks. A request of `0` means "until the frontier is exhausted", so on a capped host it clamps *down* to the cap (`_effective_max_pages`). | Any shared or public host. Unbounded is the engine's default and a six-hour run is one URL away. |
+| `WEBGRAPH_MAX_CONCURRENCY` | `0` (none); **`4` in the image** | Ceiling on parallel fetches within one crawl. The API's request model allows up to 12 and defaults to 6. | Any host with fewer cores than the request allows. |
+| `WEBGRAPH_MAX_CONCURRENT_CRAWLS` | `3`; **`2` in the image** | Whole-site crawls the API runs at once; the rest wait for a slot and are told so (`Waiting for a crawl slot`). | Size to CPU and memory: each crawl holds up to `concurrency` browsers. |
+| `WEBGRAPH_MAX_CONCURRENT_RENDERS` | `2` | Browser pages open at once for single-page requests (`/api/text` with `render: true`). | Rarely; the crawl route is bounded separately. |
+| `WEBGRAPH_MAX_BROWSERS` | `6`; **`4` in the image** | Live Chromium instances process-wide, ~150 MB resident each. A thread that cannot get a slot launches a private short-lived browser rather than blocking. | Always, to the memory budget: six suits 16 GB, four suits a 4 GiB container. |
+| `WEBGRAPH_CHROMIUM_ARGS` | empty; **`--no-sandbox --disable-dev-shm-usage --disable-gpu` in the image** | Extra Chromium flags, shell-split. | Containers. Chromium's sandbox needs kernel capabilities a container is not granted, and the default 64 MB `/dev/shm` crashes the renderer on a heavy page. On a developer machine leave it empty. |
+| `WEBGRAPH_ALLOWED_ORIGINS` | the dev frontend (`http://localhost:3000`, `http://127.0.0.1:3000`) | Browser origins the API answers, comma-separated. | Always, in production, to the frontend's origin. **Never `*`**: this service fetches arbitrary URLs on the caller's behalf, and an open CORS policy hands every page on the internet a proxy inside your network. |
+| `WEBGRAPH_BLOCK_PRIVATE_HOSTS` | on in the API (`configure_from_env(default=True)`); off in the library and CLI | Refuse loopback, private, link-local and network-internal addresses, on every redirect hop. | Set `=1` in the image so the posture is visible in `docker inspect`. |
+| `WEBGRAPH_ALLOW_PRIVATE_HOSTS` | unset | Opt out of the guard. Wins when both are set. | Pointing a local API at a site on `localhost`. Never on a public host. |
+| `WEBGRAPH_TRACE_DIR` | the system temp directory | Where the API writes one trace file per run, under `webgraph-runs/`. | When traces should survive a restart or be collected. Unset, "a server that fills a disk with them by default has replaced one problem with another." |
+| `WEBGRAPH_TRACE` | unset | A single trace file for library and CLI runs. | Diagnosing a CLI run. |
+| `WEBGRAPH_GRAPH_DIR` | `~/.cache/webgraph/graphs` (`$XDG_CACHE_HOME` honoured); **`/tmp/webgraph-graphs` in the image** | Where finished site graphs are written so a restart does not discard minutes of crawling; pruned to the newest 32. | A persistent volume, if the graph must outlive the instance. On a scale-to-zero host it is a cache, not storage. |
+| `WEBGRAPH_CONTACT` | empty | `Name contact@example.com`, sent as `<contact> webgraph/0.1` **only** to a site that refuses undeclared automated clients and says so (sec.gov). Empty: such a site is refused and the refusal names this setting. | If you want sec.gov-style sites read, and are willing to be named. Never a disguise; the client is still called webgraph. |
+| `WEBGRAPH_KG` | unset (off) | Serve [WebGraph](/docs/webgraph): the `/api/graph/*` routes and `webgraph kg`. Off, every one of them answers 404 naming this variable. | Only when you want the knowledge-graph preview; it is behind a flag until its benchmark passes. |
+| `WEBGRAPH_KG_DIR` | `~/.cache/webgraph/kg` | Where per-site knowledge graphs (SQLite files, with the model cache) are kept. | A persistent volume: the cache is what makes a rebuild free. |
+| `WEBGRAPH_LLM_*` | unset | The default model provider for WebGraph -- `PROVIDER`, `BASE_URL`, `MODEL`, `ANSWER_MODEL`, `API_KEY` / `API_KEY_ENV`, `JSON_MODE`, `CONCURRENCY`, `PRICE_IN` / `PRICE_OUT`; see [providers](/docs/webgraph/providers). A request may override any of them. | A self-hosted deployment that owns a key or runs Ollama. Never set a key on a shared host that also accepts requests from strangers. |
+| `PORT` | `8080` in the image | The port uvicorn binds. | Cloud Run and most container hosts inject it. |
+
+<Callout type="info" title="Zero means no cap">
+For every `MAX_*` cap, `0` means none. The image sets them because "a shared host cannot
+let one caller crawl a site until its frontier is exhausted" (Dockerfile).
+</Callout>
+
+## The frontend's one variable
+
+`NEXT_PUBLIC_API_BASE` — the API's URL, inlined into the bundle **at build time**, not read
+at runtime. A build without it keeps the `http://127.0.0.1:8000` default and then asks each
+visitor's own machine for the API; changing it later needs a redeploy. `apps/web/lib/api.ts`
+detects this specific mistake and says so in its error, because the symptom is otherwise
+indistinguishable from a backend that is down.
+
+## What a request may override
+
+Per-run knobs are not environment variables. `/api/site/stream` accepts `max_pages`,
+`concurrency`, `complete`, and three option objects — `crawl` (`max_depth`, `strict_domain`,
+`delay_seconds`, `verify_inventory`, `follow_links`, `discovery_limit`, `sitemap_limit`,
+`respect_robots`, `remove_chrome`, `main_content`), `fetch` and `renderOptions` — each
+applied on top of `config.py`'s defaults and then clamped by the host's caps. The `run`
+header frame of every stream reports the values *actually applied*.
+
+## `GET /api/config`
+
+Returns three things, so the settings page and the file never disagree:
+
+- `settings` — every constant in `config.py` with its `value`, its `comment` (parsed from
+  the source, not declared twice) and its `section`.
+- `overridable` — which of them a request may change, by request field: `crawl`, `fetch`,
+  `renderOptions`.
+- `caps` — this host's `max_pages`, `max_concurrency`, `max_concurrent_renders`,
+  `max_concurrent_crawls` from the environment; `0` means none.
+
+`GET /api/health` is the shorter check: `render_available`, `max_concurrent_renders`,
+`private_hosts_blocked` and `max_pages`. The last two are there because a deployment with
+the guard off and no cap "looks perfectly healthy".

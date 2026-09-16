@@ -1,0 +1,157 @@
+---
+title: Docker and deploy
+description: Build and run the API image, then deploy it to Cloud Run and the frontend to Vercel — the commands exactly as the repository's Dockerfile, Makefile and DEPLOY.md give them.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+## The image
+
+The `Dockerfile` at the repository root builds the API with a browser in it. Two decisions
+shape it, both stated at the top of the file: Chromium is not optional (the whole-site
+strategy renders every page, so the image carries the browser and its libraries — about
+400 MB), and dependencies and the browser are installed **before any source is copied**, so
+a code change rebuilds in seconds instead of re-downloading Chromium.
+
+Layer by layer:
+
+1. `python:3.12-slim-bookworm`, with `uv` copied in from `ghcr.io/astral-sh/uv:0.9.29`.
+   `PLAYWRIGHT_BROWSERS_PATH=/opt/playwright` — outside `$HOME`, because the runtime user's
+   home is not guaranteed writable.
+2. Manifests only (`pyproject.toml`, `uv.lock`, the engine's and API's `pyproject.toml`),
+   then `uv sync --frozen --package webgraph-api --no-dev --no-install-workspace`: the
+   third-party tree without the workspace source.
+3. `/app/.venv/bin/playwright install --with-deps chromium` — driven from the venv just
+   built so the browser matches the pinned Playwright version. `--with-deps` runs `apt-get`
+   and needs root.
+4. `COPY packages/engine` and `apps/api`, then the final `uv sync`.
+5. Environment defaults for a 2 vCPU / 4 GiB container (see below).
+6. A non-root user `webgraph` (uid 10001) owning `/app`. Chromium runs whatever JavaScript
+   the crawled page contains; the process hosting it should not own the filesystem.
+7. `CMD exec /app/.venv/bin/uvicorn webgraph_api.main:app` on `$PORT` with `--workers 1`
+   and a 5-second graceful shutdown — uvicorn straight from the venv, not through `uv run`
+   (which would try to re-sync at start). **One worker, deliberately**: the graph
+   cache, crawl slots and crawl pool are in-process state. Scale by making the container
+   bigger, not by adding workers.
+
+The image's defaults:
+
+```dockerfile
+ENV PORT=8080 \
+    WEBGRAPH_BLOCK_PRIVATE_HOSTS=1 \
+    WEBGRAPH_MAX_PAGES=50 \
+    WEBGRAPH_MAX_CONCURRENCY=4 \
+    WEBGRAPH_MAX_CONCURRENT_CRAWLS=2 \
+    WEBGRAPH_MAX_CONCURRENT_RENDERS=2 \
+    WEBGRAPH_MAX_BROWSERS=4 \
+    WEBGRAPH_CHROMIUM_ARGS="--no-sandbox --disable-dev-shm-usage --disable-gpu" \
+    WEBGRAPH_GRAPH_DIR=/tmp/webgraph-graphs
+```
+
+Every one is overridable at deploy time; these are the values that keep the container
+inside its budget. `--no-sandbox` is safe here because the container boundary is the
+sandbox.
+
+## Build and run locally
+
+Worth doing before spending a deploy cycle.
+
+```bash
+make docker-build        # docker build -t webgraph-api .
+make docker-run          # docker run --rm -p 8080:8080 -e WEBGRAPH_ALLOWED_ORIGINS=http://localhost:3000 webgraph-api
+curl -s localhost:8080/api/health
+```
+
+`make docker-run` takes `ALLOWED_ORIGINS=...` to change the origin. The first build
+downloads Chromium and takes a few minutes; after that only the last two layers rebuild.
+
+## Deploy the API to Cloud Run
+
+<Steps>
+<Step>
+The always-free quota applies only in `us-central1`, `us-east1` and `us-west1`.
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com
+```
+</Step>
+<Step>
+Deploy. `make deploy-api` runs exactly this, with `GCP_REGION`, `GCP_SERVICE` and
+`ALLOWED_ORIGINS` as Make variables:
+
+```bash
+gcloud run deploy webgraph-api \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --execution-environment gen2 \
+  --cpu 2 --memory 4Gi \
+  --max-instances 1 \
+  --concurrency 20 \
+  --timeout 3600 \
+  --set-env-vars WEBGRAPH_ALLOWED_ORIGINS=http://localhost:3000
+```
+
+Each flag, from `DEPLOY.md`: `gen2` because gen1 runs under gVisor, which intercepts
+syscalls Chromium needs; `4Gi` for four browsers plus page documents plus Python;
+`--max-instances 1` because a second instance splits the graph cache in half (the Makefile
+calls this flag "load-bearing"); `--concurrency 20` so one instance serves many callers
+while `WEBGRAPH_MAX_CONCURRENT_CRAWLS` bounds the expensive work; `--timeout 3600` is the
+maximum, and a crawl that reaches it is cut off mid-stream — which is why
+`WEBGRAPH_MAX_PAGES` matters. The origin starts as localhost because the frontend URL does
+not exist yet.
+</Step>
+<Step>
+Deploy the frontend to Vercel. In the project settings set **Root Directory** to
+`apps/web`; Vercel detects the pnpm workspace at the root. Set the API URL **before the
+first build**:
+
+```bash
+vercel env add NEXT_PUBLIC_API_BASE production   # the https://webgraph-api-....run.app URL gcloud printed
+vercel --prod                                     # or: make deploy-web
+```
+</Step>
+<Step>
+Close the loop — point the API at the real frontend:
+
+```bash
+gcloud run services update webgraph-api --region us-central1 \
+  --set-env-vars WEBGRAPH_ALLOWED_ORIGINS=https://your-app.vercel.app
+```
+
+Do not use `*`.
+</Step>
+<Step>
+Check the guard before sharing the link (`DEPLOY.md`, "Before sharing the link"):
+
+```bash
+API=https://webgraph-api-....run.app
+curl -s $API/api/health          # "private_hosts_blocked": true and a non-zero "max_pages"
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $API/api/text \
+  -H 'content-type: application/json' \
+  -d '{"url":"http://169.254.169.254/latest/meta-data/","render":false}'   # refused: 502, "non-public" in the detail
+curl -s -D- -o /dev/null -X OPTIONS $API/api/text \
+  -H 'Origin: https://evil.example' \
+  -H 'Access-Control-Request-Method: POST' | grep -i access-control-allow-origin   # nothing
+```
+</Step>
+</Steps>
+
+<Callout type="warn" title="Cost">
+At 2 vCPU / 4 GiB the free quota is about 25 hours of active crawling a month. A demo
+shared with a few people does not come close; a public link posted somewhere might.
+</Callout>
+
+## Without a cloud account
+
+```bash
+make api
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+That prints a `https://something.trycloudflare.com` URL to use as `NEXT_PUBLIC_API_BASE`.
+Set `WEBGRAPH_ALLOWED_ORIGINS` to the Vercel URL and `WEBGRAPH_MAX_PAGES` to something sane
+first. Your laptop is now the server, and the link dies when it sleeps.

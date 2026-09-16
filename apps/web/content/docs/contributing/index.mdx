@@ -1,0 +1,143 @@
+---
+title: Contributing
+description: One branch, a failing test with every fix, a measurement with every claim, repro with repo tools only — the loop from research to merged PR, and the conventions the template enforces.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+The rules below are `CONTRIBUTING.md` and `.github/PULL_REQUEST_TEMPLATE.md`, restated.
+Every one was learned by violating it, and the file says where.
+
+## Setup and the check
+
+```bash
+make install     # uv sync + playwright chromium + pnpm install
+make api         # FastAPI on :8000
+make web         # Next.js on :3000
+make check       # lint + types + every test suite -- before every commit
+```
+
+`make check` runs what CI runs: ruff and mypy in **strict** mode over the engine, the engine
+and API test suites, and the web app's lint, typecheck and build (`ignoreBuildErrors:
+false`, so a type error is a build failure). Two things it does not cover, and says so:
+`make check-responsive` needs the web app running, and `make bench-content` needs the
+network and the `bench` dependency group.
+
+If you touched dependencies, also run `make check-clean`: it clones the tree to a temp
+directory and installs from cold. A warm `node_modules` once hid a broken install through
+26 consecutive red CI runs while every local check passed.
+
+## The three rules
+
+<Steps>
+<Step>
+### Every fix ships with the test that fails without it
+
+Not a test in the general area: a test of the specific page shape or behaviour that was
+wrong, named after it. A PR that changes behaviour and adds no test is sent back. (Audited
+across fifteen PRs in September 2026; three had slipped and were backfilled in #28.) The
+template asks you to tick that each new test was run against `main` and **fails** there.
+</Step>
+<Step>
+### A claim is a measurement
+
+A change to extraction, reading order, routing or discovery carries before-and-after
+numbers from the runners in `benchmark/`: WCXB dev by page type at minimum, Zyte for
+anything touching articles, WCEB for comments, landmarks or the boundary, the reading-order
+benchmark for `dom/reading_order.py`, **WebMainBench for anything touching tables, code or
+Markdown rendering** (the boards that score plain text cannot see a link rendered into a
+table cell; that cost six PRs), the live suite and the fidelity suite for the pages that
+moved. Neutral-to-negative results are recorded in the commit message as rejected, so the
+next person does not repeat them. See [Benchmarks](/docs/benchmarks).
+</Step>
+<Step>
+### One branch: `main`
+
+Work happens on a short-lived branch, lands through a pull request with green CI, is
+merged, and the branch is deleted in the same step. Nothing lives on a second long-running
+branch.
+</Step>
+</Steps>
+
+## The loop
+
+Research → experiment → measure → PR → CI → merge → delete the branch. In commands:
+
+```bash
+git checkout -b fix/aside-callouts        # <type>/<short-name>
+# ... commit with the conventions below ...
+git push -u origin fix/aside-callouts
+gh pr create                              # the template asks for what a reviewer needs
+gh pr checks --watch                      # engine, api and web jobs
+gh pr merge --merge --delete-branch
+```
+
+Research means the engineering journal first: `MEMORY.md` holds numbered decisions and,
+more usefully, the things tried and measured as neutral or harmful, with the numbers.
+**Read it before changing extraction, discovery or chrome detection.** If a change overturns
+an entry, update the entry in the same commit.
+
+## Reproduce with repo tools only
+
+The template's "How to reproduce" section wants commands a reviewer can run on `main`
+from a fresh clone — "only tools that are in this repository, nothing from a local scratch
+directory":
+
+```bash
+# a live page, block by block through the production path (chosen / value / landmark / widget)
+uv run python tools/inspect_page.py "https://example.com/page" --chosen
+# a benchmark page against its ground truth: WCXB by id, Zyte by id prefix
+uv run python tools/inspect_corpus_page.py wcxb 0617 --corpus <wcxb clone> --disagree
+uv run python tools/inspect_corpus_page.py zyte e372e42c --corpus <zyte clone>
+# or the API
+curl -s -X POST localhost:8000/api/text -H 'content-type: application/json' -d '{"url":"..."}' | jq .content_markdown
+```
+
+The web UI's **Copy run log** carries every decision the engine made for a page and is the
+paste an issue needs. The most useful contribution of all is a URL: the extraction-quality
+issue template asks for the page, what a reader sees, and what webgraph produced.
+
+## Commit conventions
+
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>(<scope>): <subject>`, a body, a footer. Types: `feat`, `fix`, `perf` (with the
+measurement in the body), `refactor` (alters neither behaviour nor performance), `test`,
+`docs`, `build`, `ci`, `chore`. Scopes: `engine`, `api`, `web`, `bench`, `docs`, or a module
+path such as `engine/boilerplate`. Subject imperative, lower case, no trailing full stop,
+under 72 characters. A breaking change is `feat(engine)!:` with a `BREAKING CHANGE:` footer.
+
+The body carries the evidence. From `CONTRIBUTING.md`:
+
+```
+perf(engine): reuse one browser per crawl worker thread
+
+Relaunching Chromium per page was a fixed cost on every render. ...
+
+Measured on 12 renders of persyn.ai:
+
+  workers=1   8.5 -> 11.6 pages/min
+  workers=6  21.9 -> 39.1 pages/min
+```
+
+## What the PR template asks
+
+One primary type ticked; a two-sentence summary a release note could reuse; **the
+problem** from the user's side (URL, expected, actual); how to reproduce before the change;
+**the root cause** as a mechanism ("Kadane bridged into the comments because a comment's
+prose scores like an article's" — not "content selection was wrong"); the fix, with what
+was tried first and rejected and its number; the tests table; the measurement table;
+screenshots for UI (light and dark, phone width); risk and rollback.
+
+The checklist, in short: `make check` passes; every changed behaviour has a test that fails
+on `main`; measurements are from `benchmark/` runners on this commit and in the commit
+message; rejected alternatives recorded; new config values are `NAME = value` with a
+comment in `config.py` and appear in `/api/config`; `MEMORY.md` updated if a decision is
+overturned and `CHANGELOG.md` under Unreleased for anything user-visible; bundled assets
+recorded in `apps/web/public/ASSETS.md` with source and licence; no secrets, personal data
+or scraped page content committed; branch deleted on merge.
+
+<Callout type="info" title="The one-sentence version">
+Show the page, show the mechanism, show the number, show the test — and leave `main` the
+only branch.
+</Callout>

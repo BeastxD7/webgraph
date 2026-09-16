@@ -1,0 +1,141 @@
+---
+title: POST /api/site/stream
+description: Crawl a whole site over Server-Sent Events - technology analysis, discovery, frontier, one event per page, and a final tally.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`POST /api/site/stream` crawls a site breadth-first from its root and streams an event per stage and per page. Discovery and extraction are interleaved: each extracted page's links extend the frontier, so the first result arrives in seconds and the crawl reaches everything reachable, not only what the sitemap lists. The finished graph is kept in memory and on disk for [`/api/site/context`](/docs/api/site-context).
+
+## Request
+
+```json
+{
+  "url": "https://docs.example.com",
+  "max_pages": 200,
+  "concurrency": 6,
+  "complete": true,
+  "crawl": { "max_depth": 4, "strict_domain": true },
+  "fetch": { "respect_robots": true },
+  "renderOptions": { "settle_ms": 900 }
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `url` | string | required | Site root. A redirect is followed and the crawl is scoped to where it lands |
+| `max_pages` | integer 0–100000 | `0` | Pages to extract. `0` means unbounded: until the frontier is exhausted |
+| `concurrency` | integer 1–12 | `6` | Pages fetched in parallel |
+| `complete` | boolean | `true` | `true` unions the plain and browser fetch per page (`strategy: union`); `false` is `static-only`. Neither mode alone is complete |
+| `crawl` | [`CrawlOptions`](/docs/api/options#crawloptions) | `null` | Depth, domain scope, delay, discovery limits, robots, chrome removal |
+| `fetch` | [`FetchOptions`](/docs/api/options#fetchoptions) | `null` | Plain-fetch overrides, applied to every page |
+| `renderOptions` | [`RenderOptions`](/docs/api/options#renderoptions) | `null` | Browser overrides, applied to every page |
+
+The model has no `schema` field, so `done.site_facts` and `fact_sources` are always empty on this route; the measured per-site strategy (`CRAWL_STRATEGY = None`) is reachable from the library but not from here, since `complete` always sets one.
+
+### Caps
+
+The host's environment caps are applied on top of the request and the run header reports the values actually used. `WEBGRAPH_MAX_PAGES` clamps `max_pages`, and `0` from the client is the *largest* ask, so it clamps down to the cap. `WEBGRAPH_MAX_CONCURRENCY` clamps `concurrency`. `WEBGRAPH_MAX_CONCURRENT_CRAWLS` (default `3`) bounds crawls in flight; a request beyond it first receives `{"type": "stage", "stage": "analyze", "message": "Waiting for a crawl slot"}` and then waits.
+
+## Events, in order
+
+Framing is as for [`/api/text/stream`](/docs/api/text-stream#framing). After the slot is acquired the [run header](/docs/api/text-stream#the-run-header) arrives with `mode: "site"` and the applied `max_pages`, `concurrency`, `strategy`, `complete`, `max_depth`, `strict_domain`.
+
+### `stage`
+
+`analyze` (`Detecting technology stack`, then `Redirected to …` if the root moved), `enumerate` (`Seeding from sitemap`), `extract` (`Crawling and extracting up to N pages`, with `unlimited: true|false`).
+
+### `analysis`
+
+The root fetched both ways, measured. `root`, `frameworks`, `technologies` (each `name`, `category`, `version`, `confidence`, `evidence` - the fingerprint that matched), `payload_sources`, `render_required`, `render_loses_content`, `static_chars`, `rendered_chars`, `union_chars`, `static_coverage`, and `strategy`, the one the crawl will use.
+
+### `discovery`
+
+How the site wants to be found.
+
+```json
+{
+  "type": "discovery",
+  "robots": {
+    "found": true, "url": "https://docs.example.com/robots.txt", "fetched_status": 200,
+    "group": "User-agent: *", "rules_for_us": ["Disallow: /search"], "crawl_delay": 1.0,
+    "text": "User-agent: *\nDisallow: /search\n", "text_truncated": false, "text_chars": 34
+  },
+  "sitemaps": {
+    "attempts": [
+      { "url": "https://docs.example.com/sitemap.xml", "status": 200, "ok": true, "urls": 412, "index": false, "source": "conventional" }
+    ],
+    "found": 1, "total_urls": 412
+  },
+  "seeds": 380
+}
+```
+
+`text` is capped at `DISCOVERY_ROBOTS_TEXT_CHARS` (`4000`); `rules_for_us` is never cut. `source` is `robots` (a `Sitemap:` line), `conventional` (`/sitemap.xml`, `/sitemap_index.xml`) or `index`. `ok` means the response parsed as a sitemap and carried a `<loc>`. `seeds` is how many sitemap URLs the frontier accepted after scope and normalisation.
+
+### `frontier`
+
+The queue after seeding: `queued`, `discovered`, `depth_counts` (URLs per depth), `discovered_kinds`, `from_sitemap`, `extracted` (`0`), `new_urls` (the root plus every seed - clients rebuild the discovered set from these deltas). `discovered_kinds` tallies addresses by kind: `page`, `pdf`, `image`, `other_file`, `archive`, `category`, `tag`.
+
+### `fetching`
+
+Emitted before each batch goes out: `urls`, `queued`, `extracted`, `failed`. It is what lets a client show work in flight rather than only work finished.
+
+### `page`
+
+One per page, whether it succeeded or not.
+
+| Field | Meaning |
+|---|---|
+| `index`, `url`, `title`, `depth` | Position in the run, final URL, first heading, links from the root |
+| `citation` | How the address entered the crawl: `via` (`seed`, `sitemap`, `link`), `found_on`, `anchor` (the text a reader would have clicked), `depth`. May be `null` |
+| `ok`, `error` | `error` is `HTTP 404`, or the engine's refusal message |
+| `chars`, `blocks`, `images`, `tables` | Size of the document |
+| `markdown`, `content_markdown`, `content_blocks`, `content_methods` | As on `/api/text`, plus `site-chrome` once enough pages exist (`CHROME_MIN_PAGES = 6`) |
+| `page_type`, `page_type_confidence`, `page_type_reasons`, `page_type_runner_up` | The router's verdict with its reasons |
+| `strategy` | How this page was fetched |
+| `queued`, `discovered`, `depth_counts`, `discovered_kinds`, `extracted`, `failed`, `newly_queued`, `new_urls`, `pages_per_minute`, `totals` | Running counters; `totals` has `chars`, `markdown`, `images`, `tables` |
+| `graph` | `pages`, `sections`, `entities`, `links`, `mentions` in the graph so far |
+
+### `warning`
+
+`code: "identical-content"` when `IDENTICAL_CONTENT_WARNING` (`3`) distinct URLs return byte-identical text: the site is probably serving an interstitial the engine could not open. Carries `message`, `urls`, `chars`.
+
+### `done`
+
+```json
+{
+  "type": "done", "pages_ok": 198, "pages_total": 200, "failed": 2,
+  "discovered": 1431, "remaining_queued": 1231, "exhausted": false, "stopped": false,
+  "total_chars": 2105433, "total_markdown_chars": 2380911, "total_images": 640, "total_tables": 37,
+  "largest_identical_group": 1, "identical_content_groups": [],
+  "chrome_blocks": 42, "chrome_slots": 3, "entities": [], "site_facts": {}, "fact_sources": {},
+  "graph": { "pages": 198, "sections": 2210, "entities": 0, "links": 9120, "mentions": 0 },
+  "duration_seconds": 412.6
+}
+```
+
+`exhausted` is `true` only when the frontier emptied on its own; `stopped` is `true` when the client disconnected and the engine's stop flag ended the run. A crawl that hit `max_pages` has both `false` and a non-zero `remaining_queued`.
+
+### `error`
+
+`{"type": "error", "message": "..."}` and the stream closes. Before any page: `not a crawlable URL: …` or the root's own refusal (`site unreachable`, a wall, a refused address). Individual page failures are `page` events with `ok: false`, never `error`.
+
+## Politeness and robots
+
+The crawl reads `robots.txt` once, skips disallowed URLs at the frontier (`crawl.respect_robots`) and again per page (`fetch.respect_robots`), and waits the larger of `delay_seconds` and the file's `Crawl-delay` between fetches per worker.
+
+## What unbounded means
+
+`max_pages: 0` runs until the frontier is exhausted. On a large site that is a long time: the first live whole-site run, vtu.ac.in on 14 September 2026, discovered 17,126 URLs and ran for roughly six hours, a third of it fetching 7,907 PDFs one by one to refuse each as not HTML. Every `page` event carries the full Markdown, so an unbounded run also produces a stream of tens of megabytes. Set a cap, or set `WEBGRAPH_MAX_PAGES` on any host you share.
+
+<Callout type="warn">
+A client that stops reading does stop the crawl - the engine polls a stop flag between batches - but only after the batch in flight finishes. Close the connection rather than ignoring it.
+</Callout>
+
+```bash
+curl -N http://127.0.0.1:8000/api/site/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://docs.example.com", "max_pages": 50}' \
+  | grep '"type": "page"' | jq -c '{url, ok, page_type, chars}'
+```

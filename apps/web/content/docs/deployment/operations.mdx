@@ -1,0 +1,103 @@
+---
+title: Operations
+description: Browser memory, the three concurrency caps, run traces, the private-host guard and its known limit, what to watch — and what is not yet built.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## Browsers and memory
+
+The engine keeps **one Chromium per worker thread** (`fetch/browser.py`): Playwright's
+synchronous API binds a browser to the thread that started it, and crawl workers are
+long-lived, so a browser per thread pays the launch cost once. Each page gets its own
+`BrowserContext` — a fresh cookie jar, cache and storage — at millisecond cost.
+
+`WEBGRAPH_MAX_BROWSERS` caps live browsers process-wide. A thread that cannot get a slot
+launches a private, short-lived browser rather than blocking, so the cap bounds the pool,
+not the absolute peak; a crashed browser is not handed out again. At ~150 MB resident each
+the budget is `MAX_BROWSERS × 150 MB`, plus the Python process, plus every page's blocks
+held for the crawl's duration. The six-hour run in
+[Limits and large sites](/docs/crawling/limits-and-large-sites) reached 1.2 GB in the
+process and 5 GB in browsers; long-lived browsers accumulate. Renders block images, media
+and fonts, record at most 400 network requests, and give up after `RENDER_TIMEOUT_MS =
+30_000`.
+
+## The three caps
+
+`apps/api/src/webgraph_api/main.py` bounds work in three places, all sized from
+`Settings`:
+
+| cap | mechanism | what queues behind it |
+|---|---|---|
+| `WEBGRAPH_MAX_CONCURRENT_CRAWLS` | `asyncio.Semaphore` around the stream, plus a dedicated `ThreadPoolExecutor` of the same size | A new crawl emits `Waiting for a crawl slot` and waits. The dedicated pool exists because crawls in the default executor starved ordinary requests. |
+| `WEBGRAPH_MAX_CONCURRENT_RENDERS` | `asyncio.Semaphore` around `/api/text` with `render: true` | Single-page renders. A JavaScript shell that escalates to the browser inside the resolver is bounded by the browser pool instead. |
+| `WEBGRAPH_MAX_CONCURRENCY` and `WEBGRAPH_MAX_PAGES` | clamps on the request (`_effective_concurrency`, `_effective_max_pages`) | Nothing queues; the request is reduced and the `run` header says to what. |
+
+Two behaviours matter operationally. **Back-pressure:** `page` events carry whole
+documents, so the producer throttles when more than `CRAWL_QUEUE_HIGH_WATER = 64` events
+are buffered for a slow client. **Cancellation:** the engine polls a stop flag between
+batches and the API sets it when the client disconnects; without that, every abandoned tab
+left a full-speed crawl running for the life of the process. Note that
+`SiteRequest.concurrency` defaults to 6 while the engine's `CRAWL_CONCURRENCY` is 4: on a
+host without `WEBGRAPH_MAX_CONCURRENCY`, a default web-UI crawl runs six workers.
+
+## Traces
+
+Every API run writes one JSON Lines file to `WEBGRAPH_TRACE_DIR/webgraph-runs/` (the system
+temp directory when unset), named `<host>-<timestamp>-<run id>.jsonl`: the stream's events
+minus the output fields, ending with `trace-closed` saying whether the run was stopped. The
+`run` header the client receives names the file, so a pasted log and the server's file can
+be matched. There is no rotation; the directory is the operator's to prune. See
+[Outputs and provenance](/docs/crawling/outputs-and-provenance#traces). Finished graphs go
+to `WEBGRAPH_GRAPH_DIR` (pruned to the newest 32, 30 days). The API logs three lines at
+startup: host policy, allowed origins, and the page and concurrency caps.
+
+## The private-host guard
+
+`fetch/guard.py` refuses, before any connection is made, a URL whose host is a loopback,
+private, link-local or otherwise non-global address, or a network-internal name
+(`localhost`, `metadata.google.internal`, `metadata.goog`, `metadata`, anything under
+`.internal`, `.localhost`, `.local`). A name is resolved and **every** address it resolves
+to must be public. The check is an httpx request hook, so it fires on **every redirect
+hop** — a public host is free to answer `302 Location: http://169.254.169.254/`.
+
+It is off in the library, CLI and tests (they legitimately fetch `127.0.0.1`) and **on by
+default in the API**. `WEBGRAPH_ALLOW_PRIVATE_HOSTS=1` opts out for a local API against a
+local site, and wins if both variables are set. A refusal is a 403 with the reason on the
+stream route, and a 502 with `non-public` in the detail on `/api/text`.
+
+<Callout type="warn" title="Known limit">
+The guard resolves the hostname, and httpx then resolves it again. A DNS entry that answers
+publicly on the first lookup and privately on the second — a rebinding attack — slips past.
+Closing it needs the connection pinned to the checked address, a custom transport;
+`guard.py` documents this rather than fixing it, as a much narrower hole than the unguarded
+default.
+</Callout>
+
+## What to monitor
+
+- `GET /api/health` — `private_hosts_blocked` must be `true` and `max_pages` non-zero on any
+  public host; a deployment with either wrong looks healthy.
+- **Resident memory** against `MAX_BROWSERS × 150 MB` plus process growth during long
+  crawls; the failure is the kernel killing the process, not an error.
+- **Crawl slot waits** — `Waiting for a crawl slot` in traces means callers are queueing.
+- **Request duration** against the platform ceiling (3600 s on Cloud Run); a crawl that
+  hits it is cut off mid-stream.
+- **Disk** under the trace and graph directories.
+- **Refusal patterns** — many `identical-content` warnings or 403s from one site mean a
+  wall, not a bug.
+
+## Not yet built
+
+Stated plainly, from the code as it stands.
+
+- **Job persistence.** A crawl is a single HTTP response. There is no job id to poll, no
+  resume after a disconnect or a restart, and no queue that survives the process. The graph
+  is persisted; the crawl is not. `should_stop` fires on disconnect and the run ends.
+- **Incremental recrawl.** Every crawl starts from the root and discovers everything again.
+  `webgraph diff` re-crawls a site in full and reports what changed against the stored
+  graph; nothing skips pages that have not changed.
+- **Horizontal scale.** One instance, one worker; see [Topology](/docs/deployment).
+- **A default page cap or memory ceiling in the engine.** The image sets
+  `WEBGRAPH_MAX_PAGES=50`; the engine's own default is unbounded.
+- **Trace rotation.** One file per run, kept until the operator removes it.

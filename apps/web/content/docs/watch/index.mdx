@@ -1,0 +1,234 @@
+---
+title: Watch
+description: Crawl a site again and get what changed — which page, which section, in the page's own words — with timestamps and counters left out, as a list, a digest or an RSS/Atom feed.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+"Tell me when the university posts a circular." A watch is a site the engine crawls again
+on request and compares with the time before. It reports what changed as **which page and
+which section**, in the page's own words, and stays quiet about the things that change on
+every visit: navigation, footers, comment threads, a "last updated" line, a visitor
+counter, a clock. There is no model anywhere in it; two runs over the same two versions
+of a site produce the same changes (`packages/engine/src/webgraph/watch/`).
+
+Nothing in the engine runs on a schedule. `webgraph watch run <id>` — or
+`POST /api/watch/{id}/run` — is what a cron entry or a GitHub Action calls, and the
+repository ships an example workflow below.
+
+## The model
+
+| word | what it is |
+|---|---|
+| **watch** | a root URL and a configuration: the crawl's knobs (`max_pages`, `max_seconds`, `complete`, …) and the watch's own (`noise`, `noise_patterns`). |
+| **run** | one crawl of the watch, under the same limits and politeness as any crawl. The previous run's URL set is queued as seeds beside the sitemap and the links, so a page nothing links to any more is still asked for. |
+| **page** | what one run saw at one address: the engine's `content_hash`, the content Markdown (the page with chrome removed), and the heading-scoped sections cut from it. |
+| **change** | one page that differed from the last finished run — `added`, `removed` or `changed` — with the sections that did: heading, kind (`added` / `removed` / `edited`), the text before and after. |
+
+For each page a run compares against the last finished run in two steps:
+
+1. **By hash.** The engine's `content_hash` is over the extracted text of the whole page.
+   Equal hashes mean identical text; nothing more to do. This is the common case and it
+   costs nothing.
+2. **Section by section.** Otherwise the page's sections — a heading owns everything after
+   it until the next heading of equal or higher level, cut from the content Markdown — are
+   matched against the previous run's by heading first and position second
+   (`graph.diff.diff_sections`, the same matching `webgraph diff` uses), with the noise
+   rules applied to both sides. Sections that still differ are the change. If none do, the
+   page is counted as **suppressed**: it differed only in noise.
+
+The first run is the **baseline** and records no changes. After that the baseline is the
+last run that finished, read at least one page, and was not cut short by the caller or by
+an error — a run stopped at three pages from a closed browser tab is finished but is not
+what the site looked like, and comparing against it would report every real page as new.
+A run that ended at a limit *is* a baseline: a watch capped at 80 pages ends that way every
+time, and its 80 pages are the pages it watches, so a later run that reaches pages an
+earlier, smaller run did not reports them as `added`.
+
+`removed` is claimed only when the site said so: a page the previous run read that this run
+asked for and got HTTP 404 or 410 back. A page the run did not reach — the page cap was hit
+first — is **unverified**, not gone; a page that failed for another reason (a wall, a
+timeout, a 500) is neither. The previous run's pages are queued before the sitemap's, so a
+capped run re-verifies what it knows before it explores.
+
+<Callout type="info" title="Why the content Markdown, and why not the main-content boundary">
+Navigation, headers, footers and comment threads come off before comparing — that is what
+keeps a site-wide footer edit from being two thousand changes — because the crawl already
+separates them (`content_markdown`). The main-content *boundary* is not applied to a watch
+unless asked (`main_content: true`): it is a prose-seeking step, and a watched page is as
+likely to be a list of circulars as an article — on a four-page fixture it cut two of
+three sections from an About page.
+</Callout>
+
+## The noise rules
+
+A section is compared block by block (a block is a paragraph, a list or a table — Markdown
+separated by a blank line). Each pattern in `config.WATCH_NOISE_PATTERNS` is removed from
+the block's text; if at least one matched and fewer than `WATCH_NOISE_MIN_WORDS` (3)
+alphabetic words remain, the block *was* the pattern and is left out of the comparison. A
+block no pattern touches is always compared, however short.
+
+| block | verdict |
+|---|---|
+| `12/09/2026`, `2026-09-12T10:42:00Z`, `10:42 am` | noise |
+| `Last updated: 12 Sep 2026`, `Published on September 12, 2026` | noise |
+| `Visitors: 1,204,551`, `You are visitor number 88123`, `3 days ago` | noise |
+| `© 2026 SMVITM`, `Page generated in 0.031 seconds` | noise |
+| `Results announced on 12/09/2026` | compared — a sentence that contains a date |
+| `Total seats: 120`, `Apply online for admission`, `Since 2019 the college offers a degree` | compared |
+| `Total seats: 1200` | noise — a label and a four-digit number reads as a counter (the known edge) |
+
+A third rule is at page level: if every block of the page is still there and none was
+added — the blocks merely sit under different headings — the page is suppressed. Measured
+on vtu.ac.in's front page, two static fetches 11 minutes apart put the same social-links
+list and the same conference banner under different headings; the page's order jittered,
+not its content, and a watch that reported that would be reporting the fetch.
+
+Query strings are also stripped from Markdown link and image targets, because
+`logo.png?v=1694` changes on every deploy and the logo does not. The patterns are a list in
+`config.py`; a watch adds its own with `noise_patterns` (regular expressions,
+case-insensitive) or turns the rules off with `noise: false`, in which case a bumped
+timestamp is reported like any other change. Every run reports how many pages it
+suppressed, so a quiet run can be checked.
+
+## Running one
+
+```bash
+webgraph watch create https://vtu.ac.in/ --max-pages 200        # prints the id
+webgraph watch run <id>                                          # first run: baseline
+webgraph watch run <id> --fail-on-change                         # later: exit 1 if anything changed
+webgraph watch changes <id> --since 7d --format md               # or json, rss, atom
+webgraph watch list
+```
+
+`create` takes `--max-pages`, `--max-seconds`, `--complete` (union fetch), `--no-noise`,
+`--schedule-seconds` (advisory — nothing runs it) and `--config file.json` for anything
+else in `SiteConfig`. The store is one SQLite file, `~/.cache/webgraph/watch.sqlite3`
+(`XDG_CACHE_HOME` and `WEBGRAPH_WATCH_DB` respected; `--db` per command), with four tables:
+`watches(id, root, config_json, created_at, schedule_seconds)`,
+`runs(id, watch_id, started_at, finished_at, pages_ok, pages_failed, stopped_by)`,
+`pages(run_id, url, content_hash, title, markdown, fetched_at, strategy, error, sections_json)`,
+`changes(id, run_id, watch_id, url, kind, before_hash, after_hash, diff_json, detected_at)`.
+
+From Python:
+
+```python
+from webgraph.watch import create_watch, run_watch, list_changes, export_changes
+
+watch = create_watch("https://vtu.ac.in/", {"max_pages": 200})
+summary = run_watch(watch.id)             # RunSummary: added, removed, changed, suppressed, unverified, changes
+for change in summary.changes:
+    print(change.kind, change.url, [s["heading"] for s in change.sections])
+print(export_changes(watch.id, fmt="atom"))
+```
+
+`stream_watch(id)` is the same run as an iterator of events — the crawl's events, a
+`watch` event first (what it is compared against), a `change` event per page that
+differed, and a `done` event carrying the summary.
+
+## The API and the web app
+
+| route | what |
+|---|---|
+| `POST /api/watch` `{url, config?, schedule_seconds?}` | create; the config is validated as a run would, and a private host is refused up front |
+| `GET /api/watch`, `GET /api/watch/{id}` | list, one — with the last run and the counts |
+| `POST /api/watch/{id}/run` | Server-Sent Events: the crawl's events, `watch`, `change` per differing page, `done`. The same crawl slot, trace and caps as `/api/site/stream` (`WEBGRAPH_MAX_PAGES` clamps the watch's `max_pages`). |
+| `GET /api/watch/{id}/changes?since=&limit=` | newest first; `since` is epoch seconds or an ISO datetime |
+| `GET /api/watch/{id}/feed.xml` | RSS 2.0; `?format=atom` for Atom 1.0 |
+
+The web app's **/watch** page lists the watches, creates one from a URL, runs one with a
+"Run now" button that streams the run's progress, and shows the changes per watch: kind,
+page, section heading, the text before and after, when.
+
+## The feed
+
+A feed is the cheapest "notify me" there is: no daemon, no account, no webhook to host.
+VTU's circulars reach 16,600 people through a volunteer-run Telegram channel that reposts
+them by hand; `/api/watch/{id}/feed.xml` is that channel without the volunteer — one entry
+per change, titled with the page and the section headings, its body the text before and
+after — and any reader, a Slack integration or an Action can subscribe. Each entry's
+`guid`/`id` is the change's own, so a reader never shows one twice.
+
+## A scheduled GitHub Action
+
+`.github/workflows/example-watch.yml` is shipped with a manual trigger only and its
+`schedule` commented out, so it never runs unattended. With the schedule in, it runs a
+watch every six hours and opens an issue with the Markdown digest when anything changed:
+
+```yaml
+name: watch
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/webgraph/watch.sqlite3
+          key: webgraph-watch-${{ github.run_id }}
+          restore-keys: webgraph-watch-
+      - name: Create the watch on first run
+        run: |
+          test -f ~/.cache/webgraph/watch.sqlite3 || \
+            uv run --package webgraph webgraph watch create "$WATCH_URL" --max-pages 200 > watch-id
+        env:
+          WATCH_URL: https://vtu.ac.in/
+      - name: Run it
+        id: run
+        run: |
+          ID=$(uv run --package webgraph webgraph watch list --json | jq -r '.[0].id')
+          if uv run --package webgraph webgraph --quiet watch run "$ID" --fail-on-change; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+          uv run --package webgraph webgraph watch changes "$ID" --since 12h --format md > digest.md
+      - name: Open or update the issue
+        if: steps.run.outputs.changed == '1'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Site changed: what moved since the last run"
+          content-filepath: digest.md
+          labels: watch
+```
+
+The store lives in the Actions cache between runs (the last finished run is the baseline
+for the next); a cache miss means a fresh baseline and a quiet run. `webgraph diff
+--fail-on-change` remains for the older graph-based comparison of two whole crawls.
+
+## Measured
+
+Two runs of a watch on `https://sode-edu.in/smvitm/` (`max_pages: 80`, union fetch, four
+workers), 16 September 2026, the second started 14 minutes after the first finished and
+driven from the web page's "Run now":
+
+| | run 1 (baseline) | run 2 |
+|---|---:|---:|
+| pages read / refused | 80 / 0 | 80 / 0 |
+| wall time | 98.7 s | 98.8 s |
+| verdict | baseline | **no change** — 79 served pages hash-identical, 0 changed, 0 suppressed, 1 not reached |
+
+The one page "not reached" is `http://mitie.sode-edu.in`: a page of run 1 that was served
+from a subdomain after a redirect, so its address is outside the watch's scope and cannot
+be re-verified from inside it. Nothing was suppressed because nothing differed: the site
+carries no per-visit timestamp or counter in its content, and 14 minutes is not long enough
+for a college site to change. The noise rules are exercised deterministically by the test
+suite's two-version fixture instead (`tests/test_watch.py`: a front page whose "Last
+updated" line and visitor counter were bumped is suppressed, while a changed "Contact"
+section and a new circular under "2026" are reported).
+
+A second pair on `https://vtu.ac.in/` (`max_pages: 40`, static, four workers), three runs
+at 17:07, 17:15 and 17:26: run 2 reported nothing (39 unchanged; the one page the baseline
+had failed on, an HTTP 404 the site links to, is not owed a verdict). Run 3 found the front
+page's hash changed and, section by section, three sections edited — and every edit was
+the same blocks under a different heading. That run is the origin of the moved-blocks rule
+above; with it, the run reports no change and one page suppressed.

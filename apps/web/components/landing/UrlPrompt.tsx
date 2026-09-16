@@ -12,33 +12,25 @@ const MODES: ReadonlyArray<{ id: Mode; label: string; hint: string }> = [
   { id: "page", label: "Single page", hint: "one URL, with schema mapping" },
 ];
 
-/** Registration marks, as on the reference layout: the card reads as a placed plate. */
-function CropMarks() {
-  const arm = "absolute bg-white/70";
-  return (
-    <div aria-hidden className="pointer-events-none absolute -inset-6 hidden sm:block">
-      <span className={`${arm} left-0 top-0 h-8 w-px`} />
-      <span className={`${arm} left-0 top-0 h-px w-8`} />
-      <span className={`${arm} right-0 top-0 h-8 w-px`} />
-      <span className={`${arm} right-0 top-0 h-px w-8`} />
-      <span className={`${arm} bottom-0 left-0 h-8 w-px`} />
-      <span className={`${arm} bottom-0 left-0 h-px w-8`} />
-      <span className={`${arm} bottom-0 right-0 h-8 w-px`} />
-      <span className={`${arm} bottom-0 right-0 h-px w-8`} />
-      <span className="absolute left-0 top-0 size-1.5 -translate-x-[3px] -translate-y-[3px] rounded-full bg-white" />
-      <span className="absolute right-0 top-0 size-1.5 translate-x-[3px] -translate-y-[3px] rounded-full bg-white" />
-    </div>
-  );
-}
-
+/**
+ * The one centred thing on the page (DESIGN.md §3, §6).
+ *
+ * A field on the surface colour with a rule-strong border; the Run button sits inside it at
+ * the right. The mode is two joined secondary buttons and "Complete extraction" is a
+ * checkbox with a label, because that is what it is. An invalid address is said below the
+ * field in the `bad` colour with `role=alert`; pressing Run turns its label into "Running…"
+ * with the breathing dot until the run view takes over.
+ */
 export default function UrlPrompt() {
   const router = useRouter();
   const inputId = useId();
+  const errorId = useId();
 
   const [value, setValue] = useState("");
   const [mode, setMode] = useState<Mode>("site");
   const [complete, setComplete] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
 
   const submit = useCallback(() => {
     const normalized = normalizeInput(value);
@@ -47,6 +39,7 @@ export default function UrlPrompt() {
       return;
     }
     setError(null);
+    setRunning(true);
 
     const params = new URLSearchParams({
       url: normalized.url,
@@ -57,30 +50,24 @@ export default function UrlPrompt() {
   }, [value, mode, complete, router]);
 
   return (
-    <div id="start" className="relative mx-auto w-full max-w-3xl scroll-mt-24">
-      <CropMarks />
-
-      {/* The sheet peeking out below: the reference stacks a second plate under the card. */}
+    <form
+      id="start"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+      className="scroll-mt-24"
+    >
+      <label htmlFor={inputId} className="sr-only">
+        Website address
+      </label>
       <div
-        aria-hidden
-        className="absolute inset-x-6 bottom-0 h-16 translate-y-6 rounded-[26px] bg-white/45 backdrop-blur-md"
-      />
-
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-        className="relative rounded-[26px] border border-white/25 bg-[rgb(24_48_28/0.42)] p-5 shadow-glass backdrop-blur-xl sm:p-6"
+        className={`flex h-14 items-center gap-2 rounded-xl border bg-surface pl-4 pr-2 transition-[border-color,box-shadow] duration-(--dur-fast) ease-(--ease) focus-within:ring-2 focus-within:ring-focus/30 ${
+          error
+            ? "border-bad"
+            : "border-rule-strong focus-within:border-accent"
+        }`}
       >
-        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-white/80">
-          <span aria-hidden className="size-1.5 rounded-full bg-leaf-300" />
-          Extract a website
-        </div>
-
-        <label htmlFor={inputId} className="sr-only">
-          Website address
-        </label>
         <input
           id={inputId}
           type="text"
@@ -94,75 +81,65 @@ export default function UrlPrompt() {
           }}
           placeholder="docs.astro.build"
           aria-invalid={Boolean(error)}
-          className="mt-3 w-full border-l-2 border-white/70 bg-transparent px-3 py-1 text-[19px] font-medium text-white caret-white outline-none placeholder:text-white/55 sm:text-[22px]"
+          aria-describedby={error ? errorId : undefined}
+          className="tabular min-w-0 flex-1 bg-transparent font-mono text-code text-ink outline-none placeholder:text-faint sm:text-[1rem]"
         />
+        <button
+          type="submit"
+          disabled={running}
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-md bg-ink px-4 text-small font-semibold text-inverse transition-opacity duration-(--dur-fast) hover:opacity-88 active:translate-y-[0.5px] active:opacity-100 disabled:opacity-45 pointer-coarse:min-h-11"
+        >
+          {running && (
+            <span
+              aria-hidden
+              className="is-running size-2 rounded-full bg-accent animate-[breathe_1.8s_ease-out_infinite]"
+            />
+          )}
+          {running ? "Running…" : "Run"}
+        </button>
+      </div>
 
-        <p className="mt-2 pl-3 text-[13px] leading-relaxed text-white/70">
-          {mode === "site"
-            ? "Detects the stack, enumerates every public route, then extracts each page as rich Markdown."
-            : "Extracts one page and maps it onto a JSON schema, with provenance for every field."}
+      {error && (
+        <p id={errorId} role="alert" className="mt-2 text-caption font-medium text-bad">
+          {error}
         </p>
+      )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <div
-            role="radiogroup"
-            aria-label="Extraction mode"
-            className="flex rounded-full bg-black/25 p-1"
-          >
-            {MODES.map((option) => (
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div role="radiogroup" aria-label="What to read" className="inline-flex">
+          {MODES.map((option, index) => {
+            const selected = mode === option.id;
+            return (
               <button
                 key={option.id}
                 type="button"
                 role="radio"
-                aria-checked={mode === option.id}
+                aria-checked={selected}
                 title={option.hint}
                 onClick={() => setMode(option.id)}
-                className={
-                  mode === option.id
-                    ? "rounded-full bg-white px-3.5 py-1.5 text-[12.5px] font-bold text-ink"
-                    : "rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold text-white/75 transition-colors hover:text-white"
-                }
+                className={`inline-flex h-9 items-center border border-rule-strong px-3.5 text-small font-semibold transition-colors duration-(--dur-fast) pointer-coarse:min-h-11 ${
+                  index === 0 ? "rounded-l-md" : "-ml-px rounded-r-md"
+                } ${selected ? "bg-sunk text-ink" : "bg-transparent text-muted hover:bg-sunk hover:text-ink"}`}
               >
                 {option.label}
               </button>
-            ))}
-          </div>
-
-          {mode === "site" && (
-            <button
-              type="button"
-              aria-pressed={complete}
-              onClick={() => setComplete((current) => !current)}
-              title="Merge the static and rendered fetches so neither path loses content"
-              className={
-                complete
-                  ? "flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-1.5 text-[12.5px] font-bold text-ink"
-                  : "flex items-center gap-1.5 rounded-full bg-black/25 px-3.5 py-1.5 text-[12.5px] font-semibold text-white/75"
-              }
-            >
-              <span aria-hidden>{complete ? "◆" : "◇"}</span>
-              Complete extraction
-            </button>
-          )}
-
-          <button
-            type="submit"
-            aria-label="Start extracting"
-            className="ml-auto grid size-11 place-items-center rounded-full bg-white text-ink shadow-md transition-transform hover:scale-105 active:scale-95"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 19V5" />
-              <path d="m5 12 7-7 7 7" />
-            </svg>
-          </button>
+            );
+          })}
         </div>
 
-        {error && (
-          <p role="alert" className="mt-3 pl-3 text-[13px] font-semibold text-white">
-            {error}
-          </p>
+        {mode === "site" && (
+          <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-small text-muted pointer-coarse:min-h-11">
+            <input
+              type="checkbox"
+              checked={complete}
+              onChange={(event) => setComplete(event.target.checked)}
+              className="size-4 accent-accent"
+            />
+            Complete extraction
+            <span className="sr-only">: merge the plain fetch and the browser render</span>
+          </label>
         )}
-      </form>
-    </div>
+      </div>
+    </form>
   );
 }

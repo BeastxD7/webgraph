@@ -1,0 +1,146 @@
+---
+title: Limits and large sites
+description: A real six-hour whole-site run as the worked example, why an unbounded crawl is expensive, what memory it holds, and what to set.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A crawl has limits by default: 500 pages, an hour, 20,000 queued addresses, and links to
+PDFs and other files are counted but never fetched. `max_pages: 0` — crawl until the
+frontier is exhausted — is still available, and has to be asked for. On most sites an
+unbounded crawl is a few hundred pages in minutes; on a large site it is hours and
+gigabytes, and the crawl cannot tell you in advance which you have. This is the run that
+made that concrete, and that set the defaults.
+
+## The worked example: vtu.ac.in, 15 September 2026
+
+A whole-site run of a university's WordPress site through the production pipeline
+(`stream_site`, `union`, 4 workers), started at 00:41 and stopped by hand at 06:43 — 6 h
+2 min — when the machine ran short of memory. The numbers are from the run's report and its
+`events.jsonl`.
+
+**What the site was.** WordPress 5.1.1 (February 2019), jQuery 1.12.4, Bootstrap, behind
+Apache and Cloudflare. robots.txt: `Disallow: /wp-admin/` only. No sitemap published, so
+the page count had to be discovered by following links.
+
+**What was discovered: 17,126 URLs in six hours**, each with a citation.
+
+| kind | count |
+|---|---:|
+| PDF files (circulars, results, syllabi) | 7,907 |
+| WordPress posts `/YYYY/MM/<id>/`, in Kannada and English | 7,655 |
+| date archives | 1,034 |
+| category pages | 80 |
+| fixed pages (about, departments, schemes) | ~450 |
+
+The queue still held 4,370 URLs when the run was stopped; the true total is somewhat above
+17,000. The English mirror under `/en/` alone was 4,704 URLs.
+
+**What was extracted: 12,761 URLs processed — 7,025 pages read, 5,736 refused.** Every
+refusal was named: 5,730 PDFs (`the server returned a file download rather than a page`),
+6 HTTP 404s the site itself linked to. Throughput at the end was 35 pages a minute, each
+page fetched twice and merged. Depth: 1 root, 122 at depth 1, 616 at 2, 2,879 at 3, 3,407
+at 4. Median page 4,078 characters over 166 blocks; the largest 63,902.
+
+**What it cost.** After six hours the crawl process held 1.2 GB and its browsers 5 GB, and
+the operating system was killing background tasks. Stopping lost nothing: every `page`
+event was on disk.
+
+**Two lessons**, both in the report's last section: a page cap or a memory ceiling should be
+the default for an unbounded crawl, and PDF links should be counted but not fetched. Both
+are built (PR #94): the defaults below, and a frontier that records a file's address and
+the page that linked to it without ever requesting it.
+
+<Callout type="info" title="What ended the run">
+The `done` event carries `stopped_by`: `"pages"`, `"time"`, `"queue"`, or `null` when the
+frontier ran dry or you stopped it (`stopped` says which). `exhausted` is true only when
+nothing was left undone — a run that drained a frontier which had turned addresses away at
+the queue cap is `stopped_by: "queue"` and not exhausted. `limits` repeats the three caps
+the run ran under.
+</Callout>
+
+## Why `max_pages: 0` is expensive
+
+Three things grow without a cap.
+
+1. **Time.** Under `union` every page costs a plain fetch and a browser render, plus the
+   per-worker delay. At 35 pages a minute, 17,000 URLs is eight hours. `max_seconds`
+   (default 3,600) ends the run; it is checked as each page lands, and the pages already
+   in flight are finished and reported, so a run overshoots by at most `concurrency` pages.
+2. **Wasted fetches.** The frontier queues every same-site address that is not an image,
+   stylesheet, script, media or office file (`NON_PAGE_SUFFIXES`). PDFs are deliberately
+   not in that set, and a document-heavy site once spent a large share of its budget
+   fetching files to refuse them — a third of the six hours above. Since #94 a `.pdf` link
+   is a `FILE_KIND`: counted, cited, and not queued unless `fetch_files` is set.
+3. **Memory.** Each page's HTML is dropped after its links are read. Until #94 its blocks
+   and Markdown then stayed until the end of the run, for chrome detection and entity
+   aggregation; the crawl process alone reached 1.2 GB. Now the full pages are held only
+   until cross-page chrome is known (six of them), and after that each page keeps its URL,
+   its facts and its schema.org payloads — what the aggregation reads — and nothing else.
+   The graph builder, when one is asked for, still holds every section. `max_queue`
+   (default 20,000) bounds the frontier itself, which on vtu.ac.in was 17,126 addresses and
+   growing.
+
+A site's shape matters more than its page count: WordPress publishes one URL per post per
+language, plus a date archive per month and a category page per term. The report puts
+vtu.ac.in at about ten times its first estimate.
+
+## Memory: browsers
+
+Each Chromium is roughly 150 MB resident (`Settings.max_browsers`). The engine keeps one
+browser per worker thread (`fetch/browser.py`), capped process-wide at
+`WEBGRAPH_MAX_BROWSERS` (default 6, 4 in the Docker image); a thread that cannot get a slot
+launches a private short-lived browser rather than blocking. The vtu.ac.in browsers reached
+5 GB over six hours — far above 4 × 150 MB — because a long-lived browser accumulates.
+
+## What to set
+
+| setting | where | what it bounds |
+|---|---|---|
+| `max_pages` | `SiteConfig`, `/api/site/stream` body, `--max-pages` | Pages attempted, refusals included. Default 500; `0` is unbounded and must be asked for. The `webgraph site` CLI defaults to 40. |
+| `max_seconds` | `SiteConfig`, request body | Wall time from the start of the analysis. Default 3,600; `0` is no limit. `stream_site` only — the batch path enumerates before it fetches and has no loop to stop. |
+| `max_queue` | `SiteConfig`, `crawl.max_queue` | Queued addresses beyond which discovery stops accepting. Default 20,000; `0` is no limit. A refused address is not marked seen, so it is taken if it is linked again once the queue has drained. `stream_site` only. |
+| `fetch_files` | `SiteConfig`, `crawl.fetch_files` | Off (default): PDFs, images and downloads are counted and cited, never requested. On: `.pdf` links are queued as pages were before #94; images and downloads still never are. |
+| `host_interval_seconds` | `SiteConfig`, `crawl.host_interval_seconds` | Minimum seconds between two pages from the same host across every worker. Default 1.0; the site's `Crawl-delay` replaces it when larger. |
+| `WEBGRAPH_MAX_PAGES` | environment, API | A hard ceiling whatever a client asks. A request of `0` clamps *down* to the cap, not through it (`_effective_max_pages`). |
+| `concurrency` | `SiteConfig`, request body | Workers, and therefore browsers, per crawl. 4 is the engine default; the API request defaults to 6. |
+| `WEBGRAPH_MAX_CONCURRENCY` | environment, API | Ceiling on per-crawl workers. The image sets 4. |
+| `max_depth` | `SiteConfig`, `crawl.max_depth` | Link distance. Breadth-first, so a small budget still spends its pages near the root. |
+| `strict_domain` | `SiteConfig`, `crawl.strict_domain` | Leave `true` unless the subdomains are the site. |
+| `complete: false` | request body | `static-only`: no browsers, several times faster; right only when static coverage is full. |
+
+For a site of unknown size, run with the defaults and read the `done` event: `stopped_by`
+says which limit ended the run, `remaining_queued` in the thousands says the site is larger
+than the run, and `discovered_kinds` says whether the remainder is pages or files.
+
+## PDFs and other files
+
+A PDF link is counted under `discovered_kinds.pdf` from the moment it is discovered, and
+then left alone: there is no PDF text extraction in the engine, so a fetch could only end in
+the refusal `the server returned a file download rather than a page`, and 5,730 of those
+were a third of the six-hour run. The `done` event's `skipped` counts what was left alone by
+kind (`pdf`, `image`, `other_file`), and `skipped_urls` lists the first
+`CRAWL_SKIPPED_URLS_REPORTED` (200) of them, each with the page that linked to it and the
+link's text — a university's circulars as a list, none of them fetched. `fetch_files: true`
+restores the old behaviour for `.pdf` links, for a caller that wants the refusals on record.
+
+## Measured: sode-edu.in, 300 pages, before and after #94
+
+The same run (`max_pages=300`, four workers, `union`) on the commit before and after:
+
+| | before (`b28a326`) | batch loop + per-host interval | after (rolling pool) |
+|---|---:|---:|---:|
+| wall time | 715 s | 894 s | **484 s** |
+| pages / min | 25.2 | 20.1 | **37.2** |
+| peak RSS of the crawl process (`ru_maxrss`) | 412 MB | 315 MB | **332 MB** |
+| pages refused | 25 (PDFs fetched to be refused) | 13 | 13 |
+| PDFs counted, not fetched | — | 190 | 199 |
+
+The middle column is why the crawl loop changed in the same pull request: with the
+per-host interval, four workers starting a batch together took slots 0, 1, 2 and 3 s
+apart and every batch paid the tail. Keeping the pool full instead removed that and the
+batch tail the crawl always had, so the run is faster than before the interval existed.
+Browsers are separate processes and are not in these RSS figures; the 5 GB of the vtu run
+was theirs, and `WEBGRAPH_MAX_BROWSERS` bounds them. The driver is a 60-line script that
+consumes `stream_site` and prints `resource.getrusage`; the three runs were made within
+an hour of each other on the same machine and network.

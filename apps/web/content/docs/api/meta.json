@@ -1,0 +1,14 @@
+{
+  "title": "API reference",
+  "pages": [
+    "text",
+    "text-stream",
+    "extract",
+    "site-stream",
+    "site-context",
+    "options",
+    "errors",
+    "supplied-html",
+    "configuration"
+  ]
+}

@@ -1,0 +1,96 @@
+---
+title: The fidelity suite
+description: Whole-page Markdown against what Chromium shows on 31 old, plain and ugly pages — recall, extra share, order inversions, structure counts — and how to read a compare.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+`benchmark/fidelity/run.py` (PR #72, `make bench-fidelity`) scores the product the public
+boards cannot: the whole page. The contract it checks is the owner's brief of 14 September
+— nothing a reader sees may be lost, nothing the browser hides may be added, the order is
+the page's, the structure stays (`docs/SESSION-18-WHOLE-PAGE.md`).
+
+## The pages
+
+`benchmark/fidelity/sites.txt` lists 31 sites, old, plain and ugly on purpose, in three
+groups: pre-CSS and frameset pages (cs.cmu.edu's Alice frameset, textfiles.com,
+stallman.org, Paul Graham's essays, the 1989 web proposal, the GNU free-software page,
+catb.org, the Unicode FAQ, Gutenberg's *Frankenstein*, the TLDP index, RFC 2616,
+spacejam.com/1996, cameronsworld.net, motherfuckingwebsite.com); reference documentation
+with old markup (sqlite.org, POSIX awk, PostgreSQL `SELECT`, php.net, perldoc,
+cppreference, the Common Lisp HyperSpec, ibiblio); link- and table-shaped pages
+(craigslist, berkshirehathaway.com, arngren.net, w3schools' table tutorial); and a few
+modern controls (nasa.gov, MDN's `table` reference, an arXiv abstract). None of them
+changes by the minute: the oracle is cached between runs, and a front page scored against
+yesterday's text is noise.
+
+## The oracle
+
+A separate Chromium (Playwright, 1440×900, `domcontentloaded` plus 2.5 s, a guarded click
+on a consent button) evaluates one script in **every frame** of the page and joins the
+results — a frameset's own body has no text; the page a reader sees is its frames. The
+script collects:
+
+- `text` — `document.body.innerText` **plus the visible text of every open shadow root**.
+  `innerText` stops at a shadow boundary, and MDN keeps every code example and its
+  compatibility table inside one, on screen: 2,700 words counted as "extra" until the
+  walker was added (PR #76; a full DOM walk instead was rejected because it took arngren.net
+  from 0.99 to 0.877).
+- `lines` — visible text nodes of 25+ characters, in DOM order, for the order check.
+- Counts of visible headings, tables, lists, images and links.
+
+`SCRIPT`, `STYLE`, `NOSCRIPT` and `TEMPLATE` are skipped; an element is visible when it is
+not `display: none` or `visibility: hidden` and has a non-empty box. Before scoring, the
+oracle text is checked with the engine's own `block_page_evidence`; a wall is reported as
+`ORACLE BLOCKED` and the site is left unscored — there is nothing to score against, even
+though the engine may have got the page through its other fetch. The cache lives beside
+the output (`<out>.pages/<site>.json`); delete it to re-fetch.
+
+## The four measures
+
+Each site is resolved the way the API resolves it (`resolve_page`, union) and rendered to
+Markdown.
+
+| measure | what it is | what it must do |
+|---|---|---|
+| **recall** | share of the page's visible words (`\w+`, lower-cased, as a bag) present in our `text` | 1.000 = nothing lost; this is the number that must not drop |
+| **extra** | share of our words not on the page | hidden menus, walls, duplicated blocks |
+| **inversions** | the page's sampled lines found in our text, and how many sit before a line that precedes them on the page — a monotone check, so a repeated phrase is not an inversion | 0 |
+| **structure** | the DOM's visible heading / table / list / image / link counts beside the Markdown's `#` lines, pipe rows, list markers, `![` and `](http` | the two columns should agree |
+
+The runner prints one line per site — `recall 1.000 extra 0.034 inv 0/45 blocks 135` —
+and writes everything, including the top missing and extra words per page, to the `--out`
+JSON.
+
+## Where it stood
+
+`SESSION-18` §5, at `main@f0b0ac4`: recall 1.000 on 22 of 29 scored sites, nothing below
+0.945; sqlite.org 0.749 → 1.000 after inline `svg` text was read (#75), cppreference extra
+0.257 → 0.034 after MediaWiki's `[edit]` controls were dropped (#71), MDN extra 0.490 →
+0.142 (#73/#74). PR #90 moved cppreference 0.985 → 0.990, w3schools 0.994 → 0.998,
+cameronsworld 0.992 → 1.000. Still open at the time of writing, each with its page: arxiv
+extra 0.294 (hidden bibliographic tooling), MDN recall 0.945 / extra 0.228, berkshire extra
+0.064, unicode-faq's `pre` inside `li` hoisted (6 inversions). gnu.org times out from the
+owner's network; w3.org walls the oracle.
+
+## Reading `--compare`
+
+```bash
+uv run python benchmark/fidelity/run.py --out /tmp/main.json    # on main
+uv run python benchmark/fidelity/run.py --out /tmp/cand.json    # on the branch
+uv run python benchmark/fidelity/run.py --compare /tmp/main.json /tmp/cand.json
+```
+
+One line per site: `recall a->b`, `extra a->b`, `inversions a->b`, `blocks a->b`, then
+structure as `dom:before->after` for headings, tables, lists, images and links. A site
+whose recall moved by 0.01 or more, or whose extra moved by 0.02 or more, is flagged
+`<<`; a site that errored on either side prints `(error or missing on one side)`. The
+absolute numbers are not a leaderboard. The flagged lines are the pages to open and read,
+and the PR template's fidelity row asks for exactly that: recall / extra / inversions on
+the pages that moved.
+
+<Callout type="info" title="When to run it">
+Anything touching blocks, the union, ordering or Markdown rendering. It needs Playwright's
+Chromium and the network, and takes about seven minutes for the 31 sites on the owner's
+machine (`runs/fidelity-*.meta.json`: 6.9–8.1 min).
+</Callout>

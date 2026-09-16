@@ -1,0 +1,93 @@
+---
+title: Configuration
+description: Every WEBGRAPH_* environment variable, its default from config.py, and what it does; plus GET /api/config.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+webgraph has two kinds of setting. The engine's constants live in `packages/engine/src/webgraph/config.py`, one name per value with a comment beside it, and are changed by editing the file or by passing a config object to a call - or, for the subset listed on the [options page](/docs/api/options), per request. The **deployment** section of that file is different: each of its values is overridable by an environment variable named beside it, read once at process start by `Settings.from_env` in `webgraph/settings.py`. That method is the complete list of what a deployment can set; this page reproduces it.
+
+Every variable is prefixed `WEBGRAPH_`. For the caps, `0` means no cap. An unset or blank variable leaves the default in place.
+
+## Variables
+
+| Variable | Default (`config.py`) | Meaning |
+|---|---|---|
+| `WEBGRAPH_MAX_PAGES` | `0` (`DEPLOY_MAX_PAGES`) | Hard ceiling on pages per crawl, whatever a client asks. A client's `max_pages: 0` means "until the frontier is exhausted", so on a shared host this must be set. Reported by `/api/health` as `max_pages` |
+| `WEBGRAPH_MAX_CONCURRENCY` | `0` (`DEPLOY_MAX_CONCURRENCY`) | Ceiling on parallel fetches within one crawl. The request model allows up to 12; a two-core container should not |
+| `WEBGRAPH_MAX_CONCURRENT_RENDERS` | `2` (`DEPLOY_MAX_CONCURRENT_RENDERS`) | Browser pages open at once across the API for `render: true` requests on `/api/text` and `/api/extract`. A browser costs roughly 150 MB resident; without the cap a handful of simultaneous requests exhausts a laptop |
+| `WEBGRAPH_MAX_CONCURRENT_CRAWLS` | `3` (`DEPLOY_MAX_CONCURRENT_CRAWLS`) | Crawls the API runs at once; the rest queue and receive a `Waiting for a crawl slot` stage event. Also sizes the thread pool that runs `/api/text/stream` |
+| `WEBGRAPH_MAX_BROWSERS` | `6` (`DEPLOY_MAX_BROWSERS`) | Live Chromium instances across the whole process, ~150 MB each. Six suits 16 GB; a 2 GB container cannot hold six, and the failure mode is the kernel killing the process |
+| `WEBGRAPH_TRACE_DIR` | unset (`DEPLOY_TRACE_DIR = None`) | Where run traces are written, in a `webgraph-runs/` subdirectory. The system temp directory when unset: a server that fills a disk with diagnostics by default has replaced one problem with another |
+| `WEBGRAPH_TRACE` | unset (`DEPLOY_TRACE_FILE = None`) | A single trace file for library and CLI runs. Not used by the API, which opens one file per run |
+| `WEBGRAPH_GRAPH_DIR` | unset (`DEPLOY_GRAPH_DIR = None`) | Where crawled site graphs are kept between requests and across restarts. When unset, `$XDG_CACHE_HOME/webgraph/graphs`, or `~/.cache/webgraph/graphs` |
+| `WEBGRAPH_ALLOWED_ORIGINS` | empty (`DEPLOY_ALLOWED_ORIGINS = ()`) | Browser origins the API answers, comma-separated. Empty means the dev frontend, `http://localhost:3000` and `http://127.0.0.1:3000`. Never `*` |
+| `WEBGRAPH_CHROMIUM_ARGS` | `""` (`DEPLOY_CHROMIUM_ARGS`) | Extra flags for the browser, shell-split. Containers need `--no-sandbox --disable-dev-shm-usage` |
+| `WEBGRAPH_CONTACT` | `""` (`DEPLOY_CONTACT`) | Who runs this deployment, as `Name contact@example.com`. Declared only to a site that admits automated clients when they say who they are, in the form that site documents; empty means such a site is refused and the refusal names this variable. The client is still named `webgraph` |
+
+Two more variables are read by the outbound host guard (`webgraph/fetch/guard.py`) rather than by `Settings`:
+
+| Variable | Default in the API | Meaning |
+|---|---|---|
+| `WEBGRAPH_BLOCK_PRIVATE_HOSTS` | on (the API defaults to blocking; the library and CLI do not) | `1` refuses loopback, private, link-local and network-internal addresses, on every redirect hop |
+| `WEBGRAPH_ALLOW_PRIVATE_HOSTS` | unset | `1` turns the guard off, for pointing a locally run API at a site on localhost. Wins when both are set, because the only reason to set it is that something is being blocked that should not be |
+
+<Callout type="warn">
+The guard's state is the one setting whose misconfiguration is invisible until it is exploited. `GET /api/health` reports it as `private_hosts_blocked`, and the API logs `host policy: private addresses blocked` or `ALLOWED` at startup.
+</Callout>
+
+## What the shipped container sets
+
+The repository's `Dockerfile` targets a 2 vCPU / 4 GiB container and overrides several defaults so the image stays inside that budget. These are image defaults, not engine defaults, and any of them can be changed at deploy time:
+
+```bash
+WEBGRAPH_BLOCK_PRIVATE_HOSTS=1
+WEBGRAPH_MAX_PAGES=50
+WEBGRAPH_MAX_CONCURRENCY=4
+WEBGRAPH_MAX_CONCURRENT_CRAWLS=2
+WEBGRAPH_MAX_CONCURRENT_RENDERS=2
+WEBGRAPH_MAX_BROWSERS=4
+WEBGRAPH_CHROMIUM_ARGS="--no-sandbox --disable-dev-shm-usage --disable-gpu"
+```
+
+The container listens on `$PORT` (default `8080`) with a single uvicorn worker. It must stay a single instance: the graph cache, crawl slots and crawl pool are in-process state, and with two instances a crawl completes on one while `/api/site/context` answers `404` from the other.
+
+## Startup log
+
+The process prints what it applied, so a deployment can be checked from its first three log lines:
+
+```text
+host policy: private addresses blocked
+allowed origins: https://your-app.example
+page cap: 50, concurrency cap: 4
+```
+
+## `GET /api/config`
+
+Returns the engine's settings as the web client's settings page shows them. Values and comments come straight from `config.py`, parsed from its source, so the page and the file cannot disagree.
+
+```bash
+curl -s http://127.0.0.1:8000/api/config | jq '.caps, .overridable.fetch, .settings.CRAWL_MAX_DEPTH'
+```
+
+```json
+{ "max_pages": 50, "max_concurrency": 4, "max_concurrent_renders": 2, "max_concurrent_crawls": 2 }
+[ "respect_robots", "retries", "timeout_seconds" ]
+{
+  "value": 12,
+  "comment": "How many links away from the root the crawl goes. 0 = the root alone; 1 = the root and everything it links to; and so on. The crawl is breadth-first: every page at depth n is fetched before any page at depth n+1.",
+  "section": "Crawling a whole site"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `settings` | Every constant in `config.py`: `value`, `comment` (the comment block above it plus any trailing comment), `section` (the banner it sits under). Sets are returned sorted |
+| `overridable` | Which of them a request may change per run, keyed by request field: `crawl`, `fetch`, `renderOptions` |
+| `caps` | This host's `max_pages`, `max_concurrency`, `max_concurrent_renders`, `max_concurrent_crawls` from the environment; `0` means none |
+
+`settings` includes the `DEPLOY_*` defaults but reports the file's values, not the environment's; the applied caps are in `caps` and in `/api/health`.
+
+## Deployment
+
+`docs/DEPLOY.md` in the repository covers where the backend can run - it holds a response open for minutes, runs Chromium in-process and must be a single instance, which rules out serverless platforms - with a worked Cloud Run deployment and the matching Vercel setup for the web client. Read it before exposing the API beyond localhost.

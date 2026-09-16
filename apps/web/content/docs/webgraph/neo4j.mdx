@@ -1,0 +1,73 @@
+---
+title: Neo4j sync
+description: Push a site's knowledge graph into Neo4j (or Memgraph, or FalkorDB) over bolt in UNWIND/MERGE batches; the node and relationship shape; Aura's limits; why the database is a target and never the source of truth.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The knowledge graph lives in a SQLite file. Neo4j is where you push it to explore, query
+with Cypher, or join with other data:
+
+```bash
+uv pip install "webgraph[kg-neo4j]"        # the official driver, an optional extra
+export WEBGRAPH_KG=1 NEO4J_PASSWORD=...
+webgraph kg sync-neo4j https://example.edu/ --uri neo4j+s://xxxx.databases.neo4j.io --user neo4j
+```
+
+or `POST /api/graph/sync/neo4j` with `{url, uri, user, password, database?, typed_edges?}`,
+which streams one `batch` event per statement and a `done` with the counts. The
+credentials are used for that request and held by nothing afterwards.
+
+## What is written
+
+Everything is `UNWIND $rows AS r MERGE (...) SET ... += r.props`, in batches of 1,000,
+idempotent on `id`, with uniqueness constraints created first and **no APOC** -- the one
+path that works on Aura (`LOAD CSV` and `apoc.import.json` do not), and the same
+statements load into Memgraph and FalkorDB.
+
+| node | properties |
+|---|---|
+| `(:Page)` | `key`, `url` |
+| `(:Section)` | `id` |
+| `(:Evidence)` | `id`, `url`, `xpath`, `span_start`, `span_end`, `quote`, `content_hash` |
+| `(:Entity)` plus a label per type, e.g. `(:Entity:Course)` | `id`, `type`, `name`, `aliases`, `generic`, `extractor`, `evidence_count` |
+
+| relationship | meaning |
+|---|---|
+| `(:Section)-[:ON_PAGE]->(:Page)`, `(:Evidence)-[:IN_SECTION]->(:Section)` | where a quote sits |
+| `(:Entity)-[:MENTIONED_IN {surface}]->(:Evidence)` | the entity is named in this block, in these words |
+| `(:Entity)-[:HAS_ATTRIBUTE {key, value, unit}]->(:Evidence)` | a typed value and the quote it was read from |
+| `(:Entity)-[:RELATED {predicate, fact, weight, confidence, evidence_ids}]->(:Entity)` | the portable relation edge; `evidence_ids` is a list because a relationship cannot be the target of another |
+| `(:Entity)-[:TEACHES]->(:Entity)` etc. | only with `typed_edges`; one relationship type per predicate, for servers happy with many |
+
+A query that follows a relation back to the page:
+
+```cypher
+MATCH (a:Entity)-[r:RELATED]->(b:Entity)
+UNWIND r.evidence_ids AS eid
+MATCH (v:Evidence {id: eid})-[:IN_SECTION]->(:Section)-[:ON_PAGE]->(p:Page)
+RETURN a.name, r.predicate, b.name, r.fact, p.url + '#' + v.xpath AS anchor, v.quote
+LIMIT 25
+```
+
+## Aura Free
+
+One instance per account, auto-paused after 72 hours idle and deleted after 30 days
+paused. A 200-page site (roughly 5k entities, 15k relations, 30k evidence rows) fits with
+room. Two consequences:
+
+<Callout type="warn" title="The database is a push target">
+The SQLite file is the source of truth and rebuilds any Neo4j instance in seconds. Nothing
+in webgraph reads from Neo4j, and a paused or deleted Aura instance loses nothing.
+</Callout>
+
+- The first sync after a pause may fail while the instance wakes; run it again.
+- Dynamic relationship types (`typed_edges`) need a server that accepts many types; the
+  `RELATED {predicate}` edge is always written and is what to query on if in doubt.
+
+## Without the driver
+
+`webgraph kg export --format cypher` writes the same graph as plain `MERGE` statements for
+pasting into a console or piping through `cypher-shell`, and needs no extra installed. The
+sync route reports `neo4j driver is not installed; install it with pip install
+"webgraph[kg-neo4j]"` as an `error` event rather than failing to import.

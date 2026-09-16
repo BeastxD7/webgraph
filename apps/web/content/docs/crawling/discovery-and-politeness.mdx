@@ -1,0 +1,113 @@
+---
+title: Discovery and politeness
+description: robots.txt, sitemaps, links with citations, the seven URL kinds, per-worker delay, what is counted but never fetched, and what is refused.
+---
+
+Discovery answers "which pages exist"; politeness answers "how fast may we ask". Both are
+reported, not only consulted: since PR #87 the crawl's `discovery` event says what
+robots.txt asked and which sitemap addresses were tried, because two whole-site crawls
+had said `from_sitemap: 0` and nothing else.
+
+## robots.txt
+
+`load_robots` fetches `/robots.txt` for the root's origin and builds a `RobotsPolicy`:
+`fetched` and `status` (a missing file means *allow*, but a 404 and a 503 are recorded
+apart), `group` (`webgraph` when the site names this client, `*` otherwise, `None` when
+neither exists), `rules` (that group's Allow / Disallow / Crawl-delay lines, verbatim),
+`crawl_delay` and `sitemaps`.
+
+Rules are asked for by the client's name, `ROBOTS_AGENT_TOKEN = "webgraph"`, not by the
+browser-shaped User-Agent header, whose first token is `mozilla` — which no robots.txt
+names (fixed in PR #83).
+
+With `respect_robots: true` (the default) a disallowed URL is dropped when it is popped
+from the frontier — silently: there is no event and no counter for a page robots.txt
+refused during a crawl. The single-page path is louder: `resolve_page` raises
+`PageDisallowedError` quoting the file, the group and the rule, and names a sanctioned
+alternative where one is known (`ROBOTS_SANCTIONED_SOURCES`: the Stack Exchange and Reddit
+APIs).
+
+## Sitemaps
+
+`discover_sitemaps` tries, in order, every address robots.txt advertised (`source:
+robots`), then `/sitemap.xml` and `/sitemap_index.xml` (`conventional`), then whatever a
+sitemap index listed (`index`) — at most `MAX_SITEMAP_DOCUMENTS = 20` files and
+`sitemap_limit` URLs (50,000 on the streaming path). Each address becomes a
+`SitemapAttempt` (`url`, `status`, `ok`, `urls`, `index`, `source`); `ok` means the
+response fetched *and* carried a `<loc>`, so a 200 that serves the site's HTML 404 page is
+not a sitemap.
+
+A sitemap advertising `http://` for a site that serves only `https://` has its scheme
+reconciled against the root just fetched (`reconcile_scheme`). A sitemap count is a claim,
+not a fact — ionidea.com advertised 90 URLs of which most returned 404 — so `extract_site`
+verifies the inventory and reports advertised, live and dead apart. Sitemap URLs enter the
+frontier at depth 1 with `via: "sitemap"`.
+
+## Links, with citations
+
+Every extracted page has its HTML read once, for links (`extract_links`, skipping
+`rel="nofollow"`, honouring the canonical link), and the HTML is then dropped. The frontier records how each URL
+entered the crawl, for whoever accepted it first: a `Discovery` with `via` (`seed`,
+`sitemap` or `link`), `found_on`, `anchor` (the text a reader would have clicked, capped
+at `MAX_ANCHOR_CHARS = 160`) and `depth`. This is the citation every `page` event carries.
+
+## URL kinds
+
+`url_kind` judges an address from its URL alone as it is discovered, so the tally costs
+nothing. `KINDS` in `frontier.py` is a closed set of seven, every key reported on every
+event, zeros included:
+
+| kind | what it is | fetched? |
+|---|---|---|
+| `page` | anything not below | yes |
+| `pdf` | `.pdf` | **no** — counted and cited, never requested, unless `fetch_files` is set (#94). PDFs are absent from `NON_PAGE_SUFFIXES` ("documents worth extracting") so they normalise like pages; the frontier recognises the kind and keeps the address without queuing it |
+| `image` | `.jpg`, `.png`, `.svg`, `.webp`, ... | no — counted and cited |
+| `other_file` | `.css`, `.js`, `.zip`, `.mp4`, `.docx`, ... | no — counted and cited |
+| `archive` | a WordPress date archive, `/2024/06/` or `/date/...`, only when the path *ends* at the date | yes |
+| `category`, `tag` | `/category/...`, `/tag/...` | yes |
+
+The three file kinds (`FILE_KINDS`) never reach the queue, but the frontier records each
+same-site one once with the page that linked to it (`skipped`, `skipped_urls`, and a
+citation in `origin`), so the tally says what the site *is*; it travels as
+`discovered_kinds` on every `frontier` and `page` event, and the `done` event carries the
+skipped list. On vtu.ac.in, 7,907 of 17,126 discovered URLs were PDFs, once fetched one at
+a time to refuse each — see [Limits and large sites](/docs/crawling/limits-and-large-sites).
+
+## Concurrency and delay
+
+A crawl runs `concurrency` worker threads (default 4; the API's request defaults to 6,
+clamped by `WEBGRAPH_MAX_CONCURRENCY`). Two things space the requests:
+
+- **Per host, across every worker** (`host_interval_seconds`, default 1.0, or the site's
+  `Crawl-delay` when larger): a shared throttle (`crawl/politeness.py`) hands each worker
+  the next free slot for the host under a lock, so two workers that arrive together leave
+  one interval apart and the site sees at most one page a second from the whole crawl,
+  whatever the concurrency. Before #94 the delay was per worker, and `Crawl-delay: 1` with
+  four workers was up to four requests a second, not one.
+- **Per worker** (`delay_seconds`, default 0.3): a plain pause before each fetch, as before.
+
+Under `union` a page is two requests — plain and rendered — made together; the interval
+spaces pages, not requests. vtu.ac.in ran at about 35 pages a minute with 4 workers before
+the per-host interval, well under one page a second, so the interval binds only on a fast
+static-only crawl.
+
+## What is refused, and why each refusal is honest
+
+A refusal is a `page` event with `ok: false` and an `error` that names its cause (the
+mechanics are in [Refusals](/docs/how-it-reads-a-page/refusals)):
+
+- **A PDF or other download** — `browser: the server returned a file download rather than
+  a page`. No text is invented for a document that is not HTML.
+- **HTTP 404 / 410** — `HTTP 404`. Never rendered: a browser renders a 404 page happily and
+  would report "Not Found" as content (`MISSING_STATUSES`).
+- **A wall** — 401, 403, 429, 451, 503 named in words (`BLOCKING_STATUSES`); a short page
+  that says what walls say is refused as a block page. A wall on one of the two fetches is
+  left out and named, and the other must have 20 words of its own to stand in.
+- **A login redirect** — a fetch that ends on `/login`, `/signin`, `/auth`, ... with a return
+  parameter pointing back at the asked-for URL (`LOGIN_PATH_MARKERS`, `LOGIN_RETURN_PARAMS`).
+- **A JavaScript shell** with no readable text when no browser ran (`PageShellError`).
+
+Not a refusal but a `warning`: three or more distinct URLs returning byte-identical text
+(`IDENTICAL_CONTENT_WARNING`) means an interstitial the crawl could not open, and it says so.
+Every refusal carries its citation, so "could not fetch X" is answerable with which page
+linked to X and through what words.

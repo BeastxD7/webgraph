@@ -1,0 +1,123 @@
+/* ---------------------------------------------------------------------------
+   Documentation stylesheet
+   ---------------------------------------------------------------------------
+   Loaded by app/docs/layout.tsx only. It is a second Tailwind entry so that
+   Fumadocs' preset (which is Tailwind source, not plain CSS) can be compiled,
+   restricted to the docs code and to the class list the preset carries inline:
+   the site's own utilities are already on the page from globals.css.
+
+   Two rules keep this file from restyling the rest of the site. A stylesheet
+   loaded by a nested layout is never unloaded on client-side navigation, so
+   every global rule here must resolve to the values globals.css already sets
+   (the light palette is the site's tokens, by reference), and everything that
+   differs -- the dark palette -- is gated on the docs layout being in the DOM.
+   --------------------------------------------------------------------------- */
+@import "tailwindcss" source(none);
+@source "./";
+@source "../../components/docs";
+@source "../../content/docs";
+
+@import "fumadocs-ui/css/preset.css";
+
+@theme {
+  /* Tailwind's theme.css is re-emitted by this entry and would otherwise reset the
+     font stacks globals.css chose. Same values, stated again. */
+  --font-sans: var(--font-manrope), ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Light: Fumadocs' roles mapped onto the site's tokens. */
+  --color-fd-background: var(--color-haze);
+  --color-fd-foreground: var(--color-ink);
+  --color-fd-muted: var(--color-sunk);
+  --color-fd-muted-foreground: var(--color-ink-soft);
+  --color-fd-popover: var(--color-surface);
+  --color-fd-popover-foreground: var(--color-ink);
+  --color-fd-card: var(--color-surface);
+  --color-fd-card-foreground: var(--color-ink);
+  --color-fd-border: var(--color-line);
+  --color-fd-primary: var(--color-leaf-600);
+  --color-fd-primary-foreground: var(--color-inverse);
+  --color-fd-secondary: var(--color-sunk);
+  --color-fd-secondary-foreground: var(--color-ink);
+  --color-fd-accent: var(--color-leaf-50);
+  --color-fd-accent-foreground: var(--color-ink);
+  --color-fd-ring: var(--color-leaf-600);
+  --color-fd-overlay: rgb(15 26 20 / 0.3);
+}
+
+@theme static {
+  /* Callout and diff colours. */
+  --color-fd-info: var(--color-leaf-600);
+  --color-fd-warning: var(--color-flag-warn);
+  --color-fd-error: var(--color-flag-bad);
+  --color-fd-success: var(--color-leaf-500);
+  --color-fd-idea: var(--color-clay);
+  --color-fd-diff-remove: rgb(166 58 47 / 0.12);
+  --color-fd-diff-remove-symbol: var(--color-flag-bad);
+  --color-fd-diff-add: rgb(77 154 47 / 0.12);
+  --color-fd-diff-add-symbol: var(--color-leaf-600);
+}
+
+/* Dark: the site has no dark treatment (its hero is a photograph), so this palette is
+   derived from the same tokens -- ink as the ground, leaf-300 as the accent so it keeps
+   its contrast. Gated on the docs layout: see the header comment. */
+.dark:has(#nd-docs-layout) {
+  color-scheme: dark;
+
+  --color-fd-background: #0f1a14;
+  --color-fd-foreground: #e6ece5;
+  --color-fd-muted: #172520;
+  --color-fd-muted-foreground: #9aa89f;
+  --color-fd-popover: #15221b;
+  --color-fd-popover-foreground: #e6ece5;
+  --color-fd-card: #15221b;
+  --color-fd-card-foreground: #e6ece5;
+  --color-fd-border: rgb(230 236 229 / 0.12);
+  --color-fd-primary: #93c874;
+  --color-fd-primary-foreground: #0f1a14;
+  --color-fd-secondary: #1c2c24;
+  --color-fd-secondary-foreground: #e6ece5;
+  --color-fd-accent: rgb(147 200 116 / 0.12);
+  --color-fd-accent-foreground: #e6ece5;
+  --color-fd-ring: #93c874;
+  --color-fd-overlay: rgb(0 0 0 / 0.5);
+
+  --color-fd-info: #93c874;
+  --color-fd-success: #93c874;
+  --color-fd-warning: #d9a441;
+  --color-fd-error: #e07a6e;
+  --color-fd-idea: #d1a071;
+}
+
+/* Inside the layout only. */
+#nd-docs-layout {
+  /* The article sits centred in the main column: `main` is `justify-items-center`, so
+     capping the article is what centres it between the sidebar and the table of
+     contents. 76ch of docs prose plus its own padding; the layout itself is capped at
+     --docs-max (87.5rem) and centred, so a wide screen gets margins, not a left-hugging
+     column. Fumadocs' own `max-w-[900px]` on #nd-page is what this overrides. */
+  #nd-page {
+    max-width: calc(76ch + 4rem);
+  }
+
+  /* The reading measure: long-form text fills the article, which is the measure. */
+  .prose {
+    max-width: 76ch;
+  }
+
+  .prose table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .prose code,
+  .prose pre {
+    font-family: var(--font-mono);
+  }
+
+  /* The page title in the site's display face, as on every other page. */
+  h1 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+}

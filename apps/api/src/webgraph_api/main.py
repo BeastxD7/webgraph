@@ -31,9 +31,12 @@ from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
+from webgraph import config as engine_config
 from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
@@ -48,6 +51,7 @@ from webgraph.graph.store import GraphStore
 from webgraph.page import stream_page
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
+from webgraph.report import build_site_report
 from webgraph.resolve import (
     PageBlockedError,
     PageMissingError,
@@ -61,6 +65,17 @@ from webgraph.settings import Settings, describe_config
 from webgraph.site import SiteConfig, stream_site
 from webgraph.trace import RunTrace, trace_events
 from webgraph.types import BlockKind, Document, ReadingOrderMethod
+from webgraph.watch import (
+    WatchStore,
+    create_watch,
+    export_changes,
+    list_changes,
+    site_config_from,
+    stream_watch,
+)
+from webgraph.watch.store import default_watch_db
+
+from webgraph_api import kg_routes
 
 # Every value a deployment can set lives in `webgraph.settings.Settings` (defaults in `webgraph.config`), read once here. The
 # reasoning for each cap is beside its field there; these names are kept because the rest of
@@ -217,6 +232,25 @@ class CrawlOptions(BaseModel):
     respect_robots: bool | None = None
     remove_chrome: bool | None = None
     main_content: bool | None = None
+    fetch_files: bool | None = Field(
+        default=None,
+        description="Fetch links to PDFs and other files. Off (the default), they are counted "
+        "in discovered_kinds and listed with their citations in the done event's skipped_urls, "
+        "and never requested.",
+    )
+    max_queue: int | None = Field(
+        default=None,
+        ge=0,
+        le=1_000_000,
+        description="Queued addresses beyond which discovery stops. 0 = no limit.",
+    )
+    host_interval_seconds: float | None = Field(
+        default=None,
+        ge=0,
+        le=60,
+        description="Minimum seconds between two pages from the same host, across every "
+        "worker. The site's Crawl-delay replaces it when larger.",
+    )
 
 
 def _applied(dataclass_default: Any, options: BaseModel | None) -> Any:
@@ -373,10 +407,19 @@ class TextResponse(BaseModel):
 class SiteRequest(BaseModel):
     url: str = Field(description="Site root URL")
     max_pages: int = Field(
-        default=0,
+        default=engine_config.CRAWL_MAX_PAGES,
         ge=0,
         le=100000,
-        description="0 means unbounded -- crawl until the frontier is exhausted.",
+        description="Pages to attempt before the crawl stops, refusals included. 0 means "
+        "unbounded -- crawl until the frontier is exhausted -- and has to be asked for; the "
+        "default is the engine's cap.",
+    )
+    max_seconds: float = Field(
+        default=engine_config.CRAWL_MAX_SECONDS,
+        ge=0,
+        le=86_400,
+        description="Seconds the run may take before it stops. 0 means no time limit. The "
+        "done event's stopped_by says which limit ended a run: pages, time, queue, or null.",
     )
     concurrency: int = Field(default=6, ge=1, le=12)
     complete: bool = Field(
@@ -385,6 +428,21 @@ class SiteRequest(BaseModel):
         "alone is complete -- see the engine's resolve module.",
     )
     crawl: CrawlOptions | None = None
+    fetch: FetchOptions | None = None
+    render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
+
+    model_config = {"populate_by_name": True}
+
+
+class SiteReportRequest(BaseModel):
+    url: str = Field(description="Site root URL")
+    pages: int | None = Field(
+        default=None,
+        ge=1,
+        le=engine_config.REPORT_MAX_PAGES,
+        description="Pages to sample: the root, then the first internal links it offers, "
+        "one per path section where it links to several. Defaults to `REPORT_PAGES`.",
+    )
     fetch: FetchOptions | None = None
     render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
 
@@ -402,6 +460,9 @@ class HealthResponse(BaseModel):
     is exploited: a deployment with this False looks perfectly healthy."""
     max_pages: int
     """The server-side page cap. 0 means crawls run until the frontier is exhausted."""
+
+    webgraph: bool = False
+    """Whether the knowledge-graph routes (`/api/graph/*`) are served: `WEBGRAPH_KG=1`."""
 
 
 @asynccontextmanager
@@ -426,9 +487,43 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+def _graph_for(url: str) -> Any:
+    builder = _recall_graph(url)
+    return builder.graph if builder is not None else None
+
+
+app.include_router(kg_routes.create_router(_graph_for))
+"""WebGraph (`/api/graph/*`), behind `WEBGRAPH_KG=1`: every route answers 404 with the
+flag's name until it is set."""
+
+_SECRET_FIELDS: Final[frozenset[str]] = frozenset({"api_key", "password"})
+
+
+def _redact(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: ("[redacted]" if k in _SECRET_FIELDS and v else _redact(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """A 422 that does not echo secrets.
+
+    FastAPI's default handler returns the offending `input` -- the whole request body for a
+    body-level error -- which for `/api/graph/build` would send the caller's provider key
+    back down the wire and into whatever logs the response. Redacted here for every route,
+    since a key in a body is never the part that failed validation.
+    """
+    # `jsonable_encoder` first: a validator that raised puts the exception object itself in
+    # `ctx`, and a bare `JSONResponse` would turn that 422 into a 500.
+    return JSONResponse(status_code=422, content={"detail": _redact(jsonable_encoder(exc.errors()))})
 
 
 def _measured(resolved: ResolvedPage) -> bool:
@@ -554,6 +649,34 @@ async def _resolve(request: TextRequest | ExtractRequest) -> ResolvedPage:
         raise HTTPException(status_code=502, detail=f"could not fetch page: {exc}") from exc
 
 
+@app.post("/api/site/report")
+async def site_report(request: SiteReportRequest) -> JSONResponse:
+    """The site report: what the site shows people, what it shows machines, and how ready
+    it is for AI agents (`webgraph.report.build_site_report`).
+
+    Runs in a worker thread under one render slot for its whole duration -- it renders up
+    to `pages` pages, one after another, and one slot is the honest cost of that. A root
+    the engine refuses (walled, disallowed for this client, missing) is not an HTTP error:
+    the report comes back with `reachable: false`, the engine's refusal in `refusal`, and
+    no score, because "this site could not be measured, and here is why" is the result.
+    Every request the report makes identifies itself as webgraph and is spaced a second
+    apart per host; nothing is fetched as another bot.
+    """
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="url must be http or https")
+    fetch_config = _applied(FetchConfig(), request.fetch)
+    render_config = _applied(RenderConfig(), request.render_options)
+    async with _render_slots:
+        report = await asyncio.to_thread(
+            build_site_report,
+            request.url,
+            pages=request.pages,
+            fetch_config=fetch_config,
+            render_config=render_config,
+        )
+    return JSONResponse(content=json.loads(json.dumps(report.as_dict(), default=str)))
+
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(
@@ -562,6 +685,7 @@ async def health() -> HealthResponse:
         max_concurrent_renders=MAX_CONCURRENT_RENDERS,
         private_hosts_blocked=guard.private_hosts_blocked(),
         max_pages=PAGE_CAP,
+        webgraph=kg_routes.kg_enabled(),
     )
 
 
@@ -1121,6 +1245,7 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
     config = _applied(
         SiteConfig(
             max_pages=_effective_max_pages(request.max_pages),
+            max_seconds=request.max_seconds,
             concurrency=_effective_concurrency(request.concurrency),
             strategy=Strategy.UNION if request.complete else Strategy.STATIC_ONLY,
             fetch=_applied(FetchConfig(), request.fetch),
@@ -1166,6 +1291,10 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                 # The caps this host applied, not what the client asked for. A log that
                 # reports the request rather than the run explains nothing when they differ.
                 max_pages=config.max_pages,
+                max_seconds=config.max_seconds,
+                max_queue=config.max_queue,
+                fetch_files=config.fetch_files,
+                host_interval_seconds=config.host_interval_seconds,
                 concurrency=config.concurrency,
                 # None means Stage 0's measured verdict decides per site, which is a real
                 # answer and not a missing one.
@@ -1227,3 +1356,230 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ======================================================================================
+# Watch: change monitoring on top of the crawl
+# ======================================================================================
+
+WATCH_DB: Path | None = SETTINGS.watch_db
+"""Where watches live. None = the engine's default (`~/.cache/webgraph/watch.sqlite3`).
+Module-level so a test can point it at a temporary file."""
+
+_watch_store: WatchStore | None = None
+_watch_store_lock = threading.Lock()
+
+
+def _watches() -> WatchStore:
+    """The store, opened on first use rather than at import: importing the API must not
+    create a file in the user's cache directory."""
+    global _watch_store
+    with _watch_store_lock:
+        wanted = Path(WATCH_DB) if WATCH_DB else default_watch_db()
+        if _watch_store is None or _watch_store.path != wanted:
+            _watch_store = WatchStore(wanted)
+        return _watch_store
+
+
+class WatchCreateRequest(BaseModel):
+    url: str = Field(description="Site root URL")
+    config: dict[str, Any] | None = Field(
+        default=None,
+        description="SiteConfig fields by name (max_pages, max_seconds, complete, ...) and the "
+        "watch's own: noise (false compares dates and counters too), noise_patterns (extra "
+        "regular expressions). The host's caps still apply when it runs.",
+    )
+    schedule_seconds: int = Field(
+        default=0,
+        ge=0,
+        description="Advisory: how often the owner means to run it. Nothing in the API "
+        "schedules; POST /api/watch/{id}/run is what a cron entry or an Action calls.",
+    )
+
+
+class WatchOut(BaseModel):
+    id: str
+    root: str
+    config: dict[str, Any]
+    created_at: float
+    schedule_seconds: int
+    last_run: dict[str, Any] | None = None
+    runs: int = 0
+    changes: int = 0
+
+
+def _watch_out(store: WatchStore, watch_id: str) -> WatchOut:
+    watch = store.get_watch(watch_id)
+    if watch is None:
+        raise HTTPException(status_code=404, detail=f"no watch with id {watch_id!r}")
+    runs = store.runs(watch.id)
+    last = next((run for run in runs if run.finished), None)
+    return WatchOut(
+        id=watch.id,
+        root=watch.root,
+        config=watch.config,
+        created_at=watch.created_at,
+        schedule_seconds=watch.schedule_seconds,
+        last_run=last.as_dict() if last else None,
+        runs=len(runs),
+        changes=store.count_changes(watch.id),
+    )
+
+
+@app.post("/api/watch", response_model=WatchOut)
+async def watch_create(request: WatchCreateRequest) -> WatchOut:
+    """Register a site to watch. Validates the config the way a run would."""
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="url must be http or https")
+    guard.check_url(request.url)
+    try:
+        watch = create_watch(
+            request.url,
+            request.config,
+            schedule_seconds=request.schedule_seconds,
+            store=_watches(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _watch_out(_watches(), watch.id)
+
+
+@app.get("/api/watch", response_model=list[WatchOut])
+async def watch_list() -> list[WatchOut]:
+    store = _watches()
+    return [_watch_out(store, watch.id) for watch in store.list_watches()]
+
+
+@app.get("/api/watch/{watch_id}", response_model=WatchOut)
+async def watch_get(watch_id: str) -> WatchOut:
+    return _watch_out(_watches(), watch_id)
+
+
+@app.delete("/api/watch/{watch_id}")
+async def watch_delete(watch_id: str) -> dict[str, bool]:
+    if not _watches().delete_watch(watch_id):
+        raise HTTPException(status_code=404, detail=f"no watch with id {watch_id!r}")
+    return {"deleted": True}
+
+
+@app.post("/api/watch/{watch_id}/run")
+async def watch_run(watch_id: str) -> StreamingResponse:
+    """Run a watch once, streaming the crawl's events, a `change` event per page that
+    differed, and a `done` event with the run's summary. Same crawl slots, caps and
+    politeness as `/api/site/stream`."""
+    store = _watches()
+    watch = store.get_watch(watch_id)
+    if watch is None:
+        raise HTTPException(status_code=404, detail=f"no watch with id {watch_id!r}")
+    guard.check_url(watch.root)
+
+    def capped(config: SiteConfig) -> SiteConfig:
+        return replace(
+            config,
+            max_pages=_effective_max_pages(config.max_pages),
+            concurrency=_effective_concurrency(config.concurrency),
+        )
+
+    async def generate() -> AsyncIterator[str]:
+        if _crawl_slots.locked():
+            yield _sse({"type": "stage", "stage": "analyze", "message": "Waiting for a crawl slot"})
+        async with _crawl_slots:
+            queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+            stop = threading.Event()
+            trace = _open_trace(watch.root)
+            applied = capped(site_config_from(watch.config))
+            header = _run_header(
+                watch.root,
+                trace,
+                mode="watch",
+                watch_id=watch.id,
+                max_pages=applied.max_pages,
+                max_seconds=applied.max_seconds,
+                concurrency=applied.concurrency,
+                strategy=applied.strategy.value if applied.strategy else "measured",
+            )
+            trace.write(header)
+            yield _sse(header)
+
+            def produce() -> None:
+                try:
+                    for event in trace_events(
+                        stream_watch(watch.id, store=store, should_stop=stop.is_set, adjust=capped),
+                        trace,
+                    ):
+                        if stop.is_set():
+                            return
+                        while queue.qsize() > CRAWL_QUEUE_HIGH_WATER and not stop.is_set():
+                            time.sleep(0.05)
+                        loop.call_soon_threadsafe(queue.put_nowait, event)
+                except Exception as exc:
+                    failure = {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
+                    trace.write(failure)
+                    loop.call_soon_threadsafe(queue.put_nowait, failure)
+                finally:
+                    trace.write({"type": "trace-closed", "stopped": stop.is_set()})
+                    trace.close()
+                    loop.call_soon_threadsafe(queue.put_nowait, None)
+
+            loop.run_in_executor(_crawl_pool, produce)
+            try:
+                while True:
+                    event = await queue.get()
+                    if event is None:
+                        break
+                    yield _sse(event)
+            finally:
+                stop.set()
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _since_param(since: str | None) -> float | None:
+    """`since` as epoch seconds or an ISO datetime; naive times are UTC."""
+    if not since:
+        return None
+    try:
+        return float(since)
+    except ValueError:
+        pass
+    from datetime import UTC, datetime
+
+    try:
+        parsed = datetime.fromisoformat(since)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail="since must be epoch seconds or an ISO 8601 datetime"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
+
+
+@app.get("/api/watch/{watch_id}/changes")
+async def watch_changes(
+    watch_id: str, since: str | None = None, limit: int = 200
+) -> dict[str, Any]:
+    """Changes newest first. `since` is epoch seconds or an ISO datetime, exclusive."""
+    store = _watches()
+    out = _watch_out(store, watch_id)
+    changes = list_changes(watch_id, _since_param(since), store=store, limit=max(1, min(limit, 2000)))
+    return {"watch": out.model_dump(), "changes": [c.as_dict() for c in changes]}
+
+
+@app.get("/api/watch/{watch_id}/feed.xml")
+async def watch_feed(watch_id: str, request: Request, format: str = "rss") -> Response:
+    """The changes as a feed: RSS 2.0 by default, Atom 1.0 with `?format=atom`. The
+    cheapest "notify me" there is -- any reader or Action can subscribe."""
+    if format not in {"rss", "atom"}:
+        raise HTTPException(status_code=422, detail="format must be rss or atom")
+    store = _watches()
+    if store.get_watch(watch_id) is None:
+        raise HTTPException(status_code=404, detail=f"no watch with id {watch_id!r}")
+    body = export_changes(watch_id, fmt=format, store=store, feed_url=str(request.url))
+    media = "application/atom+xml" if format == "atom" else "application/rss+xml"
+    return Response(content=body, media_type=f"{media}; charset=utf-8")

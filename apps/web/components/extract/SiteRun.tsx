@@ -16,7 +16,7 @@ import RunTabs, { type RunTab } from "./RunTabs";
 import TechnologyPanel from "./TechnologyPanel";
 import UrlList from "./UrlList";
 import Citation from "@/components/ui/Citation";
-import { PHASE_LABEL, useSiteStream } from "@/hooks/useSiteStream";
+import { PHASE_LABEL, STOPPED_BY_LABEL, useSiteStream } from "@/hooks/useSiteStream";
 import { useTabTitle } from "@/hooks/useTabTitle";
 import type { RunMeta } from "@/lib/runlog";
 
@@ -76,12 +76,12 @@ export default function SiteRun({
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 px-5 pb-20 sm:px-8">
+    <div className="page-col space-y-5 pb-20">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-[13.5px] font-semibold">
           <span aria-hidden className={`size-2 rounded-full ${PHASE_DOT[run.phase]}`} />
-          {run.phase === "done" && run.summary && !run.summary.exhausted
-            ? `Reached the page cap · ${run.summary.remaining_queued.toLocaleString("en-US")} pages not crawled`
+          {run.phase === "done" && run.summary && run.summary.stopped_by
+            ? `${STOPPED_BY_LABEL[run.summary.stopped_by]} · ${run.summary.remaining_queued.toLocaleString("en-US")} pages not crawled`
             : PHASE_LABEL[run.phase]}
         </span>
 

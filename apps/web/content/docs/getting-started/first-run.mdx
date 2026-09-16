@@ -1,0 +1,145 @@
+---
+title: First run
+description: Extract one page over curl, watch its stages stream, crawl a site in the web UI, and inspect a page block by block.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This page assumes `make api` is running on `:8000` and, for the UI sections, `make web` on
+`:3000`. See [Installation](/docs/getting-started/installation).
+
+## A page
+
+```bash
+curl -s localhost:8000/api/text \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","render":true}'
+```
+
+<Callout type="info">
+The `content-type` header is required: `curl -d` alone sends a form body and the request
+model answers 422. `"render": true` asks for the complete strategy — plain HTTP and a
+browser, merged. The default is `false`: plain HTTP, which `/api/text` escalates to the
+browser only when the static document is a JavaScript shell. The web UI always sends
+`render: true`.
+</Callout>
+
+The response is a `TextResponse` (`apps/api/src/webgraph_api/main.py`):
+
+| Field | What it is |
+|---|---|
+| `text` | The whole page as plain text, in reading order. Alt text and media placeholders are not in it. |
+| `markdown` | The whole page as Markdown: headings, images, links, tables, code, rules, definition lists. |
+| `content_markdown` | The page reduced to its content: `<nav>`/`<footer>` landmarks removed, then the main-content boundary. Empty when nothing was removed. |
+| `content_methods` | The steps that removed something, in order: `landmarks`, `main-landmark`, `article-element`, `article-body`, `block-model`, `main-content`. |
+| `comments_markdown` | A comment thread found under the content and left out of `content_markdown`. |
+| `page_type`, `page_type_confidence` | `article`, `documentation`, `service`, `forum`, `collection`, `listing`, `product` or `unknown`. |
+| `page.reading_order`, `page.reading_order_measured` | `geometric-xy-cut`, `geometric-anchored`, `dom-fallback` or `single-block`; `false` means the order was assumed from source, not measured. |
+| `page.dom_order_differs` | `true` when CSS moved content away from source order. `page` also carries `blocks`, `frameworks`, `requires_render`, `payloads` and `content_hash`. |
+| `images`, `tables` | Absolute image URLs; tables kept with their rows. |
+
+A refused page is not a `TextResponse`. A wall, a login redirect, a 404 or a robots.txt
+disallow is HTTP 502 with the reason in `detail`, in the site's own words where it has any
+— see [Refusals](/docs/getting-started/concepts#refusals).
+
+### Watching the stages
+
+```bash
+curl -sN localhost:8000/api/text/stream \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","render":true}'
+```
+
+Each frame is `data: {json}` with a `type` and a `stage`
+(`packages/engine/src/webgraph/page.py`):
+
+1. `run` — the header: run id, trace file name, engine version, the strategy that will
+   actually run (`static-only`, `union` or `supplied`). The stream runs exactly that
+   strategy; unlike `/api/text` it does not escalate a shell to the browser, so with
+   `render: false` a shell is an `error` event.
+2. `stage` — `resolve` is running, with a message such as "Fetching as plain HTTP and
+   through a browser, then merging".
+3. `resolve` — `static_chars`, `rendered_chars`, `union_chars`, `static_coverage`,
+   `blocks_only_in_static`, `blocks_only_in_rendered`, and `render_error` when the
+   browser was unavailable, gave up, or was served a wall that was left out.
+4. `parse` — `blocks`, `words`, `reading_order`, `reading_order_measured`,
+   `dom_order_differs`, `kinds`.
+5. `classify` — `page_type`, `confidence`, the model's `reasons`, `runner_up`.
+6. `select` — `kept` of `total`, the `methods` that fired, what each removed.
+7. `done` — `title`, `text`, `markdown`, `content_markdown`, `comments_markdown`,
+   `images`, `tables`.
+
+An `error` event ends the stream and is the only event that can appear out of order. Once
+the first byte is sent an HTTP status can no longer say anything, so failure is an event.
+
+### In the web UI
+
+Open `http://localhost:3000`, pick **Single page**, type a URL and submit. The run has its
+own address, `/extract?url=…&mode=page`. Its stage list is the same stream: "Fetch it both
+ways" (strategy, plain HTTP versus browser, what plain HTTP alone would have given), "Turn
+markup into blocks", "Read the page type", "Decide what counts as content", "Hand it back".
+A stage that has not started is not drawn.
+
+If the fetch fails, the run opens **Paste the page's HTML instead**. That sends the source
+as `html` on the same request; nothing is fetched, the first stage reads "Read the HTML you
+supplied", and a pasted wall is refused like a fetched one.
+
+## A site
+
+Pick **Whole site** (the default), type a domain — the placeholder is `docs.astro.build` —
+and submit. **Complete extraction** is on by default; it is the request's `complete` field
+and selects the union strategy. The same run over curl:
+
+```bash
+curl -sN localhost:8000/api/site/stream \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://docs.astro.build","max_pages":20}'
+```
+
+`max_pages: 0`, the default, means crawl until the frontier is exhausted, so cap a first
+look. The events (`webgraph.site.stream_site`), in order:
+
+- `run`, then `stage` — `analyze` ("Detecting technology stack", or "Waiting for a crawl
+  slot"), later `enumerate` and `extract`.
+- `analysis` — the resolved `root`, `frameworks`, `technologies` with evidence and
+  confidence, `render_required`, `render_loses_content`, character counts both ways, and
+  the `strategy` chosen.
+- `discovery` — what `robots.txt` said (`rules_for_us`, `crawl_delay`, the file), every
+  sitemap tried with its status and URL count, and `seeds` accepted into the frontier.
+- `frontier` — `queued`, `discovered`, `depth_counts`, `discovered_kinds` (page, pdf,
+  image, other_file, archive, category, tag), `new_urls`.
+- `fetching` — the batch going out now.
+- `page` — one per page: `url`, `title`, `ok`, `error`, `citation` (which page linked
+  here, through which link text), `markdown`, `content_markdown`, `page_type`,
+  `strategy`, counters, `pages_per_minute`.
+- `warning` — `identical-content`: several URLs returned byte-identical text, usually an
+  interstitial the engine could not open.
+- `done` — `pages_ok`, `pages_total`, `failed`, `discovered`, `exhausted`, `stopped`,
+  totals, `chrome_blocks`, `chrome_slots`, `duration_seconds`.
+
+The UI shows these as panels. **Technology detected** lists each fingerprint with its
+evidence and confidence. **How the site can be discovered** has three collapsed rows:
+`robots.txt` (the rules for this client, then the file), `Sitemaps` (every attempt, or
+"none published — discovery is by links only"), and `URLs found by kind`, with a warning
+when files outnumber pages. The counters **Discovered**, **Queued**, **Extracted** and
+**Failed** are tabs that open the list they count; an extracted page opens to its Markdown
+with a **Content only** toggle and its page type. Closing the tab stops the crawl: the
+engine polls a stop flag between batches.
+
+## Debugging a page
+
+When the output looks wrong, read the page the way the engine did:
+
+```bash
+uv run python tools/inspect_page.py https://www.apple.com/iphone/
+uv run python tools/inspect_page.py https://linear.app/ --chosen        # chosen blocks only
+uv run python tools/inspect_page.py https://example.com/page --grep "Most read"
+```
+
+The fetch is the API's own (`resolve_page`, static and rendered, merged) and the policy is
+the one `/api/text` uses. The header line gives the strategy, `render_error`, the
+reading-order method and the content methods that fired; then one row per block in reading
+order: index, `IN`/`out`, the value the boundary step assigned, kind, landmark region,
+`m=1` inside `<main>`, widget, `body=Y` inside a declared article body, `rect` or `none`
+for a measured box, and the text. The pull-request template asks for a reproduction that
+uses it.

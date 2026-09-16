@@ -16,6 +16,7 @@ from typing import Final
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 __all__ = [
+    "FILE_KINDS",
     "KINDS",
     "CrawlScope",
     "Discovery",
@@ -42,8 +43,10 @@ NON_PAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
     ".woff", ".woff2", ".ttf", ".otf", ".eot",
     ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
 })
-"""Skipped by the crawler. PDFs are deliberately absent -- they are documents worth
-extracting, and belong to the document pipeline rather than being discarded here."""
+"""Refused by `normalize_url`: never a page. PDFs are deliberately absent -- they are
+documents worth extracting, and belong to a document pipeline rather than being discarded
+here -- but until that pipeline exists the frontier counts them without queuing them
+(`FILE_KINDS`, `Frontier.fetch_files`)."""
 
 IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".ico", ".bmp", ".tiff",
@@ -54,6 +57,12 @@ KINDS: Final[tuple[str, ...]] = (
 )
 """What a discovered address looks like, from its URL alone. Every key is reported on
 every event, zeros included, so a consumer gets a closed shape rather than a sparse one."""
+
+FILE_KINDS: Final[frozenset[str]] = frozenset({"pdf", "image", "other_file"})
+"""The kinds that are files, not pages: counted, cited, and never fetched unless a crawl
+asks for files. A whole-site run of vtu.ac.in spent a third of six hours fetching 5,730
+PDFs one at a time to refuse each as not HTML; the engine has no document pipeline, so the
+fetch could only ever end in a refusal (#94)."""
 
 _DATE_ARCHIVE: Final[re.Pattern[str]] = re.compile(
     r"/(?:date/.*|(?:19|20)\d{2}/(?:0[1-9]|1[0-2])(?:/(?:0[1-9]|[12]\d|3[01]))?)$"
@@ -130,8 +139,9 @@ def url_kind(url: str) -> str:
     screen said so, because a frontier counts addresses and an address is an address. This
     is the cheap classifier behind the running tally the stream reports: extension first
     (`pdf`, `image`, `other_file`), then the WordPress shapes that are lists of pages
-    rather than pages (`archive`, `category`, `tag`), else `page`. It never decides what is
-    fetched -- `normalize_url` and the scope do that -- it only says what was found.
+    rather than pages (`archive`, `category`, `tag`), else `page`. The frontier uses it for
+    one decision -- a `FILE_KINDS` address is counted and cited but not queued unless
+    `fetch_files` is set -- and otherwise it only says what was found.
     """
     try:
         path = urlsplit(url).path or "/"
@@ -298,6 +308,17 @@ class Frontier:
     """
 
     scope: CrawlScope
+    max_queue: int = 0
+    """Queued addresses beyond which `add` refuses new ones. 0 = no limit.
+
+    Discovery outruns extraction by an order of magnitude on a large site, and every queued
+    address is held in memory for the life of the crawl. A refused address is not marked
+    seen: if it is linked again once the queue has drained, it is accepted then.
+    `refused_by_cap` counts the refusals, so the crawl can say the cap was reached."""
+
+    fetch_files: bool = False
+    """Queue `FILE_KINDS` addresses as pages. Off, they are recorded and skipped."""
+
     _lanes: dict[int, deque[str]] = field(default_factory=dict)
     """One FIFO per depth. `pop` drains the shallowest non-empty lane, so the crawl is
     breadth-first by construction rather than by the accident of arrival order: a
@@ -314,8 +335,20 @@ class Frontier:
     every page links to twenty, and the point of the tally is to say what the site *is*."""
 
     _seen_files: set[str] = field(default_factory=set)
-    """Image and file addresses already tallied. They never reach `_seen` (they are not
-    pages) and would otherwise be counted once per page that links to them."""
+    """File addresses already tallied. They never reach `_seen` (they are not pages) and
+    would otherwise be counted once per page that links to them."""
+
+    skipped: dict[str, int] = field(default_factory=lambda: dict.fromkeys(sorted(FILE_KINDS), 0))
+    """How many same-site addresses of each file kind were recorded and not queued. A
+    closed shape, like `kinds`: every file kind is present, zeros included."""
+
+    skipped_urls: dict[str, str] = field(default_factory=dict)
+    """Every skipped file address -> its kind, in the order found. Each also has a citation
+    in `origin`, so a report can list the PDFs a site publishes and the page that links to
+    each one without a single one having been fetched."""
+
+    refused_by_cap: int = 0
+    """Addresses `add` turned away because the queue was at `max_queue`."""
 
     origin: dict[str, Discovery] = field(default_factory=dict)
     """How each address came to be in this crawl, for whoever accepted it first.
@@ -333,11 +366,18 @@ class Frontier:
         """
         normalized = normalize_url(url, base=base)
         if normalized is None:
+            self._skip_file(url, base)
             return False
         key = canonical_key(normalized)
         if key in self._seen:
             return False
         if not self.scope.permits(normalized, depth):
+            return False
+        if not self.fetch_files and url_kind(normalized) in FILE_KINDS:
+            self._skip_file(normalized, None)
+            return False
+        if self.max_queue > 0 and len(self) >= self.max_queue:
+            self.refused_by_cap += 1
             return False
         self._seen.add(key)
         self._lanes.setdefault(depth, deque()).append(normalized)
@@ -345,33 +385,44 @@ class Frontier:
         self._tally(normalized)
         return True
 
+    @property
+    def queue_capped(self) -> bool:
+        """Whether the queue cap turned any address away."""
+        return self.refused_by_cap > 0
+
     def _tally(self, url: str) -> None:
         kind = url_kind(url)
         self.kinds[kind] = self.kinds.get(kind, 0) + 1
 
-    def _tally_file(self, url: str, base: str | None) -> None:
-        """Count an address `normalize_url` refused, when it is a file on this site.
+    def _skip_file(self, url: str, base: str | None) -> str | None:
+        """Record a same-site file address without queuing it. Returns its key when new.
 
-        Refusal has several causes -- off-site, `mailto:`, a template's `/undefined` -- and
-        only one of them is worth reporting: a same-site image or download. Those are the
-        addresses that make a site look bigger than it reads."""
+        Two routes lead here: an address `normalize_url` refused (an image, a stylesheet, an
+        archive -- `NON_PAGE_SUFFIXES`), and a PDF, which normalises like a page and would
+        otherwise be queued, fetched and refused. Refusal by `normalize_url` has other
+        causes too -- off-site, `mailto:`, a template's `/undefined` -- and none of those is
+        recorded: the addresses worth counting are the same-site files that make a site
+        look bigger than it reads."""
         try:
             resolved = urljoin(base, url) if base else url
             parts = urlsplit(resolved)
         except ValueError:
-            return
+            return None
         if parts.scheme not in {"http", "https"} or not parts.hostname:
-            return
+            return None
         kind = url_kind(resolved)
-        if kind not in {"image", "other_file"}:
-            return
+        if kind not in FILE_KINDS:
+            return None
         if not same_site(resolved, self.scope.root, allow_subdomains=self.scope.allow_subdomains):
-            return
+            return None
         key = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path, parts.query, ""))
         if key in self._seen_files:
-            return
+            return None
         self._seen_files.add(key)
         self.kinds[kind] = self.kinds.get(kind, 0) + 1
+        self.skipped[kind] = self.skipped.get(kind, 0) + 1
+        self.skipped_urls[key] = kind
+        return key
 
     def extend(
         self,
@@ -401,24 +452,32 @@ class Frontier:
         """
         accepted: list[str] = []
         for url in urls:
+            label = (anchors or {}).get(url) or None
             normalized = normalize_url(url, base=base)
             if normalized is None:
-                self._tally_file(url, base)
+                # A file, or nothing worth recording. A file keeps its citation: a PDF is
+                # never fetched, but "which page links to this circular" is still a
+                # question the crawl can answer.
+                skipped = self._skip_file(url, base)
+                if skipped is not None:
+                    self._cite(skipped, via=via, found_on=found_on, anchor=label, depth=depth)
+                continue
+            if not self.fetch_files and url_kind(normalized) in FILE_KINDS:
+                skipped = self._skip_file(normalized, None)
+                if skipped is not None:
+                    self._cite(skipped, via=via, found_on=found_on, anchor=label, depth=depth)
                 continue
             if self.add(normalized, depth):
                 accepted.append(normalized)
-                label = (anchors or {}).get(url)
-                self.origin.setdefault(
-                    normalized,
-                    Discovery(
-                        url=normalized,
-                        via=via,
-                        found_on=found_on,
-                        anchor=(label or None),
-                        depth=depth,
-                    ),
-                )
+                self._cite(normalized, via=via, found_on=found_on, anchor=label, depth=depth)
         return accepted
+
+    def _cite(
+        self, url: str, *, via: str, found_on: str | None, anchor: str | None, depth: int
+    ) -> None:
+        self.origin.setdefault(
+            url, Discovery(url=url, via=via, found_on=found_on, anchor=anchor, depth=depth)
+        )
 
     def citation(self, url: str) -> Discovery | None:
         """How this address entered the crawl, or None if it was never recorded."""

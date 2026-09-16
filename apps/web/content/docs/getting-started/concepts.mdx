@@ -1,0 +1,112 @@
+---
+title: Concepts
+description: The vocabulary the engine, the API and the UI share, each term with the code path that defines it.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Each term below gets one honest paragraph and the module where it lives. The deeper account
+is in [How it reads a page](/docs/how-it-reads-a-page).
+
+## Static fetch, render, and union
+
+`webgraph.resolve.Strategy` names four ways a page can be obtained. `STATIC_ONLY` is one
+HTTP request. `RENDERED_ONLY` is the browser's document alone, for a page whose static HTML
+is known to be a decoy. `UNION` fetches both ways and
+merges the two block lists on normalised text (`resolve._key`), then reports how much each side contributed
+(`static_chars`, `rendered_chars`, `union_chars`, `blocks_only_in_static`,
+`blocks_only_in_rendered`). `SUPPLIED` is not a fetch at all: the caller hands over the
+HTML (`resolve_supplied`). In the engine `UNION` is the default when nothing is set; on
+the API the `render` flag (`/api/text`, default `false`) and the `complete` flag
+(`/api/site/stream`, default `true`) choose. Union exists because neither side is complete on its own —
+hydration removes server-rendered content, consent walls replace articles, lazy sections
+never mount — and because predicting which pages need a browser scored 0 of 7 on pages
+that measurably lost content (README, Stage 3). Per site, `analyze_site` measures the root
+both ways and recommends `STATIC_ONLY` only when the static HTML was found complete.
+
+## Blocks
+
+A `Block` (`webgraph.types`) is a contiguous run of text with its position in the document:
+`text`, `tag`, `xpath`, `dom_index`, an optional `rect`, and a `kind`. `BlockKind` is
+`paragraph`, `heading`, `list-item`, `table`, `image`, `code`, `quote`, `figure-caption`,
+`media` (a video or embed that was present but not transcribed) and `rule` (an `<hr>`,
+which has no text and is invisible to everything that reads words). `Block.text` stays
+plain; the Markdown form is `rich_text`, so deduplication, the content hash and reading
+order all key on the plain form. Element-level granularity is the working compromise:
+per-word is noisy, per-section hides column structure.
+
+## Reading order
+
+`Document.reading_order_method` (`webgraph.types.ReadingOrderMethod`) says how the block
+sequence was obtained. `geometric-xy-cut` means every block had a measured box and a
+recursive XY-cut over those boxes produced the order. `geometric-anchored` means most
+blocks were measured and the rest — a collapsed `<details>`, a panel behind a disclosure —
+were placed beside their source-order neighbours; it is a weaker claim and gets its own
+name. Below half the blocks measured, or with no geometry at all (a static fetch, a failed
+render, supplied HTML), the order is source order and the document says so:
+`dom-fallback`, `reading_order_measured: false`. `dom_order_differs` reports whether the
+measured order and source order disagreed, which is the signal that CSS reordered the page.
+
+## Whole page and filtered content
+
+The product is the whole page: `text` and `markdown` are `Document.blocks` rendered in
+full, and nothing reduces them. `content_markdown` is a second, deliberately lossy view
+produced by `webgraph.content.select_content`: `<nav>` and `<footer>` landmarks out, the
+`<main>` or `<article>` scope kept when the page declares a trustworthy one, cross-page site
+chrome out (crawl only — one page cannot know what a site repeats), then a boundary drawn
+around the densest contiguous run of prose by `webgraph.main_content` (a maximum-subarray
+over per-block scores). Which policy the boundary step uses comes from
+`webgraph.pagetype.policy_for(page_type)`: a listing's link grid is its content, a
+product's identical grid is a rail. `content_methods` records which steps fired, and
+`content_markdown` is empty when none did.
+
+## Hidden matter
+
+What the browser hid stays out. The renderer stamps every element it is not showing with
+`data-wg-hidden` and the mechanism — `display`, `visibility`, `offscreen` (a box entirely at
+negative page coordinates), `clipped` (a 1px screen-reader-only box) — and
+`webgraph.fetch.render.hidden_matter` collects the text of the first three so the union
+cannot put a static-only copy of it back. `opacity: 0` is stamped but kept: it is usually
+a scroll-reveal animation's starting state, which is content. A collapsed disclosure's body
+is hidden and is content too; it stays, anchored after its control. `clipped` text is the
+`include_hidden_text` option's business: off by default, on for a caller who wants every
+string in the DOM.
+
+## Provenance
+
+Three grains. Every block carries its `xpath` — the anchor that lets a consumer re-find the
+node on a later crawl — plus `dom_index` and, when measured, `rect`. Every schema `Fact`
+carries a `Provenance`: `source_url`, `extractor`, `modality` (`dom-json` or `text`),
+`confidence`, `source_xpath`. And in a crawl every `page` event carries a `citation`: which
+page linked here, by what method, through which link text. The `resolve` event's
+`render_error` is provenance of a kind as well: it says when the result is one fetch rather
+than two, and why.
+
+## Page type
+
+`webgraph.pagetype` routes each document to one of `article`, `documentation`, `service`,
+`forum`, `collection`, `listing`, `product` or `unknown` with a gradient-boosted model
+trained on the WCXB development split, reading only what the `Document` already carries
+(URL path, structured payloads, block statistics — never a domain). The type is reported
+with its confidence and reasons. It is not acted on for the whole page — `markdown` and
+`text` are the same whatever the type — and it does select the policy the filtered
+`content_markdown` is drawn with. `unknown` means the default policy.
+
+## Refusals
+
+A page the engine cannot read is an exception, not a document (`webgraph.resolve`):
+
+| Error | When | Says |
+|---|---|---|
+| `PageBlockedError` | the server answered with a wall | `kind` is `login` (redirected to a sign-in page), `challenge` (a bot-management script with no words, vendor named), `undeclared` (the site admits automated clients that say who runs them; set `WEBGRAPH_CONTACT`) or `block` (a page saying the client was refused), and quotes the evidence |
+| `PageDisallowedError` | `robots.txt` disallows the page for this client | the group and rule that decided, and what the site offers instead |
+| `PageMissingError` | HTTP 404 or 410 | `HTTP 404: page does not exist` |
+| `PageShellError` | a JavaScript shell with no readable text, and this request did not render | carries the shell's document, so `/api/extract` can still read its hydration payload |
+
+<Callout type="info">
+On `/api/text` and `/api/extract` these are HTTP 502 with the message as `detail` — except
+`PageShellError` on `/api/extract`, which returns facts from the shell with `render_error`
+set; on the streams they are an `error` event that ends the stream. A wall served to one fetch while
+the other fetch got a real page is not a refusal: that side is left out and named in
+`render_error`.
+</Callout>

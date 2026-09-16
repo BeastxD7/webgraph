@@ -6,6 +6,381 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
+- **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
+  model reads every heading-scoped section and states what it says -- entities of twelve
+  core types plus open ones, typed attributes (price, date, phone, email) and relations --
+  and every row is kept only if the model's verbatim quote is found in a block of that
+  section. The row then cites `url#xpath` and a character span (`Evidence`); a quote not
+  found is rejected and counted by reason. No unverified tier exists in the store.
+  `Section.blocks` (`BlockRef(xpath, kind, start, end)`) is the one change inside `graph/`
+  that makes this possible; section text is byte-identical to before.
+- **Bring your own key.** Three raw-`httpx` adapters (`kg/providers.py`): OpenAI-compatible
+  with a `base_url` (OpenAI, Groq, Together, OpenRouter, DeepSeek, Mistral, xAI, Ollama,
+  LM Studio, vLLM, any custom endpoint), Anthropic (`output_config` json_schema) and Gemini
+  (`responseJsonSchema`), with a `json_schema` → `json_object` → prompt ladder and retries
+  on 408/409/429/5xx. Config per request or from `WEBGRAPH_LLM_*`; the key is excluded from
+  `repr`, never persisted, never traced, and the API's new 422 handler redacts `api_key`
+  and `password` from validation errors (FastAPI echoes the whole body on a missing field).
+  A deterministic `FakeProvider` runs the tests and the CI benchmark.
+- **Build with the bill visible** (`kg/build.py`): the first event is `estimate` (sections,
+  cached sections, input tokens, output at a quarter, USD when prices are configured);
+  caps on pages, sections, input tokens (2M) and dollars stop the build cleanly with
+  `truncated: true`; the LLM cache (`llm_cache` in the site's SQLite file, keyed on prompt
+  version, model, section text and known entities) makes a second build free. Sections
+  are read by page in-degree, then depth. No gleaning, no build-time summaries.
+- **Deterministic merge** (`kg/merge.py`): `(type, norm(name))`, model-declared aliases,
+  open type into same-name core type, MinHash/LSH 3-gram Jaccard ≥ 0.9; JSON-LD/microdata
+  entities enter first and win on a type conflict; a name on more than 60% of pages is
+  `generic` and never expanded through. No LLM-judged dedup.
+- **Store**: one SQLite file per site under `WEBGRAPH_KG_DIR` (`kg/store.py`) with FTS5
+  over entity names and facts (pure-Python scan when FTS5 is missing), in-memory
+  adjacency, `build_runs`, a versioned schema.
+- **Ask, with the path streamed** (`kg/retrieve.py`): FTS5 BM25 seeds ∪ the crawl's
+  section BM25 → two mass-normalised hops → evidence with 35% of slots reserved for rows
+  reached by expansion → one answer call; every factual sentence carries `[n]` citations
+  to `url#xpath`, an uncited sentence is returned `unsupported: true` (never silently
+  kept), "Not stated on this site." is recognised as abstention. Events: `seeds`, `hop`,
+  `evidence`, `answer_delta`, `answer`.
+- **Exports and Neo4j**: JSONL, a portable `MERGE`-only Cypher script, JSON-LD with
+  `prov:wasQuotedFrom` and `oa:XPathSelector` + `oa:TextPositionSelector` per assertion
+  (`kg/export.py`); `kg/neo4j.py` pushes `UNWIND $rows MERGE` batches of 1,000 over bolt
+  (`RELATED {predicate, evidence_ids}` edges, typed edges behind a flag, no APOC) with the
+  official driver as the optional extra `webgraph[kg-neo4j]`.
+- **API** (`apps/api/src/webgraph_api/kg_routes.py`, `WEBGRAPH_KG=1`, otherwise 404
+  naming the flag): `POST /api/graph/build`, `POST /api/graph/query`, `GET
+  /api/graph/stats`, `GET /api/graph` (nodes and edges), `GET /api/graph/entity`, `GET
+  /api/graph/export?fmt=jsonl|cypher|jsonld`, `POST /api/graph/sync/neo4j` (credentials per
+  request, never stored), `DELETE /api/graph`; `/api/health` reports `webgraph`.
+- **CLI**: `webgraph kg build <site>` (from the stored crawl, `--graph` JSONL, `--pages`
+  a directory of saved HTML, or a fresh crawl), `kg ask <site> "question"`, `kg export
+  --format jsonl|cypher|jsonld`, `kg sync-neo4j` (password from `NEO4J_PASSWORD` only).
+- **Benchmark** `benchmark/kg/`: `generate.py` derives typed questions from a site's own
+  JSON-LD with the gold page and block located verbatim; `run.py` scores answer
+  correctness by type, citation precision/recall at page *and block* level,
+  unsupported-sentence rate, abstention, graph statistics and cost, in three modes
+  (`bm25` baseline, `kg`, `kg+sections`); a six-page fixture site with 23 questions
+  (three 2-hop, two not-on-site). **On the fixture with the fake provider the BM25
+  baseline beats the KG on answer correctness (0.86 vs 0.62)** -- the fake's quotes are
+  six-word windows -- and no real model was measured in this PR (no key in the
+  environment, Ollama up with no models). The flag stays on until `kg+sections` beats
+  `bm25` on typed and two-hop questions on three real sites.
+- Docs: `/docs/webgraph` (what it is, the provenance rule, cost controls, the benchmark,
+  what v1 does not do), `/docs/webgraph/providers`, `/docs/webgraph/neo4j`; the
+  deployment configuration table gains `WEBGRAPH_KG`, `WEBGRAPH_KG_DIR`, `WEBGRAPH_LLM_*`.
+- Config: `KG_*` in `config.py` (section "WebGraph"), `DEPLOY_KG`, `DEPLOY_KG_DIR`;
+  `Settings.kg_enabled`, `Settings.kg_dir`.
+- Not in this PR: the web UI (`/graph` with the sigma graph and the live query path) is
+  the next PR; the `/products` WebGraph card stays "coming".
+- Key hygiene over the API: `api_key_env` in a request body may name only the conventional
+  key variables (`kg.providers.KEY_ENVS_A_CALLER_MAY_NAME`; the CLI is unrestricted) -- a
+  free choice plus a caller-chosen `base_url` would have read any variable off the server
+  and posted it as a bearer token; and a preset's key resolves by the `base_url`'s scheme
+  and host, not a string prefix, so `https://api.openai.com.evil.example/v1` gets no key
+  (`TestProviders::test_a_preset_key_goes_only_to_the_preset_host`,
+  `::test_an_untrusted_body_may_not_name_an_arbitrary_variable`,
+  `test_kg_api.py::…::test_api_key_env_cannot_point_at_an_arbitrary_server_variable`).
+### Added (2026-09-16, PR #102) — machine-readable site signals in the report
+- **What the site declares to machines** (`report/signals.py`; `SiteReport.signals`, the
+  CLI's SIGNALS section, `signals` in `POST /api/site/report`, a section of `/report`, a
+  docs section). Twenty-four signals in five groups, each with `present` (true / false /
+  null for not measurable), the detail in the file's own terms, who honours it, the spec
+  URL and a plain-words meaning for the owner ("Your robots.txt tells AI systems they may
+  index it for search and link back and use it as input to AI answers, but should not
+  train AI models on it. Honoured voluntarily by the bots that read Content-Signal; not
+  enforced."). *Declarations to AI*: robots.txt `Content-Signal` read per `User-agent`
+  group (www.cloudflare.com's line sits in its `Cohere-ai` group, and the report says so),
+  IETF aipref `Content-Usage` (header and robots line), `llms.txt` / `llms-full.txt` with a
+  sample of five links checked, `ai.txt`, RSL (`License:` line, `Link rel=license`,
+  `<link>`, inline block, `/rsl.xml`), TDM reservation (header, meta, `tdmrep.json`),
+  `noai` / `noimageai`, the indexing directives from `X-Robots-Tag` and meta robots.
+  *Discovery*: sitemap, feed autodiscovery, Markdown twin (`text/markdown` alternate,
+  `describedby`), IndexNow (not measurable). *Agents*: A2A agent card at
+  `agent-card.json` and the pre-0.3 `agent.json`, `agents.json`, MCP (`mcp.json`, MCP
+  `Link` rels), RFC 9727 `api-catalog` plus `ai-catalog` / `agent-skills`. *Metadata*:
+  JSON-LD `@type`s in the plain HTML, OpenGraph / Twitter, `hreflang`, canonical. *Trust*:
+  `security.txt` (both paths, `Expires` checked), `humans.txt`, web app manifest,
+  speculation rules. A `402` on the root is noted as pay-per-crawl.
+- Every probe is one streaming GET that reads status and headers first and at most a small
+  cap of body (`fetch_capped`: 64 KB, 512 KB for the llms files, 1 MB for the root), paced
+  with the report, skipped when robots.txt disallows the path for this client, under the
+  engine's own User-Agent. Presence is never the status alone: vercel.com answers
+  `/ai.txt`, `/rsl.xml`, `/humans.txt`, `/manifest.json` with its 2.5 MB HTML shell and
+  200, so each signal has a shape test. Typically 12-18 requests.
+- The suggested `robots.txt` gains a commented `Content-Signal` block -- search and AI
+  input yes / training no; or all yes -- with the note that it is a declaration, not
+  enforcement, shown back rather than proposed when the file already has one, and a
+  comment when no feed is advertised. `suggested_security_txt` (RFC 9116 template) is
+  offered when the site has none.
+- `crawl.discovery.parse_groups` keeps `Content-Signal` and `Content-Usage` lines in the
+  group they sit in. `PageReport.has_open_graph`; `LlmsFile` gains `links_checked` /
+  `links_answering` and moves to `report/signals.py` (re-exported).
+
+### Changed (2026-09-16, PR #99)
+- The 10-point *Structured data and page metadata* sub-score's 4 page-field points now
+  count OpenGraph beside title, description and `lang` (four fields; a page with the
+  older three and no `og:*` earns 3 of 4). Weights unchanged; total stays 100. No new
+  sub-score: declarations to AI are choices, not virtues, and agent cards are too rare to
+  score. `llms.txt` stays at 5.
+
+### Added (2026-09-16, PR #101) — Watch
+- `webgraph.watch`: change monitoring on top of the crawl. A watch is a root and a
+  config; `run_watch` / `stream_watch` crawl it again with the previous run's URL set as
+  seeds (`stream_site(..., seeds=)`), compare every page against the last finished run by
+  the engine's `content_hash` first and section by section second
+  (`graph.diff.diff_sections`, now public, over sections cut from the content Markdown),
+  and record `added` / `removed` / `changed` with the section heading and the text on each
+  side. The first run is a baseline. `removed` is claimed only on an HTTP 4xx; a page the
+  cap never reached is `unverified`. No model anywhere: two runs over the same two versions
+  of a site produce the same changes. The `page` event now carries `content_hash`.
+- Noise rules, documented and configurable (`config.WATCH_NOISE_PATTERNS`,
+  `WATCH_NOISE_MIN_WORDS`; per watch `noise_patterns`, `noise: false`): a block whose text
+  *is* a date, a time or a counter -- patterns removed, fewer than three alphabetic words
+  left -- is left out before two versions of a section are compared; a sentence that
+  contains one is compared; query strings are stripped from link and image targets.
+  Navigation, footers and comments are already gone (the content Markdown); the
+  main-content boundary is off for a watch unless asked, because a watched page is as
+  likely a list of circulars as an article. A page whose blocks all survive and merely sit
+  under different headings is suppressed too -- measured on vtu.ac.in's front page, two
+  static fetches 11 minutes apart put the same social-links list under different headings.
+  Every run reports how many pages it `suppressed`.
+- Storage: one SQLite file, standard library only, `~/.cache/webgraph/watch.sqlite3`
+  (`XDG_CACHE_HOME`, `WEBGRAPH_WATCH_DB`): `watches(id, root, config_json, created_at,
+  schedule_seconds)`, `runs(id, watch_id, started_at, finished_at, pages_ok, pages_failed,
+  stopped_by)`, `pages(run_id, url, content_hash, title, markdown, fetched_at, strategy,
+  error, sections_json)`, `changes(id, run_id, watch_id, url, kind, before_hash,
+  after_hash, diff_json, detected_at)`.
+- `export_changes(fmt="json" | "md" | "rss" | "atom")`: an RSS 2.0 or Atom 1.0 feed of
+  changes, one entry per change titled with the page and its section headings -- the
+  cheapest "notify me" there is, and a university's circulars as a feed (the research
+  found VTU's reach 16,600 people through a volunteer Telegram channel that reposts them
+  by hand).
+- CLI: `webgraph watch create <url> [--max-pages] [--complete] [--no-noise] [--config]`,
+  `watch list`, `watch run <id> [--fail-on-change]` (non-zero on change, for a scheduled
+  job), `watch changes <id> [--since 12h|ISO|epoch] [--format md|json|rss|atom]`.
+  `webgraph diff --fail-on-change` remains. `.github/workflows/example-watch.yml` is an
+  Action that runs a watch and opens an issue with the digest; shipped with a manual
+  trigger only and its six-hourly `schedule` commented out, so it never runs unattended.
+- API: `POST /api/watch`, `GET /api/watch`, `GET /api/watch/{id}`, `DELETE /api/watch/{id}`,
+  `POST /api/watch/{id}/run` (SSE: the crawl's events plus `watch`, `change`, `done`;
+  the same crawl slot, trace and caps as `/api/site/stream`), `GET /api/watch/{id}/changes?since=`,
+  `GET /api/watch/{id}/feed.xml[?format=atom]`.
+- Web: `/watch` -- the watches, a URL to add one, "Run now" streaming the run, and the
+  changes per watch (kind, page, section heading, before and after, when), in the design
+  system, both themes, phone width. "Watch" in the header; a fifth product card, marked
+  available (the grid's odd last card spans the row). Docs: `/docs/watch`.
+- Tests (fail on the base branch): `packages/engine/tests/test_watch.py` (47: store round
+  trip; two versions of a local site -- one page added, one gone, two changed with the
+  section heading and the text on each side, the front page's bumped timestamp and
+  counter suppressed; a 500 is not a removed page; a page behind the cap is unverified;
+  noise rules on 19 blocks; RSS and Atom well-formed with every required element; the CLI
+  end to end), `apps/api/tests/test_api.py::TestWatch` (4).
+
+### Changed (2026-09-16, PR #98) — landing page motion and docs alignment
+- The landing page is a scroll-driven story on one sticky, code-drawn stage
+  (`components/landing/Story.tsx`, `Stage.tsx`, `scene/scene.ts`): the promise (the hero;
+  eight blocks drop in, settle, are numbered in reading order and typed out as Markdown), the
+  pain (a cookie banner, a login modal, a 503, off-screen links and a `display:none` dialog
+  fall onto the page in oxide red; what a naive reader emits is listed beside them), the turn
+  (a plain fetch and a Chromium render converge, a scan refuses each wall in the engine's own
+  words and leaves the XY-cut behind), the result (Markdown in reading order, `recall 1.000
+  on 22 of 29 sites · floor 0.945` from `FIDELITY`, a graph of the site, the Site Truth
+  Report card, linking to `/report`), then the proof and the prompt. The scene is hand-written
+  Canvas 2D -- gravity and a bounce for falling blocks, critically damped springs to their
+  slots, an impulse and fade for refused ones -- with no library; the landing route's JS
+  grows 176.7 → 183.5 KB gz (+6.8). Without JavaScript the stage is a server-rendered SVG of
+  the final frame; under `prefers-reduced-motion` it is four still frames and nothing on the
+  page is hidden. Reveals, count-ups and the standings' score bars come from one
+  IntersectionObserver (`Motion.tsx`). The ground is CSS: a green field and a warm glow that
+  travel with the stage, edge blobs, a 48px ruled grid and a 0.04 grain, kept off the copy
+  columns and measured (dark ≥ 7.6:1; light `muted` 6.9:1 at the darkest grain pixel, 7.1:1
+  on the mean ground). `Hero.tsx` and `Pipeline.tsx` are folded into the story with their
+  copy; the URL prompt closes the page as `#start`.
+- Docs: the article is centred between the sidebar and the table of contents --
+  `#nd-page` capped at 76ch plus padding inside Fumadocs' centred `main`, `.prose` at 76ch,
+  `--docs-max` 87.5rem (the owner's ~1400px, over DESIGN.md's 90rem). Content unchanged.
+
+
+### Changed (2026-09-16, PR #94) — a crawl has limits by default
+- `CRAWL_MAX_PAGES` is 500, not 0. `0` still means unbounded and now has to be asked for:
+  the API's `SiteRequest.max_pages` defaults to the engine's cap, and the web app leaves
+  the field out unless a cap was given, so the API's default applies rather than `0`. Two
+  new limits beside it: `CRAWL_MAX_SECONDS` (3,600; `SiteRequest.max_seconds`) ends a run
+  by wall time, checked between batches; `CRAWL_MAX_QUEUE` (20,000; `crawl.max_queue`)
+  stops the frontier accepting addresses past that many queued -- a refused address is not
+  marked seen, so it is taken if linked again once the queue has drained. The `done` event
+  says which limit ended the run in `stopped_by` (`"pages"`, `"time"`, `"queue"`, or
+  `null` when the frontier ran dry or the caller stopped it), repeats the caps in `limits`,
+  and counts `queue_refused`; `exhausted` is now false for a run whose frontier had turned
+  addresses away. The reason: a whole-site run of vtu.ac.in with the old defaults ran six
+  hours, held six gigabytes, and was stopped by hand (#87).
+- Files are counted, not fetched. A link whose `url_kind` is `pdf`, `image` or `other_file`
+  (`FILE_KINDS`) is tallied in `discovered_kinds`, recorded with the page that linked to it
+  and the link's text (the frontier's `skipped`, `skipped_urls` and a citation in
+  `origin`), and never requested. The `done` event carries `skipped` by kind,
+  `skipped_total`, and the first `CRAWL_SKIPPED_URLS_REPORTED` (200) addresses with their
+  citations -- a university's circulars as a list, none fetched. `SiteConfig.fetch_files`
+  (`crawl.fetch_files`) queues `.pdf` links as before, for a caller that wants the refusals
+  on record. vtu.ac.in spent a third of six hours fetching 5,730 PDFs to refuse each.
+- `stream_site` no longer holds every page until the end of the run. The full pages are
+  kept only until cross-page chrome is known (six of them, released the moment it is); after
+  that each page keeps its URL, its facts and its schema.org payloads -- what
+  `_aggregate_entities` and the site facts read -- and its blocks, Markdown and images go
+  (`_kept`). The `page` event already carried each of them to the consumer. Measured on
+  sode-edu.in, 300 pages, four workers, `union`, same machine and hour: peak RSS of the
+  crawl process 412 MB -> 332 MB, 715 s -> 484 s, 25.2 -> 37.2 pages/min, 25 PDFs fetched
+  and refused -> 199 counted and not fetched.
+- The crawl loop keeps its pool full and refills it as each page lands, instead of running
+  batches of `concurrency` pages that start together and end when the slowest does. With
+  the per-host interval a batch of four took slots 0-3 s apart and paid that tail every
+  time -- measured 20.1 pages/min against 25.2 before -- and the rolling pool removed it
+  along with the tail the batches always had (37.2). `fetching` events now carry
+  everything in flight, sent whenever that set changes; the time limit and the caller's
+  stop are checked as each page lands, and pages already in flight are finished and
+  reported.
+- Politeness is per host, not per worker. `CRAWL_HOST_INTERVAL_SECONDS` (1.0;
+  `crawl.host_interval_seconds`) is a minimum interval between two pages from the same host
+  across every worker of a crawl, enforced by a shared throttle that reserves the next slot
+  under a lock (`crawl/politeness.py`); the site's `Crawl-delay` replaces it when larger.
+  Before, `max(delay_seconds, crawl_delay)` was slept per worker, and `Crawl-delay: 1` with
+  four workers was four requests a second. `delay_seconds` (0.3) is still the per-worker
+  pause. Under `union` a page is two requests made together; the interval spaces pages.
+- API: `SiteRequest.max_seconds`; `CrawlOptions.fetch_files`, `max_queue`,
+  `host_interval_seconds` (all in `/api/config`'s `overridable.crawl`); the `run` header
+  reports the five limits applied. Web: `DoneEvent.stopped_by`, `limits`, `skipped`,
+  `skipped_urls`; the run summary says which limit ended the run and how many files were
+  counted and not fetched, instead of inferring "the page cap" from `!exhausted`.
+- Tests: `packages/engine/tests/test_crawl_limits.py` (defaults; `stopped_by` for each
+  limit, for a cap that lands on the last page, and for the caller's stop; a `.pdf` link is
+  never resolved but is counted and cited, and `fetch_files` restores the fetch; retention
+  keeps entity payloads and facts and drops blocks; the throttle spaces two real workers);
+  `apps/api/tests/test_api.py::TestCrawlLimits` (request defaults, `/api/config`, `done`
+  carries `stopped_by`, a local server records that the PDF was never requested).
+
+### Added (2026-09-16, PR #95) — Site Report
+- `webgraph report <url> [--pages N] [--json]`, `POST /api/site/report` and `/report` in
+  the web app: what a site shows people, what it shows machines, and how ready it is for
+  AI agents, from the measurements the engine already makes. For the root and up to four
+  more pages (one per path section the root links to), each fetched plainly and in a real
+  browser: words without JavaScript against words with it (`ResolvedPage` now carries
+  `static_words / rendered_words / union_words` beside the character counts, and
+  `static_error` says why the plain fetch gave nothing -- an HTTP error, a wall left out);
+  which side was walled; words and links a reader cannot see, by kind, with links parked
+  off the page and the foreign hosts they point at counted apart from `display: none`
+  dropdowns; consent words; dead internal links (HEAD, 30 per page, each address once per
+  report); title, description, canonical, `lang`, JSON-LD / microdata. Site-wide: the
+  stack with versions dated against a verified release table (WordPress 4.0-7.1, Drupal
+  7-11, Joomla 3-6, Next.js 13-16), `robots.txt`, sitemaps, `/llms.txt`.
+- **What robots.txt declares per bot.** The engine never fetches as another bot. For
+  fifteen well-known AI and search bots (GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot,
+  Claude-Web, anthropic-ai, PerplexityBot, Google-Extended, Googlebot, Bingbot, CCBot,
+  Applebot-Extended, meta-externalagent, Bytespider, Amazonbot) the report reads the site's
+  file as that bot would (RFC 9309: the groups naming it, combined; `*` otherwise) and
+  says allowed / restricted / blocked at the root, how many `Disallow` lines decide
+  something, any `Crawl-delay`, and the lines verbatim. `crawl.discovery.parse_groups` is
+  the one robots.txt group parser, shared with `group_for_client`.
+- **An AI-readiness score out of 100** from eight documented sub-scores -- readable
+  without JavaScript 25, robots does not block AI bots wholesale 20, no walls 15, sitemap
+  10, structured data and metadata 10, no hidden or injected content 10, llms.txt 5, dead
+  links 5 -- each with its evidence and a recommendation in plain words; an unmeasured
+  part is left out and the total rescaled to the measured weight. llms.txt's five points
+  and its "optional" label cite the reason: 97% of such files get no requests (Ahrefs,
+  June 2026). The robots sub-score says it measures reach, not virtue, and never
+  recommends blocking.
+- **Integrity**: "Likely SEO-spam injection" only when `REPORT_SPAM_MIN_HOSTS` (5) or more
+  foreign hosts are linked from elements parked off the page on one page -- vtu.ac.in: 174
+  off-screen links to 170 foreign hosts on every sampled page, beside 187 legitimate
+  affiliated-college hosts in its hidden dropdowns, which are not a verdict; an outdated
+  CMS (WordPress 5.1.1, released 2019-02-21, 7.6 years); walls; unreadable pages. One
+  finding per kind across the sampled pages.
+- **Suggested files**: a `robots.txt` that keeps the site's existing file byte for byte
+  and appends only comments -- two variants, allow all or allow search/assistant bots and
+  disallow training crawlers, the owner's choice -- and an `llms.txt` draft per
+  llmstxt.org from the sampled titles and descriptions, marked optional.
+- A walled or disallowed root ends the report with the engine's own refusal and no score.
+  The plain fetches identify themselves as webgraph, the browser fetch is a real Chromium
+  under its own User-Agent, both obey robots.txt, and the report's own requests are spaced
+  `REPORT_REQUEST_INTERVAL_SECONDS` (1 s) apart per host; the report's footer says so,
+  with the engine version and commit, pages sampled and duration.
+- Web: `/report?url=…` and `/report/<domain>`; "Report" in the nav; the `/products` Site
+  Truth Report card is now available with a "Run a report" CTA. Docs:
+  `/docs/site-report`. Config: `REPORT_PAGES`, `REPORT_MAX_PAGES`,
+  `REPORT_REQUEST_INTERVAL_SECONDS`, `REPORT_DEAD_LINK_CHECKS_PER_PAGE`,
+  `REPORT_SPAM_MIN_HOSTS`, `REPORT_STACK_OLD_YEARS`.
+- Measured on five live sites (2026-09-16): vtu.ac.in 74/100 (injection + WordPress
+  5.1.1), sode-edu.in 74, vercel.com 90, docs.python.org 83, gov.uk 81; the numbers and
+  their evidence are in the pull request. Extraction is untouched.
+
+### Changed (2026-09-16, PR #93) — landing page, products page, design tokens
+- The landing page is rebuilt from the design spec. The hero photograph, its glass prompt,
+  its CC BY credit and the light-only commitment are gone; the page is the ground colour,
+  one display line ("The honest web reader."), the URL prompt, and four measured numbers
+  with their caveats beside them (WCXB 0.862 dev split, first of seven by a margin the
+  board calls a tie; WCEB 0.883 with content and comments joined, content alone 0.856;
+  route recall 98.1% on 96 sites against a real-browser oracle, static alone 31.0%; 0%
+  wrong-value rate). Two columns list what the engine refuses, in its own error messages,
+  and what it drops because a reader would not have seen it; three steps say how a page is
+  read; a five-board table gives this engine's score, the leader's and the place in words,
+  scrape-evals marked "not a ranking". Every figure is read from `lib/benchmarks.ts`
+  (`selfScore`, `leaderScore`, new `ROUTE_RECALL`, `FIDELITY`, `WCXB_TEST`,
+  `RENDER_PREDICTION`); the earlier `Pipeline.tsx` copy with 132 rules across 18
+  categories is replaced.
+- `/products`: one composed 2×2 grid. Crawler and CLI are marked available (a filled dot);
+  WebGraph -- an LLM-built knowledge graph of a site with every node and edge cited to its
+  page and block -- and Site Truth Report -- what a site shows people against what it sends
+  crawlers, grounded in vtu.ac.in's ~60 off-screen gambling links per page (#88) -- are
+  marked coming soon (a hollow ring). The chip carries the state in word and form; nothing
+  coming soon is described as existing.
+- Design tokens: `globals.css` now carries the spec's `tokens.css` -- light values on
+  `:root`, a system-dark block and a `data-theme="dark"` block that wins over it, mapped
+  onto Tailwind with `@theme inline` so utilities follow the theme; a type scale as
+  utilities (`text-display` … `text-stat`); three radii (4 / 6 / 10px, replacing the
+  Tailwind ramp so the run view's `rounded-2xl` panels flatten to 10px); one shadow, for
+  things that float; reduced motion collapses every transition and turns the running dot
+  into a static ring. The `--color-fd-*` bridge for the docs shell is in place. The run
+  view, benchmarks, how-it-works and settings keep their earlier utility names through an
+  alias block (`ink-soft`→`muted`, `ink-faint`→`faint`, `haze`→`ground`,
+  `line`/`line-soft`→`rule`, `line-strong`→`rule-strong`, `leaf-*`→`accent`/`accent-ink`/
+  `accent-soft`, `clay`/`flag-warn`→`warn`, `flag-bad`→`bad`, `shadow-lift`→`shadow-float`);
+  `shadow-card` and `shadow-glass` are not aliased and now emit nothing.
+- One header and footer for every page, from `layout.tsx`: Home, Products, Docs (the route
+  is being built alongside), Benchmarks, How it works, GitHub; a theme toggle cycling
+  System → Light → Dark, written to `data-theme` on `<html>` and remembered in
+  `localStorage` under next-themes' key so the docs shell can share it; a "Run a site"
+  button to `/#start`. Below 900px the items fold behind a "Menu" button that opens a
+  full-width sheet with 48px rows. The bar takes the surface colour and a rule after 8px of
+  scroll. The run view's banner loses the photograph band and its duplicate back link.
+  Under `/docs` the header and footer step aside (`SiteChrome`): the docs shell draws its
+  own bar and sidebar, and two navigations on one page is one too many.
+- Known and open: `app/docs/docs.css` is a second Tailwind entry, and its utilities land
+  after `globals.css`'s in the shared `utilities` layer. Once `/docs` has been visited the
+  stylesheet stays loaded across client-side navigation, and any `hidden md:flex`-style
+  pair on the rest of the site then loses to the docs copy of `.hidden` (measured: the
+  nav collapsed to "Menu" at 1280px after visiting the docs). The new components write
+  symmetric `max-md:` / `md:` pairs so no base utility is left to be overridden; the
+  older pages (`/benchmarks`, `/how-it-works`, `/settings`, the run view) still carry
+  such pairs. The fix is one Tailwind entry -- the Fumadocs preset imported from
+  `globals.css`, as DESIGN.md §4c has it -- and belongs with the docs shell.
+- Measured with Playwright at 1280 and 400px, light and dark: no page scrolls
+  horizontally; the phone gutter is 16px; buttons are 44px under a coarse pointer; a
+  remembered theme is on `<html>` at DOMContentLoaded (a `next/script` beforeInteractive
+  variant was measured to set it after, and was not used).
+
+### Added (2026-09-16, PR #92) — documentation site
+- The web app serves documentation at `/docs`, built with Fumadocs from MDX files under
+  `apps/web/content/docs/`. The sidebar has seven sections in a fixed order -- getting
+  started, API, how it reads a page, crawling, benchmarks, deployment, contributing --
+  each a placeholder page for now; the content follows in this pull request series. The
+  landing page carries the README's opening and a card per section. Built-in full-text
+  search (`/api/search`), a table of contents per page, light and dark themes, and a
+  "Docs" link in the site header.
+- The docs use the site's own palette and type (haze, ink, leaf; Manrope, JetBrains Mono,
+  Instrument Serif for the title) and are styled by a stylesheet loaded only under
+  `/docs`; the dark palette applies only while the docs layout is on the page, so the
+  rest of the site renders exactly as before, also after navigating away from the docs.
+  `apps/web/content/docs/_authoring.md` says how to add a page, what frontmatter it takes
+  and which components are available.
+
 ### Fixed (2026-09-15, PR #90) — a block's XPath is the geometry map's
 - The browser's measurements are keyed by each element's XPath in a fresh parse; the
   block walk removes hidden twins, clipped labels, permalinks and unreachable trays and

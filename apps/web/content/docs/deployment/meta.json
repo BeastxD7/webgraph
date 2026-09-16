@@ -1,0 +1,8 @@
+{
+  "title": "Deployment",
+  "pages": [
+    "configuration",
+    "docker",
+    "operations"
+  ]
+}

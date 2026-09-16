@@ -1,0 +1,117 @@
+---
+title: Markdown
+description: What the whole-page Markdown carries, how each block kind is written, and how it differs from the plain text.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+Plain text destroys most of what a page means. A flattened table loses which column a
+value belonged to; a stripped link loses where it pointed; a heading becomes an
+indistinguishable line. `render_markdown.py` writes the ordered blocks as Markdown because
+it is the format that survives the trip — a model, an index or a document store can use
+it without re-inferring the structure the page already had. Blocks arrive in reading
+order, so the Markdown reflects how a person reads the page rather than how the HTML was
+authored.
+
+## What each block becomes
+
+| kind | Markdown |
+|---|---|
+| heading | `## text`, level clamped to 1–6 after `heading_offset` |
+| paragraph | the text; a `<br>` is a hard break (`\` at line end), a blank line stays a paragraph break |
+| list item | `- ` or `1. `, indented two spaces per nesting level; a continuation paragraph indented under the bullet |
+| `<dt>` / `<dd>` | `**term**` on one line, `: definition` on the next — the Markdown Extra / Pandoc / kramdown form |
+| table | pipes, header row then `---` row, ragged rows padded; or the table's own cleaned HTML when a cell spans or a table nests |
+| code | a fence, tagged with the declared language (`python`, `js`); text verbatim |
+| quote | `> ` per line; a block inside a structural blockquote gets `> ` per level |
+| image | `![alt](src)`, or `[![alt](src)](link)` when a link wraps only the image |
+| figure caption | `*caption*` |
+| rule | `---` |
+| media | `*[Media not transcribed.]*` — an italic note, so nobody mistakes it for content |
+
+Consecutive list items form one list. A definition follows its term on the next line
+without a blank between them; two terms in a row each get their line, because a DocBook
+table of contents is a `<dl>` of terms with no definitions (catb.org).
+
+**Definition lists** were chosen in this form because CommonMark has no definition lists,
+and under a CommonMark reader `**term**` then `: definition` still reads as *one*
+paragraph with the term marked and the association kept, where an indented paragraph
+after a blank line is just another paragraph. cl.cam.ac.uk's Unicode FAQ and every php.net
+parameter list were coming out as alternating paragraphs (PR #75).
+
+**Tables** render as pipes when pipes can say what the table says, and as the table's own
+markup when they cannot — a `<td colspan="3">` rendered as pipes drops the merge and
+shifts every value beneath it into the wrong column, which corrupts data rather than
+reformatting it. On WebMainBench's pages whose truth holds an HTML table, a pipe rendering
+caps at 0.445 where the table's own markup reaches 1.000. Rendering a table as pipes when
+its only span was a full-width title row was measured and rejected (table_edit 0.3365 →
+0.3305; the corpus writes that shape as HTML six times and as pipes once).
+
+## The switches
+
+<Tabs items={['include_links', 'include_images', 'include_tables']}>
+<Tab value="include_links">
+On by default. A block's `rich_text` — inline links, emphasis and code — is used when links
+are on; the plain `text` otherwise. A pipe table's cells carry their links (`rich_rows`)
+**only when links are on**: PR #68 rendered `[text](href)` into every cell regardless,
+and WebMainBench, which scores with links off, lost table_edit 0.390 → 0.338 unnoticed
+for six pull requests (fixed in PR #78). A preserved HTML table honours the same switch,
+unwrapping its `<a>` elements.
+</Tab>
+<Tab value="include_images">
+On by default: on many pages the alt text and caption around an image carry information
+available nowhere else in the markup. Off, image blocks are skipped and `<img>` elements
+are stripped from a preserved HTML table.
+</Tab>
+<Tab value="include_tables">
+On by default. Off, table blocks are skipped entirely.
+</Tab>
+</Tabs>
+
+## `text` against `markdown`
+
+`Block.text` stays plain; the Markdown form lives in a separate `Block.rich_text`.
+De-duplication, the content hash and reading order all key on the plain form — folding
+Markdown syntax into it would change every hash and make two renderings of one sentence
+look like different content.
+
+`Document.text` is the blocks' plain text in reading order, joined by blank lines, and it
+is *not* everything the Markdown carries. Image alt text and media placeholders are left
+out: an image block's `text` is its alt, kept so the Markdown can carry it, but no reader
+saw it as text — ikea.com's bookcase category emitted 613 words of alt text ("A tall,
+white BILLY bookshelf with multiple shelves…") that no annotator marked. Rules have no
+text at all. Callers that relied on alt text in `text` should read the Markdown.
+
+<Callout type="info">
+This is also a measurement lesson. The first engine-versus-trafilatura comparison reported
+danluu.com as "51.8% of content missing"; trafilatura had been called with
+`include_links=True`, inflating its count with `[text](url)`, while the engine emitted no
+links at all. Plain against plain, the two were 8,945 vs 9,138 characters — 98%
+agreement. Compare like with like.
+</Callout>
+
+## Dollars
+
+Every Markdown dialect a model reads delimits mathematics with `$…$`, so an unescaped
+currency amount silently becomes a formula, and a *pair* of them becomes a formula
+containing all the prose between. Measured on WebMainBench: 18 of 200 pages with no
+mathematics were scored as emitting formulas, because of sentences like `spends $29.8
+billion … a surplus of $344 million`.
+
+The rule is a dollar followed by a digit is money and is escaped; nothing else is. It was
+measured rather than guessed: escaping every `$` fixed the false positives and broke the
+true ones (the formula column's page count fell from 282 to 130). In the corpus's own
+truth an escaped dollar is followed by a digit 953 times of 1,221, while a bare one is
+followed by a space, a backslash beginning a LaTeX command, or another `$`. Because
+mathematics may also begin with a digit (`$0.07^{7}$`), a span that contains a backslash,
+caret, underscore or brace is located first and left alone. This applies to the Markdown
+only; the plain `text` is not Markdown and nothing in it is a delimiter.
+
+## Hard breaks
+
+`<br>` is a line break and `<br><br>` a paragraph break (PR #63). An address keeps its
+lines as Markdown hard breaks; a `<br><br>`-separated article — the paragraphs of a
+pre-CSS page, a forum post, an email pasted into a `<div>` — becomes paragraphs, as it
+would have with `<p>` tags; headings, captions and list items stay one line. Source
+newlines still collapse to spaces, as HTML says they should.

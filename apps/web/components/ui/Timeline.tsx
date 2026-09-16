@@ -35,10 +35,10 @@ export interface TimelineStep {
 }
 
 const DOT: Record<TimelineState, string> = {
-  done: "bg-leaf-600 text-white",
-  running: "bg-leaf-100 text-leaf-700 animate-[breathe_1.8s_ease-out_infinite]",
-  failed: "bg-flag-bad text-white",
-  stopped: "bg-ink-faint text-white",
+  done: "bg-leaf-600 text-inverse",
+  running: "is-running bg-leaf-100 text-leaf-700 animate-[breathe_1.8s_ease-out_infinite]",
+  failed: "bg-flag-bad text-inverse",
+  stopped: "bg-ink-faint text-inverse",
 };
 
 const BADGE: Partial<Record<TimelineState, string>> = {

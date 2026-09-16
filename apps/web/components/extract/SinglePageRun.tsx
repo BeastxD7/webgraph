@@ -246,7 +246,7 @@ export default function SinglePageRun({ url }: { url: string }) {
   }, [url, presetIndex]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 px-5 pb-20 sm:px-8">
+    <div className="page-col space-y-5 pb-20">
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[13.5px] font-semibold">
           {loading ? "Extracting…" : error ? "Failed" : "Extracted"}

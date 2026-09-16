@@ -309,14 +309,44 @@ ROUTER_MIN_CONFIDENCE = 0.5
 # Crawling a whole site
 # ======================================================================================
 
-# Pages to extract. 0 = unbounded, until the frontier is exhausted.
-CRAWL_MAX_PAGES = 0
+# Pages to attempt before the crawl stops, refusals included. 0 = unbounded, until the
+# frontier is exhausted -- an explicit ask, never the default: a whole-site run of
+# vtu.ac.in with no cap ran six hours and held six gigabytes (PR #87, #94).
+CRAWL_MAX_PAGES = 500
+
+# Seconds a crawl may run before it stops, measured from the start of the analysis and
+# checked as each page lands. 0 = no time limit. The `done` event says
+# `stopped_by: "time"` when this ended it.
+CRAWL_MAX_SECONDS = 3600
+
+# Queued addresses beyond which the frontier stops accepting new ones. Discovery on a
+# large site outruns extraction by an order of magnitude (vtu.ac.in: 17,126 found, 12,761
+# fetched), and every queued address is held in memory. 0 = no limit.
+CRAWL_MAX_QUEUE = 20_000
+
+# Fetch links to PDFs and other files. Off, they are counted (`discovered_kinds`), cited
+# (`skipped_urls`, with the page that linked to each) and never requested: the engine has
+# no document pipeline, so a fetched PDF is refused, and 5,730 of them cost a third of a
+# six-hour run. On, `.pdf` links are queued as pages were before (#94).
+CRAWL_FETCH_FILES = False
+
+# How many skipped file addresses the `done` event lists in full (with their citations).
+# The count by kind is always complete; the list is capped so one event cannot carry
+# thousands of lines.
+CRAWL_SKIPPED_URLS_REPORTED = 200
 
 # Pages fetched in parallel within one crawl.
 CRAWL_CONCURRENCY = 4
 
-# Pause between fetches per worker, in seconds.
+# Pause between fetches per worker, in seconds. Per worker: with four workers this alone
+# allows four requests a second. The per-host interval below is what bounds the site's load.
 CRAWL_DELAY_SECONDS = 0.3
+
+# Minimum seconds between two requests to the same host, across every worker of a crawl.
+# 1.0 = at most one page a second per host, whatever the concurrency; the site's
+# `Crawl-delay` replaces it when larger. Under `union` a page is two requests (plain and
+# rendered) made together; the interval spaces pages, not requests.
+CRAWL_HOST_INTERVAL_SECONDS = 1.0
 
 # How many links away from the root the crawl goes. 0 = the root alone; 1 = the root and
 # everything it links to; and so on. The crawl is breadth-first: every page at depth n is
@@ -391,6 +421,54 @@ MAX_ANCHOR_CHARS = 160
 IDENTICAL_CONTENT_WARNING = 3
 
 # ======================================================================================
+# Watch (change monitoring)
+# ======================================================================================
+
+# A block whose text is a date, a time or a counter -- rather than a sentence that contains
+# one -- is left out before two versions of a section are compared. Each pattern is removed
+# from the block's text; if fewer than WATCH_NOISE_MIN_WORDS alphabetic words remain, the
+# block was the pattern and is ignored; a block no pattern touches is always compared.
+# Case-insensitive. The rule is deliberately narrow: "Results announced on 12/09/2026" is a
+# sentence and is compared; "12/09/2026" alone, "Last updated: 12 Sep 2026",
+# "Visitors: 1,204,551" and "10:42 am" are not. Known edge: a block that is only a label
+# and a four-digit number ("Total seats: 1200") reads as a counter and is ignored.
+WATCH_NOISE_PATTERNS = (
+    # Dates: 12/09/2026, 2026-09-12T10:42:00Z, 12.09.26, 12 Sep 2026, September 12, 2026.
+    r"\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b",
+    r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b",
+    r"\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?,?\s+\d{2,4}\b",
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{2,4}\b",
+    # A weekday only when written as a date's prefix: "Friday, 12 ..." or "Fri 12".
+    r"\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day|nesday|rsday|urday)?\b,?(?=\s+\d)",
+    # Times: 10:42, 10:42:07, 10:42 am, 22:15 IST.
+    r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?\s*(?:[A-Z]{2,4}|UTC[+-]\d{1,2}(?::\d{2})?)?\b",
+    # The label of a timestamp: "Last updated on", "Published:", "Page generated in".
+    r"\b(?:last\s+)?(?:updated|modified|published|posted|generated|revised|refreshed)(?:\s+on|\s+at|\s+in)?\b:?",
+    # A counter: a label beside a number, either way round; "You are visitor number 1204".
+    r"\b(?:visitors?|views?|hits|visits|online|users\s+online|page\s*views?|total\s+visitors?|counter)\b\s*:?\s*\d[\d,.]*",
+    r"\b\d[\d,.]*\s*(?:visitors?|views?|hits|visits|online|page\s*views?)\b",
+    r"\byou\s+are\s+visitor\s+(?:number|no\.?)?\s*\d[\d,.]*",
+    # Counter-shaped numbers on their own: four or more digits, or thousands separators.
+    r"\b\d{1,3}(?:,\d{3})+\b",
+    r"\b\d{4,}\b",
+    # Relative times.
+    r"\b\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b",
+    r"\bjust\s+now\b",
+    # Copyright lines.
+    r"(?:©|\(c\)|copyright)\s*\d{4}(?:\s*[-\u2013]\s*\d{4})?",
+)
+
+# Alphabetic words a block must keep, once the noise patterns are removed, to be compared.
+WATCH_NOISE_MIN_WORDS = 3
+
+# Characters of a section's text kept on each side of a recorded change. Provenance is the
+# heading and the page; the text is context, and a 40 kB table is not context.
+WATCH_SECTION_TEXT_CHARS = 2_000
+
+# Sections reported per changed page before the page counts as rewritten.
+WATCH_MAX_SECTIONS_PER_PAGE = 40
+
+# ======================================================================================
 # Knowledge graph
 # ======================================================================================
 
@@ -420,12 +498,86 @@ GRAPH_MENTION_WEIGHT = 0.25  # weight of an entity mention against a text match
 GRAPH_HEADING_WEIGHT = 3  # a match in a heading counts this many times
 
 # ======================================================================================
+# WebGraph: the inferred knowledge graph (`webgraph.kg`, behind WEBGRAPH_KG)
+# ======================================================================================
+
+# A section shorter than this many characters is not sent to the model: too little text
+# to state a fact with a verifiable quote, and the prompt overhead dwarfs it.
+KG_MIN_SECTION_CHARS = 120
+
+# Sections extracted in parallel. Each is one model call; four keeps a laptop's local
+# model busy without tripping a hosted provider's rate limit.
+KG_CONCURRENCY = 4
+
+# Caps a build stops cleanly at, reporting truncated=true. 0 = no cap. Input tokens are
+# estimated at four characters each before any call is made (the `estimate` event).
+KG_MAX_PAGES = 0
+KG_MAX_SECTIONS = 0
+KG_MAX_INPUT_TOKENS = 2_000_000
+KG_MAX_USD = 0.0
+
+# Extra extraction passes over each section ("gleaning"). GraphRAG's default of one
+# doubles the bill for a few more relations; off here, and measured before it is turned on.
+KG_GLEANINGS = 0
+
+# Two names for one entity are merged when their 3-gram shingle sets overlap by at least
+# this Jaccard score and the type agrees. 0.9 catches typos and spacing, not synonyms.
+KG_MERGE_JACCARD = 0.9
+
+# An entity named on more than this share of pages is kept but never expanded through: it
+# is the site's own name, and a hop through it reaches everything, which reaches nothing.
+KG_GENERIC_PAGE_SHARE = 0.6
+
+# Retrieval: seeds from the entity and fact indexes, then this many hops of expansion,
+# capped so a hub cannot flood the evidence set; `decay` is the per-hop score multiplier.
+KG_MAX_HOPS = 2
+KG_HOP_DECAY = 0.5
+KG_MAX_ENTITIES = 60
+KG_MAX_RELATIONS = 150
+
+# Evidence handed to the answer model, and the share of it reserved for rows reached by
+# expansion rather than by the seed match (the `Budget.neighbour_share` lesson).
+KG_MAX_EVIDENCE = 24
+KG_GRAPH_EVIDENCE_SHARE = 0.35
+
+# Model output longer than this many characters per section is discarded as runaway.
+KG_MAX_OUTPUT_CHARS = 40_000
+
+# ======================================================================================
 # Technology profiling
 # ======================================================================================
 
 # Script bundles fetched to fingerprint frameworks, and the total bytes read.
 PROFILE_MAX_SCRIPTS = 4
 PROFILE_MAX_TOTAL_BYTES = 3_000_000
+
+# ======================================================================================
+# Site report (what a site shows people, what it shows machines, how ready it is for agents)
+# ======================================================================================
+
+# Pages a report samples: the root, then the first internal links the root offers, one per
+# path prefix where the root links to several sections. Each is fetched both ways.
+REPORT_PAGES = 5
+
+# Most pages one report may sample, whatever the caller asks for.
+REPORT_MAX_PAGES = 10
+
+# Seconds between the report's own requests to one host -- pages, robots.txt, llms.txt,
+# sitemaps, dead-link checks. One a second at most; a report is a courtesy call.
+REPORT_REQUEST_INTERVAL_SECONDS = 1.0
+
+# Internal links checked for a dead answer (HEAD, GET on 405; status >= 400) per sampled
+# page. Each address is checked once per report, however many pages link to it.
+REPORT_DEAD_LINK_CHECKS_PER_PAGE = 30
+
+# Distinct external hosts linked from hidden or off-screen elements before the report
+# calls it a likely SEO-spam injection. vtu.ac.in carried ~60 such links to dozens of
+# gambling hosts per page (14 Sep 2026); a site's own off-canvas menu links to one host.
+REPORT_SPAM_MIN_HOSTS = 5
+
+# A CMS release older than this many years, when the version is known and its release
+# date is in the report's table, is flagged as an outdated stack.
+REPORT_STACK_OLD_YEARS = 3
 
 # ======================================================================================
 # Run traces
@@ -461,6 +613,17 @@ DEPLOY_TRACE_FILE = None
 
 # WEBGRAPH_GRAPH_DIR: where crawled graphs are kept. None = ~/.cache/webgraph/graphs.
 DEPLOY_GRAPH_DIR = None
+
+# WEBGRAPH_KG: serve the knowledge-graph routes (/api/graph/*) and CLI. Off = the routes
+# answer 404 and say so. Off by default until the benchmark in benchmark/kg beats BM25.
+DEPLOY_KG = False
+
+# WEBGRAPH_KG_DIR: where per-site knowledge graphs (SQLite) are kept. None =
+# ~/.cache/webgraph/kg.
+DEPLOY_KG_DIR = None
+# WEBGRAPH_WATCH_DB: the SQLite file that holds watches, their runs, pages and changes.
+# None = ~/.cache/webgraph/watch.sqlite3 (XDG_CACHE_HOME respected).
+DEPLOY_WATCH_DB = None
 
 # WEBGRAPH_ALLOWED_ORIGINS: browser origins the API answers, comma-separated. Never "*".
 # Empty = the dev frontend (http://localhost:3000, http://127.0.0.1:3000).

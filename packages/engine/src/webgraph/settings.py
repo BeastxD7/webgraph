@@ -54,6 +54,14 @@ class Settings:
     graph_dir: Path | None = Path(config.DEPLOY_GRAPH_DIR) if config.DEPLOY_GRAPH_DIR else None
     """`WEBGRAPH_GRAPH_DIR`: where crawled graphs are kept between requests."""
 
+    kg_enabled: bool = config.DEPLOY_KG
+    """`WEBGRAPH_KG`: serve the knowledge-graph routes and CLI. `1`, `true`, `yes`, `on`."""
+
+    kg_dir: Path | None = Path(config.DEPLOY_KG_DIR) if config.DEPLOY_KG_DIR else None
+    """`WEBGRAPH_KG_DIR`: where per-site knowledge graphs (SQLite files) are kept."""
+    watch_db: Path | None = Path(config.DEPLOY_WATCH_DB) if config.DEPLOY_WATCH_DB else None
+    """`WEBGRAPH_WATCH_DB`: the SQLite file holding watches, runs, pages and changes."""
+
     allowed_origins: tuple[str, ...] = tuple(config.DEPLOY_ALLOWED_ORIGINS)
     """`WEBGRAPH_ALLOWED_ORIGINS`: browser origins the API answers, comma-separated. Never
     `*` -- this service fetches arbitrary URLs on the caller's behalf."""
@@ -87,6 +95,9 @@ class Settings:
             trace_dir=path("WEBGRAPH_TRACE_DIR") or (Path(config.DEPLOY_TRACE_DIR) if config.DEPLOY_TRACE_DIR else None),
             trace_file=path("WEBGRAPH_TRACE") or (Path(config.DEPLOY_TRACE_FILE) if config.DEPLOY_TRACE_FILE else None),
             graph_dir=path("WEBGRAPH_GRAPH_DIR") or (Path(config.DEPLOY_GRAPH_DIR) if config.DEPLOY_GRAPH_DIR else None),
+            kg_enabled=env.get("WEBGRAPH_KG", "").strip().lower() in {"1", "true", "yes", "on"} or config.DEPLOY_KG,
+            kg_dir=path("WEBGRAPH_KG_DIR") or (Path(config.DEPLOY_KG_DIR) if config.DEPLOY_KG_DIR else None),
+            watch_db=path("WEBGRAPH_WATCH_DB") or (Path(config.DEPLOY_WATCH_DB) if config.DEPLOY_WATCH_DB else None),
             allowed_origins=origins or tuple(config.DEPLOY_ALLOWED_ORIGINS),
             chromium_args=env.get("WEBGRAPH_CHROMIUM_ARGS", "") or config.DEPLOY_CHROMIUM_ARGS,
             contact=env.get("WEBGRAPH_CONTACT", "").strip() or config.DEPLOY_CONTACT,

@@ -1,0 +1,16 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "getting-started",
+    "api",
+    "how-it-reads-a-page",
+    "crawling",
+    "site-report",
+    "watch",
+    "webgraph",
+    "benchmarks",
+    "deployment",
+    "contributing"
+  ]
+}
