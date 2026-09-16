@@ -6,6 +6,49 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #99) — machine-readable site signals in the report
+- **What the site declares to machines** (`report/signals.py`; `SiteReport.signals`, the
+  CLI's SIGNALS section, `signals` in `POST /api/site/report`, a section of `/report`, a
+  docs section). Twenty-four signals in five groups, each with `present` (true / false /
+  null for not measurable), the detail in the file's own terms, who honours it, the spec
+  URL and a plain-words meaning for the owner ("Your robots.txt tells AI systems they may
+  index it for search and link back and use it as input to AI answers, but should not
+  train AI models on it. Honoured voluntarily by the bots that read Content-Signal; not
+  enforced."). *Declarations to AI*: robots.txt `Content-Signal` read per `User-agent`
+  group (www.cloudflare.com's line sits in its `Cohere-ai` group, and the report says so),
+  IETF aipref `Content-Usage` (header and robots line), `llms.txt` / `llms-full.txt` with a
+  sample of five links checked, `ai.txt`, RSL (`License:` line, `Link rel=license`,
+  `<link>`, inline block, `/rsl.xml`), TDM reservation (header, meta, `tdmrep.json`),
+  `noai` / `noimageai`, the indexing directives from `X-Robots-Tag` and meta robots.
+  *Discovery*: sitemap, feed autodiscovery, Markdown twin (`text/markdown` alternate,
+  `describedby`), IndexNow (not measurable). *Agents*: A2A agent card at
+  `agent-card.json` and the pre-0.3 `agent.json`, `agents.json`, MCP (`mcp.json`, MCP
+  `Link` rels), RFC 9727 `api-catalog` plus `ai-catalog` / `agent-skills`. *Metadata*:
+  JSON-LD `@type`s in the plain HTML, OpenGraph / Twitter, `hreflang`, canonical. *Trust*:
+  `security.txt` (both paths, `Expires` checked), `humans.txt`, web app manifest,
+  speculation rules. A `402` on the root is noted as pay-per-crawl.
+- Every probe is one streaming GET that reads status and headers first and at most a small
+  cap of body (`fetch_capped`: 64 KB, 512 KB for the llms files, 1 MB for the root), paced
+  with the report, skipped when robots.txt disallows the path for this client, under the
+  engine's own User-Agent. Presence is never the status alone: vercel.com answers
+  `/ai.txt`, `/rsl.xml`, `/humans.txt`, `/manifest.json` with its 2.5 MB HTML shell and
+  200, so each signal has a shape test. Typically 12-18 requests.
+- The suggested `robots.txt` gains a commented `Content-Signal` block -- search and AI
+  input yes / training no; or all yes -- with the note that it is a declaration, not
+  enforcement, shown back rather than proposed when the file already has one, and a
+  comment when no feed is advertised. `suggested_security_txt` (RFC 9116 template) is
+  offered when the site has none.
+- `crawl.discovery.parse_groups` keeps `Content-Signal` and `Content-Usage` lines in the
+  group they sit in. `PageReport.has_open_graph`; `LlmsFile` gains `links_checked` /
+  `links_answering` and moves to `report/signals.py` (re-exported).
+
+### Changed (2026-09-16, PR #99)
+- The 10-point *Structured data and page metadata* sub-score's 4 page-field points now
+  count OpenGraph beside title, description and `lang` (four fields; a page with the
+  older three and no `og:*` earns 3 of 4). Weights unchanged; total stays 100. No new
+  sub-score: declarations to AI are choices, not virtues, and agent cards are too rare to
+  score. `llms.txt` stays at 5.
+
 ### Added (2026-09-16, PR #95) — Site Report
 - `webgraph report <url> [--pages N] [--json]`, `POST /api/site/report` and `/report` in
   the web app: what a site shows people, what it shows machines, and how ready it is for
