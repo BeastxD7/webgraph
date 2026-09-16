@@ -14,7 +14,7 @@ export default function RunBanner({
   children?: React.ReactNode;
 }) {
   return (
-    <section className="page-col pb-10 pt-8 sm:pt-10">
+    <section className="page-col pb-10 max-sm:pt-8 sm:pt-10">
       <p className="text-label font-bold uppercase text-muted">
         {mode === "site" ? "Whole-site extraction" : "Single-page extraction"}
       </p>

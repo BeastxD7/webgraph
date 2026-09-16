@@ -31,7 +31,7 @@ const STEPS: ReadonlyArray<{ title: string; body: string }> = [
 
 export default function Pipeline() {
   return (
-    <section aria-labelledby="reads" className="page-col border-t border-rule py-16 md:py-24">
+    <section aria-labelledby="reads" className="page-col border-t border-rule max-md:py-16 md:py-24">
       <h2 id="reads" className="font-display text-h2 text-ink">
         Two fetches, one page, the reader&rsquo;s order
       </h2>
@@ -40,7 +40,7 @@ export default function Pipeline() {
         {STEPS.map((step, index) => (
           <li
             key={step.title}
-            className="grid gap-x-8 gap-y-2 border-b border-rule py-6 sm:grid-cols-[3rem_14rem_1fr] md:py-8"
+            className="grid gap-x-8 gap-y-2 border-b border-rule max-md:py-6 sm:grid-cols-[3rem_14rem_1fr] md:py-8"
           >
             <span className="font-mono text-label font-medium text-accent-ink" aria-hidden>
               {String(index + 1).padStart(2, "0")}

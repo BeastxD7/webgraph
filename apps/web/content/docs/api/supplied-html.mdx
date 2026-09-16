@@ -1,0 +1,82 @@
+---
+title: Supplying your own HTML
+description: The html field on /api/text and /api/text/stream - read a page you already have, for the sites that refuse every automated fetch.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Some sites refuse every automated fetch. Stack Overflow answers both the plain fetch and the browser with a Cloudflare challenge; nyc.gov with Akamai's; a login wall serves nothing of the page to anyone not signed in. The engine will not disguise itself to get past them. What you can do is hand over the page you already have - your own signed-in browser's document, an extension's copy, a saved file - and have it read exactly as a fetched page would be.
+
+## Where it is accepted
+
+`html` is a field of `TextRequest`, so it works on `POST /api/text` and `POST /api/text/stream`. It is **not** a field of `ExtractRequest`: `/api/extract` always fetches, and the web UI says so when a paste is present. The crawl has no equivalent.
+
+## When to use it
+
+- The refusal you got was a `challenge`, `block` or `login` wall (see [errors](/docs/api/errors)) and you can open the page in a browser.
+- `robots.txt` disallows the page for automated readers; the refusal message itself offers this route.
+- The page is behind a login you have, and you want it read without giving the engine your session.
+- You have an archive of HTML files and want the same text and Markdown the live pipeline would produce.
+
+## Request
+
+```json
+{
+  "url": "https://stackoverflow.com/questions/11227809/why-is-processing-a-sorted-array-faster",
+  "html": "<!DOCTYPE html><html><head><title>…</title></head><body>…</body></html>",
+  "include_hidden_text": false
+}
+```
+
+`url` is still required. It is the page's address: links and images are made absolute against it, the trace and the run header name it, and a pasted login page is judged against it. It is not fetched, not resolved by DNS, and not checked by the private-host guard, since there is nothing for the guard to stop. `rtl` is forced as on any `/api/text` request (`false` means left-to-right); `render`, `fetch` and `renderOptions` are ignored.
+
+```bash
+curl -s http://127.0.0.1:8000/api/text \
+  -H 'Content-Type: application/json' \
+  --data-binary @- <<JSON
+{"url": "https://example.com/members/report", "html": $(jq -Rs . < report.html)}
+JSON
+```
+
+<Steps>
+<Step>Open the page in your own browser, signed in if it needs that.</Step>
+<Step>View the page source, or copy `document.documentElement.outerHTML` from the console for a page that was built by JavaScript. The rendered DOM is usually the better paste.</Step>
+<Step>Send it as `html` with the page's URL. On the web UI, the "Paste the page's HTML instead" panel under the URL field does the same thing.</Step>
+</Steps>
+
+## What changes
+
+| Aspect | Fetched page | Supplied page |
+|---|---|---|
+| `strategy` | `static-only`, `union`, `rendered-only` | `supplied` |
+| Network | Plain fetch, optionally a browser | **None.** Nothing is fetched, including frames the markup names and resources it references |
+| `render` | Requests the union | Ignored; the run header reports `render: false`, `supplied: true` |
+| `fetch`, `renderOptions` | Applied | Not consulted |
+| Reading order | Measured from layout when rendered | Source order: `reading_order` is `dom-fallback` (or `single-block` for a one-block document) and `reading_order_measured` is `false` |
+| Hidden text | Removed by measuring the layout | Text a browser would have hidden - a `display: none` menu, a collapsed section - may appear |
+| `render_error` | Why a render was missing, if it was | The fixed note: `HTML supplied by the caller; not fetched or rendered -- reading order is source order, and what the browser would have hidden may appear` |
+| `static_chars` / `union_chars` | Each fetch's contribution | Both equal the supplied document's length; `rendered_chars` is `0` |
+| Guard, robots | Checked | Not checked: nothing is requested from anyone |
+
+Everything after the resolve stage is identical: the same parser, the same page-type router, the same content selection, the same Markdown. `content_markdown`, `page_type`, `images` and `tables` mean what they mean on a fetched page.
+
+A `<frameset>` is parsed as the markup it is. The fetched path composes frames by fetching each one; the supplied path deliberately does not, because a caller who can name frame URLs in pasted HTML would otherwise be naming URLs for this process to fetch from inside its network.
+
+## What stays the same: a pasted wall is refused
+
+The supplied document goes through the same wall check as a fetched one. A pasted Cloudflare "Sorry, you have been blocked", a challenge script with no words, or a page with no readable text at all is refused with the same `PageBlockedError` / `ValueError` message a fetch of it would raise, as a `502` on `/api/text` and an `error` event on the stream.
+
+A login page needs one extra step, because a supplied document never went anywhere for the engine to notice a redirect. The one place it can say where it really is is its own `<link rel="canonical">` or `og:url`. When that declared address differs from `url` and looks like a login page - `/login`, `/signin`, `/sso`, `/oauth`, a `?next=`/`?dest=`/`?redirect_to=` pointing back at `url` - the paste is refused as a login redirect. Measured on 14 September 2026: `www.linkedin.com/login` declares itself canonically, so a paste of it with `url` set to the feed it was guarding is refused rather than returned as twenty blocks of "Email or phone". A page declaring nothing, or declaring itself, is judged on its words.
+
+<Callout type="warn">
+Supplying HTML gets a page read; it does not get a wall read. The engine's rule is never a false output, and it applies to what you paste as much as to what it fetches.
+</Callout>
+
+## Size limit
+
+`html` larger than `FETCH_MAX_BYTES` (`32 * 1024 * 1024` = 33,554,432 bytes, measured as UTF-8) is refused: `could not read the supplied HTML for <url>: 40,123,456 bytes is over the 33,554,432-byte limit a fetched page is held to`. An empty or whitespace-only string is refused with `…: it is empty`. Both are `502` on `/api/text` - the caller's HTML being refused, not a fetch failing, so the message does not say "fetch".
+
+## In the stream
+
+On `/api/text/stream` the first `stage` event says `Reading the HTML supplied by the caller`, the run header carries `strategy: "supplied"`, and the `resolve` event has `strategy: "supplied"`, `rendered_chars: 0` and the `render_error` note above. Show that note wherever you would show a completeness claim: the result is one representation, unmeasured, and a reader deserves to know which one they are looking at.

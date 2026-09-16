@@ -1,0 +1,178 @@
+---
+title: Installation
+description: Install the engine, the API and the web UI from the repository, or run the API as a container.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+The repository is a monorepo: a Python workspace managed by `uv` (the engine in
+`packages/engine`, the API in `apps/api`) and a pnpm workspace for the Next.js front end
+(`apps/web`). One `make install` sets up all three.
+
+## Requirements
+
+| What | Version | Where it is pinned |
+|---|---|---|
+| Python | 3.12 or newer | `requires-python = ">=3.12"` in `packages/engine/pyproject.toml` and `apps/api/pyproject.toml` |
+| `uv` | not pinned for local use | the Dockerfile uses `ghcr.io/astral-sh/uv:0.9.29` |
+| pnpm | 11.24.0 | `"packageManager": "pnpm@11.24.0"` in the root `package.json` |
+| Node.js | a current release | not pinned in the repository; the front end is Next.js 16 with `@types/node` 22.x |
+| Chromium | the build Playwright installs | `playwright>=1.49`, the engine's `render` extra; the API depends on `webgraph[render]` |
+
+Chromium is not optional for the default strategy. The engine's whole-site strategy renders
+every page to measure its layout, and each live browser costs about 150 MB of resident
+memory (`WEBGRAPH_MAX_BROWSERS`, six by default on a laptop, four in the container image).
+Without Playwright the engine still runs, silently degrading to a static-only fetch and
+saying so in `render_error`.
+
+## From the repository
+
+<Steps>
+<Step>
+
+### Install everything
+
+```bash
+make install
+```
+
+That target is exactly three commands:
+
+```bash
+uv sync --all-packages --group dev
+uv run --package webgraph playwright install chromium
+pnpm install
+```
+
+The first syncs both Python packages and the `dev` group (pytest, ruff, mypy). The second
+downloads Chromium into Playwright's cache, driven from the same virtual environment so the
+browser matches the pinned Playwright version. The third installs the front end.
+
+</Step>
+<Step>
+
+### Run the API
+
+```bash
+make api
+```
+
+This runs `uvicorn webgraph_api.main:app --reload --host 127.0.0.1 --port 8000`. On
+startup it prints the host policy (private addresses blocked or allowed), the CORS origins
+and the page cap. Nothing has to be set for local development.
+
+Check it:
+
+```bash
+curl -s localhost:8000/api/health
+```
+
+`render_available` must be `true`. If it is `false`, Playwright or its Chromium is missing
+and every page will come back static-only.
+
+</Step>
+<Step>
+
+### Run the web UI
+
+In a second terminal:
+
+```bash
+make web
+```
+
+This is `pnpm web:dev`, which starts Next.js on `http://localhost:3000`. The front end is a
+browser client that talks to the API directly; its default API base is
+`http://127.0.0.1:8000`, overridable with `NEXT_PUBLIC_API_BASE` (inlined at build time).
+
+</Step>
+<Step>
+
+### Optional: check the whole tree
+
+```bash
+make test     # engine and API test suites
+make check    # lint, types and tests
+```
+
+Tests marked `network` or `render` need the network or a browser; deselect them with
+`-m 'not network'` / `-m 'not render'`.
+
+</Step>
+</Steps>
+
+<Callout type="info">
+Both `make api` and `make web` have to be running for the UI to do anything. The Makefile's
+`help` target says the same: run them in two terminals for the full stack.
+</Callout>
+
+## As a container
+
+The `Dockerfile` builds the API with Chromium inside it. Its own header explains the two
+things that make the image awkward: the browser and its shared libraries add roughly
+400 MB, and dependencies plus the browser are installed before any source is copied so a
+code change rebuilds in seconds rather than re-downloading Chromium.
+
+<Tabs items={['make', 'docker']}>
+<Tab value="make">
+
+```bash
+make docker-build        # docker build -t webgraph-api .
+make docker-run          # serves on :8080
+curl -s localhost:8080/api/health
+```
+
+`docker-run` passes `WEBGRAPH_ALLOWED_ORIGINS` (default `http://localhost:3000`).
+
+</Tab>
+<Tab value="docker">
+
+```bash
+docker build -t webgraph-api .
+docker run -p 8080:8080 -e WEBGRAPH_ALLOWED_ORIGINS=http://localhost:3000 webgraph-api
+```
+
+</Tab>
+</Tabs>
+
+The image sets defaults "chosen for a 2 vCPU / 4 GiB container", every one overridable at
+deploy time:
+
+```dockerfile
+ENV PORT=8080 \
+    WEBGRAPH_BLOCK_PRIVATE_HOSTS=1 \
+    WEBGRAPH_MAX_PAGES=50 \
+    WEBGRAPH_MAX_CONCURRENCY=4 \
+    WEBGRAPH_MAX_CONCURRENT_CRAWLS=2 \
+    WEBGRAPH_MAX_CONCURRENT_RENDERS=2 \
+    WEBGRAPH_MAX_BROWSERS=4 \
+    WEBGRAPH_CHROMIUM_ARGS="--no-sandbox --disable-dev-shm-usage --disable-gpu" \
+    WEBGRAPH_GRAPH_DIR=/tmp/webgraph-graphs
+```
+
+Two of those are worth knowing before you share a link. `WEBGRAPH_MAX_PAGES=50` exists
+because `max_pages: 0` — the local default — means "crawl until the frontier is exhausted",
+which on a shared host is one caller occupying a crawl slot for hours. And the container
+runs one uvicorn worker on purpose: the graph cache, the crawl slots and the crawl thread
+pool are in-process state, so a second worker would answer `/api/site/context` from a
+process that never ran the crawl.
+
+<Callout type="warn">
+`docs/DEPLOY.md` is blunt about hosting: the API cannot go on a serverless platform.
+`POST /api/site/stream` holds one response open for minutes, Chromium runs in-process, and
+there must be exactly one instance. What is left is a container host with a real core;
+the document's worked example is Cloud Run at 2 vCPU / 4 GiB with `--max-instances 1`.
+See [Deployment](/docs/deployment) for the full procedure, the environment reference and
+the pre-launch checks.
+</Callout>
+
+## Where things land
+
+- Site graphs from finished crawls: `~/.cache/webgraph/graphs`, pruned to the newest 32;
+  override with `WEBGRAPH_GRAPH_DIR`.
+- Playwright's browsers: Playwright's default cache, or `PLAYWRIGHT_BROWSERS_PATH`
+  (`/opt/playwright` in the image).
+- The engine's CLI, once installed: `uv run webgraph text <url>`, `webgraph extract`,
+  `webgraph site`, `webgraph diff`, `webgraph bench` (see `webgraph --help`).

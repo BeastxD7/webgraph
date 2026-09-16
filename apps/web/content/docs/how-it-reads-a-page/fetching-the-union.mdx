@@ -1,0 +1,125 @@
+---
+title: Fetching the union
+description: Why every page is fetched twice, how the two documents are merged, and what each strategy label means.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+Three fetch strategies exist and one is the default; a fourth fetches nothing.
+
+| strategy | what it does | when it is used |
+|---|---|---|
+| `static-only` | one HTTP request | asked for; or the browser side failed |
+| `rendered-only` | Chromium, measured geometry | asked for; or the plain fetch side failed |
+| `union` | both, merged | **default** — the only one that is not lossy |
+| `supplied` | nothing fetched; the caller's own HTML | `/api/text` with `html` |
+
+## Why two fetches
+
+Neither representation is complete on its own, and the losses go both ways.
+
+**The plain fetch is refused where the browser is not.** Measured on Firecrawl's
+scrape-evals corpus, 1,000 live URLs on 2026-09-12, **143 answered 403** to a plain fetch
+(`fetch/static.py`). Those refusals are about the client, not the content. A User-Agent that still names
+the crawler and carries a contact recovers 16 of the 143; a bare Chrome string recovers
+33; the engine takes the identifiable one. None of it matters as much as the browser,
+which recovers **55%** of the same 403s because it is not imitating a browser, it is one.
+
+**The browser loses what its own scripts remove.** `bbc.co.uk/news` yields 19,908
+characters statically and 9,279 rendered, because a consent wall replaces the article
+(`resolve.py`); hydration replaces server-rendered markup; lazy sections never mount
+without scrolling.
+
+**And which pages need which cannot be predicted.** A `requires_render` heuristic over
+page length, script density and framework markers returned `False` on all seven sites
+that measurably lost content statically — 0/7. A page holding 2,078 characters carries no
+signal that another 969 appear after hydration (`angular.dev` at 68%). So the engine
+stopped asking: `UNION` fetches both and merges, and **beat static-alone on 8 of 10 sites
+and rendered-alone on 4 of 10**. It doubles per-page cost; callers who want speed choose
+`static-only` explicitly.
+
+## How they are merged
+
+`union_documents` merges by *text*, not by XPath — hydration rewrites the tree, but the
+words are stable. The key is the block's text with all whitespace removed and case
+folded, because the two sides disagree about spaces too ("New Loops →" against
+"NewLoops →" on linear.app).
+
+The rendered document leads, because its order was measured. A block only the static
+fetch has is placed by **observed adjacency**: after the nearest preceding block that
+appears in *both* documents, at that anchor's *last* occurrence in the rendered order.
+Appending them at the end put two thousand blocks of `lemonde.fr` after the article;
+the first occurrence placed them at 0.50–0.65 accuracy against 0.88–1.00 for the last;
+emitting at every occurrence copied one block 201 times on corriere.it.
+
+Two kinds of static-only block are not "content the render lost" and stay out: one
+whose text begins or ends with the whole text of a rendered block (a headline with its
+hidden mobile copy run into it), and one the browser laid out and **hid**
+(`hidden_matter`): every string under `display: none`, `visibility: hidden` or a box off
+the page. php.net's manual TOC — a hundred links under `display: none` — and
+cppreference's hover menus were dropped by the renderer and put straight back by the
+merge from the static side: 330 → 233 and 254 → 135 blocks once this existed (PR #65). A
+hidden line matches exactly however short; a block spanning several hidden nodes matches
+as a substring only past 12 characters, because "Home" is in every menu.
+
+The merged document is relabelled `geometric-anchored` when any static-only block was
+placed: part of it was positioned by adjacency rather than measured, and a weaker claim
+gets a different name.
+
+## Walls, per side
+
+Each side is judged alone before the merge (`wall_evidence`). Cloudflare let a plain
+fetch of `columbia.edu/~fdc/sample.html` through and walled the browser with "Performing
+security verification … Ray ID"; merged, those sentences became content, invisible to the
+block-page check inside a 4,000-word document (PR #64). Now the walled side is left out and named in `render_error`, and the other side is the
+page — if it has at least `MIN_PAGE_BESIDE_WALL_WORDS` (20) words of its own.
+old.reddit.com answers the browser with a wall and the plain fetch with a login redirect
+holding "Skip to main content"; that is not the page either, and the merge is refused
+(PR #67). A login redirect on one side is a wall in the same sense (PR #73). Walls on
+both sides raise.
+
+## A 5xx render
+
+`RenderResult.ok` means the browser navigated and measured, not that the server answered
+with a page. flipkart.com/mobiles gave the plain fetch the listing (200, 560 KB) and
+Chromium, seconds later, a 503 "No server is available to handle this request"; the union
+merged that sentence into the listing (PR #89). `RenderResult.status` now carries the
+status, and a 5xx render is a failed side: the static page stands alone with
+`render_error` saying what the browser was told. Both sides 5xx is a refusal. A 4xx
+render is still judged on its words.
+
+## What the labels mean
+
+<Tabs items={['static-only', 'rendered-only', 'union', 'supplied']}>
+<Tab value="static-only">
+Asked for; or Playwright is not installed; or the render failed or answered 5xx; or the
+browser was served a wall and the plain fetch has the page; or the page is a `<frameset>`
+(frames fetched statically, composed in frameset order). `render_error` says which.
+Reading order is source order and `reading_order_measured` is false.
+</Tab>
+<Tab value="rendered-only">
+Asked for; or the plain fetch was not ok, not HTML, or empty; or the plain fetch was
+served a wall and the browser has the page. `static_chars` still reports what the plain
+fetch held, so a caller knows what was declined.
+</Tab>
+<Tab value="union">
+Both sides parsed, neither a wall, merged. `blocks_only_in_static` and
+`blocks_only_in_rendered` say what each side contributed that the other lacked.
+</Tab>
+<Tab value="supplied">
+The caller passed `html` to `/api/text`. Nothing is fetched or rendered; `render_error`
+says reading order is source order and what the browser would have hidden may appear. A
+pasted wall is refused like a fetched one.
+</Tab>
+</Tabs>
+
+## `static_coverage`
+
+`SiteAnalysis` and `ResolvedPage` both report `static_coverage = static_chars /
+union_chars`, clamped to 1.0: the raw ratio exceeds 1 when the union deduplicates a
+navigation the page renders three times. The clamp keeps the number readable as "how much
+would I have had from the plain fetch alone". At site level one
+render of the root buys a verdict for the crawl: `recommended_strategy` is `UNION`
+whenever either side was shown to lose content, `STATIC_ONLY` only when a real comparison
+found the static HTML complete.

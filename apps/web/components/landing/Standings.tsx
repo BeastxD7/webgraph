@@ -34,7 +34,7 @@ const ROWS: ReadonlyArray<{ id: string; label: string; pages: string; place: str
 
 export default function Standings() {
   return (
-    <section aria-labelledby="standings" className="page-col border-t border-rule py-16 md:py-24">
+    <section aria-labelledby="standings" className="page-col border-t border-rule max-md:py-16 md:py-24">
       <h2 id="standings" className="font-display text-h2 text-ink">
         Where it stands, including where it does not
       </h2>

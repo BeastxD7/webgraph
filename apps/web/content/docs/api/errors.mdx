@@ -1,0 +1,47 @@
+---
+title: Errors and refusals
+description: Every refusal names its reason. The error classes, the HTTP status or event each becomes, an example message, and what to do about it.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## The contract
+
+webgraph never returns a wall, a shell or an empty response as if it were the page. When it cannot obtain a page it refuses, and the refusal says why in words a person can act on: which wall, quoting it; which robots rule, quoting it; which address, and why it is not public.
+
+On the blocking routes a refusal is an HTTP status with a `detail` string. On the streaming routes it is an `error` event carrying `message`, because after the first byte a status can no longer say anything. The message is the same; only the wrapper differs.
+
+## Classes, statuses, messages
+
+| Engine class | `/api/text`, `/api/extract` | `/api/text/stream` | Example message | What to do |
+|---|---|---|---|---|
+| `PageMissingError` | `502` `could not fetch page: HTTP 404: page does not exist` | `error` at `resolve`, bare message | `HTTP 404: page does not exist` | Nothing to do; a `404`/`410` page is never rendered because a browser renders one perfectly happily |
+| `PageBlockedError` kind `block` | `502`, bare message | `error` at `resolve`, bare | `could not resolve https://…: the site served a block page instead of the content; it said: "Sorry, you have been blocked"` | Try `render: true` if you did not; a real browser recovers about 55% of static `403`s. Otherwise [bring your own HTML](/docs/api/supplied-html) or use the site's API |
+| `PageBlockedError` kind `challenge` | `502`, bare | `error`, bare | `could not resolve https://…: the site answered with a Cloudflare bot challenge -- a script a browser must run before the page is served -- and no page` | The engine will not solve challenges or disguise itself. Supply the HTML from your own browser |
+| `PageBlockedError` kind `login` | `502`, bare | `error`, bare | `could not resolve https://…: redirected to a login page (https://…/login?dest=…); the page requires a sign-in and nothing of it was served` | Sign in yourself and supply the HTML, or use the site's API |
+| `PageBlockedError` kind `undeclared` | `502`, bare | `error`, bare | `could not resolve https://…: the site admits automated clients only when they declare who runs them -- a User-Agent naming an operator and a contact address -- and this deployment has nothing to declare; set WEBGRAPH_CONTACT='Name contact@example.com' …` | Set `WEBGRAPH_CONTACT` on the deployment; see below |
+| `PageDisallowedError` | `502` `could not fetch page: could not resolve https://…: …` | `error`, prefixed `PageDisallowedError: …` | quoted below | Use the source the message names; supply the HTML; or pass `fetch.respect_robots: false` as your explicit choice |
+| `PageShellError` | `/api/text`: `502` `could not fetch page: …` after a browser escalation failed; `/api/extract`: `200` with facts from the payload | `error`, prefixed `PageShellError: …` | `could not resolve https://…: the page is a JavaScript shell with no readable text until a browser runs it (HTTP 200, 41,203 bytes of markup); rendering was not used for this request` | Send `render: true`, or use `/api/extract`, which reads the hydration payload |
+| Both fetches failed (`ValueError`) | `502` `could not fetch page: could not resolve https://…: HTTP 403 -- the site refused this client; it said: "…"; browser: …` | `error`, prefixed `ValueError: …` | as left; `plain fetch: ConnectError: …` for a transport error | Both paths are reported because they usually fail for different reasons. `401`, `403`, `429`, `451` and `503` are spelled out in words; a `429`/`503` was already retried once, honouring `Retry-After` up to `5.0` s |
+| No readable text (`ValueError`) | `502` | `error`, prefixed | `could not resolve https://…: the response produced no readable text (HTTP 200, 812 bytes of markup, none of it visible)` | The response was not a page; check the URL |
+| Supplied HTML refused (`ValueError`) | `502`, bare | `error`, prefixed | `could not read the supplied HTML for https://…: 40,123,456 bytes is over the 33,554,432-byte limit a fetched page is held to`, or `…: it is empty` | Supply a page, not an archive |
+| `guard.BlockedHostError` | `502` inside a fetch failure: `… plain fetch: BlockedHostError: refusing to fetch a non-public address: 10.0.0.4` | `403` `{"detail": "refused: refusing to fetch a non-public address: 127.0.0.1"}` before the stream | `refusing to fetch a network-internal name: metadata.google.internal` | Intended. For a local site on a local API set `WEBGRAPH_ALLOW_PRIVATE_HOSTS=1` |
+| Bad request | `422` `url must be http or https`, `schema must be a JSON Schema object with 'properties'`, or FastAPI's validation array | `422` before the stream | – | Fix the request |
+
+The robots refusal, in full:
+
+```text
+could not resolve https://stackoverflow.com/questions/1: https://stackoverflow.com/robots.txt disallows /questions/1 for this client (`User-agent: *` / `Disallow: /`): the site does not want automated readers here. The site offers the Stack Exchange API (https://api.stackexchange.com/docs); or supply the HTML you already have (`html` on /api/text) and the engine reads that.
+```
+
+On `/api/site/stream`, a root that cannot be resolved is a single `error` event (`not a crawlable URL: …`, `site unreachable`, or the refusal above); a page that fails mid-crawl is a `page` event with `ok: false` and the message in `error`, and the crawl continues. Robots-disallowed URLs are skipped silently at the frontier.
+
+<Callout type="info">
+The `kind` of a `PageBlockedError` is not a field in the response; it is legible from the message. `redirected to a login page` is `login`, `bot challenge` is `challenge`, `admits automated clients only when they declare` is `undeclared`, `served a block page` is `block`.
+</Callout>
+
+## Declaring who runs the deployment
+
+Some sites admit automated clients only when the client says who operates it; sec.gov answers an undeclared fetch with `403` and "Please declare your traffic by updating your user agent to include company specific information." On such a demand the engine looks at `WEBGRAPH_CONTACT`. If set, the page is fetched once more with the User-Agent `<contact> webgraph/0.1` - operator first, then the software's name, no browser prefix - and the `resolve` event reports `identity_declared: true`. If empty, the refusal names the setting. The contact goes only to a site that asked; every other fetch uses the ordinary agent. If the site keeps refusing, the message quotes what was sent: `…kept refusing this one declared as "…"`.
+
+The value is the operator's decision: `Name contact@example.com`, identifying whoever is responsible for the traffic. The client is still named `webgraph`; this is a declaration, not a disguise.

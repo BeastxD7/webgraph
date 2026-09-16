@@ -10,6 +10,9 @@ import ThemeToggle from "@/components/ui/ThemeToggle";
 import { isActive, NAV, type NavItem } from "./links";
 import Wordmark from "./Wordmark";
 
+// The docs shell (app/docs/layout.tsx) takes the brand mark from here.
+export { Mark } from "./Wordmark";
+
 /**
  * One bar for every page (DESIGN.md §4d).
  *
@@ -44,7 +47,7 @@ export default function SiteHeader() {
       <div className="page-col flex h-14 items-center gap-4">
         <Wordmark />
 
-        <nav aria-label="Site" className="hidden flex-1 items-center gap-6 nav:flex">
+        <nav aria-label="Site" className="flex-1 items-center gap-6 max-nav:hidden nav:flex">
           {NAV.map((item) => (
             <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} />
           ))}
@@ -53,7 +56,7 @@ export default function SiteHeader() {
         <div className="ml-auto flex items-center gap-1.5">
           <ThemeToggle />
           {/* Wrapped: the button's own `inline-flex` would otherwise fight `hidden`. */}
-          <div className="hidden nav:block">
+          <div className="max-nav:hidden nav:block">
             <Button href="/#start">Run a site</Button>
           </div>
           <button
@@ -61,7 +64,7 @@ export default function SiteHeader() {
             aria-expanded={open}
             aria-controls={sheetId}
             onClick={() => setOpen(!open)}
-            className="inline-flex h-9 items-center rounded-md px-3 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 nav:hidden"
+            className="h-9 items-center rounded-md px-3 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 max-nav:inline-flex nav:hidden"
           >
             {open ? "Close" : "Menu"}
           </button>
@@ -72,7 +75,7 @@ export default function SiteHeader() {
       {open && (
         <div
           id={sheetId}
-          className="absolute inset-x-0 top-full border-b border-rule bg-surface nav:hidden"
+          className="absolute inset-x-0 top-full border-b border-rule bg-surface max-nav:block nav:hidden"
         >
           <nav aria-label="Site, menu" className="page-col">
             <ul className="divide-y divide-rule">

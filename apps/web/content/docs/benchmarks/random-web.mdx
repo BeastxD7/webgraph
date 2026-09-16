@@ -1,0 +1,129 @@
+---
+title: The random web
+description: 300 pages nobody picked — drawn uniformly over the Tranco top million and fetched from the Common Crawl index — scored with the fidelity oracle; the first numbers and how to redraw.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Every other suite in `benchmark/` is a set of pages somebody chose: a corpus's authors, or
+this project, which picked old and ugly pages, modern JavaScript pages, sites the owner
+named. A failure rate on chosen pages is the failure rate on chosen pages. The random-web
+sampler draws pages at random from two public lists so the number means something about
+the web.
+
+<Callout type="warn" title="Where the code lives">
+`benchmark/random_web/sample.py` and its report script are on the `random-web` branch, not
+on `main` at the time of writing. The sample file it wrote,
+`benchmark/random_web/sample-2026-09.txt`, is in the `name url` format that
+`benchmark/fidelity/run.py --sites` reads, so scoring needs nothing from the branch.
+</Callout>
+
+## The sampler
+
+From `sample.py`'s docstring:
+
+1. **Domains** come from the Tranco list (`top-1m.csv`, tranco-list.eu), a million sites
+   ranked by traffic — sampled **uniformly over the rank range**, not by traffic, so rank
+   900,000 is as likely as rank 90. The tail is where the odd markup lives.
+2. **A page per domain** comes from the Common Crawl index (`index.commoncrawl.org`): the
+   crawl's most recent listing for that host, one URL drawn at random among the
+   200-status `text/html` captures, skipping a site's own machinery (`wp-json`,
+   `xmlrpc.php`, feeds, `wp-login`, `cgi-bin`). That gives inner pages, not home pages, in
+   whatever state the site was in when a crawler last saw them.
+
+The draw is seeded (`--seed`) so a sample can be redrawn exactly, one paced request per
+domain. A domain whose index lookup yields nothing — not in the crawl, only non-HTML, only
+errors — is skipped and counted, and the draw continues until `--count` pages are found.
+
+```bash
+uv run python benchmark/random_web/sample.py --tranco top-1m.csv --count 300 --seed 1 \
+    --out benchmark/random_web/sample-2026-09.txt
+```
+
+The September 2026 draw used index `CC-MAIN-2026-34`, seed 1, and wrote 300 pages after
+skipping 344 of 644 domains; it took about 30 minutes (`runs/random-web-sample.log`,
+`.meta.json`).
+
+## The first numbers
+
+Scored on `main@b618443` with `benchmark/fidelity/run.py` (the
+[fidelity oracle](/docs/benchmarks/fidelity-suite#the-oracle): Chromium `innerText` plus
+open shadow roots, every frame joined, walls refused). The run finished on 16 September
+2026 after 66 minutes (`runs/random-web-score.meta.json`); the figures below are computed
+from its output file.
+
+| | |
+|---|---:|
+| pages drawn | 300 |
+| scored | 258 |
+| not scored — oracle blocked (a wall served to Chromium) | 12 |
+| not scored — oracle failed (its subprocess errored or timed out) | 14 |
+| not scored — refused by the engine, each named | 16 |
+| of which: a JavaScript shell with no readable text | 11 |
+| of which: HTTP 404 / 410 | 3 |
+| of which: robots.txt disallows this client | 2 |
+
+On the 258 scored pages:
+
+| measure | value |
+|---|---:|
+| word recall, median | **0.986** |
+| word recall, mean | 0.916 |
+| recall 1.000 | 34% of pages |
+| recall at or above 0.95 | 64% |
+| recall under 0.80 | 10.5% |
+| extra share, median | 0.041 |
+| extra share over 0.30 | 20.5% |
+| zero order inversions | 64% |
+| strategy chosen | union 244 · rendered-only 13 · static-only 1 |
+
+An earlier snapshot of the same run, at 189 of 300, read median 0.980, mean 0.912, 59%
+at or above 0.95, about 10% under 0.80, extra over 0.30 on 20%. The distribution did not
+move much between the two readings.
+
+## Reading the tail
+
+The bottom of the recall distribution is not all the engine's. Of the 258 scored pages, 27
+have an oracle text of fewer than 50 words: an HTTP 403 page served to Chromium but not
+worded like a wall (`nsenergybusiness.com`, 15 oracle words against our 2,527 — recall
+0.0, extra 1.0), a video embed with no text, a page whose main content the oracle's
+`domcontentloaded` + 2.5 s never saw. Those score recall 0 or extra 1.0 and mean nothing
+about extraction. Real losses are also there — a travel page where the engine produced no
+words against 1,021 on screen (`gokitetours.com`, recall 0.0), a sports-stream page at
+0.029 — and those are the pages to open.
+
+High extra share is dominated by cookie banners and privacy text the browser hid or the
+page did not show (`beonemedicines.com`: 604 of our words, "cookies" 22 times, against an
+empty oracle; `epldiamond.ru`: a personal-data notice repeated). Whether each is "hidden
+matter added" or "the oracle missed it" is a per-page question.
+
+<Callout type="info" title="What this suite is for">
+Not a leaderboard. A distribution over pages nobody picked, redrawn with the same seed
+after a change, so the diff says whether a fix generalises beyond the pages it was written
+for. The per-page `missing_top` and `extra_top` word lists in the output JSON are where the
+next fix comes from.
+</Callout>
+
+## Redrawing and re-scoring
+
+<Steps>
+<Step>
+Get the Tranco list (`top-1m.csv`) from tranco-list.eu and check out the `random-web`
+branch for `sample.py`.
+</Step>
+<Step>
+Draw: `sample.py --tranco top-1m.csv --count 300 --seed 1 --out <sites file>`. Same seed,
+same index collection, same sample; a new month's index is a new web.
+</Step>
+<Step>
+Score with `benchmark/fidelity/run.py --sites <sites file> --out <json>` (see
+[Running them](/docs/benchmarks/running-them)). Expect about an hour for 300 pages;
+Playwright's Chromium and the network required. Run it through `tools/run_logged.py` so
+the dashboard shows progress.
+</Step>
+<Step>
+Compare two commits with `benchmark/fidelity/run.py --compare base.json cand.json`; the
+oracle is cached beside the first output, so both sides score the same text.
+</Step>
+</Steps>

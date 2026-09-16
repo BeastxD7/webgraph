@@ -60,6 +60,9 @@ const listeners = new Set<() => void>();
 
 export function subscribeTheme(listener: () => void): () => void {
   listeners.add(listener);
+  // Another page (the docs shell has its own switch on the same key) may have changed the
+  // stored value while no toggle of ours was mounted; catch up on mount.
+  applyTheme(readTheme());
   const onStorage = (event: StorageEvent) => {
     if (event.key === THEME_KEY || event.key === null) {
       applyTheme(readTheme());

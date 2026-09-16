@@ -1,0 +1,83 @@
+---
+title: Topology
+description: Two processes deployed two ways — a Next.js client and a FastAPI service with Chromium inside it — and what the second one needs from a host.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+webgraph deploys as two processes with opposite requirements (`docs/DEPLOY.md`):
+
+| | what it is | where it goes |
+|---|---|---|
+| `apps/web` | A Next.js client that only ever talks to the API from the browser | Any static host; the repository's target is Vercel (`make deploy-web`) |
+| `apps/api` | FastAPI, with a headless Chromium inside it, streaming a crawl for minutes | A container host; the repository's target is Google Cloud Run (`make deploy-api`) |
+
+The engine itself (`packages/engine`) is a library the API imports; it runs anywhere Python
+3.12 and Playwright's Chromium run, and needs nothing from this section when used directly.
+
+## Why the API is the whole problem
+
+`DEPLOY.md` gives three constraints, in the order they eliminate options.
+
+1. **`POST /api/site/stream` holds one HTTP response open for minutes.** It emits a
+   server-sent event per page as the crawl walks the site. Function platforms — Vercel
+   Functions, Netlify, Lambda behind API Gateway, Cloudflare Workers — cap the response
+   duration or buffer it, and a buffered stream is not a stream.
+2. **Chromium runs in-process.** The `union` strategy renders every page to measure its
+   layout; that is where reading-order recovery comes from. The host needs Docker, roughly
+   a gigabyte of memory before the Python process is counted, and a real CPU core.
+3. **Exactly one instance.** The graph cache (`_graphs`), the crawl slots, the crawl thread
+   pool and the on-disk `GraphStore` are in-process or local-disk state. With two instances
+   a crawl completes on A and `/api/site/context` answers 404 from B, intermittently. Pin
+   max instances to 1 and run one uvicorn worker — the Dockerfile does both.
+
+A fourth appears once the frontend is on HTTPS: the API must be too, or the browser blocks
+the request as mixed content.
+
+## Resource needs
+
+The numbers the repository states, with their sources:
+
+- **Memory per browser: ~150 MB resident** (`Settings.max_browsers`, `fetch/browser.py`).
+  The engine keeps one Chromium per crawl worker thread, capped process-wide by
+  `WEBGRAPH_MAX_BROWSERS` (6 by default — "six suits a laptop with 16 GB" — and 4 in the
+  Docker image). A 2 GB container cannot hold six, and the failure mode is the kernel
+  killing the process.
+- **The image's budget: 2 vCPU / 4 GiB.** Every default the Dockerfile sets is chosen to
+  keep the container inside that: 4 browsers, 4 workers per crawl, 2 concurrent crawls, 2
+  concurrent single-page renders, and a 50-page cap.
+- **Image size: ~400 MB of Chromium and its shared libraries** on a `python:3.12-slim`
+  base, installed with `playwright install --with-deps`.
+- **A long crawl grows.** The six-hour whole-site run in
+  [Limits and large sites](/docs/crawling/limits-and-large-sites) held 1.2 GB in the crawl
+  process and 5 GB across its browsers with 4 workers and no page cap. On a shared host the
+  page cap is not optional.
+
+## What is free
+
+`DEPLOY.md`'s survey, dated September 2026 and marked "verify before trusting": Google
+Cloud Run works (always-free quota, real streaming, a 60-minute request ceiling,
+scale-to-zero, a card required on the billing account); Hugging Face Docker Spaces, Render
+free, Koyeb free and Fly.io do not, for size or because the tier ended. On Cloud Run's
+always-free quota a 2 vCPU / 4 GiB container comes to **about 25 hours of active crawling a
+month** — 180,000 vCPU-seconds ÷ 2 and 360,000 GiB-seconds ÷ 4 both land at 25 hours — and
+nothing while idle.
+
+The alternative that needs no account: `make api` on the machine you have, and
+`cloudflared tunnel --url http://127.0.0.1:8000` for a public HTTPS address. Set
+`WEBGRAPH_ALLOWED_ORIGINS` and `WEBGRAPH_MAX_PAGES` first — the local default is unbounded,
+and this is a public address.
+
+<Callout type="warn" title="Before sharing any link">
+The API fetches whatever URL it is handed and returns the body. On a cloud host that
+includes the instance metadata service, which serves credentials over plain HTTP. The
+private-host guard is on by default in the API; check it rather than assume it — see
+[Operations](/docs/deployment/operations#the-private-host-guard).
+</Callout>
+
+<Cards>
+  <Card title="Configuration" href="/docs/deployment/configuration" description="Every WEBGRAPH_* variable: default, meaning, when to set it; GET /api/config." />
+  <Card title="Docker" href="/docs/deployment/docker" description="Build and run the image; deploy to Cloud Run and Vercel, exactly as the repository does." />
+  <Card title="Operations" href="/docs/deployment/operations" description="Browser memory, concurrency caps, traces, the private-host guard, what to monitor, what is not built." />
+</Cards>

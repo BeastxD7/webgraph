@@ -10,8 +10,8 @@ export const MEASURED_DAY = MEASURED.date.replace(/\s*\(.*\)$/, "");
 
 export default function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-rule sm:mt-24">
-      <div className="page-col grid gap-8 py-10 text-small text-muted md:grid-cols-3 md:gap-12">
+    <footer className="border-t border-rule max-sm:mt-16 sm:mt-24">
+      <div className="page-col grid py-10 text-small text-muted max-md:gap-8 md:grid-cols-3 md:gap-12">
         <div className="flex flex-col gap-3">
           <Wordmark />
           <p className="measure-lede">
@@ -21,7 +21,7 @@ export default function SiteFooter() {
         </div>
 
         <nav aria-label="Footer">
-          <ul className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3 md:grid-cols-2">
+          <ul className="grid gap-x-6 gap-y-2 max-sm:grid-cols-2 sm:grid-cols-3 md:grid-cols-2">
             {FOOTER_LINKS.map((item) => (
               <li key={item.label}>
                 {item.external ? (

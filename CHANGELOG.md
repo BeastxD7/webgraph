@@ -45,10 +45,36 @@ All notable changes to this project are documented here. The format follows
   button to `/#start`. Below 900px the items fold behind a "Menu" button that opens a
   full-width sheet with 48px rows. The bar takes the surface colour and a rule after 8px of
   scroll. The run view's banner loses the photograph band and its duplicate back link.
+  Under `/docs` the header and footer step aside (`SiteChrome`): the docs shell draws its
+  own bar and sidebar, and two navigations on one page is one too many.
+- Known and open: `app/docs/docs.css` is a second Tailwind entry, and its utilities land
+  after `globals.css`'s in the shared `utilities` layer. Once `/docs` has been visited the
+  stylesheet stays loaded across client-side navigation, and any `hidden md:flex`-style
+  pair on the rest of the site then loses to the docs copy of `.hidden` (measured: the
+  nav collapsed to "Menu" at 1280px after visiting the docs). The new components write
+  symmetric `max-md:` / `md:` pairs so no base utility is left to be overridden; the
+  older pages (`/benchmarks`, `/how-it-works`, `/settings`, the run view) still carry
+  such pairs. The fix is one Tailwind entry -- the Fumadocs preset imported from
+  `globals.css`, as DESIGN.md §4c has it -- and belongs with the docs shell.
 - Measured with Playwright at 1280 and 400px, light and dark: no page scrolls
   horizontally; the phone gutter is 16px; buttons are 44px under a coarse pointer; a
   remembered theme is on `<html>` at DOMContentLoaded (a `next/script` beforeInteractive
   variant was measured to set it after, and was not used).
+
+### Added (2026-09-16, PR #92) — documentation site
+- The web app serves documentation at `/docs`, built with Fumadocs from MDX files under
+  `apps/web/content/docs/`. The sidebar has seven sections in a fixed order -- getting
+  started, API, how it reads a page, crawling, benchmarks, deployment, contributing --
+  each a placeholder page for now; the content follows in this pull request series. The
+  landing page carries the README's opening and a card per section. Built-in full-text
+  search (`/api/search`), a table of contents per page, light and dark themes, and a
+  "Docs" link in the site header.
+- The docs use the site's own palette and type (haze, ink, leaf; Manrope, JetBrains Mono,
+  Instrument Serif for the title) and are styled by a stylesheet loaded only under
+  `/docs`; the dark palette applies only while the docs layout is on the page, so the
+  rest of the site renders exactly as before, also after navigating away from the docs.
+  `apps/web/content/docs/_authoring.md` says how to add a page, what frontmatter it takes
+  and which components are available.
 
 ### Fixed (2026-09-15, PR #90) — a block's XPath is the geometry map's
 - The browser's measurements are keyed by each element's XPath in a fresh parse; the

@@ -1,0 +1,92 @@
+---
+title: Site context and graph
+description: POST /api/site/context assembles a bounded context bundle from a crawled site; the graph routes expose what the crawl learned.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A crawl leaves behind a site graph: pages, their sections, the links between them with their anchor text, and entities derived from what other pages call a page. These three routes read that graph. None of them fetches anything, so they answer in milliseconds - and all of them return `404` with `No graph for <url>. Crawl it first.` when no crawl of that root has run on this instance.
+
+Graphs are kept in memory (the four most recent) and written to `WEBGRAPH_GRAPH_DIR` (default `~/.cache/webgraph/graphs`, honouring `XDG_CACHE_HOME`) when a crawl ends, so a restart does not lose them. The `url` must be the root the crawl was started with.
+
+## `POST /api/site/context`
+
+Assembles a context bundle about `query` from the graph. It is retrieval under a budget, not an answer: what comes back is text for a model or a person to read, with a record of why each piece was chosen.
+
+### Request
+
+```json
+{
+  "url": "https://docs.example.com",
+  "query": "how is pricing tiered for teams",
+  "max_chars": 120000,
+  "max_hops": 2
+}
+```
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `url` | string | required | Root of a site already crawled on this instance |
+| `query` | string | required | What the context should be about |
+| `max_chars` | integer 1000–4000000 | `120000` | Size of the assembled text; roughly four characters per token |
+| `max_hops` | integer 0–3 | `2` | How far to follow links out from the matched sections. `0` is lexical retrieval alone |
+
+### How it is assembled
+
+1. **Seeding.** Sections are scored against the query with BM25 (`GRAPH_BM25_B = 0.75`); a match in a heading counts `GRAPH_HEADING_WEIGHT = 3` times, and headings on more than `GRAPH_HEADING_UBIQUITY = 0.5` of pages carry no signal. Lexical rather than embeddings because it needs no model, is deterministic and benchmarkable, and is strong on the queries websites get: names, error strings, prices.
+2. **Expansion.** From each seed the assembler walks links up to `max_hops` away, weighting an edge by how specific it is - a page linked from every page is navigation, one linked from two pages is a topic - and by shared entity mentions (`GRAPH_MENTION_WEIGHT = 0.25`). This is what lets the pricing page, which never repeats the feature's name, be included because the feature page links to it as "Pricing".
+3. **Three tiers under the budget.** 65% of `max_chars` goes to **full sections** for the best matches, with 35% of that reserved for sections reached by expansion so seeds cannot crowd them out, and at most three sections per page. 20% goes to **openings** - heading plus the first 400 characters - for the next band. Whatever remains lists a **map** of the other pages that survived expansion: title, URL, headings. The map is what turns a silent omission into "this page exists, here is where".
+
+Near-identical sections (version archives, print views) are collapsed by their first `GRAPH_DEDUP_PREFIX_CHARS = 300` characters.
+
+### Response
+
+```json
+{
+  "text": "# Context assembled for: how is pricing tiered for teams\nSite: https://docs.example.com — 198 pages, 2210 sections indexed.\n\n## Relevant content\n\n...\n\n## Further content (openings only)\n\n...\n\n## Other pages on this site (not included above)\n\n...",
+  "sources": [
+    { "heading": "Team plans", "page_url": "https://docs.example.com/pricing", "page_title": "Pricing", "hops": 1, "score": 4.2137, "reason": "linked from this page as \"Pricing\"", "chars": 1840, "tier": "full" },
+    { "heading": "(opening)", "page_url": "https://docs.example.com/teams", "page_title": "Teams", "hops": 0, "score": 6.9021, "reason": "matched query", "chars": 3120, "tier": "opening" }
+  ],
+  "pages_mapped": ["https://docs.example.com/billing", "https://docs.example.com/faq"],
+  "stats": { "chars": 118220.0, "approx_tokens": 29555.0, "sections_considered": 212.0, "sections_full": 14.0, "sections_opening": 31.0, "pages_mapped": 92.0, "pages_in_graph": 198.0, "budget_used": 0.9852 },
+  "graph": { "pages": 198, "sections": 2210, "entities": 143, "links": 9120, "mentions": 1877 }
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | string | The bundle, as Markdown in the three sections shown above |
+| `sources` | `ContextSource[]` | One entry per section included, full tier first. `heading` is `(opening)` for a section with none; `hops` is `0` for a lexical seed, `1` for a direct neighbour; `reason` is the strongest single piece of evidence in words: `matched query`, `linked from this page as "…"`, `linked from this section as "…"`, `also describes <entity>`; `tier` is `full` or `opening` |
+| `pages_mapped` | string[] | URLs named in the map tier only |
+| `stats` | object | `chars`, `approx_tokens`, `sections_considered`, `sections_full`, `sections_opening`, `pages_mapped`, `pages_in_graph`, `budget_used` (share of `max_chars` spent) |
+| `graph` | object | The graph's size: `pages`, `sections`, `entities`, `links`, `mentions` |
+
+A graph that exists but has no sections yet (a crawl that has not produced content) is `409` with `The crawl has not produced any content yet.`
+
+```bash
+curl -s http://127.0.0.1:8000/api/site/context \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://docs.example.com", "query": "team pricing", "max_chars": 40000}' \
+  | jq -r '.sources[] | "\(.tier)\t\(.hops)\t\(.reason)\t\(.page_url)"'
+```
+
+<Callout type="info">
+Read `sources` before trusting `text`. A bundle whose full tier is all `hops: 0` found the answer by matching words; one whose best sections arrived by link followed the site's own structure to get there. Both are legitimate, and they deserve different confidence.
+</Callout>
+
+## `GET /api/site/graph/summary?url=…&limit=24`
+
+What the crawl learned about how the site is put together.
+
+| Field | Meaning |
+|---|---|
+| `root` | The graph's root URL |
+| `counts` | `pages`, `sections`, `entities`, `links`, `mentions` |
+| `entities` | Up to `limit`, most pages first: `key`, `type`, `name`, up to four `aliases`, up to four `pages` |
+| `hubs` | Up to `limit` pages ranked by inbound links, then section count: `url`, `title`, `inbound`, `outbound`, `sections`, `specificity` (near 1.0 for a page linked from one other, falling towards 0 as everything links to it - a hub with low specificity is navigation) |
+| `deepest` | The eight pages furthest from the root |
+
+## `GET /api/site/graph?url=…`
+
+Streams the whole graph as JSON Lines (`application/x-ndjson`, served as an attachment named `<host>.graph.jsonl`). One object per line, `kind` first: a `site` line with `root` and the counts, then every `page` (`key`, `url`, `title`, `depth`, `chars`, `content_hash`, `sections`), every `section` (`id`, `page_key`, `order`, `heading`, text and links), every `entity`, then `link`, `mention` and `section_link` edges. Nodes precede the edges that reference them. It is streamed rather than assembled because a large graph is tens of megabytes. The file is the same format the graph store writes, so `webgraph ask --graph <file>` reads it directly.

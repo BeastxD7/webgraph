@@ -1,0 +1,115 @@
+---
+title: Blocks and structure
+description: The block model, what each HTML construct becomes, and the rules that decide when a repeat is a twin.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Reading order and Markdown both work on *blocks*: one per innermost block-level element
+that contains text, so a paragraph, a heading, a list item or a table cell is a block and
+`<p>a <a>b</a> c</p>` is one block rather than three. Granularity is the whole design
+question. Per-word blocks make ordering noisy; per-section blocks hide the column
+structure ordering needs to see.
+
+## The block model
+
+A `Block` carries `text` (plain), `rich_text` (inline Markdown, kept separate so the hash
+and de-duplication key on the plain form), `kind`, `tag`, `xpath`, `dom_index`, and a
+`rect` when the browser measured it. The kinds are `paragraph`, `heading` (with `level`),
+`list-item` (with `level` and `ordered`), `table` (`rows`, `rich_rows`, or `table_html`),
+`image` (`href`, `alt`, `link`), `code` (`language`), `quote`, `figure-caption`, `media`
+(a placeholder saying a video or embed was there and not transcribed) and `rule`. A block
+also records where it sits: `region` (the innermost landmark by tag *or* ARIA role),
+`in_main`, `widget` (a named filter, consent, rail, comments or post-furniture panel),
+`quoted`, `body_of` and `float_of`.
+
+## What each construct becomes
+
+| markup | block | note |
+|---|---|---|
+| `<h1>`–`<h6>` | `heading`, level from the tag | permalink anchors (`headerlink`, a `¶`/`#` glyph on a fragment href) and `mw-editsection` strips removed first |
+| `<p>`, `<div>` with only inline children | `paragraph` | `<br>` is a hard break; `<br><br>` splits into paragraphs (PR #63) |
+| `<li>` | `list-item` with nesting depth | `<li><p>…</p><p>…</p></li>` — DocBook, Sphinx, MediaWiki — makes the first paragraph the item and the rest its continuation (PR #66) |
+| `<dt>` / `<dd>` | `paragraph` wearing the item's tag | rendered as a definition list; a `<dd>` of several paragraphs keeps them under one marker (PR #75) |
+| `<hr>` | `rule` | no text; skipped by everything that reads words; dropped if the browser gave it no box (PR #75) |
+| `<table>` | `table` as `rows` | or `table_html` when a cell spans or a table nests: pipes cannot say "this cell covers three columns" |
+| `<pre>` | `code` with `language` | text taken verbatim — whitespace is the meaning |
+| CodeMirror / Monaco / Ace DOM | one `code` block | lines in order, gutter and cursor layers out; a viewport editor completed from the hidden `<pre>` beside it (PR #73) |
+| `<blockquote>` of prose | `quote` | one that holds a table, a list or several paragraphs is walked into; each inner block carries `quoted` (PR #63) |
+| `<img>` | `image` | `src`, else `data-src`, else the first `srcset` candidate; under 32 px is a tracking pixel; `<a href><img></a>` keeps the link (PR #68) |
+| `<svg>` with `<text>` | `paragraph` of its labels, joined by `·` | at least 2 labels or 3 words; an icon emits nothing (PR #75) |
+| `<figcaption>` | `figure-caption` | |
+| `<video>`, `<audio>`, `<iframe>` | `media` | a note that it was there |
+
+**Tables.** A layout table is not a table: Hacker News once came out as one block of
+3,720 characters. `is_layout_table` treats a `<table>` as a container when a cell holds a
+page (another table, a form, a heading, more than `LONG_CELL_CHARS` of prose), or its
+shape cannot hold data (one row, one column, blank spacer rows), unless it carries a
+`<th>`, `<thead>` or `<caption>`. A data table with merged cells keeps its own markup,
+cleaned to the table tags and the two span attributes; inside a preserved cell `<br>`,
+`<p>` and `<li>` keep the words apart (`<td>a<br>b</td>` was `ab`). Links in cells survive
+into `rich_rows` (craigslist's "best of" is a table of links).
+
+**Code and its furniture.** A language is read from `language-js`, `lang-js`,
+`highlight-js`, MDN's `brush: js` and `data-language`/`data-lang`. What is *not* a
+language: `undefined`, `none`, `null`, `text`, `plaintext`, `plain`, `nohighlight` — the
+words a highlighter writes when it found none; perldoc's fences came out tagged `undefined`, a word the page never showed
+(PR #86). The strip above a code block ("js Copy" on MDN) is consumed only when it holds a
+control or nothing but labels; a `<p>` of four words is never the strip, because
+perldoc.perl.org lost "is made equivalent to" and "For example, this program" that way
+(PR #86).
+
+**Orphan text.** A container that holds blocks may hold text of its own: bare words under
+`<body>`, `<center>`, `<font>` or `<form>` on a pre-CSS page. textfiles.com's closing line
+sat straight under `<body>` and was emitted by nobody (word recall 0.787 → 1.0). Orphan
+runs are flushed per container, through inline wrappers, where the reader meets them;
+AppleInsider's paragraphs came out reversed until they were (PR #63).
+
+## Shadow DOM, composed like the browser
+
+The collector serialises open shadow roots as `<template shadowrootmode>`, and
+`flatten_shadow_roots` builds the browser's *flat tree*: each `<slot>` is replaced by what
+is assigned to it (`slot="name"` to the first `<slot name>`, everything else to the first
+unnamed slot), its fallback kept only when nothing is; light children no slot takes are
+dropped; nested components are composed inside out. Splicing the shadow content ahead of
+the light DOM, as the first version did, read every filled slot's fallback ("Untitled
+card") as text on the page and turned a title slotted into an `<h2>` into a paragraph
+(PR #85). github.com's `<relative-time>` no longer reads twice.
+
+## De-duplication
+
+Measured on WCXB (2,008 pages): **28.8% of emitted blocks repeat text already emitted**,
+usually because one DOM carries a mobile and a desktop rendering of the same page.
+`_deduplicate` runs after ordering, so "first" means first *read*, and keys on whitespace-
+stripped text plus `href` (two pictures may share alt text; two references to one image
+collapse). `kind` is deliberately not in the key: pudding.cool emitted one sentence as
+both a `list-item` and a `paragraph`.
+
+What stays:
+
+- **Two copies the browser drew in two places.** A product grid says `$100` under six
+  cards; each has its own rectangle. On allbirds.com 15 of 26 prices were being dropped
+  as repeats before this.
+- **The measured copy over the unmeasured**, kept *where it was drawn*: moving it up put
+  python.org's footer column inside the header, whose hidden dropdown lists the same
+  links.
+- **The page's own copy over the chrome's echo.** A later heading beats an earlier
+  non-heading; a block in `main` beats the same text in `nav`. Every docs.python.org
+  module page lost its heading to its own sidebar before this rule.
+- **A table or code block a page repeats on purpose**, on a page nobody measured.
+  columbia.edu/~fdc/sample.html shows one demo table four times and came out with one.
+  The test is company: a hidden layout copies a *run*, so a repeat whose neighbour also
+  repeats the first copy's neighbour is a twin and goes; a repeat among different
+  neighbours is the page repeating itself and stays (PR #69).
+
+<Callout type="info">
+Repeated *prose* on an unmeasured page is still deduplicated. Keeping it by the same
+neighbour rule was measured and rejected: WCXB −0.0017, Zyte −0.003, and businessinsider.com
+— which carries its article three times, interleaved with different furniture — fell
+from 0.998 to 0.471.
+</Callout>
+
+A last pass, `_drop_restated_wholes`, removes a block of 150+ words whose six-word
+shingles are 70% present across *several* other blocks — businessinsider.de's
+`articleBody` div restating the paragraphs above it — while a single block that nearly
+repeats another is a revision, not a restatement, and stays (PR #48).

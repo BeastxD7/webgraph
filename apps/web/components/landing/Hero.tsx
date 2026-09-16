@@ -2,9 +2,9 @@ import UrlPrompt from "./UrlPrompt";
 
 export default function Hero() {
   return (
-    <section className="page-col pb-12 pt-12 md:pb-16 md:pt-20">
+    <section className="page-col max-md:pb-12 max-md:pt-12 md:pb-16 md:pt-20">
       <div className="grid grid-cols-12 gap-x-6 gap-y-10">
-        <div className="col-span-12 lg:col-span-8">
+        <div className="max-lg:col-span-12 lg:col-span-8">
           <p className="text-label font-bold uppercase text-muted">
             Open-source · Runs locally · MIT
           </p>
@@ -16,7 +16,7 @@ export default function Hero() {
           </p>
         </div>
 
-        <div className="col-span-12 lg:col-span-8 lg:col-start-3">
+        <div className="max-lg:col-span-12 lg:col-span-8 lg:col-start-3">
           <UrlPrompt />
           <p className="mt-3 text-caption text-muted lg:text-right">
             Runs on your machine. The only requests made are to the site you name.

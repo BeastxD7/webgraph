@@ -12,7 +12,7 @@ export default function StatTile({
   source: string;
 }) {
   return (
-    <div className="flex flex-col gap-2 border-t border-rule pt-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0 lg:first:border-l-0 lg:first:pl-0">
+    <div className="flex flex-col gap-2 border-rule max-lg:border-t max-lg:pt-4 lg:border-l lg:pl-6 lg:first:border-l-0 lg:first:pl-0">
       <p className="tabular font-display text-stat text-ink">{value}</p>
       <p className="text-small font-bold text-ink">{label}</p>
       <p className="text-caption text-muted">{source}</p>

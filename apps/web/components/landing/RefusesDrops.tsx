@@ -74,7 +74,7 @@ const DROPS: ReadonlyArray<{ label: string; value: string; source?: string }> = 
 
 export default function RefusesDrops() {
   return (
-    <section aria-labelledby="refuses" className="page-col border-t border-rule py-16 md:py-24">
+    <section aria-labelledby="refuses" className="page-col border-t border-rule max-md:py-16 md:py-24">
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         <div className="min-w-0">
           <h2 id="refuses" className="font-display text-h2 text-ink">

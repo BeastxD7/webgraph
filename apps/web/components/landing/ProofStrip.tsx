@@ -14,11 +14,11 @@ const MEASURED_DAY = MEASURED.date.replace(/\s*\(.*\)$/, "");
 
 export default function ProofStrip() {
   return (
-    <section aria-labelledby="proof" className="page-col border-t border-rule py-16 md:py-24">
+    <section aria-labelledby="proof" className="page-col border-t border-rule max-md:py-16 md:py-24">
       <h2 id="proof" className="sr-only">
         What was measured
       </h2>
-      <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4 lg:gap-0">
+      <div className="grid max-lg:gap-8 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
           value={selfScore(WCXB).toFixed(3)}
           label="WCXB, dev split"

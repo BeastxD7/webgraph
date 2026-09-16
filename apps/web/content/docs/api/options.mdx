@@ -1,0 +1,79 @@
+---
+title: Request options
+description: FetchOptions, RenderOptions and CrawlOptions - the per-request overrides, their defaults from config.py, and what each one does.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Three request fields carry per-run overrides: `fetch`, `renderOptions` (alias `render_options`) and `crawl`. Every field in them is optional and `null` by default; a `null` leaves the engine's default in place, and the defaults are the constants in `packages/engine/src/webgraph/config.py` quoted below. `GET /api/config` returns the same list under `overridable`, so a client can discover it at runtime. Anything not listed here is changed by editing `config.py`, not per request.
+
+Overrides are applied by replacing fields on the engine's config dataclasses (`FetchConfig`, `RenderConfig`, `SiteConfig`). On a crawl, the host's environment caps still apply on top.
+
+## `FetchOptions`
+
+Accepted by `/api/text`, `/api/text/stream` and `/api/site/stream` as `fetch`. Governs the plain HTTP fetch, which every strategy starts with.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `timeout_seconds` | number 1–120 | `20.0` (`FETCH_TIMEOUT_SECONDS`) | Seconds to wait for a plain HTTP response |
+| `retries` | integer 0–5 | `1` (`FETCH_RETRIES`) | Extra attempts after a `429`/`503` (honouring `Retry-After` up to `5.0` s) or a transport error. A definite answer such as `403` or `404` is never retried |
+| `respect_robots` | boolean | `true` (`PAGE_RESPECT_ROBOTS`) | Ask the host's `robots.txt` before fetching and refuse a page it disallows for this client, quoting the rule and naming what the site offers instead. `false` is the caller's explicit choice |
+
+The fetch speaks HTTP the way a browser does - HTTP/2, brotli, the `Sec-Fetch-*` navigation headers - under a User-Agent that still names `webgraph` and carries a contact URL. Those are not overridable per request. The robots check asks for the `webgraph` token (`ROBOTS_AGENT_TOKEN`), not the browser prefix, and caches a host's file for `ROBOTS_CACHE_SECONDS = 3600`.
+
+```json
+{ "fetch": { "timeout_seconds": 45, "retries": 2, "respect_robots": false } }
+```
+
+## `RenderOptions`
+
+Accepted by the same three routes as `renderOptions`. Governs the browser, and therefore only matters when a render runs: `render: true`, a shell escalation on `/api/text`, or a crawl with `complete: true`.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `timeout_ms` | integer 1000–120000 | `30000` (`RENDER_TIMEOUT_MS`) | Milliseconds a navigation may take before the page is read as-is, or refused if it holds fewer than `MIN_SALVAGED_TEXT = 200` characters |
+| `wait_until` | `commit` \| `domcontentloaded` \| `load` \| `networkidle` | `"load"` (`RENDER_WAIT_UNTIL`) | When the navigation counts as finished. `networkidle` never fires on sites with analytics beacons or polling; measured, it timed out on 5 of 24 real sites |
+| `settle_ms` | integer 0–10000 | `900` (`RENDER_SETTLE_MS`) | Pause after load for hydration and layout to settle before geometry is measured |
+| `dismiss_gates` | boolean | `true` (`RENDER_DISMISS_GATES`) | Click through a first-run interstitial (persona picker, age gate) that blocks the page from mounting. One guarded click on a page with at most `4000` characters and one internal link, kept only if the text grows `1.5×` |
+| `reveal_collapsed` | boolean | `false` (`RENDER_REVEAL_COLLAPSED`) | Open `<details>` and ARIA disclosure panels before measuring, without clicking |
+| `viewport_width` | integer 320–3840 | `1440` (`RENDER_VIEWPORT_WIDTH`) | Viewport width in CSS pixels. Width decides reading order: a narrow viewport collapses columns into one |
+| `viewport_height` | integer 320–2160 | `900` (`RENDER_VIEWPORT_HEIGHT`) | Viewport height in CSS pixels |
+
+Images, media and fonts are never downloaded (`RENDER_BLOCK_RESOURCES`); fonts shift metrics by a pixel or two, and reading order does not care. The browser runs headless and is reused across pages on a thread; neither is overridable.
+
+```json
+{ "renderOptions": { "wait_until": "networkidle", "settle_ms": 2000, "viewport_width": 390, "viewport_height": 844 } }
+```
+
+<Callout type="info">
+A render that fails or times out does not fail the request. The result degrades to the static document and `render_error` on the `resolve` event says why.
+</Callout>
+
+## `CrawlOptions`
+
+Accepted by `/api/site/stream` only, as `crawl`. `max_pages`, `concurrency` and `complete` are top-level fields of the request, not options here.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `max_depth` | integer 0–50 | `12` (`CRAWL_MAX_DEPTH`) | Links away from the root the crawl goes. `0` is the root alone; `1` adds everything it links to or its sitemap lists. Breadth-first, so a page budget is spent near the root |
+| `strict_domain` | boolean | `true` (`CRAWL_STRICT_DOMAIN`) | Stay on the root's host (`www.example.com` and `example.com` are one host). `false` also follows subdomains, never other sites |
+| `delay_seconds` | number 0–10 | `0.3` (`CRAWL_DELAY_SECONDS`) | Pause between fetches per worker. Raised to the site's `Crawl-delay` when that is larger |
+| `verify_inventory` | boolean | `true` (`CRAWL_VERIFY_INVENTORY`) | Check each sitemap URL with a cheap request before spending a page on it, so a stale sitemap cannot burn the budget on 404s — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
+| `follow_links` | boolean | `true` (`CRAWL_FOLLOW_LINKS`) | Discover pages by following links as well as reading the sitemap — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
+| `discovery_limit` | integer 0–10000 | `400` (`CRAWL_DISCOVERY_LIMIT`) | URLs harvested by link-following before verification — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
+| `sitemap_limit` | integer 0–200000 | `50000` (`CRAWL_SITEMAP_LIMIT`) | URLs read from sitemaps, at most; sitemap indexes are followed up to `MAX_SITEMAP_DOCUMENTS = 20` files |
+| `respect_robots` | boolean | `true` (`CRAWL_RESPECT_ROBOTS`) | Skip URLs `robots.txt` disallows for this client at the frontier. Distinct from `fetch.respect_robots`, which checks again per page inside `resolve_page` |
+| `remove_chrome` | boolean | `true` (`CRAWL_REMOVE_CHROME`) | Produce `content_markdown` with landmarks, cross-page site chrome and boilerplate removed. Chrome is a block seen on `CHROME_THRESHOLD = 0.9` of pages, judged once `CHROME_MIN_PAGES = 6` pages exist, never removing more than half a page |
+| `main_content` | boolean | `true` (`CRAWL_MAIN_CONTENT`) | Also draw the main-content boundary when producing `content_markdown`. Turn off for a site whose pages are link hubs by design, where the list of links is the content |
+
+```json
+{
+  "url": "https://docs.example.com",
+  "max_pages": 300,
+  "crawl": { "max_depth": 3, "strict_domain": false, "delay_seconds": 1.0, "main_content": false }
+}
+```
+
+<Callout type="warn">
+`strict_domain: false` turns a bounded crawl into a potentially unbounded one: `blog.`, `shop.` and `status.` subdomains are usually separate applications. Pair it with `max_pages`.
+</Callout>

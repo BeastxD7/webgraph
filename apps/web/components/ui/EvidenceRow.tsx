@@ -16,7 +16,7 @@ export default function EvidenceRow({
   mono?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-x-4 gap-y-1 border-b border-rule py-3 sm:grid-cols-[8.5rem_1fr]">
+    <div className="grid gap-x-4 gap-y-1 border-b border-rule py-3 sm:grid-cols-[8.5rem_1fr]">
       <dt className="text-small font-semibold text-ink">{label}</dt>
       <dd className="min-w-0">
         <p className={mono ? "break-words font-mono text-code text-ink" : "text-small text-ink"}>

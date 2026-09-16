@@ -1,0 +1,113 @@
+---
+title: API reference
+description: The webgraph HTTP API - routes, request shapes, streaming, and the two guards every deployment runs.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+webgraph's API is a FastAPI service (`apps/api`, module `webgraph_api.main`) over the extraction engine. It has one job: take a URL, obtain the page as completely as it can, and return text, Markdown and facts with a record of where each came from. Every refusal names its reason.
+
+## Base URL
+
+Locally, `make api` starts the service on `http://127.0.0.1:8000`, which is also the web client's default `NEXT_PUBLIC_API_BASE`. The shipped container listens on `$PORT` (default `8080`). All routes live under `/api/`. There is no authentication layer: put the service behind your own if it is reachable from the internet.
+
+## Requests and responses
+
+Every `POST` route takes a JSON body and every field name below is a JSON key. Request models accept both the snake_case name and, where one exists, the camelCase alias: `render_options` and `renderOptions` are the same field. Responses are JSON objects; pydantic validation failures return `422` with FastAPI's standard `detail` array.
+
+There are two response shapes:
+
+| Shape | Routes | How it ends |
+|---|---|---|
+| Blocking JSON | `/api/text`, `/api/extract`, `/api/site/context`, `/api/site/graph/summary`, `/api/health`, `/api/config` | One body; failure is an HTTP status with a `detail` string |
+| Server-Sent Events | `/api/text/stream`, `/api/site/stream` | `text/event-stream`; each frame is `data: <JSON>\n\n`; failure is an `error` event that closes the stream |
+
+Once a stream has sent its first byte the HTTP status can no longer say anything, so a streaming route reports everything discovered during the run as events. Only checks that happen before the first byte (a non-HTTP URL, a refused host) use a status code.
+
+## Routes
+
+| Route | One line |
+|---|---|
+| `GET /api/health` | Liveness plus the two settings whose misconfiguration is invisible |
+| `GET /api/config` | Every engine setting with its comment, which ones a request may override, and this host's caps |
+| `POST /api/text` | One page: text, Markdown, content Markdown, page type, images, tables |
+| `POST /api/text/stream` | The same pipeline as SSE: `resolve`, `parse`, `classify`, `select`, `done` |
+| `POST /api/extract` | Facts under a JSON Schema (yours or the one for the page's type), each with provenance |
+| `POST /api/site/stream` | Whole-site crawl as SSE: `analysis`, `discovery`, `frontier`, `fetching`, `page`, `done` |
+| `POST /api/site/context` | A bounded context bundle about a query, assembled from a crawled site's graph |
+| `GET /api/site/graph/summary` | Hubs, entities and the deepest pages of a crawled site |
+| `GET /api/site/graph` | The whole site graph as JSON Lines |
+
+<Cards>
+  <Card title="Single page" href="/docs/api/text" description="POST /api/text and its streaming twin." />
+  <Card title="Whole site" href="/docs/api/site-stream" description="Crawl events, caps, and what unbounded means." />
+  <Card title="Errors" href="/docs/api/errors" description="Every refusal, its status, and what to do." />
+  <Card title="Configuration" href="/docs/api/configuration" description="The WEBGRAPH_* variables." />
+</Cards>
+
+## CORS and allowed origins
+
+The service answers browser requests only from the origins in `WEBGRAPH_ALLOWED_ORIGINS` (comma-separated). When that is empty it allows the development frontend, `http://localhost:3000` and `http://127.0.0.1:3000`. It never allows `*`: this process fetches arbitrary URLs on the caller's behalf, and an open CORS policy would hand every page on the internet a fetch proxy running inside your network. Allowed methods are `GET` and `POST`.
+
+## The private-host guard
+
+The API refuses to fetch loopback, private, link-local and network-internal addresses (`localhost`, `*.internal`, `*.local`, `169.254.169.254`, `metadata.google.internal`, and so on), including any address a redirect lands on. It is on by default in the API and off in the library and CLI. `WEBGRAPH_ALLOW_PRIVATE_HOSTS=1` turns it off for pointing a local API at a local site; `WEBGRAPH_BLOCK_PRIVATE_HOSTS=1` turns it on explicitly. The opt-out wins if both are set.
+
+How a refusal surfaces depends on where the check runs:
+
+- `POST /api/text/stream` checks the URL before the first byte and answers **403** with `{"detail": "refused: refusing to fetch a non-public address: 127.0.0.1"}`. The response carries CORS headers like any other, so a browser sees the reason rather than a network error.
+- Every other route reaches the guard inside the fetch layer, where the refusal is a failed fetch. `/api/text` reports it as a 502 whose `detail` contains `plain fetch: BlockedHostError: refusing to fetch a non-public address: ...`; `/api/site/stream` reports it in an `error` event.
+
+<Callout type="warn">
+A deployment with the guard off looks perfectly healthy. `GET /api/health` reports `private_hosts_blocked` for exactly this reason.
+</Callout>
+
+## `GET /api/health`
+
+```json
+{
+  "status": "ok",
+  "render_available": true,
+  "max_concurrent_renders": 2,
+  "private_hosts_blocked": true,
+  "max_pages": 0
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `status` | `"ok"` | Always `ok` when the process answers |
+| `render_available` | boolean | Playwright is installed; without it every route degrades to the plain fetch |
+| `max_concurrent_renders` | integer | Browser pages the API opens at once (`WEBGRAPH_MAX_CONCURRENT_RENDERS`) |
+| `private_hosts_blocked` | boolean | The guard above is on |
+| `max_pages` | integer | This host's ceiling on pages per crawl; `0` means crawls run until the frontier is exhausted |
+
+## `GET /api/config`
+
+Returns every constant in `webgraph/config.py` with its value, the comment above it and the section banner it sits under, parsed from the file's source so the documentation cannot drift from the code.
+
+```json
+{
+  "settings": {
+    "FETCH_TIMEOUT_SECONDS": {
+      "value": 20.0,
+      "comment": "Seconds to wait for a plain HTTP response.",
+      "section": "Fetching (plain HTTP)"
+    }
+  },
+  "overridable": {
+    "crawl": ["delay_seconds", "discovery_limit", "follow_links", "main_content", "max_depth", "remove_chrome", "respect_robots", "sitemap_limit", "strict_domain", "verify_inventory"],
+    "fetch": ["respect_robots", "retries", "timeout_seconds"],
+    "renderOptions": ["dismiss_gates", "reveal_collapsed", "settle_ms", "timeout_ms", "viewport_height", "viewport_width", "wait_until"]
+  },
+  "caps": {
+    "max_pages": 0,
+    "max_concurrency": 0,
+    "max_concurrent_renders": 2,
+    "max_concurrent_crawls": 3
+  }
+}
+```
+
+`overridable` lists which settings a request may change per run, by request field; everything else is changed by editing `config.py`. `caps` are the host's environment caps, `0` meaning none. The [options page](/docs/api/options) documents each overridable field.

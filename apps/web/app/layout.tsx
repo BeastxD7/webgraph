@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, JetBrains_Mono, Manrope } from "next/font/google";
 
+import SiteChrome from "@/components/site/SiteChrome";
 import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
@@ -67,8 +68,8 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     // `suppressHydrationWarning`: the boot script below stamps `data-theme` on this element
-    // before React runs, so the server markup and the first client render legitimately
-    // differ by one attribute.
+    // before React runs, and the docs theme switch writes a class onto it the same way, so
+    // the server markup and the first client render legitimately differ there.
     <html
       lang="en"
       suppressHydrationWarning
@@ -81,9 +82,13 @@ export default function RootLayout({
         <script suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body className="flex min-h-dvh flex-col antialiased">
-        <SiteHeader />
+        <SiteChrome>
+          <SiteHeader />
+        </SiteChrome>
         <div className="flex-1">{children}</div>
-        <SiteFooter />
+        <SiteChrome>
+          <SiteFooter />
+        </SiteChrome>
       </body>
     </html>
   );

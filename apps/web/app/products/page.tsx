@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function ProductsPage() {
   return (
-    <main className="page-col pb-16 pt-12 md:pb-24 md:pt-20">
+    <main className="page-col max-md:pb-16 max-md:pt-12 md:pb-24 md:pt-20">
       <header>
         <h1 className="font-display text-h1 text-ink">Products</h1>
         <p className="measure-lede mt-4 text-body text-muted">
@@ -19,7 +19,7 @@ export default function ProductsPage() {
         </p>
       </header>
 
-      <div className="mt-10 md:mt-12">
+      <div className="max-md:mt-10 md:mt-12">
         <ProductGrid />
       </div>
 

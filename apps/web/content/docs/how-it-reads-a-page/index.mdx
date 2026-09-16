@@ -1,0 +1,80 @@
+---
+title: How it reads a page
+description: The path from a URL to ordered Markdown, one stage at a time, with the reason each stage exists.
+---
+
+import { Card, Cards } from 'fumadocs-ui/components/card';
+
+webgraph takes a URL and returns the page as Markdown in the order a reader would read it,
+together with an account of how it knows: which fetch each block came from, whether the
+order was measured or assumed, and why anything was left out. There is no model in the
+path. Every step below is deterministic, and every rule in it was put there because a
+named page broke without it.
+
+<Steps>
+<Step>**robots.txt** — the site's rule for this client is read first; a disallowed page is a refusal, not a fetch.</Step>
+<Step>**Two fetches** — the plain HTTP document and the browser-rendered one, in parallel; technology detection reads headers, markup and the live runtime.</Step>
+<Step>**Wall check, per side** — a block page, a bot challenge, a login redirect or a 5xx on either side is left out and named; both sides walled is a refusal.</Step>
+<Step>**Parse into blocks** — shadow roots composed, off-screen and hidden matter dropped, structure kept.</Step>
+<Step>**Union** — the two documents merged, anchored on the blocks they share; what the browser hid stays out.</Step>
+<Step>**Reading order** — an XY-cut over the measured boxes; source order only when too little was measured.</Step>
+<Step>**De-duplication** — cloned twins go, real repeats stay.</Step>
+<Step>**Output** — `markdown` / `text` for the whole page; `content_markdown` after landmarks, scopes, chrome and the boundary.</Step>
+</Steps>
+
+## The stages
+
+**[Technology detection](/docs/how-it-reads-a-page/technology-detection).** Before
+anything is read, the site is fingerprinted from seven kinds of evidence: response
+headers, markup, same-origin assets, runtime globals, the network log, the cookie jar and
+the page's own bundle. Each detection carries its evidence and a confidence, and a rule
+only fires on something a page can emit by *using* a technology, never by writing about
+it.
+
+**[Discovery](/docs/how-it-reads-a-page/discovery).** `robots.txt` is read first and
+obeyed, asked by this client's own name. Then every sitemap that can be found, then the
+links on every page extracted. Each discovered address carries a citation: how it was
+found, on which page, under what anchor text. A site with no sitemap reports a page count
+of *unknown* rather than zero.
+
+**[Fetching the union](/docs/how-it-reads-a-page/fetching-the-union).** Every page is
+fetched twice, once as plain HTTP and once in Chromium, and the two are merged. Neither
+alone is complete: the browser recovers pages the plain fetch is refused, and the plain
+fetch holds text the browser's own scripts remove. Predicting which pages need which
+scored 0 of 7, so the engine stopped predicting.
+
+**[What the browser hides](/docs/how-it-reads-a-page/what-the-browser-hides).** The
+browser stamps each element with how it is hidden — `display`, `visibility`, `clipped`,
+`overflow`, `opacity`, `offscreen` — and the parser reads the stamps. A menu under
+`display: none` stays out even though the plain fetch has it; a collapsed accordion stays
+in; a closed dialog is not on the page.
+
+**[Blocks and structure](/docs/how-it-reads-a-page/blocks-and-structure).** The tree
+becomes blocks with kinds: heading, paragraph, list item, table, code, quote, image, rule.
+Shadow DOM is composed as the browser paints it, `<li><p>` is a list item, a merged-cell
+table keeps its own markup, an inline SVG diagram is read for its labels.
+
+**[Reading order](/docs/how-it-reads-a-page/reading-order).** Blocks are ordered from
+their measured boxes by recursive XY-cut, and the result is labelled by how it was
+obtained: `geometric-xy-cut` when every block was measured, `geometric-anchored` when
+most were, `dom-fallback` when geometry could not lead.
+
+**[Markdown](/docs/how-it-reads-a-page/markdown).** The ordered blocks become Markdown
+that keeps headings, lists, pipe tables, fenced code with its language, links and images,
+definition lists and hard breaks. `text` is the plain form the hash and de-duplication key
+on.
+
+**[Filtered content](/docs/how-it-reads-a-page/filtered-content).** `content_markdown`
+is the same blocks with the page's furniture removed: declared landmarks first, then the
+`main` and `article` scopes, then whatever the site repeats across pages, then a boundary
+drawn around the densest run of prose. The whole page is the product; the filtered field
+must not regress on the boards.
+
+**[Refusals](/docs/how-it-reads-a-page/refusals).** A page the engine cannot read is a
+refusal, never a guess. Each refusal quotes the server's own words and says what the
+caller can do instead.
+
+<Cards>
+  <Card title="Start with the union" href="/docs/how-it-reads-a-page/fetching-the-union" description="Why two fetches, and how they are merged." />
+  <Card title="Or with the refusals" href="/docs/how-it-reads-a-page/refusals" description="Every message the engine can answer with instead of a page." />
+</Cards>
