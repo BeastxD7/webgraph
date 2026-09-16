@@ -15,7 +15,9 @@ All notable changes to this project are documented here. The format follows
   ticks "remember in this browser"), a build panel that shows the `estimate` first and
   streams progress, caps and the final stats, the graph, an ask box, export and Neo4j sync.
 - The graph: sigma 3 (WebGL) + graphology, ForceAtlas2 in a worker for a bounded time;
-  colour by type in a fixed eight-slot categorical order validated for both grounds, size by
+  colour by type in a fixed eight-slot categorical order that passes the dataviz palette
+  checks on both grounds (the light one warns on contrast, answered by labels and the list),
+  size by
   evidence count; hover and selection dim the rest; clicking a node shows every mention with
   its quote and `url#xpath`, attributes and relations each with their quote. Phone width
   falls back to a filterable list; the page never scrolls sideways.
@@ -34,10 +36,12 @@ All notable changes to this project are documented here. The format follows
   row so the sentence splitter keeps their citations apart.
 - `/products`: the WebGraph card is "Available — preview, behind a flag" with CTAs to
   `/graph` and the docs; the footer gains WebGraph; `/docs/webgraph` gains "The page".
-- Measured only with the fake provider (no key in the environment; Ollama has no models):
-  the fixture site builds, the path streams and lights, every citation resolves to
-  `url#xpath`, both themes, 1440 px and 400 px, no console errors. Not measured: a real
-  model's answers, or a graph above ~40 nodes in the browser.
+- Measured only with the fake provider (no key in the environment; Ollama has no models),
+  in headless Chromium: the fixture site (35 entities) builds, the path streams and lights,
+  every citation resolves to `url#xpath`, both themes, 1440 px and 400 px with no sideways
+  scroll, no console errors; the sode-edu.in crawl's fake-provider graph (4,490 entities,
+  954 relations; 1,500 shown by degree) draws in 1.5 s, answers in 0.8 s and holds 61 fps
+  after the path lands. Not measured: a real model's answers.
 
 ### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
 - **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language

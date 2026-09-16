@@ -342,9 +342,9 @@ export async function streamGraphSync(
 /**
  * One hue per entity type, assigned in a fixed order so a type keeps its colour whatever
  * else is on screen. Eight slots; every further type is "other" in grey and is still named
- * in the legend and on the node. Validated for both grounds with the dataviz palette
- * checks (adjacent-pair CVD dE >= 8.4; the light warns on contrast, which the node labels
- * and the list view answer).
+ * in the legend and on the node. Passes the dataviz palette checks (lightness band, chroma,
+ * CVD and normal-vision separation, contrast) on both grounds; the light palette warns on
+ * contrast, which the node labels and the list view answer.
  */
 export const TYPE_SLOTS: readonly string[] = [
   "Organization",
