@@ -881,8 +881,13 @@ def stream_site(
     config: SiteConfig | None = None,
     should_stop: Callable[[], bool] | None = None,
     builder: GraphBuilder | None = None,
+    seeds: Iterable[str] | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Crawl and extract continuously, yielding an event per page as it completes.
+
+    `seeds` are addresses queued at depth 1 beside the sitemap's, cited `via: "seed"`. A
+    watch passes the previous run's URL set so that a page nothing links to any more is
+    still fetched -- and its 404 recorded as the page going away rather than never noticed.
 
     Discovery and extraction are **interleaved**, not sequential. Enumerating an entire site
     before extracting anything means staring at no output for minutes on a large site, and it
@@ -989,7 +994,11 @@ def stream_site(
     frontier.origin.setdefault(
         normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
     )
-    seeded = frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
+    # The caller's seeds go in first: a watch re-verifies what it knows before it explores,
+    # so a capped run spends its pages on the previous run's pages rather than on whatever
+    # the sitemap lists first.
+    seeded = frontier.extend(list(seeds), 1, via="seed", found_on=None) if seeds else []
+    seeded += frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
     yield _discovery_event(policy, probe.sitemap_attempts, len(probe.sitemap_pages), len(seeded))
 
@@ -1213,6 +1222,9 @@ def stream_site(
                     "error": page.error,
                     "depth": depth,
                     "chars": page.text_chars,
+                    # Over the extracted text, so a watch can tell an unchanged page from
+                    # a changed one without holding the previous text (`pipeline.content_hash_of`).
+                    "content_hash": page.document.content_hash if page.document is not None else "",
                     "markdown": page.markdown,
                     "content_markdown": content_md,
                     "content_blocks": selection.kept if selection is not None else None,

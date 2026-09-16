@@ -6,6 +6,59 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #101) — Watch
+- `webgraph.watch`: change monitoring on top of the crawl. A watch is a root and a
+  config; `run_watch` / `stream_watch` crawl it again with the previous run's URL set as
+  seeds (`stream_site(..., seeds=)`), compare every page against the last finished run by
+  the engine's `content_hash` first and section by section second
+  (`graph.diff.diff_sections`, now public, over sections cut from the content Markdown),
+  and record `added` / `removed` / `changed` with the section heading and the text on each
+  side. The first run is a baseline. `removed` is claimed only on an HTTP 4xx; a page the
+  cap never reached is `unverified`. No model anywhere: two runs over the same two versions
+  of a site produce the same changes. The `page` event now carries `content_hash`.
+- Noise rules, documented and configurable (`config.WATCH_NOISE_PATTERNS`,
+  `WATCH_NOISE_MIN_WORDS`; per watch `noise_patterns`, `noise: false`): a block whose text
+  *is* a date, a time or a counter -- patterns removed, fewer than three alphabetic words
+  left -- is left out before two versions of a section are compared; a sentence that
+  contains one is compared; query strings are stripped from link and image targets.
+  Navigation, footers and comments are already gone (the content Markdown); the
+  main-content boundary is off for a watch unless asked, because a watched page is as
+  likely a list of circulars as an article. A page whose blocks all survive and merely sit
+  under different headings is suppressed too -- measured on vtu.ac.in's front page, two
+  static fetches 11 minutes apart put the same social-links list under different headings.
+  Every run reports how many pages it `suppressed`.
+- Storage: one SQLite file, standard library only, `~/.cache/webgraph/watch.sqlite3`
+  (`XDG_CACHE_HOME`, `WEBGRAPH_WATCH_DB`): `watches(id, root, config_json, created_at,
+  schedule_seconds)`, `runs(id, watch_id, started_at, finished_at, pages_ok, pages_failed,
+  stopped_by)`, `pages(run_id, url, content_hash, title, markdown, fetched_at, strategy,
+  error, sections_json)`, `changes(id, run_id, watch_id, url, kind, before_hash,
+  after_hash, diff_json, detected_at)`.
+- `export_changes(fmt="json" | "md" | "rss" | "atom")`: an RSS 2.0 or Atom 1.0 feed of
+  changes, one entry per change titled with the page and its section headings -- the
+  cheapest "notify me" there is, and a university's circulars as a feed (the research
+  found VTU's reach 16,600 people through a volunteer Telegram channel that reposts them
+  by hand).
+- CLI: `webgraph watch create <url> [--max-pages] [--complete] [--no-noise] [--config]`,
+  `watch list`, `watch run <id> [--fail-on-change]` (non-zero on change, for a scheduled
+  job), `watch changes <id> [--since 12h|ISO|epoch] [--format md|json|rss|atom]`.
+  `webgraph diff --fail-on-change` remains. `.github/workflows/example-watch.yml` is an
+  Action that runs a watch and opens an issue with the digest; shipped with a manual
+  trigger only and its six-hourly `schedule` commented out, so it never runs unattended.
+- API: `POST /api/watch`, `GET /api/watch`, `GET /api/watch/{id}`, `DELETE /api/watch/{id}`,
+  `POST /api/watch/{id}/run` (SSE: the crawl's events plus `watch`, `change`, `done`;
+  the same crawl slot, trace and caps as `/api/site/stream`), `GET /api/watch/{id}/changes?since=`,
+  `GET /api/watch/{id}/feed.xml[?format=atom]`.
+- Web: `/watch` -- the watches, a URL to add one, "Run now" streaming the run, and the
+  changes per watch (kind, page, section heading, before and after, when), in the design
+  system, both themes, phone width. "Watch" in the header; a fifth product card, marked
+  available (the grid's odd last card spans the row). Docs: `/docs/watch`.
+- Tests (fail on the base branch): `packages/engine/tests/test_watch.py` (47: store round
+  trip; two versions of a local site -- one page added, one gone, two changed with the
+  section heading and the text on each side, the front page's bumped timestamp and
+  counter suppressed; a 500 is not a removed page; a page behind the cap is unverified;
+  noise rules on 19 blocks; RSS and Atom well-formed with every required element; the CLI
+  end to end), `apps/api/tests/test_api.py::TestWatch` (4).
+
 ### Changed (2026-09-16, PR #98) — landing page motion and docs alignment
 - The landing page is a scroll-driven story on one sticky, code-drawn stage
   (`components/landing/Story.tsx`, `Stage.tsx`, `scene/scene.ts`): the promise (the hero;
