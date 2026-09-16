@@ -219,6 +219,25 @@ class CrawlOptions(BaseModel):
     respect_robots: bool | None = None
     remove_chrome: bool | None = None
     main_content: bool | None = None
+    fetch_files: bool | None = Field(
+        default=None,
+        description="Fetch links to PDFs and other files. Off (the default), they are counted "
+        "in discovered_kinds and listed with their citations in the done event's skipped_urls, "
+        "and never requested.",
+    )
+    max_queue: int | None = Field(
+        default=None,
+        ge=0,
+        le=1_000_000,
+        description="Queued addresses beyond which discovery stops. 0 = no limit.",
+    )
+    host_interval_seconds: float | None = Field(
+        default=None,
+        ge=0,
+        le=60,
+        description="Minimum seconds between two pages from the same host, across every "
+        "worker. The site's Crawl-delay replaces it when larger.",
+    )
 
 
 def _applied(dataclass_default: Any, options: BaseModel | None) -> Any:
@@ -375,10 +394,19 @@ class TextResponse(BaseModel):
 class SiteRequest(BaseModel):
     url: str = Field(description="Site root URL")
     max_pages: int = Field(
-        default=0,
+        default=engine_config.CRAWL_MAX_PAGES,
         ge=0,
         le=100000,
-        description="0 means unbounded -- crawl until the frontier is exhausted.",
+        description="Pages to attempt before the crawl stops, refusals included. 0 means "
+        "unbounded -- crawl until the frontier is exhausted -- and has to be asked for; the "
+        "default is the engine's cap.",
+    )
+    max_seconds: float = Field(
+        default=engine_config.CRAWL_MAX_SECONDS,
+        ge=0,
+        le=86_400,
+        description="Seconds the run may take before it stops. 0 means no time limit. The "
+        "done event's stopped_by says which limit ended a run: pages, time, queue, or null.",
     )
     concurrency: int = Field(default=6, ge=1, le=12)
     complete: bool = Field(
@@ -1166,6 +1194,7 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
     config = _applied(
         SiteConfig(
             max_pages=_effective_max_pages(request.max_pages),
+            max_seconds=request.max_seconds,
             concurrency=_effective_concurrency(request.concurrency),
             strategy=Strategy.UNION if request.complete else Strategy.STATIC_ONLY,
             fetch=_applied(FetchConfig(), request.fetch),
@@ -1211,6 +1240,10 @@ async def site_stream(request: SiteRequest) -> StreamingResponse:
                 # The caps this host applied, not what the client asked for. A log that
                 # reports the request rather than the run explains nothing when they differ.
                 max_pages=config.max_pages,
+                max_seconds=config.max_seconds,
+                max_queue=config.max_queue,
+                fetch_files=config.fetch_files,
+                host_interval_seconds=config.host_interval_seconds,
                 concurrency=config.concurrency,
                 # None means Stage 0's measured verdict decides per site, which is a real
                 # answer and not a missing one.
