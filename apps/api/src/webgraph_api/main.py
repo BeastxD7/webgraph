@@ -31,6 +31,7 @@ from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -466,7 +467,9 @@ async def _validation_error(_request: Request, exc: RequestValidationError) -> J
     back down the wire and into whatever logs the response. Redacted here for every route,
     since a key in a body is never the part that failed validation.
     """
-    return JSONResponse(status_code=422, content={"detail": _redact(exc.errors())})
+    # `jsonable_encoder` first: a validator that raised puts the exception object itself in
+    # `ctx`, and a bare `JSONResponse` would turn that 422 into a 500.
+    return JSONResponse(status_code=422, content={"detail": _redact(jsonable_encoder(exc.errors()))})
 
 
 def _measured(resolved: ResolvedPage) -> bool:

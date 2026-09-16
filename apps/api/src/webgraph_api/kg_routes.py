@@ -189,21 +189,25 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
             with _builds_lock:
                 _building.discard(request.url)
 
-        store = _store_for(request.url, must_exist=False)
-        builder = KGBuilder(
-            graph,
-            provider,
-            store,
-            build_config=BuildConfig(
-                max_pages=request.budget.max_pages,
-                max_sections=request.budget.max_sections,
-                max_input_tokens=request.budget.max_input_tokens,
-                max_usd=request.budget.max_usd,
-                concurrency=provider.config.max_concurrency,
-                gleanings=request.gleanings,
-                rebuild=request.rebuild,
-            ),
-        )
+        try:
+            store = _store_for(request.url, must_exist=False)
+            builder = KGBuilder(
+                graph,
+                provider,
+                store,
+                build_config=BuildConfig(
+                    max_pages=request.budget.max_pages,
+                    max_sections=request.budget.max_sections,
+                    max_input_tokens=request.budget.max_input_tokens,
+                    max_usd=request.budget.max_usd,
+                    concurrency=provider.config.max_concurrency,
+                    gleanings=request.gleanings,
+                    rebuild=request.rebuild,
+                ),
+            )
+        except Exception:
+            release()  # otherwise the site stays "building" (409) until the process restarts
+            raise
 
         def events() -> Iterator[dict[str, Any]]:
             try:

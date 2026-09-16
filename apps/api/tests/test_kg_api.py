@@ -169,3 +169,23 @@ class TestInspectExportSync:
 
     def test_flag_is_part_of_the_router(self) -> None:
         assert "WEBGRAPH_KG=1" in kg_routes.FLAG_MESSAGE
+
+
+class TestValidationHandler:
+    def test_a_validator_exception_in_ctx_still_renders_a_422(self) -> None:
+        # Pydantic puts the raised exception object itself in `ctx` when a field validator
+        # raises; a handler that skips `jsonable_encoder` turns that 422 into a 500.
+        import asyncio
+
+        from fastapi.exceptions import RequestValidationError
+
+        from webgraph_api.main import _validation_error
+
+        exc = RequestValidationError([
+            {"type": "value_error", "loc": ("body", "provider"), "msg": "bad", "input": {"api_key": "sk-secret"}, "ctx": {"error": ValueError("boom")}}
+        ])
+        response = asyncio.run(_validation_error(None, exc))  # type: ignore[arg-type]
+        assert response.status_code == 422
+        body = json.loads(response.body)
+        assert "error" in body["detail"][0]["ctx"]  # encoded, as FastAPI's own handler would
+        assert body["detail"][0]["input"]["api_key"] == "[redacted]"
