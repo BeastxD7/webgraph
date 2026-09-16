@@ -28,6 +28,7 @@ export const NAV: readonly NavItem[] = [
 export const FOOTER_LINKS: readonly NavItem[] = [
   { label: "Report", href: "/report" },
   { label: "Docs", href: DOCS },
+  { label: "WebGraph", href: "/graph" },
   { label: "Benchmarks", href: "/benchmarks" },
   { label: "How it works", href: "/how-it-works" },
   { label: "Settings", href: "/settings" },

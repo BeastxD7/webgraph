@@ -107,8 +107,30 @@ viewer can light the path up:
 | `evidence` | the numbered quotes handed to the model: evidence rows of the selected relations, mentions and every typed attribute of the selected entities, and the blocks of the seed sections, with 35% of the slots reserved for rows reached by expansion |
 | `answer_delta`, `answer` | sentences with their citations, `unsupported` flags, the `path` (seeds, hops, evidence, answer nodes) and usage |
 
-Without a model configured the answer is extractive -- the best-matching quotes, cited --
-which is also what the benchmark's `bm25` baseline gets.
+Without a model configured (or with `no_model: true`) the answer is extractive -- the
+best-matching quotes, one quoted sentence each, cited -- which is also what the benchmark's
+`bm25` baseline gets.
+
+## The page
+
+`/graph?url=` in the web app (with the same flag on the API) is the whole workflow on one
+page: the site, the model panel, the build with its estimate and streaming progress, the
+graph, the question, the exports.
+
+- **The graph** is drawn by sigma (WebGL) and laid out by ForceAtlas2 in a worker. Colour is
+  the entity type in a fixed eight-slot order (every other type is grey, and still named in
+  the legend), size is the number of quotes. Click a node for every mention with its quote
+  and `url#xpath`, its attributes and relations, each with the quote that states it. At
+  phone width the graph is a filterable list.
+- **The path lights up as the question runs.** Seeds turn amber when the `seeds` event
+  lands; each `hop` brightens its edges and sends a particle along them; the chosen
+  evidence enlarges its nodes; the answer's nodes turn green and the camera pans to them.
+  Everything off the path dims. Nothing waits for the answer to render.
+- **The key** is typed in the browser and sent in the body of each build or ask request;
+  the API uses it for that request and stores nothing, and redacts it from any error it
+  echoes. By default it lives in the page's memory; "remember in this browser" keeps it in
+  that browser's `localStorage`, nowhere else. Provider, endpoint and model names are
+  remembered as ordinary preferences.
 
 ## Exports
 
