@@ -454,7 +454,6 @@
   background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 10%, transparent), transparent 72%);
   animation-duration: 53s;
 }
-.bd-heat { display: none; }
 .bd-grain {
   position: absolute;
   inset: 0;
@@ -531,7 +530,7 @@ main[data-motion] [data-reveal]:not([data-in]) .score-bar { transform: scaleX(0)
 main[data-motion] .score-bar { transition: transform 900ms var(--ease); transition-delay: calc(var(--i, 0) * 70ms + 200ms); }
 
 /* Micro-interactions: the primary button lifts a hair; focus rings are the global ones. */
-.landing a.bg-ink:hover, .landing button.bg-ink:hover { transform: translateY(-1px); }
+.landing a.bg-ink:hover:not(:active), .landing button.bg-ink:hover:not(:active) { transform: translateY(-1px); }
 .landing a.bg-ink, .landing button.bg-ink { transition-property: color, background-color, opacity, border-color, transform; }
 
 @media (prefers-reduced-motion: reduce) {

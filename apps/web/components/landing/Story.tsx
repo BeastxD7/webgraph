@@ -109,8 +109,8 @@ export default function Story() {
           </h2>
           <p className="measure-lede mt-4 text-body text-muted" data-reveal style={idx(1)}>
             A cookie banner returned as the article. A login page passed off as the page. A
-            503, extracted as text. Half the words missing because the page needed a browser.
-            Sixty gambling links no reader ever saw, faithfully included.
+            503, extracted as text. Words missing because the page needed a browser. Sixty
+            gambling links no reader ever saw, faithfully included.
           </p>
           <p className="mt-5 max-w-prose text-caption text-muted" data-reveal style={idx(2)}>
             Each is a page this engine met while being measured: a consent dialog chosen as
@@ -166,8 +166,9 @@ export default function Story() {
           </h2>
           <p className="measure-lede mt-4 text-body text-muted" data-reveal style={idx(1)}>
             Every page says whether its order was measured or assumed, how it was fetched, and
-            what was refused. Pages link into a graph of the site. The Site Truth Report — what
-            a site shows people against what it shows crawlers — is coming soon.
+            what was refused. Each page links to the pages it reaches, so the crawl is a map of
+            the site. The Site Truth Report — what a site shows people against what it shows
+            crawlers — is coming soon.
           </p>
           <p className="mt-5 max-w-prose text-caption text-muted" data-reveal style={idx(2)}>
             Whole-page fidelity, measured against Chromium&rsquo;s innerText on {FIDELITY.sites}{" "}
