@@ -279,12 +279,12 @@ function KindsRow({ kinds, live }: { kinds: DiscoveredKinds | null; live: boolea
 
   /**
    * Said in the collapsed row, not only inside it. A site that is mostly files is the one
-   * fact about discovery a reader cannot afford to miss: the crawl fetches each PDF to find
-   * out it is a PDF, and a queue of 8,000 of them is hours of refusals.
+   * fact about discovery a reader cannot afford to miss: the page count says how much of
+   * the site reads as pages, and the files are on record with the page that linked to each.
    */
   const note =
     total > 0 && files > counts.page
-      ? `Files outnumber pages${counts.pdf > 0 ? ` (${n(counts.pdf)} PDFs)` : ""}. PDFs are counted and fetched, then refused as not HTML; images and other files are counted but never fetched.`
+      ? `Files outnumber pages${counts.pdf > 0 ? ` (${n(counts.pdf)} PDFs)` : ""}. Files are counted with the page that links to each, and never fetched.`
       : null;
 
   return (

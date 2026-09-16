@@ -1983,6 +1983,10 @@ their own machine and unacceptable on a host shared with anyone, where one calle
 crawl slot for hours. Extracted to `_effective_max_pages` purely so the case could be
 asserted without a network call.
 
+*Overturned in part by D115 (PR #94):* the unbounded default was not right on the owner's
+own machine either -- vtu.ac.in ran six hours and held six gigabytes. `0` still means
+unbounded and the clamp is unchanged; it is no longer the default anywhere.
+
 The same reasoning produced `WEBGRAPH_MAX_CONCURRENCY`, `WEBGRAPH_MAX_BROWSERS` and
 `WEBGRAPH_CHROMIUM_ARGS`: every number tuned for a 16 GB laptop is wrong for a 4 GiB
 container, and `MAX_BROWSERS = 6` at ~150 MB each is a kernel OOM kill that no exception
@@ -3280,3 +3284,39 @@ before. The document is now read as it stands. *With a guard, because the first 
 things worse*: reliancedigital.in answers a 288-character document whose entire body is the
 words "stream timeout", and salvaging it produced somebody else's error as the page. A
 salvaged timeout must hold a real page, not an error wearing one's clothes.
+
+### D115 -- A crawl has limits by default; files are counted, not fetched (PR #94)
+
+The whole-site run of vtu.ac.in (15 Sep, `scratchpad/vtu/REPORT.md`, docs "Limits and
+large sites"): 6 h 2 min before it was stopped by hand, the crawl process at 1.2 GB and its
+browsers at 5 GB, 17,126 addresses discovered of which 7,907 were PDFs, 5,730 of them fetched
+one at a time to be refused as not HTML -- a third of the run. D21's `max_pages = 0` default
+was the cause of the first number and the frontier's treatment of `.pdf` as a page the cause
+of the last.
+
+Four changes, each with the number that justified it:
+
+- **Defaults with limits.** `CRAWL_MAX_PAGES = 500`, `CRAWL_MAX_SECONDS = 3600`,
+  `CRAWL_MAX_QUEUE = 20_000`. `0` still means unbounded, as an explicit ask. The `done` event
+  says which one ended the run (`stopped_by`), and `exhausted` is false when the queue cap
+  turned addresses away -- the UI had rendered `exhausted` as "every reachable page crawled".
+- **Count, don't fetch.** `FILE_KINDS = {pdf, image, other_file}`: recorded with a citation
+  (the page that linked it, the link text) and never queued. `fetch_files` opts back in for
+  PDFs. Rejected: dropping PDFs from the tally -- a university site *is* mostly circulars,
+  and a report that cannot list them has lost the most useful thing it found.
+- **Retention.** `stream_site` kept every `PageExtraction` (blocks, Markdown, images) until
+  the end to compute entity counts and site facts, which read only the URL, the facts and
+  the schema.org payloads. `_kept` keeps those; the six full pages chrome detection needs
+  are released once it is known. Measured on sode-edu.in, 300 pages, 4 workers, `union`:
+  peak RSS of the crawl process 412 MB -> 332 MB, 715 s -> 484 s, 25.2 -> 37.2 pages/min
+  (the speed is the rolling pool, below; RSS is the retention plus the PDFs not fetched).
+- **Politeness per host.** `delay_seconds` was slept per worker, so `Crawl-delay: 1` with
+  four workers was four requests a second. `HostThrottle` reserves the next slot per host
+  under a lock (`crawl/politeness.py`); `CRAWL_HOST_INTERVAL_SECONDS = 1.0` or the site's
+  `Crawl-delay`, whichever is larger. The per-worker pause stays. At 25-35 pages a minute a
+  `union` crawl never reaches the interval; it binds on a fast static-only crawl, where it
+  should. **The crawl loop is a rolling pool, not lockstep batches:** measured with the
+  interval in place, the batch loop fell to 20.1 pages/min (894 s) because four pages
+  starting together took slots 0-3 s apart and every batch paid the tail; the rolling
+  pool ran 37.2 pages/min -- faster than before the interval existed, because the batch
+  tail the crawl always had is gone too.

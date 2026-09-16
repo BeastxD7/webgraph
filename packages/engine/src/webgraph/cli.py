@@ -27,7 +27,7 @@ from webgraph.types import Document
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from webgraph.graph.model import SiteGraph
 
-__all__ = ["main"]
+__all__ = ["format_site_report", "main"]
 
 
 def _load_source(url: str, *, render: bool, quiet: bool) -> tuple[str, dict[str, Any], str]:
@@ -168,6 +168,140 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     else:
         print(analysis.report())
     return 0 if analysis.reachable else 1
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    """Site report: what the site shows people, what it shows machines, how ready it is
+    for agents. `--json` is the whole report; the default is a readable summary."""
+    from webgraph.report import build_site_report
+
+    report = build_site_report(args.url, pages=args.pages)
+    if args.json:
+        print(json.dumps(report.as_dict(), indent=2, default=str))
+        return 0 if report.reachable else 1
+    for line in format_site_report(report):
+        print(line)
+    return 0 if report.reachable else 1
+
+
+def format_site_report(report: Any) -> list[str]:
+    """The report as lines for a terminal: the score and its parts, the integrity
+    findings, the pages, the bots, the signals by group, and how it was measured. The
+    suggested files are printed in full at the end so they can be cut out."""
+    lines: list[str] = []
+    rule = "=" * 66
+    lines += [rule, f"SITE REPORT  {report.url}", rule]
+    if not report.reachable:
+        lines += ["", "  NO REPORT: " + (report.refusal or "the root could not be read"), ""]
+        lines.append("  The engine does not disguise itself to get past a refusal; see the message above.")
+        return lines
+    score = report.score
+    lines += ["", f"  AI-READINESS  {score.total}/100" + (
+        f"  (of {score.measured_weight} measured points)" if score.measured_weight < 100 else ""
+    )]
+    for sub in score.subscores:
+        earned = "unmeasured" if sub.score is None else f"{sub.score:>4.1f}/{sub.weight}"
+        lines.append(f"    {earned:>12}  {sub.label}")
+        lines.append(f"                  {sub.evidence}")
+        if sub.recommendation:
+            lines.append(f"                  -> {sub.recommendation}")
+    lines += ["", "  INTEGRITY"]
+    if report.findings:
+        for finding in report.findings:
+            where = f"  ({finding.page})" if finding.page else ""
+            lines.append(f"    [{finding.severity}] {finding.title}{where}")
+            lines.append(f"      {finding.detail}")
+    else:
+        lines.append("    nothing found")
+    lines += ["", "  STACK"]
+    if report.stack:
+        for entry in report.stack:
+            when = f"  released {entry.released.isoformat()}, {entry.age_years:g} years ago" if entry.released else ""
+            version = f" {entry.version}" if entry.version else ""
+            lines.append(f"    {entry.name}{version}{when}")
+    else:
+        lines.append("    none detected")
+    lines += ["", "  PAGES  (static words / rendered words / union; wall; hidden links; dead links; consent)"]
+    for page in report.pages:
+        if page.error:
+            lines.append(f"    {page.requested_url}")
+            lines.append(f"      not read: {page.error}")
+            continue
+        lines.append(
+            f"    {page.requested_url}\n      {page.static_words:,} / {page.rendered_words:,} / "
+            f"{page.union_words:,} words  ({page.static_coverage:.0%} without JavaScript); "
+            f"wall: {page.wall or 'none'}; hidden links: {page.hidden_links} "
+            f"({page.offscreen_links} off-screen, {page.offscreen_external_hosts} foreign hosts); "
+            f"dead links: {page.dead_count}/{page.links_checked}; consent text: {page.consent_share:.0%}"
+        )
+    robots = report.robots
+    lines += ["", f"  ROBOTS.TXT  {'found' if robots.found else 'not found'}"]
+    lines.append("    what the file declares per bot (the engine never fetched as any of them):")
+    for bot in robots.bots:
+        via = {"named": "named", "wildcard": "via *", "none": "not mentioned"}[bot.via]
+        delay = f", crawl-delay {bot.crawl_delay:g}s" if bot.crawl_delay else ""
+        word = {"allowed": "allowed", "partly": "partly restricted", "blocked": "blocked"}[bot.access]
+        paths = ""
+        if bot.content_paths:
+            paths = f"; {len(bot.content_paths)} content paths: " + ", ".join(bot.content_paths[:2])
+        lines.append(f"      {bot.token:<20} {word:<18} {via}{delay}{paths}")
+    llms = report.llms_txt
+    lines += [
+        "",
+        f"  LLMS.TXT  {'found' if llms and llms.found else 'not found'}"
+        + (f"  ({llms.sections} sections, {llms.links} links)" if llms and llms.found else ""),
+        f"    {report.llms_txt_note}",
+    ]
+    signals = report.signals
+    if signals is not None:
+        lines += [
+            "",
+            f"  SIGNALS  what the site declares to machines ({len(signals.present)} of "
+            f"{sum(1 for s in signals.signals if s.present is not None)} measurable present; "
+            f"{signals.requests} requests)",
+            "    Almost none of this is enforced; each line says who honours it.",
+        ]
+        for group, members in signals.by_group().items():
+            lines.append(f"    {signals_group_label(group)}")
+            for signal in members:
+                mark = {True: "yes", False: "no ", None: "?  "}[signal.present]
+                lines.append(f"      [{mark}] {signal.label:<28} {signal.detail}")
+                lines.append(f"            {signal.meaning}")
+                lines.append(f"            honoured by: {signal.who_honours}  spec: {signal.spec_url}")
+    how = report.measured
+    lines += [
+        "",
+        "  MEASURED",
+        f"    webgraph {how.engine_version} @ {how.commit}; {how.pages_sampled} pages sampled; "
+        f"{how.request_interval_seconds:g}s between requests; {how.duration_seconds:.0f}s in all",
+        f"    {how.statement}",
+        "",
+        "  SUGGESTED robots.txt",
+        "  " + "-" * 40,
+        *report.suggested_robots_txt.splitlines(),
+        "  " + "-" * 40,
+        "",
+        "  SUGGESTED llms.txt  (optional -- see the note above)",
+        "  " + "-" * 40,
+        *report.suggested_llms_txt.splitlines(),
+        "  " + "-" * 40,
+    ]
+    if report.suggested_security_txt:
+        lines += [
+            "",
+            "  SUGGESTED security.txt  (RFC 9116; the site has none)",
+            "  " + "-" * 40,
+            *report.suggested_security_txt.splitlines(),
+            "  " + "-" * 40,
+        ]
+    return lines
+
+
+def signals_group_label(group: str) -> str:
+    from webgraph.report.signals import GROUPS
+
+    labels: dict[str, str] = {str(key): label for key, label in GROUPS.items()}
+    return labels.get(group, group)
 
 
 def _cmd_site(args: argparse.Namespace) -> int:
@@ -549,6 +683,107 @@ def _cmd_kg_sync_neo4j(args: argparse.Namespace) -> int:
     return 0
 
 
+def _since(raw: str | None) -> float | None:
+    """`--since` as an epoch timestamp: seconds, an ISO date or datetime, or `3d`/`12h`."""
+    if not raw:
+        return None
+    import re
+    import time
+    from datetime import datetime
+
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+        return float(raw)
+    relative = re.fullmatch(r"(\d+)([smhdw])", raw)
+    if relative:
+        unit = {"s": 1, "m": 60, "h": 3600, "d": 86_400, "w": 604_800}[relative.group(2)]
+        return time.time() - int(relative.group(1)) * unit
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None:
+        from datetime import UTC
+
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
+
+
+def _cmd_watch_create(args: argparse.Namespace) -> int:
+    """Register a site to watch and print its id."""
+    from webgraph.watch import create_watch
+
+    options: dict[str, Any] = {}
+    if args.max_pages is not None:
+        options["max_pages"] = args.max_pages
+    if args.max_seconds is not None:
+        options["max_seconds"] = args.max_seconds
+    if args.complete:
+        options["complete"] = True
+    if args.no_noise:
+        options["noise"] = False
+    if args.config:
+        options.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
+    watch = create_watch(
+        args.url, options, schedule_seconds=args.schedule_seconds, store=args.db
+    )
+    if args.json:
+        print(json.dumps(watch.as_dict(), indent=2))
+    else:
+        print(watch.id)
+        print(f"watching {watch.root}", file=sys.stderr)
+        print("run it with: webgraph watch run " + watch.id, file=sys.stderr)
+    return 0
+
+
+def _cmd_watch_list(args: argparse.Namespace) -> int:
+    from webgraph.watch import list_watches
+
+    watches = list_watches(store=args.db)
+    if args.json:
+        print(json.dumps([w.as_dict() for w in watches], indent=2))
+        return 0
+    for watch in watches:
+        print(f"{watch.id}  {watch.root}")
+    if not watches:
+        print("no watches. create one with: webgraph watch create <url>", file=sys.stderr)
+    return 0
+
+
+def _cmd_watch_run(args: argparse.Namespace) -> int:
+    """Run a watch once; print what changed. Non-zero on change with --fail-on-change."""
+    from webgraph.watch import run_watch
+
+    def progress(event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind == "page" and not args.quiet:
+            mark = "ok " if event.get("ok") else "err"
+            print(f"  [{event['index']:>4}] {mark} {event['url'][:96]}", file=sys.stderr)
+        elif kind == "change":
+            headings = ", ".join(
+                (s.get("heading") or "(opening)") for s in event.get("sections", [])[:3]
+            )
+            print(f"  {event['kind']:<8} {event['url']}  {headings}", file=sys.stderr)
+        elif kind == "error":
+            print(f"  error: {event['message']}", file=sys.stderr)
+
+    summary = run_watch(args.id, store=args.db, on_event=progress)
+    if args.json:
+        print(json.dumps(summary.as_dict(), indent=2))
+    else:
+        print(summary.summary())
+        for change in summary.changes:
+            print(f"  {change.kind:<8} {change.url}")
+            for section in change.sections[: args.detail]:
+                heading = section.get("heading") or "(opening)"
+                print(f"      {section.get('kind', 'edited'):<8} {heading}")
+    return 1 if (args.fail_on_change and summary.any_change) else 0
+
+
+def _cmd_watch_changes(args: argparse.Namespace) -> int:
+    """Print a watch's changes as json, md, rss or atom."""
+    from webgraph.watch import export_changes
+
+    print(export_changes(args.id, _since(args.since), fmt=args.format, store=args.db), end="")
+    return 0
+
+
 def _cmd_bench(args: argparse.Namespace) -> int:
     cases = load_corpus(Path(args.corpus))
     score = run_corpus(cases)
@@ -621,6 +856,18 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("url", help="site root URL")
     analyze.add_argument("--json", action="store_true", help="emit JSON")
     analyze.set_defaults(func=_cmd_analyze)
+
+    report = subparsers.add_parser(
+        "report",
+        help="site report: what the site shows people, what it shows machines, "
+        "how ready it is for AI agents",
+    )
+    report.add_argument("url", help="site root URL")
+    report.add_argument(
+        "--pages", type=int, default=None, help="pages to sample (default REPORT_PAGES)"
+    )
+    report.add_argument("--json", action="store_true", help="emit the whole report as JSON")
+    report.set_defaults(func=_cmd_report)
 
     site = subparsers.add_parser(
         "site", help="analyse, enumerate and extract an entire site"
@@ -744,6 +991,53 @@ def build_parser() -> argparse.ArgumentParser:
     kg_sync.add_argument("--typed-edges", action="store_true")
     kg_sync.add_argument("--kg-dir")
     kg_sync.set_defaults(func=_cmd_kg_sync_neo4j)
+    watch = subparsers.add_parser(
+        "watch", help="watch a site for changes: create, run, changes, list"
+    )
+    watch_sub = watch.add_subparsers(dest="watch_command", required=True)
+
+    def db_flag(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument(
+            "--db", help="SQLite file (default: ~/.cache/webgraph/watch.sqlite3 or WEBGRAPH_WATCH_DB)"
+        )
+        sub.add_argument("--json", action="store_true", help="emit JSON")
+
+    create = watch_sub.add_parser("create", help="register a site to watch; prints its id")
+    create.add_argument("url", help="site root URL")
+    create.add_argument("--max-pages", type=int, default=None, help="0 for unlimited")
+    create.add_argument("--max-seconds", type=float, default=None)
+    create.add_argument("--complete", action="store_true", help="union fetch (static + rendered)")
+    create.add_argument("--no-noise", action="store_true", help="compare dates and counters too")
+    create.add_argument(
+        "--schedule-seconds", type=int, default=0, help="advisory: how often you mean to run it"
+    )
+    create.add_argument("--config", help="JSON file of SiteConfig fields and watch options")
+    db_flag(create)
+    create.set_defaults(func=_cmd_watch_create)
+
+    listing = watch_sub.add_parser("list", help="list watches")
+    db_flag(listing)
+    listing.set_defaults(func=_cmd_watch_list)
+
+    run = watch_sub.add_parser("run", help="crawl again and record what changed")
+    run.add_argument("id", help="watch id")
+    run.add_argument("--detail", type=int, default=8, help="sections listed per page")
+    run.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help="exit non-zero when anything changed, for a scheduled job",
+    )
+    db_flag(run)
+    run.set_defaults(func=_cmd_watch_run)
+
+    changes = watch_sub.add_parser("changes", help="print recorded changes")
+    changes.add_argument("id", help="watch id")
+    changes.add_argument(
+        "--since", help="epoch seconds, an ISO date, or a span such as 12h or 7d"
+    )
+    changes.add_argument("--format", choices=("json", "md", "rss", "atom"), default="md")
+    db_flag(changes)
+    changes.set_defaults(func=_cmd_watch_changes)
 
     bench = subparsers.add_parser("bench", help="score the engine against a labelled corpus")
     bench.add_argument("corpus", help="corpus directory containing gold.json")
