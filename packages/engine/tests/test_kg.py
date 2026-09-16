@@ -646,3 +646,60 @@ class TestProviders:
         assert out.accepted > 0 and out.rejected["quote_not_found"] == 0
         fabricated, _ = extract_section(FakeProvider(fabricate=True), prepared)
         assert fabricated.rejected["quote_not_found"] > 0
+
+
+# -- CLI ---------------------------------------------------------------------------------------
+
+
+class TestCLI:
+    @pytest.fixture
+    def env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.setenv("WEBGRAPH_KG", "1")
+        monkeypatch.setenv("WEBGRAPH_KG_DIR", str(tmp_path / "kg"))
+        monkeypatch.setenv("WEBGRAPH_GRAPH_DIR", str(tmp_path / "graphs"))
+        return tmp_path
+
+    def test_the_flag_gates_every_subcommand(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        from webgraph.cli import main
+
+        monkeypatch.delenv("WEBGRAPH_KG", raising=False)
+        monkeypatch.setenv("WEBGRAPH_KG_DIR", str(tmp_path))
+        for argv in (["kg", "build", ROOT, "--pages", str(FIXTURE), "--provider", "fake"], ["kg", "ask", ROOT, "q"], ["kg", "export", ROOT], ["kg", "sync-neo4j", ROOT]):
+            with pytest.raises(SystemExit, match="WEBGRAPH_KG=1"):
+                main(argv)
+
+    def test_build_ask_export(self, env: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        from webgraph.cli import main
+
+        assert main(["kg", "build", ROOT, "--pages", str(FIXTURE), "--provider", "fake", "--model", "fake-1", "--json"]) == 0
+        events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert events[0]["type"] == "estimate" and events[-1]["type"] == "done"
+        assert list((env / "kg").glob("*.sqlite"))
+
+        assert main(["kg", "ask", ROOT, "What is the tuition fee for B.E. Computer Science?", "--pages", str(FIXTURE), "--no-model"]) == 0
+        out = capsys.readouterr().out
+        assert "₹1,20,000" in out and "#/html/body/main/p[" in out
+
+        assert main(["kg", "export", ROOT, "--format", "jsonl"]) == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert rows[0]["kind"] == "kg" and any(r["kind"] == "entity" for r in rows)
+        assert main(["kg", "export", ROOT, "--format", "cypher", "--out", str(env / "g.cypher")]) == 0
+        assert "MERGE (e:Entity" in (env / "g.cypher").read_text()
+
+    @pytest.mark.usefixtures("env")
+    def test_build_needs_a_model_and_ask_needs_a_graph(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.cli import main
+
+        monkeypatch.delenv("WEBGRAPH_LLM_MODEL", raising=False)
+        with pytest.raises(SystemExit, match="--model"):
+            main(["kg", "build", ROOT, "--pages", str(FIXTURE), "--provider", "ollama"])
+        assert main(["kg", "ask", ROOT, "q", "--no-model"]) == 1
+
+    @pytest.mark.usefixtures("env")
+    def test_sync_refuses_a_password_on_the_command_line(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.cli import main
+
+        main(["kg", "build", ROOT, "--pages", str(FIXTURE), "--provider", "fake", "--json"])
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+        with pytest.raises(SystemExit, match="NEO4J_PASSWORD"):
+            main(["kg", "sync-neo4j", ROOT])

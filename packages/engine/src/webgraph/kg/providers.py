@@ -609,7 +609,9 @@ class FakeProvider:
         if scored[0][0] == 0:
             return "Not stated on this site."
         best = [(n, q) for neg, n, q in scored[:2] if neg < 0]
-        return " ".join(f"{quote.rstrip('.')} [{n}]." for n, quote in best)
+        # One sentence per citation: a stop inside the quote becomes a semicolon, so the
+        # `[n]` at the end covers the whole of what was quoted.
+        return " ".join(f"{re.sub(r'(?<=\w{5})[.!?]\s+', '; ', quote).rstrip('.')} [{n}]." for n, quote in best)
 
 
 def _window(text: str, needle: str, *, words: int = 6) -> str:
