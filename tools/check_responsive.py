@@ -82,13 +82,13 @@ SIZES: Final[tuple[tuple[str, int, int], ...]] = (
     ("short-1440", 1440, 640),
 )
 
-# (route, rule) -> why. The landing's story stage (components/landing/Stage.tsx) is sticky by
-# design on phones and its chapter notes are set in caption size; both belong to the landing
-# owner and are recorded here rather than silently passed. Remove the entry when they are
-# fixed, and the rule takes over again.
+# (route, rule) -> why. The landing's story stage (components/landing/Story.tsx) is sticky
+# under the header on phones and its chapter notes are set in caption size; both belong to
+# the landing's owner and are recorded here rather than silently passed. A waiver that no
+# finding uses fails the run, so an entry cannot outlive its fix and hide a regression.
 WAIVED: Final[dict[tuple[str, str], str]] = {
-    ("landing", "pinned"): "story stage is sticky on phones by design (components/landing, PR #107)",
-    ("landing", "text"): "chapter notes are text-caption prose (components/landing, PR #107)",
+    ("landing", "pinned"): "story stage sticky under the header on phones; components/landing, reported in PR #107",
+    ("landing", "text"): "chapter notes are text-caption prose; components/landing, reported in PR #107",
 }
 
 PHONE_MAX_WIDTH: Final[int] = 480
@@ -242,6 +242,7 @@ def main() -> int:
     themes = ("light", "dark") if args.theme == "both" else (args.theme,)
 
     results: list[Result] = []
+    waivers_used: set[tuple[str, str]] = set()
     with sync_playwright() as driver:
         browser = driver.chromium.launch()
         for theme in themes:
@@ -285,6 +286,7 @@ def main() -> int:
                         reason = WAIVED.get((name, rule))
                         if reason:
                             waived.append(f"{message} -- waived: {reason}")
+                            waivers_used.add((name, rule))
                         else:
                             problems.append(message)
 
@@ -364,11 +366,19 @@ def main() -> int:
     failures = sum(1 for r in results if not r.ok)
     waived = sum(1 for r in results if r.ok and r.waived)
     print()
+    checked = {p[0] for p in pages}
+    stale = 0
+    for key, reason in WAIVED.items():
+        if key[0] in checked and any(w <= PHONE_MAX_WIDTH for _, w, _ in sizes) and key not in waivers_used:
+            print(f"waiver unused, remove it: {key} -- {reason}", file=sys.stderr)
+            stale += 1
     if failures:
         print(f"{failures} of {len(results)} route x viewport checks failed", file=sys.stderr)
     else:
         print(f"all {len(results)} route x viewport checks passed" + (f" ({waived} waived, see WAIVED)" if waived else ""))
-    return 1 if failures else 0
+    if stale:
+        print(f"{stale} waiver(s) in WAIVED no longer match a finding", file=sys.stderr)
+    return 1 if failures or stale else 0
 
 
 if __name__ == "__main__":
