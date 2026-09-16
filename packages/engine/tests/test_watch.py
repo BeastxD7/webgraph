@@ -403,6 +403,33 @@ class TestIncrementalRun:
         baseline = store.baseline_run(watch.id)
         assert baseline is not None and baseline.id == capped.id
 
+    def test_blocks_that_moved_between_sections_are_not_a_change(self) -> None:
+        """vtu.ac.in's front page, two static fetches 11 minutes apart: the same
+        social-links list and conference banner under different headings."""
+        from webgraph.watch import _compare
+
+        before = PageRecord(
+            url="https://x.test/", content_hash="a", sections=(
+                {"heading": "Students", "level": 2, "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)"},
+                {"heading": "Message", "level": 2, "text": "The new millennium has seen unprecedented challenges."},
+            ),
+        )
+        after = PageRecord(
+            url="https://x.test/", content_hash="b", sections=(
+                {"heading": "Students", "level": 2, "text": "The new millennium has seen unprecedented challenges."},
+                {"heading": "Message", "level": 2, "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)"},
+            ),
+        )
+        verdict = _compare(before, after, NoiseRules.default())
+        assert verdict.kind is None and verdict.suppressed
+        # But a block that is new is a change, however the rest moved.
+        grown = PageRecord(
+            url="https://x.test/", content_hash="c", sections=(
+                *after.sections, {"heading": "Circulars", "level": 2, "text": "Fee notification for the odd semester examinations."},
+            ),
+        )
+        assert _compare(before, grown, NoiseRules.default()).kind == "changed"
+
     def test_a_wall_is_not_a_removed_page(self) -> None:
         from webgraph.watch import _gone
 

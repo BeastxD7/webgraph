@@ -19,7 +19,9 @@ URL set as seeds beside the sitemap and the links, under the same limits and pol
 as any crawl -- and records every page: its `content_hash`, its content Markdown, and the
 heading-scoped sections cut from it. For each page the run compares against the last
 finished run: by hash first (identical text is identical, no diff needed), then section
-by section with the noise rules applied (`watch.noise`), and records a **change** --
+by section with the noise rules applied (`watch.noise`) -- a page whose blocks all
+survive and merely sit under different headings is suppressed too, since two fetches of
+one page can differ in order without differing in content -- and records a **change** --
 `added`, `removed`, `changed` -- carrying the page, the section headings and the text on
 each side. The first run is the baseline and records no changes. No model is involved
 anywhere; two runs over the same two versions of a site produce the same changes.
@@ -39,6 +41,7 @@ Scheduling is not the engine's business in v1. `webgraph watch run <id>` (or
 from __future__ import annotations
 
 import time
+from collections import Counter
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -293,7 +296,19 @@ def _compare(previous: PageRecord | None, current: PageRecord, rules: NoiseRules
     changes = diff_sections(before, after)
     if not changes:
         return _Verdict(None, suppressed=True)
+    if _blocks_of(before) == _blocks_of(after):
+        # Every block is still there and nothing was added: the blocks moved between
+        # sections. Measured on vtu.ac.in's front page, two static fetches 11 minutes
+        # apart put the same social-links list and the same conference banner under
+        # different headings -- the page's order jittered, not its content. A watch that
+        # reported that would be reporting the fetch.
+        return _Verdict(None, suppressed=True)
     return _Verdict("changed", _section_dicts(changes))
+
+
+def _blocks_of(sections: list[Section]) -> Counter[str]:
+    """The page's blocks as a multiset, with the heading each sits under ignored."""
+    return Counter(block for section in sections for block in section.text.split("\n\n") if block)
 
 
 def stream_watch(

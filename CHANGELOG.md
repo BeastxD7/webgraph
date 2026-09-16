@@ -23,8 +23,10 @@ All notable changes to this project are documented here. The format follows
   contains one is compared; query strings are stripped from link and image targets.
   Navigation, footers and comments are already gone (the content Markdown); the
   main-content boundary is off for a watch unless asked, because a watched page is as
-  likely a list of circulars as an article. Every run reports how many pages it
-  `suppressed`.
+  likely a list of circulars as an article. A page whose blocks all survive and merely sit
+  under different headings is suppressed too -- measured on vtu.ac.in's front page, two
+  static fetches 11 minutes apart put the same social-links list under different headings.
+  Every run reports how many pages it `suppressed`.
 - Storage: one SQLite file, standard library only, `~/.cache/webgraph/watch.sqlite3`
   (`XDG_CACHE_HOME`, `WEBGRAPH_WATCH_DB`): `watches(id, root, config_json, created_at,
   schedule_seconds)`, `runs(id, watch_id, started_at, finished_at, pages_ok, pages_failed,

@@ -78,6 +78,12 @@ block no pattern touches is always compared, however short.
 | `Total seats: 120`, `Apply online for admission`, `Since 2019 the college offers a degree` | compared |
 | `Total seats: 1200` | noise — a label and a four-digit number reads as a counter (the known edge) |
 
+A third rule is at page level: if every block of the page is still there and none was
+added — the blocks merely sit under different headings — the page is suppressed. Measured
+on vtu.ac.in's front page, two static fetches 11 minutes apart put the same social-links
+list and the same conference banner under different headings; the page's order jittered,
+not its content, and a watch that reported that would be reporting the fetch.
+
 Query strings are also stripped from Markdown link and image targets, because
 `logo.png?v=1694` changes on every deploy and the logo does not. The patterns are a list in
 `config.py`; a watch adds its own with `noise_patterns` (regular expressions,
@@ -219,3 +225,10 @@ for a college site to change. The noise rules are exercised deterministically by
 suite's two-version fixture instead (`tests/test_watch.py`: a front page whose "Last
 updated" line and visitor counter were bumped is suppressed, while a changed "Contact"
 section and a new circular under "2026" are reported).
+
+A second pair on `https://vtu.ac.in/` (`max_pages: 40`, static, four workers), three runs
+at 17:07, 17:15 and 17:26: run 2 reported nothing (39 unchanged; the one page the baseline
+had failed on, an HTTP 404 the site links to, is not owed a verdict). Run 3 found the front
+page's hash changed and, section by section, three sections edited — and every edit was
+the same blocks under a different heading. That run is the origin of the moved-blocks rule
+above; with it, the run reports no change and one page suppressed.
