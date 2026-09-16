@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import Link from "next/link";
+
 import Button from "@/components/ui/Button";
 import { DOCS } from "@/components/site/links";
 import { FIDELITY, RENDER_PREDICTION } from "@/lib/benchmarks";
@@ -71,6 +73,14 @@ export default function Story() {
             <div className="relative size-full">
               <StoryStill copy={STAGE_COPY} />
               <Stage copy={STAGE_COPY} />
+              {/* The report card on the canvas is a link: Stage places this over it. */}
+              <Link
+                href="/report"
+                data-report-link
+                hidden
+                aria-label="Site Truth Report — run it on any site"
+                className="absolute rounded-md outline-offset-2"
+              />
             </div>
           </div>
         </div>
@@ -167,8 +177,11 @@ export default function Story() {
           <p className="measure-lede mt-4 text-body text-muted" data-reveal style={idx(1)}>
             Every page says whether its order was measured or assumed, how it was fetched, and
             what was refused. Each page links to the pages it reaches, so the crawl is a map of
-            the site. The Site Truth Report — what a site shows people against what it shows
-            crawlers — is coming soon.
+            the site. The{" "}
+            <Link href="/report" className="font-medium text-accent-ink underline underline-offset-2">
+              Site Truth Report
+            </Link>{" "}
+            — what a site shows people against what it shows crawlers — run it on any site.
           </p>
           <p className="mt-5 max-w-prose text-caption text-muted" data-reveal style={idx(2)}>
             Whole-page fidelity, measured against Chromium&rsquo;s innerText on {FIDELITY.sites}{" "}

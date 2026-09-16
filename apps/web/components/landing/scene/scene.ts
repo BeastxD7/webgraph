@@ -220,6 +220,8 @@ export type Scene = {
   settled(): boolean;
   /** Snap every body to the end state of `chapter`, for a still frame. */
   still(chapter: number): void;
+  /** Where the Site Truth Report card is drawn, in virtual units, when it is fully in; else null. */
+  reportCard(): { x: number; y: number; w: number; h: number } | null;
   readonly chapter: number;
   /** How much of the "pain" is on the stage right now, 0..1 — the backdrop reads it. */
   readonly heat: number;
@@ -749,8 +751,9 @@ export function createScene(copy: StageCopy): Scene {
     ctx.strokeStyle = pal.ruleStrong;
     ctx.lineWidth = 1;
     ctx.stroke();
-    text(ctx, pal, "SITE TRUTH REPORT · COMING SOON", x + 14, y + 20, 8, pal.muted, "sans", 700);
+    text(ctx, pal, "SITE TRUTH REPORT · /report", x + 14, y + 20, 8, pal.muted, "sans", 700);
     text(ctx, pal, "what the site hides", x + 14, y + 38, 12, pal.ink, "sans", 700);
+    text(ctx, pal, "run it on any site →", x + OUT.w - 14, y + 38, 9, pal.accentInk, "sans", 600, "right");
     ctx.strokeStyle = pal.rule;
     copy.report.forEach(([label, value], i) => {
       const yy = y + 60 + i * 21;
@@ -871,12 +874,17 @@ export function createScene(copy: StageCopy): Scene {
     ctx.restore();
   }
 
+  function reportCard(): { x: number; y: number; w: number; h: number } | null {
+    return chapter === 3 && t >= 0.75 ? { x: OUT.x, y: 428, w: OUT.w, h: 126 } : null;
+  }
+
   return {
     setChapter,
     step,
     draw,
     settled,
     still,
+    reportCard,
     get chapter() {
       return chapter;
     },

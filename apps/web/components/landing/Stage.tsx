@@ -94,6 +94,7 @@ function Live({ copy }: { copy: StageCopy }) {
 
     const scene = createScene(copy);
     stage.dataset.stage = "live";
+    const reportLink = stage.querySelector<HTMLElement>("[data-report-link]");
     let palette = readPalette();
     let intersecting = false;
     let visible = false;
@@ -130,6 +131,26 @@ function Live({ copy }: { copy: StageCopy }) {
       stage.style.setProperty("--story-heat", scene.heat.toFixed(3));
     };
 
+    // The report card is a link: an anchor sits exactly over where the canvas drew it.
+    const placeReportLink = () => {
+      if (!reportLink) return;
+      const card = scene.reportCard();
+      if (!card) {
+        reportLink.hidden = true;
+        return;
+      }
+      const cw = canvas.clientWidth;
+      const ch = canvas.clientHeight;
+      const s = Math.min(cw / VW, ch / VH);
+      const ox = (cw - VW * s) / 2;
+      const oy = (ch - VH * s) / 2;
+      reportLink.style.left = `${ox + card.x * s}px`;
+      reportLink.style.top = `${oy + card.y * s}px`;
+      reportLink.style.width = `${card.w * s}px`;
+      reportLink.style.height = `${card.h * s}px`;
+      reportLink.hidden = false;
+    };
+
     const tick = (now: number) => {
       frame = 0;
       const dt = last ? Math.min(0.05, (now - last) / 1000) : 1 / 60;
@@ -137,6 +158,7 @@ function Live({ copy }: { copy: StageCopy }) {
       scene.step(dt);
       const size = fitCanvas(canvas);
       if (size) scene.draw(ctx, size.w, size.h, palette);
+      placeReportLink();
       dirty = false;
       if (visible && (!scene.settled() || dirty)) frame = requestAnimationFrame(tick);
       else last = 0;
@@ -180,6 +202,7 @@ function Live({ copy }: { copy: StageCopy }) {
 
     return () => {
       delete stage.dataset.stage;
+      if (reportLink) reportLink.hidden = true;
       if (frame) cancelAnimationFrame(frame);
       io.disconnect();
       ro.disconnect();

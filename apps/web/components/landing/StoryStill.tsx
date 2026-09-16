@@ -57,7 +57,7 @@ export default function StoryStill({ copy }: { copy: StageCopy }) {
     <svg
       viewBox="0 0 800 600"
       role="img"
-      aria-label="A web page read as ordered blocks, emitted as Markdown in reading order and linked into a graph of the site; beside it, a Site Truth Report of what the site hides."
+      aria-label="A web page read as ordered blocks, emitted as Markdown in reading order and linked into a graph of the site; beside it, the Site Truth Report of what the site hides."
       className="absolute inset-0 size-full font-mono"
       style={{ fontSize: 10.5 }}
     >
@@ -151,12 +151,19 @@ export default function StoryStill({ copy }: { copy: StageCopy }) {
         </g>
       ))}
 
+      {/* An SVG anchor, not next/link: this is the no-JavaScript frame, inside inline SVG,
+          where `<Link>` cannot render; a full navigation is what it should do. */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+      <a href="/report" aria-label="Site Truth Report — run it on any site">
       <rect x={520} y={428} width={260} height={126} rx={6} fill="var(--surface)" stroke="var(--rule-strong)" />
       <text x={534} y={448} fontSize={8} fontWeight={700} fill="var(--muted)" className="font-sans">
-        SITE TRUTH REPORT · COMING SOON
+        SITE TRUTH REPORT · /report
       </text>
       <text x={534} y={466} fontSize={12} fontWeight={700} fill="var(--ink)" className="font-sans">
         what the site hides
+      </text>
+      <text x={766} y={466} fontSize={9} fontWeight={600} textAnchor="end" fill="var(--accent-ink)" className="font-sans">
+        run it on any site →
       </text>
       {copy.report.map(([label, value], i) => (
         <g key={label}>
@@ -169,6 +176,7 @@ export default function StoryStill({ copy }: { copy: StageCopy }) {
           <line x1={534} y1={495 + i * 21} x2={766} y2={495 + i * 21} stroke="var(--rule)" />
         </g>
       ))}
+      </a>
     </svg>
   );
 }
