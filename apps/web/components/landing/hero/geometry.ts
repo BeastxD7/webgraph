@@ -3,23 +3,24 @@
  * page in the meadow. Both draw the same pages from the same seed, so when the canvas
  * takes over from the server-rendered SVG nothing jumps.
  *
- * Units are metres. The camera stands at `eyeY`, looking down the +z axis, pitched a
- * little up so the horizon sits just below the frame's middle; the sky has the larger half.
- * Pages are ~A4 in proportion, standing on the ground plane y = 0.
+ * Units are metres. The camera is low -- `eyeY` is not much above the pages, the way the
+ * reference's camera sits in the grass, so the nearest pages rise past the card's foot -- and
+ * pitched a little up so the horizon sits just below the frame's middle. Pages are ~A4 in
+ * proportion, standing on the ground plane y = 0.
  */
-export const CAM = { eyeY: 1.4, pitchDeg: 2, fovDeg: 38, near: 0.5, far: 140 } as const;
+export const CAM = { eyeY: 0.7, pitchDeg: 2.5, fovDeg: 38, near: 0.3, far: 140 } as const;
 
 export const FIELD = {
-  zNear: 4.4,
+  zNear: 2.6,
   zFar: 48,
   /** Half-width of the populated strip at depth z, as a multiple of z (the frustum + margin). */
   xSpread: 0.72,
-  pageH: 0.28,
-  pageW: 0.2,
+  pageH: 0.2,
+  pageW: 0.142,
 } as const;
 
 /** The plinth the card stands on, before the live field moves it under the card's DOM box. */
-export const PLINTH = { x: 0, z: 7.6, w: 3.4, d: 1.5, h: 0.22 } as const;
+export const PLINTH = { x: 0, z: 3.6, w: 1.9, d: 0.7, h: 0.06 } as const;
 
 export type PageKind = 0 | 1 | 2 | 3; // paper · junk (a naive reader's content) · hidden · graph node
 
@@ -59,18 +60,23 @@ export function seedPages(n: number, seed = 7): PageSeed[] {
   const lnRange = Math.log(FIELD.zFar / FIELD.zNear);
   let graph = 0;
   while (out.length < n) {
-    const z = FIELD.zNear * Math.exp(rnd() * lnRange);
+    // Skewed toward the camera: the far pages are a few pixels each and a texture, not a crowd.
+    const z = FIELD.zNear * Math.exp(Math.pow(rnd(), 1.45) * lnRange);
     const x = (rnd() * 2 - 1) * FIELD.xSpread * z;
     // The clearing: the plinth's footprint and a step around it.
-    if (Math.abs(x - PLINTH.x) < PLINTH.w / 2 + 0.7 && Math.abs(z - PLINTH.z) < PLINTH.d / 2 + 0.9) continue;
+    if (Math.abs(x - PLINTH.x) < PLINTH.w / 2 + 0.4 && Math.abs(z - PLINTH.z) < PLINTH.d / 2 + 0.35) continue;
     const r = rnd();
-    let kind: PageKind = r < 0.09 ? 1 : r < 0.14 ? 2 : 0;
+    // No junk in the immediate foreground: a dark page that large would be a wall.
+    let kind: PageKind = z < 3.4 ? 0 : r < 0.09 ? 1 : r < 0.14 ? 2 : 0;
     // A handful of graph nodes in the mid-ground, where a thread between them can be seen.
-    if (kind === 0 && graph < 9 && z > 9 && z < 20 && Math.abs(x) < 0.45 * z && rnd() < 0.08) {
+    if (kind === 0 && graph < 9 && z > 4.8 && z < 9 && Math.abs(x) > 1.1 && Math.abs(x) < 0.42 * z && rnd() < 0.14) {
       kind = 3;
       graph++;
     }
-    const s = 0.82 + rnd() * 0.4;
+    // The nearest pages are a little larger -- they are the grass in front of the prompt --
+    // but capped, so the tallest of them rises only a step past the prompt's foot.
+    let s = (0.82 + rnd() * 0.4) * (z < 4.5 ? 1 + ((4.5 - z) / 4.5) * 0.2 : 1);
+    if (z < 3.2) s = Math.min(s, 1.05);
     out.push({
       x,
       z,
@@ -78,7 +84,7 @@ export function seedPages(n: number, seed = 7): PageSeed[] {
       w: FIELD.pageW * s * (0.9 + rnd() * 0.2),
       kind,
       phase: rnd() * Math.PI * 2,
-      lean: (rnd() - 0.5) * 0.5,
+      lean: (rnd() - 0.5) * 0.42,
       lines: [0.55 + rnd() * 0.4, 0.5 + rnd() * 0.45, 0.25 + rnd() * 0.5],
     });
   }

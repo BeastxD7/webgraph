@@ -77,20 +77,20 @@
 
   /* The hero's scene (components/landing/hero, §8 below). Day: a pale sky, a haze at the
      horizon, the accent's green as the field. Large fills, on purpose and only here. */
-  --sky-top:       #bcd6ee;
-  --sky-mid:       #dbe8f3;
-  --sky-horizon:   #f3f4ef;
-  --haze:          #e6ebe6;
-  --sun:           #fff6dc;
-  --cloud:         #ffffff;
+  --sky-top:       #9fc0e4;
+  --sky-mid:       #d4e2ee;
+  --sky-horizon:   #f4e9d8;
+  --haze:          #e8e2d3;
+  --sun:           #ffd9a3;
+  --cloud:         #fbf6ee;
   --field-near:    #4f9a33;
-  --field-far:     #a9cf96;
+  --field-far:     #b3c58a;
   --paper:         #fbfbf6;
   --paper-ink:     #2a3a30;
   --paper-junk:    #a8463a;
   --paper-hidden:  #3a4a41;
-  --plinth:        #eceee7;
-  --plinth-side:   #cfd4c9;
+  --plinth:        #e9ebe3;
+  --plinth-side:   #aeb4a8;
   --frame-margin:  0.5rem;        /* the page margin around the hero frame; 0.75rem from 640px */
   --frame-radius:  1.5rem;        /* 2.25rem from 640px */
 
@@ -171,20 +171,20 @@
 
 
     /* Dusk: a deep ink sky, a warm line at the horizon, the same field in cooler tones. */
-    --sky-top:       #0a1120;
-    --sky-mid:       #1d2b47;
-    --sky-horizon:   #d98b5c;
-    --haze:          #3e3f52;
-    --sun:           #f2b98a;
-    --cloud:         #55607a;
+    --sky-top:       #0a1020;
+    --sky-mid:       #22304f;
+    --sky-horizon:   #c8785a;
+    --haze:          #4a4356;
+    --sun:           #f0a070;
+    --cloud:         #4e5872;
     --field-near:    #2c6a2d;
-    --field-far:     #3a4a50;
-    --paper:         #d6d9d0;
-    --paper-ink:     #3a463f;
+    --field-far:     #45505a;
+    --paper:         #a5aca5;
+    --paper-ink:     #2a332e;
     --paper-junk:    #7a352c;
     --paper-hidden:  #2b3530;
-    --plinth:        #4d5450;
-    --plinth-side:   #303633;
+    --plinth:        #4a524d;
+    --plinth-side:   #262c29;
 
     --selection:     rgb(143 207 116 / 0.28);
     --focus:         #8fcf74;
@@ -221,20 +221,20 @@
 
 
   /* Dusk: a deep ink sky, a warm line at the horizon, the same field in cooler tones. */
-  --sky-top:       #0a1120;
-  --sky-mid:       #1d2b47;
-  --sky-horizon:   #d98b5c;
-  --haze:          #3e3f52;
-  --sun:           #f2b98a;
-  --cloud:         #55607a;
+  --sky-top:       #0a1020;
+  --sky-mid:       #22304f;
+  --sky-horizon:   #c8785a;
+  --haze:          #4a4356;
+  --sun:           #f0a070;
+  --cloud:         #4e5872;
   --field-near:    #2c6a2d;
-  --field-far:     #3a4a50;
-  --paper:         #d6d9d0;
-  --paper-ink:     #3a463f;
+  --field-far:     #45505a;
+  --paper:         #a5aca5;
+  --paper-ink:     #2a332e;
   --paper-junk:    #7a352c;
   --paper-hidden:  #2b3530;
-  --plinth:        #4d5450;
-  --plinth-side:   #303633;
+  --plinth:        #4a524d;
+  --plinth-side:   #262c29;
 
   --selection:     rgb(143 207 116 / 0.28);
   --focus:         #8fcf74;
@@ -459,10 +459,22 @@
 .landing-backdrop {
   position: absolute;
   inset: 0;
+  top: min(100svh, 64rem);
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
   contain: strict;
+}
+.bd-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+  opacity: 0.4;
+  mask-image: linear-gradient(to bottom, black 0, black 45%, rgb(0 0 0 / 0.3) 70%, transparent 100%);
 }
 .bd-blob {
   position: absolute;
@@ -584,43 +596,36 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 /* ---------------------------------------------------------------------------
    8. Landing: the hero frame -- a field of pages
    The reference composition: a rounded full-bleed scene inside a page margin,
-   the copy centred over the sky, the product's card standing in the meadow.
-   `--frame-margin` and `--frame-radius` step up at 640px (§5). The frame is
-   sticky for 70svh of scroll while the field organises; reduced motion makes
-   it an ordinary block. `[data-field]` is stamped by the renderer when it
-   draws, and is the only thing that hides the server-rendered still.
+   the copy centred over the sky, the prompt standing in the meadow. One
+   viewport tall and not pinned; the story scrolls in below it. `--frame-margin`
+   and `--frame-radius` step up at 640px (§5). `[data-field]` is stamped by the
+   renderer when it draws, and is the only thing that hides the server-rendered
+   still; `[data-hero-state]` is written by the prompt and read by the field.
    --------------------------------------------------------------------------- */
 .landing-hero {
   padding: var(--frame-margin);
   margin-top: -3.5rem; /* under the header, which floats over the sky on this page */
 }
-.hero-track {
-  height: calc(170svh - 2 * var(--frame-margin));
-}
 .hero-frame {
-  position: sticky;
-  top: var(--frame-margin);
+  position: relative;
   height: calc(100svh - 2 * var(--frame-margin));
-  min-height: 36rem;
-  max-height: 68rem;
+  min-height: 38rem;
+  max-height: 64rem;
   border-radius: var(--frame-radius);
   overflow: hidden;
   isolation: isolate;
   background: var(--sky-mid);
-  /* Scroll progress, 0 at rest → 1 once the field is organised; set by the renderer. */
-  --hero-p: 0;
 }
 .hero-frame[data-field] .hero-still { visibility: hidden; }
 .hero-canvas-back { z-index: 0; }
-.hero-canvas-front { z-index: 3; height: 52%; }
+.hero-canvas-front { z-index: 3; height: 45%; }
 .hero-copy {
   position: absolute;
   z-index: 2;
   inset-inline: 0;
-  top: clamp(5rem, 12%, 8.5rem);
+  top: clamp(4.5rem, 11%, 8rem);
   padding-inline: max(1rem, calc(var(--gutter) - var(--frame-margin)));
   text-align: center;
-  transform: translateY(calc(var(--hero-p) * -1.25rem));
 }
 .hero-badge {
   display: inline-flex;
@@ -656,33 +661,57 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   position: absolute;
   z-index: -1;
   inset: -3rem -10% -2rem;
-  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--sky-mid) 70%, transparent), transparent 70%);
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--sky-mid) 72%, transparent), transparent 70%);
   pointer-events: none;
 }
-.hero-card-slot {
+
+/* The prompt stands on the plinth; the front canvas (z 3) draws the nearest pages over its foot. */
+.hero-prompt-slot {
   position: absolute;
   z-index: 2;
   left: 50%;
-  bottom: 19%;
-  width: min(34rem, calc(100% - 2rem));
-  transform: translate(-50%, calc(var(--hero-p) * -0.75rem));
+  bottom: 16.5%;
+  width: min(40rem, calc(100% - 2rem));
+  transform: translateX(-50%);
 }
-.hero-card {
+.hero-prompt { position: relative; }
+.prompt-box {
   box-shadow:
     0 1px 2px rgb(15 26 20 / 0.08),
     0 18px 36px -14px rgb(15 26 20 / 0.35),
     0 40px 60px -30px rgb(15 26 20 / 0.25);
-  transition: transform var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
 }
-.hero-card:hover {
-  transform: translateY(-2px);
+.example-chip {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(6px);
+}
+/* The run card rises above the prompt while an example is hovered or a run starts. */
+.hero-preview {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.75rem);
+  width: min(32rem, 100%);
+  translate: -50% 0.75rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 450ms var(--ease), translate 600ms var(--ease);
+}
+.hero-preview[data-shown] {
+  opacity: 1;
+  translate: -50% 0;
+}
+.hero-card {
+  box-shadow:
+    0 1px 2px rgb(15 26 20 / 0.08),
+    0 24px 48px -16px rgb(15 26 20 / 0.4);
+}
+@media (max-height: 46rem), (max-width: 40rem) {
+  .hero-preview { display: none; }
 }
 @media (max-height: 44rem) {
-  .hero-copy { top: 4.5rem; }
-  .hero-card-slot { bottom: 12%; }
+  .hero-copy { top: 4.25rem; }
+  .hero-prompt-slot { bottom: 10%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-track { height: auto; }
-  .hero-frame { position: relative; top: 0; }
-  .hero-card { transition: none; }
+  .hero-preview { transition: none; }
 }

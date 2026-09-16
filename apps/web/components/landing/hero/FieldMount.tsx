@@ -5,9 +5,9 @@ import { useEffect, useRef } from "react";
 /**
  * Mounts the live field over the hero's still. Two canvases: the back one draws the sky,
  * the ground, the plinth and every page behind it; the front one, sized to the frame's
- * lower half and above the card in the stacking order, draws only the pages between the
- * camera and the plinth, so they overlap the card's foot. The renderer is a separate chunk,
- * imported here so the page's own JavaScript carries none of it.
+ * lower half and above the prompt in the stacking order, draws only the pages between the
+ * camera and the plinth, so they rise past the prompt's foot. The renderer is a separate
+ * chunk, imported here so the page's own JavaScript carries none of it.
  *
  * Reduced motion draws one frame and stops. No WebGL2, or a lost context, leaves the still.
  */
@@ -24,7 +24,7 @@ export default function FieldMount() {
     let cancelled = false;
     import("./field/field").then(({ mountField }) => {
       if (cancelled) return;
-      dispose = mountField({ frame, back: backEl, front: frontEl, preset: "hero" });
+      dispose = mountField({ frame, back: backEl, front: frontEl });
     });
     return () => {
       cancelled = true;
