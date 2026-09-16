@@ -883,3 +883,173 @@ class TestCrawlLimits:
         assert entry["found_on"] == root
         assert entry["anchor"] == "Notice (PDF)"
         assert "/circulars/notice.pdf" not in requested, "the crawl fetched a PDF it would refuse"
+
+
+def _watch_page(title: str, body: str, links: tuple[str, ...]) -> str:
+    nav = "".join(f'<a href="{href}">{href}</a> ' for href in links)
+    return (
+        f"<html><head><title>{title}</title></head><body><nav>{nav}</nav>"
+        f"<main>{body}</main><footer><p>Visitors: 1,204,551</p></footer></body></html>"
+    )
+
+
+WATCH_V1 = {
+    "index.html": _watch_page(
+        "College",
+        f"<h1>Welcome</h1><p>{SMALL_SITE_PROSE}</p><p>Last updated: 12 Sep 2026</p>",
+        ("/", "/notices.html"),
+    ),
+    "notices.html": _watch_page(
+        "Notices",
+        f"<h1>Notices</h1><p>{SMALL_SITE_PROSE}</p><h2>2026</h2><ul><li>Fee notification for the odd semester.</li></ul>",
+        ("/", "/notices.html"),
+    ),
+}
+WATCH_V2 = {
+    "index.html": _watch_page(
+        "College",
+        f"<h1>Welcome</h1><p>{SMALL_SITE_PROSE}</p><p>Last updated: 13 Sep 2026</p>",
+        ("/", "/notices.html"),
+    ),
+    "notices.html": _watch_page(
+        "Notices",
+        f"<h1>Notices</h1><p>{SMALL_SITE_PROSE}</p><h2>2026</h2><ul><li>Fee notification for the odd semester.</li>"
+        "<li>Revised timetable for the laboratory sessions.</li></ul>",
+        ("/", "/notices.html"),
+    ),
+}
+
+
+@pytest.fixture
+def watched_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, Path]]:
+    """A two-page site whose files the test rewrites between runs, and a temporary watch
+    database. No browser: the analysis is told Playwright is absent."""
+    from webgraph.fetch import robots
+
+    import webgraph_api.main as api
+
+    monkeypatch.setattr("webgraph.analyze.PLAYWRIGHT_AVAILABLE", False)
+    monkeypatch.setattr(api, "WATCH_DB", tmp_path / "watch.sqlite3")
+    robots.forget()
+    root = tmp_path / "site"
+    root.mkdir()
+    for name, html in WATCH_V1.items():
+        (root / name).write_text(html, encoding="utf-8")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), partial(_QuietHandler, directory=str(root)))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}/", root
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class TestWatch:
+    """`/api/watch`: create, run (SSE with `change` events), changes, feed."""
+
+    WATCH_CONFIG: ClassVar[dict[str, object]] = {
+        "complete": False, "concurrency": 1, "delay_seconds": 0, "host_interval_seconds": 0, "max_pages": 10,
+    }
+
+    @staticmethod
+    def run(client: TestClient, watch_id: str) -> list[dict]:
+        import json
+
+        with client.stream("POST", f"/api/watch/{watch_id}/run") as response:
+            assert response.status_code == 200
+            assert response.headers["content-type"].startswith("text/event-stream")
+            return [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+
+    def test_create_lists_and_refuses_bad_input(self, client: TestClient, watched_site: tuple[str, Path]) -> None:
+        root, _ = watched_site
+        created = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG, "schedule_seconds": 3600})
+        assert created.status_code == 200, created.text
+        body = created.json()
+        assert body["root"] == root and len(body["id"]) == 12
+        assert body["schedule_seconds"] == 3600 and body["runs"] == 0
+        assert client.get(f"/api/watch/{body['id']}").json()["id"] == body["id"]
+        assert [w["id"] for w in client.get("/api/watch").json()] == [body["id"]]
+        assert client.post("/api/watch", json={"url": "ftp://x"}).status_code == 422
+        assert client.post("/api/watch", json={"url": root, "config": {"strategy": "guess"}}).status_code == 422
+        assert client.get("/api/watch/nope").status_code == 404
+        assert client.post("/api/watch/nope/run").status_code == 404
+
+    def test_a_run_streams_changes_and_done_carries_the_summary(
+        self, client: TestClient, watched_site: tuple[str, Path]
+    ) -> None:
+        root, directory = watched_site
+        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+
+        first = self.run(client, watch_id)
+        assert first[0]["type"] == "run" and first[0]["mode"] == "watch" and first[0]["watch_id"] == watch_id
+        assert first[1]["type"] == "watch" and first[1]["baseline"] is True
+        assert first[-1]["type"] == "done" and first[-1]["baseline"] is True
+        assert first[-1]["pages_ok"] == 2
+        assert not any(e["type"] == "change" for e in first)
+
+        for name, html in WATCH_V2.items():
+            (directory / name).write_text(html, encoding="utf-8")
+        second = self.run(client, watch_id)
+        done = second[-1]
+        assert done["type"] == "done"
+        assert done["changes"] == {"added": 0, "removed": 0, "changed": 1}
+        assert done["suppressed"] == 1, "the bumped 'last updated' line is not a change"
+        assert done["stopped_by"] is None
+        [change] = [e for e in second if e["type"] == "change"]
+        assert change["url"] == f"{root}notices.html"
+        assert change["kind"] == "changed"
+        assert change["sections"][0]["heading"] == "2026"
+        assert "Revised timetable" in change["sections"][0]["after"]
+
+        listed = client.get(f"/api/watch/{watch_id}/changes").json()
+        assert listed["watch"]["runs"] == 2 and listed["watch"]["changes"] == 1
+        assert [c["url"] for c in listed["changes"]] == [f"{root}notices.html"]
+        assert client.get(f"/api/watch/{watch_id}/changes", params={"since": "2099-01-01"}).json()["changes"] == []
+        assert client.get(f"/api/watch/{watch_id}/changes", params={"since": "yesterday"}).status_code == 422
+
+    def test_the_feed_is_rss_or_atom_and_well_formed(
+        self, client: TestClient, watched_site: tuple[str, Path]
+    ) -> None:
+        from xml.etree import ElementTree as ET
+
+        root, directory = watched_site
+        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+        self.run(client, watch_id)
+        for name, html in WATCH_V2.items():
+            (directory / name).write_text(html, encoding="utf-8")
+        self.run(client, watch_id)
+
+        rss = client.get(f"/api/watch/{watch_id}/feed.xml")
+        assert rss.status_code == 200
+        assert rss.headers["content-type"].startswith("application/rss+xml")
+        tree = ET.fromstring(rss.text)
+        assert tree.tag == "rss"
+        [item] = tree.findall("channel/item")
+        assert item.findtext("link") == f"{root}notices.html"
+        assert "2026" in (item.findtext("title") or "")
+
+        atom = client.get(f"/api/watch/{watch_id}/feed.xml", params={"format": "atom"})
+        assert atom.headers["content-type"].startswith("application/atom+xml")
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        feed = ET.fromstring(atom.text)
+        assert feed.find("a:link[@rel='self']", ns) is not None
+        assert len(feed.findall("a:entry", ns)) == 1
+        assert client.get(f"/api/watch/{watch_id}/feed.xml", params={"format": "pdf"}).status_code == 422
+
+    def test_the_hosts_page_cap_applies_to_a_watch(
+        self, client: TestClient, watched_site: tuple[str, Path], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import webgraph_api.main as api
+
+        root, _ = watched_site
+        monkeypatch.setattr(api, "PAGE_CAP", 1)
+        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+        events = self.run(client, watch_id)
+        assert events[0]["max_pages"] == 1
+        assert events[-1]["pages_total"] == 1
+        assert events[-1]["stopped_by"] == "pages"
