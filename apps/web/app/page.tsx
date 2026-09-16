@@ -8,10 +8,11 @@ import Standings from "@/components/landing/Standings";
 import Story from "@/components/landing/Story";
 
 /**
- * The hero -- a field of pages, the product's card standing in it -- then five chapters.
- * The first three share one sticky stage (`Story`): the pain, the turn, the result. Then the proof — the numbers with their sources, what is refused
- * and dropped, the standings including where this engine loses — and the prompt to run it.
- * `Motion` adds the scroll reveals once JavaScript is up; the page is complete without it.
+ * The hero -- the Earth from orbit, the prompt over it -- then the chapters. `Story` is how
+ * it reads a page: three steps beside one illustration, and three cards of real output. Then
+ * the proof — the numbers with their sources, what is refused and dropped, the standings
+ * including where this engine loses — and the prompt to run it. `Motion` adds the scroll
+ * reveals once JavaScript is up; the page is complete without it.
  */
 export default function LandingPage() {
   return (

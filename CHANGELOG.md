@@ -59,6 +59,67 @@ All notable changes to this project are documented here. The format follows
   are `text-caption` prose at 13 px. Overflow stays enforced on the landing. Also out of
   scope: `RankChart`'s rotated labels clip at the SVG's left edge at every width (its
   `PAD.left`, not a layout matter).
+### Changed (2026-09-17, PR #106) — hero: the Earth by day and by night
+- The hero follows the page's theme, both photoreal, from the same orbit. Dark: the night
+  scene as before, with the sun now rising from behind the limb -- half hidden, the rays and
+  core occluded where the planet stands in front (the scene pass writes the ground into
+  alpha; the post pass reads it), the rim warmest at the sun and blue along the limb. Light:
+  the same Earth in full day -- the sun high behind the viewer, bright ocean (the water a
+  little bluer and deeper than the map's), cloud decks with their shadows, the thick pale-
+  blue air at the limb fading into a light sky (deep blue-grey at the top, near-white at the
+  limb); no stars, no flare; the country marker a green pin with a ring instead of the warm
+  glow. Switching the theme (the toggle or the system) crosses the scene over 600 ms --
+  the light's direction, the sky, the sun, the exposure, the grain and the vignette all
+  interpolate on `uTheme` -- while the frame's own palette (`--scene-*`, now defined light
+  first and overridden in the dark blocks like the site's tokens) transitions in step: ink
+  copy and light glass by day, light copy and dark glass by night. Two stills,
+  `public/earth/still-1440-light.jpg` and `-dark.jpg` (80 / 100 KB), rendered by
+  `tools/render_hero_still.py` (now one run per theme), chosen by the stylesheet.
+- The run card can no longer touch the sub-line: the copy, the card's room and the prompt
+  are three rows over the scene, the middle one a size container, and the card shows only
+  where that row is tall enough (`@container (min-height: 19.5rem)`); the card itself is
+  shorter (a header and three rows). The sub-line and the credit carry a soft shadow in
+  the ground's colour so they hold their contrast beside the flare (measured 8:1 dark,
+  9:1 light against the sampled ground).
+- Fixed: the country turn took the wrong of the two tilt solutions and hit the clamp, so a
+  country could end at the limb rather than beside the prompt (India did); it now takes
+  the solution nearer the resting tilt, and the frame point moved a little inward.
+- Bytes and frames: the hero chunk 23.4 KB / 8.8 KB gz (was 8.0); p50 16.7 / p95 18.7 ms
+  in both themes and across the switch, headed Chromium on an M2 at DPR 2 → 1.5.
+
+### Changed (2026-09-17, PR #105) — landing: how it reads a page, as one panel
+- Chapters 01–03 of the landing (the pain, the turn, the result) were a sticky Canvas-2D
+  stage the copy scrolled past; the owner's verdict was that the illustrations and their
+  animations were not good. Replaced, after the way LlamaIndex and landing.ai do it, by one
+  framed panel (`components/landing/Story.tsx`): the three steps as an accordion on the
+  left -- Fetch twice · Refuse the walls, drop the hidden · Reading order, then Markdown --
+  and on the right an isometric illustration that changes with the open step
+  (`how/Scene.tsx`, inline SVG rendered on the server; `how/iso.ts` is the 30° projection).
+  One page stands on a ruled floor with a cast shadow; step one adds the plain and the
+  rendered fetch as two sheets with their real word counts (react.dev/learn: static 2,108 ·
+  rendered 2,195 · union 2,198) and dotted paths that draw themselves; step two peels the
+  page into labelled layers -- Heading / Paragraph / Table / Code in ink, and in oxide red
+  the cookie banner, the login modal, the off-screen links and the display:none block,
+  which lift off and dissolve, with the refusal tagged in the engine's words; step three
+  draws the XY-cuts, numbers the blocks in reading order, slides out the Markdown with the
+  same numbers and `reading_order: geometric_xy_cut`, and stands the Site Truth Report
+  beside it. Springs are overshoot curves in CSS; the pieces rise in with a stagger when the
+  panel scrolls into view, switching steps cross-morphs (the page stays, the rest
+  re-sorts), the layers parallax a few pixels with the pointer on a damped spring
+  (`how/HowMotion.tsx`, which also keeps one step open, advances them every 6.5 s until
+  touched, and does nothing under reduced motion). Without JavaScript the accordion is the
+  browser's own and the scene stands complete at step one. `how/how.css` holds the sheet.
+- Below the panel, three cards with pieces of the real output where the old chapter copy
+  had prose: word recall 1.000 on sqlite.org/lang.html (was 0.749) with the bar filling;
+  three refusals stamped in as `resolve.py` words them (login redirect, HTTP 503,
+  robots.txt); three `url#xpath` anchors from docs.python.org/3/tutorial/ with their quotes,
+  typed in. Headline "Reads the page the way a *person* does." -- Manrope with one Instrument
+  Serif italic word -- over a pill eyebrow.
+- Removed: `Stage.tsx`, `StoryStill.tsx`, `scene/scene.ts` and the `.story-stage` /
+  `--story-heat` / `data-chapter` rules in `globals.css` §7. Hero untouched. Landing client
+  JS 14.6 KB / 5.9 KB gz in total (Motion, the prompt and HowMotion together), the panel's
+  sheet 10.6 KB / 2.8 KB gz; frame times while assembling, switching with the pointer moving
+  and idle: p50 16.7 / p95 17.7 / max 17.8 ms at DPR 2 on an M2, production build.
 
 ### Changed (2026-09-17, PR #104) — hero: the Earth from orbit at sunrise
 - The landing opens on the Earth, from orbit, at sunrise -- the owner's brief: websites are

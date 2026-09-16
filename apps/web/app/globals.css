@@ -406,8 +406,9 @@
    7. Landing: ground, stage and motion
    Everything here is enhancement. Without JavaScript the page is complete:
    `main[data-motion]` is stamped by components/landing/Motion.tsx, and it is
-   the only selector that ever hides a [data-reveal] element. The stage's
-   scroll state arrives as --story-heat on .story-stage and data-chapter on the section.
+   the only selector that ever hides a [data-reveal] element. The "how it
+   reads a page" panel and its scene have their own sheet, imported by the
+   component: components/landing/how/how.css.
    --------------------------------------------------------------------------- */
 
 /* The ground: a gradient field in the ink-green family, a ruled grid, grain. */
@@ -479,39 +480,6 @@
   100% { transform: translate3d(3%, -3%, 0) scale(0.96); }
 }
 
-/* The field behind the stage travels with it (it is sticky): a green field, and a warmer
-   one the stage fades in through --story-heat while the pain chapter is on screen. */
-.story-stage { isolation: isolate; }
-.story-stage::before,
-.story-stage::after {
-  content: "";
-  position: absolute;
-  inset: -12% -18%;
-  z-index: -1;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.story-stage::before {
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%);
-  animation: bd-drift 46s ease-in-out infinite alternate;
-  will-change: transform;
-}
-.story-stage::after {
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--bad) 22%, transparent), transparent 72%);
-  opacity: var(--story-heat, 0);
-  transition: opacity 500ms var(--ease);
-}
-
-/* The stage: once the canvas draws, the server-rendered still steps aside. */
-.story-stage[data-stage] svg { display: none; }
-.story-stage canvas { display: block; }
-
-/* The chapter label of the panel on stage turns accent. */
-[data-story][data-chapter="1"] [data-panel="1"] .story-label,
-[data-story][data-chapter="2"] [data-panel="2"] .story-label,
-[data-story][data-chapter="3"] [data-panel="3"] .story-label { color: var(--accent-ink); }
-.story-label { transition: color var(--dur-base) var(--ease); }
-
 /* Reveals: hidden only once Motion has mounted (and never under reduced motion). */
 main[data-motion] [data-reveal]:not([data-in]) {
   opacity: 0;
@@ -544,20 +512,76 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 .landing a.bg-ink, .landing button.bg-ink { transition-property: color, background-color, opacity, border-color, transform; }
 
 @media (prefers-reduced-motion: reduce) {
-  .bd-blob, .story-stage::before { animation: none; }
-  .story-stage::after { transition: none; }
+  .bd-blob { animation: none; }
 }
 
 /* ---------------------------------------------------------------------------
    8. Landing: the hero frame -- the Earth from orbit
-   A rounded full-bleed scene inside a page margin, always dark (it is space in
-   both themes; the page below keeps its theme): the copy centred and light, the
-   prompt as dark glass below it, above the limb. One viewport tall, not pinned.
-   `--frame-margin` and `--frame-radius` step up at 640px (§5). `[data-field]` is
-   stamped by the renderer when it draws, and is the only thing that hides the
-   still; `[data-hero-state]` and `[data-hero-host]` are written by the prompt
-   and read by the renderer.
+   A rounded full-bleed scene inside a page margin, one viewport tall, not
+   pinned. It follows the theme: by day (the light theme) the Earth in full sun
+   under a pale sky, the copy in ink and the prompt as light glass; by night
+   (the dark theme) the sunrise behind the limb, stars, the copy light and the
+   prompt as dark glass. The frame's own palette is the --scene-* set below,
+   defined light first and overridden in the two dark blocks the way the site's
+   tokens are (§1b). `--frame-margin` and `--frame-radius` step up at 640px
+   (§5). `[data-field]` is stamped by the renderer when it draws, and is the
+   only thing that hides the still; `[data-hero-state]` and `[data-hero-host]`
+   are written by the prompt and read by the renderer.
    --------------------------------------------------------------------------- */
+:root {
+  --scene-bg: #a9b5c4;
+  --scene-ink: #0f1a14;
+  --scene-title: #0f1a14;
+  --scene-muted: #1f2b31;
+  --scene-faint: #46545c;
+  --scene-glass: rgb(255 255 255 / 0.74);
+  --scene-glass-2: rgb(255 255 255 / 0.55);
+  --scene-line: rgb(15 26 20 / 0.12);
+  --scene-line-2: rgb(15 26 20 / 0.24);
+  --scene-shadow: rgb(15 26 20 / 0.22);
+  --scene-glow: rgb(255 255 255 / 0.55);
+  --scene-on-glass: #0f1a14;
+  --scene-check-bg: #0f1a14;
+  --scene-check-ink: #fff;
+  --scene-still: url("/earth/still-1440-light.jpg");
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --scene-bg: #05070c;
+    --scene-ink: #f2f4f1;
+    --scene-title: #fff;
+    --scene-muted: #b6bcc6;
+    --scene-faint: #8a92a0;
+    --scene-glass: rgb(10 14 22 / 0.72);
+    --scene-glass-2: rgb(255 255 255 / 0.06);
+    --scene-line: rgb(255 255 255 / 0.14);
+    --scene-line-2: rgb(255 255 255 / 0.26);
+    --scene-shadow: rgb(0 0 0 / 0.7);
+    --scene-glow: rgb(0 0 0 / 0.5);
+    --scene-on-glass: #f2f4f1;
+    --scene-check-bg: rgb(255 255 255 / 0.92);
+    --scene-check-ink: #0f1a14;
+    --scene-still: url("/earth/still-1440-dark.jpg");
+  }
+}
+:root[data-theme="dark"] {
+  --scene-bg: #05070c;
+  --scene-ink: #f2f4f1;
+  --scene-title: #fff;
+  --scene-muted: #b6bcc6;
+  --scene-faint: #8a92a0;
+  --scene-glass: rgb(10 14 22 / 0.72);
+  --scene-glass-2: rgb(255 255 255 / 0.06);
+  --scene-line: rgb(255 255 255 / 0.14);
+  --scene-line-2: rgb(255 255 255 / 0.26);
+  --scene-shadow: rgb(0 0 0 / 0.7);
+  --scene-glow: rgb(0 0 0 / 0.5);
+  --scene-on-glass: #f2f4f1;
+  --scene-check-bg: rgb(255 255 255 / 0.92);
+  --scene-check-ink: #0f1a14;
+  --scene-still: url("/earth/still-1440-dark.jpg");
+}
+
 .landing-hero {
   padding: var(--frame-margin);
   margin-top: -3.5rem; /* under the header, which floats over the scene on this page */
@@ -570,27 +594,45 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   border-radius: var(--frame-radius);
   overflow: hidden;
   isolation: isolate;
-  background: #05070c;
-  color: #f2f4f1;
-  /* The frame's own palette: light text on space, whatever the page's theme. */
-  --scene-ink: #f2f4f1;
-  --scene-muted: #b6bcc6;
-  --scene-faint: #8a92a0;
-  --scene-glass: rgb(10 14 22 / 0.72);
-  --scene-glass-2: rgb(255 255 255 / 0.06);
-  --scene-line: rgb(255 255 255 / 0.14);
-  --scene-line-2: rgb(255 255 255 / 0.26);
+  background: var(--scene-bg);
+  color: var(--scene-ink);
+  transition: background-color 600ms var(--ease), color 600ms var(--ease);
+}
+.hero-still {
+  position: absolute;
+  inset: 0;
+  background: var(--scene-still) center / cover no-repeat;
 }
 .hero-frame[data-field] .hero-still { visibility: hidden; }
 .hero-canvas { z-index: 0; }
-.hero-copy {
+
+/* The copy, the room for the run card, the prompt: three rows over the scene. The middle
+   row is a size container, so the card shows only where it fits between the sub-line and
+   the prompt; the last row keeps the prompt above the limb. */
+.hero-layout {
   position: absolute;
+  inset: 0;
   z-index: 2;
-  inset-inline: 0;
-  top: clamp(4.5rem, 11%, 8rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) 24%;
+  pointer-events: none;
+}
+.hero-layout > * { pointer-events: auto; }
+.hero-copy {
+  padding-top: clamp(4.5rem, 11svh, 8rem);
   padding-inline: max(1rem, calc(var(--gutter) - var(--frame-margin)));
   text-align: center;
   color: var(--scene-ink);
+}
+.hero-room {
+  position: relative;
+  min-height: 0;
+  container-type: size;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  pointer-events: none;
 }
 .hero-badge {
   display: inline-flex;
@@ -604,6 +646,7 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   font-size: var(--text-caption);
   font-weight: 600;
   color: var(--scene-ink);
+  transition: background-color 600ms var(--ease), border-color 600ms var(--ease), color 600ms var(--ease);
 }
 .hero-title {
   margin-top: 1.25rem;
@@ -611,16 +654,21 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   line-height: 0.98;
   letter-spacing: -0.015em;
   text-wrap: balance;
-  color: #fff;
-  text-shadow: 0 2px 24px rgb(0 0 0 / 0.35);
+  color: var(--scene-title);
+  text-shadow: 0 2px 24px var(--scene-glow);
+  transition: color 600ms var(--ease);
 }
 .hero-lede {
   margin-top: 1.25rem;
+  margin-inline: auto;
   max-width: 42rem;
   font-size: clamp(1rem, 0.95rem + 0.3vw, 1.125rem);
   line-height: 1.55;
   text-wrap: pretty;
   color: var(--scene-muted);
+  /* Near the flare the sub-line keeps its contrast: a soft shadow in the ground's colour. */
+  text-shadow: 0 0 2px var(--scene-glow), 0 1px 14px var(--scene-glow), 0 0 28px var(--scene-glow);
+  transition: color 600ms var(--ease);
 }
 .hero-credit {
   position: absolute;
@@ -631,17 +679,14 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--scene-faint);
-  opacity: 0.8;
+  opacity: 0.85;
+  text-shadow: 0 0 6px var(--scene-glow), 0 0 14px var(--scene-glow);
 }
 
-/* The prompt: dark glass over space, below the copy and above the limb. */
+/* The prompt: glass over the scene, at the bottom of its room, above the limb. */
 .hero-prompt-slot {
-  position: absolute;
-  z-index: 2;
-  left: 50%;
-  bottom: 24%;
   width: min(40rem, calc(100% - 2rem));
-  transform: translateX(-50%);
+  pointer-events: auto;
 }
 .hero-prompt { position: relative; }
 .hero-prompt .prompt-box {
@@ -650,27 +695,30 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   color: var(--scene-ink);
   box-shadow:
     0 1px 0 rgb(255 255 255 / 0.06) inset,
-    0 24px 48px -20px rgb(0 0 0 / 0.7);
+    0 24px 48px -20px var(--scene-shadow);
+  transition: background-color 600ms var(--ease), border-color 600ms var(--ease), color 600ms var(--ease);
 }
 .hero-prompt .prompt-box input { color: var(--scene-ink); }
 .hero-prompt .prompt-box input::placeholder { color: var(--scene-faint); }
-.hero-prompt .prompt-box [role="radiogroup"] { background: rgb(255 255 255 / 0.08); }
+.hero-prompt .prompt-box [role="radiogroup"] { background: var(--scene-glass-2); }
 .hero-prompt .prompt-box [role="radio"] { color: var(--scene-muted); }
 .hero-prompt .prompt-box [role="radio"]:hover { color: var(--scene-ink); }
-.hero-prompt .prompt-box [role="radio"][aria-checked="true"] { background: rgb(255 255 255 / 0.92); color: #0f1a14; }
-.hero-prompt .prompt-box button[type="submit"] { background: #fff; color: #0f1a14; }
+.hero-prompt .prompt-box [role="radio"][aria-checked="true"] { background: var(--scene-check-bg); color: var(--scene-check-ink); }
+.hero-prompt .prompt-box button[type="submit"] { background: var(--scene-check-bg); color: var(--scene-check-ink); }
 .hero-prompt .prompt-box ul button {
   border-color: var(--scene-line);
   color: var(--scene-muted);
 }
 .hero-prompt .prompt-box ul button:hover { border-color: var(--scene-line-2); background: var(--scene-glass-2); color: var(--scene-ink); }
-.hero-prompt [role="alert"] { color: #f4a09a; }
-/* The run card arrives above the prompt with weight: a short drop, a settle, no bounce. */
+.hero-prompt [role="alert"] { color: var(--bad); }
+/* The run card arrives above the prompt with weight: a short drop, a settle, no bounce. It
+   is shown only where its room is tall enough for it not to touch the sub-line. */
 .hero-preview {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 0.75rem);
   width: min(32rem, 100%);
+  display: none;
   translate: -50% 1.25rem;
   scale: 0.97;
   opacity: 0;
@@ -680,18 +728,21 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
     translate 720ms cubic-bezier(0.2, 0.9, 0.22, 1.04),
     scale 720ms cubic-bezier(0.2, 0.9, 0.22, 1.04);
 }
+@container (min-height: 19.5rem) {
+  .hero-preview { display: block; }
+}
 .hero-preview[data-shown] {
   opacity: 1;
   translate: -50% 0;
   scale: 1;
 }
 .hero-card {
-  background: rgb(10 14 22 / 0.9);
+  background: var(--scene-glass);
   border-color: var(--scene-line-2);
   color: var(--scene-ink);
   box-shadow:
     0 1px 0 rgb(255 255 255 / 0.06) inset,
-    0 24px 48px -16px rgb(0 0 0 / 0.7);
+    0 24px 48px -16px var(--scene-shadow);
 }
 .hero-card .text-ink { color: var(--scene-ink); }
 .hero-card .text-muted, .hero-card .text-faint { color: var(--scene-muted); }
@@ -711,17 +762,18 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 .hero-lede { --i: 2; }
 .hero-prompt-slot > * { --i: 4; }
 
-/* The header floats over space: its wordmark reads light there. */
-header[data-floating] .wordmark-text { color: #f2f4f1; }
+/* The header floats over the scene: its wordmark reads in the scene's ink there. */
+header[data-floating] .wordmark-text { color: var(--scene-ink); transition: color 600ms var(--ease); }
 
-@media (max-height: 46rem), (max-width: 40rem) {
-  .hero-preview { display: none; }
+@media (max-width: 40rem) {
+  .hero-preview { display: none !important; }
 }
 @media (max-height: 44rem) {
-  .hero-copy { top: 4.25rem; }
-  .hero-prompt-slot { bottom: 16%; }
+  .hero-copy { padding-top: 4.25rem; }
+  .hero-layout { grid-template-rows: auto minmax(0, 1fr) 16%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hero-preview { transition: none; }
   .hero-copy > *, .hero-prompt-slot > * { animation: none; }
+  .hero-frame, .hero-badge, .hero-title, .hero-lede, .hero-prompt .prompt-box, header[data-floating] .wordmark-text { transition: none; }
 }

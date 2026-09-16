@@ -1,0 +1,292 @@
+/* ---------------------------------------------------------------------------
+   Landing: "how it reads a page" -- the panel, the scene, the cards
+   Imported by components/landing/Story.tsx; plain CSS on the site's tokens
+   (globals.css §1), no Tailwind utilities of its own.
+
+   The panel is `[data-how]`: three <details> steps beside an inline isometric
+   SVG (how/Scene.tsx). Two attributes drive everything: `data-in` (Motion, on
+   scroll into view) assembles the scene; `data-step` (HowMotion, from the
+   open step) cross-morphs it. Without JavaScript neither is set: the scene
+   stands complete at step one.
+   --------------------------------------------------------------------------- */
+.how-eyebrow {
+  display: inline-block;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--muted);
+}
+.how-title {
+  font-family: var(--font-sans-stack);
+  font-weight: 700;
+  font-size: clamp(2rem, 1.2rem + 3.2vw, 3.5rem);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.how-title em {
+  font-family: var(--font-display-stack);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 1.12em;
+  letter-spacing: -0.01em;
+}
+
+/* The panel: a rule with a restrained warm-to-green edge, the scene on a faint ground. */
+.how {
+  --plane: color-mix(in oklab, var(--surface) 86%, #fff);
+  --scene-shadow: var(--ink);
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+  isolation: isolate;
+}
+.how::before {
+  /* the frame: a 1px gradient edge, drawn under a masked pseudo-element */
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, color-mix(in oklab, var(--warn) 55%, var(--rule)), var(--rule) 40%, var(--rule) 60%, color-mix(in oklab, var(--accent) 60%, var(--rule)));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+}
+@media (max-width: 63.9rem) {
+  .how { grid-template-columns: 1fr; }
+}
+@media (min-width: 64rem) {
+  .how { min-height: 31rem; }
+}
+/* In the dark the shadow is black, not ink (ink is light there). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .how { --scene-shadow: #000; }
+}
+:root[data-theme="dark"] .how { --scene-shadow: #000; }
+
+/* The steps. */
+.how-steps {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border-right: 1px solid var(--rule);
+}
+@media (max-width: 63.9rem) {
+  .how-steps { order: 2; border-right: 0; border-top: 1px solid var(--rule); }
+}
+.how-step { border-top: 1px solid var(--rule); }
+.how-step:last-child { border-bottom: 1px solid var(--rule); }
+.how-step > summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.25rem 1fr 1rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem 0;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: var(--text-h3);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.how-step > summary::-webkit-details-marker { display: none; }
+.how-step > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.how-num { font-size: var(--text-label); font-weight: 500; color: var(--faint); }
+.how-step[open] .how-num { color: var(--accent-ink); }
+.how-chevron { width: 1rem; height: 1rem; color: var(--faint); transition: transform var(--dur-base) var(--ease); }
+.how-step[open] .how-chevron { transform: rotate(180deg); }
+.how-step-body {
+  margin: 0 0 1.125rem 2.75rem;
+  font-size: var(--text-small);
+  line-height: var(--text-small--line-height);
+  color: var(--muted);
+}
+/* The auto-advance: a thin line under the open step fills over the dwell. */
+.how-step > summary::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  width: 100%;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.how[data-auto] .how-step[open] > summary::after { animation: how-dwell 6.5s linear both; }
+@keyframes how-dwell { to { transform: scaleX(1); } }
+
+/* The stage. */
+.how-stage {
+  position: relative;
+  min-height: 24rem;
+  background:
+    radial-gradient(60% 55% at 55% 45%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 70%),
+    var(--ground);
+}
+.how-scene { display: block; width: 100%; height: 100%; min-height: 24rem; overflow: visible; }
+@media (max-width: 63.9rem) {
+  .how-stage, .how-scene { min-height: 0; aspect-ratio: 4 / 3; }
+}
+
+/* Scene paint: tokens only, so it follows the theme. */
+.how-scene .floor line { stroke: var(--rule); stroke-width: 1; }
+.how-scene .sheet .face { fill: var(--plane); stroke: var(--rule-strong); stroke-width: 1; }
+.how-scene .sheet .edge { fill: color-mix(in oklab, var(--ink) 14%, var(--plane)); stroke: var(--rule-strong); stroke-width: 1; stroke-linejoin: round; }
+.how-scene .sheet-bad .face { fill: var(--bad-soft); stroke: var(--bad); }
+.how-scene .sheet-bad .edge { fill: color-mix(in oklab, var(--bad) 30%, var(--bad-soft)); stroke: var(--bad); }
+.how-scene .shadow { fill: url(#how-shadow); }
+.how-scene .sh0 { stop-color: var(--scene-shadow); stop-opacity: 0.18; }
+.how-scene .sh1 { stop-color: var(--scene-shadow); stop-opacity: 0; }
+.how-scene .line { fill: var(--faint); opacity: 0.55; }
+.how-scene .ink { fill: var(--ink); opacity: 0.82; }
+.how-scene .code { fill: var(--accent-ink); opacity: 0.8; }
+.how-scene .bad { fill: var(--bad); opacity: 0.8; }
+.how-scene .line-bad { fill: var(--bad); opacity: 0.25; }
+.how-scene .ghost { fill: none; stroke: var(--rule-strong); stroke-dasharray: 3 3; }
+.how-scene .sunk { fill: var(--sunk); }
+.how-scene .grid rect { fill: none; stroke: var(--rule-strong); }
+.how-scene .grid path { stroke: var(--rule-strong); fill: none; }
+.how-scene .grid .head { fill: var(--sunk); stroke: none; }
+.how-scene text { font-family: var(--font-mono-stack); font-size: 9px; fill: var(--muted); }
+.how-scene text.strong { fill: var(--ink); font-weight: 500; }
+.how-scene text.faint { fill: var(--faint); }
+.how-scene text.good { fill: var(--accent-ink); }
+.how-scene .head { fill: var(--sunk); }
+.how-scene .tag rect { fill: var(--plane); stroke: var(--rule-strong); }
+.how-scene .tag text { font-size: 9.5px; fill: var(--ink); font-weight: 500; }
+.how-scene .tag-bad rect { fill: var(--bad-soft); stroke: var(--bad); }
+.how-scene .tag-bad text { fill: var(--bad); }
+.how-scene .tag-good rect { fill: var(--good-soft); stroke: var(--good); }
+.how-scene .tag-good text { fill: var(--good); }
+.how-scene .dots { fill: none; stroke: var(--accent-ink); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 0.006 0.022; }
+.how-scene .draw { fill: none; stroke: #fff; stroke-width: 14; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.how-scene .cut { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.how-scene .num circle { fill: var(--accent); }
+.how-scene .num text { fill: var(--surface); font-size: 10px; font-weight: 500; text-anchor: middle; }
+
+/* Motion. Springs are overshoot curves; the stagger is --i. */
+.how-scene {
+  --spring: cubic-bezier(0.2, 1.3, 0.3, 1);
+}
+.how-scene .world { transition: transform 1000ms var(--ease); }
+.how[data-step="1"] .world, .how:not([data-step]) .world { transform: translateX(80px); }
+.how[data-step="2"] .world { transform: translateX(20px); }
+.how[data-step="3"] .world { transform: translateX(-110px); }
+.how-scene .par { will-change: transform; }
+.how-scene .rise, .how-scene .pop, .how-scene .hid {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform 900ms var(--spring) calc(var(--i, 0) * 80ms),
+    opacity 500ms var(--ease) calc(var(--i, 0) * 80ms);
+}
+.how-scene .pop { transition-duration: 700ms, 300ms; }
+/* A step's pieces are away unless the panel is on that step (no data-step is step one). */
+.how-scene .s1, .how-scene .s2, .how-scene .s3 { opacity: 0; transform: translateY(26px); }
+.how-scene .pop.s1, .how-scene .pop.s2, .how-scene .pop.s3 { transform: scale(0.6); }
+.how:not([data-step="2"]):not([data-step="3"]) .how-scene .s1,
+.how[data-step="2"] .how-scene .s2,
+.how[data-step="3"] .how-scene .s3 { opacity: 1; transform: none; }
+/* Not yet in view: everything is down and away, and the paths are undrawn. */
+main[data-motion] .how:not([data-in]) .how-scene .rise { opacity: 0 !important; transform: translateY(40px) !important; }
+main[data-motion] .how:not([data-in]) .how-scene .pop { opacity: 0 !important; transform: scale(0.6) !important; }
+main[data-motion] .how:not([data-in]) .how-scene .draw { stroke-dashoffset: 1; }
+/* The paths draw themselves when step one arrives, and are undrawn on the others. */
+.how-scene .draw { transition: stroke-dashoffset 1300ms var(--ease) 350ms; }
+.how[data-step="2"] .how-scene .draw, .how[data-step="3"] .how-scene .draw { stroke-dashoffset: 1; transition-duration: 200ms; transition-delay: 0ms; }
+.how-scene .dots { animation: how-march 1.4s linear infinite; }
+@keyframes how-march { to { stroke-dashoffset: -0.028; } }
+/* Step three's cuts draw across the page. */
+.how-scene .cut { stroke-dashoffset: 1; transition: stroke-dashoffset 700ms var(--ease) calc(300ms + var(--i, 0) * 160ms), opacity 300ms; }
+.how[data-step="3"] .how-scene .cut { stroke-dashoffset: 0; }
+/* Step two: what the browser hid lifts off the page and dissolves. */
+.how[data-in][data-step="2"] .how-scene .hid { animation: how-lift 3000ms var(--ease) calc(500ms + var(--i, 0) * 220ms) both; }
+@keyframes how-lift {
+  0%   { opacity: 0; transform: translateY(14px); }
+  22%  { opacity: 1; transform: translateY(0); }
+  48%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0.3; transform: translateY(-48px); }
+}
+
+/* The cards. */
+.how-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  background: var(--surface);
+}
+.how-card .mock {
+  margin-top: auto;
+  padding-top: 1.25rem;
+}
+.mock-ui { border: 1px solid var(--rule); border-radius: 10px; background: var(--ground); overflow: hidden; }
+.mock-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono-stack);
+  font-size: var(--text-label);
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mock-head .dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.mock-head .dot-bad { background: var(--bad); }
+.mock-body { padding: 0.75rem; }
+.chip {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono-stack);
+  font-size: var(--text-label);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.chip-good { background: var(--good-soft); color: var(--good); }
+.chip-bad { background: var(--bad-soft); color: var(--bad); }
+.bar { height: 6px; border-radius: 3px; background: var(--sunk); overflow: hidden; }
+.bar-fill { display: block; height: 100%; width: 100%; border-radius: inherit; background: var(--accent); transform-origin: left; transition: transform 1100ms var(--ease) 300ms; }
+main[data-motion] .how-card:not([data-in]) .bar-fill { transform: scaleX(0); }
+.mock-refusals .row, .mock-prov .row {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule);
+}
+.mock-refusals .row:first-child, .mock-prov .row:first-child { border-top: 0; padding-top: 0; }
+.mock-refusals .row:last-child, .mock-prov .row:last-child { padding-bottom: 0; }
+.mock-refusals .row { grid-template-columns: 5.25rem 1fr; gap: 0.5rem; align-items: start; }
+.mock-refusals .row > span:last-child, .mock-prov .row > span:last-child { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.mock-prov .anchor { overflow-wrap: anywhere; }
+main[data-motion] .how-card .mock-refusals .row { transition: transform 500ms var(--spring, cubic-bezier(0.2, 1.3, 0.3, 1)) calc(400ms + var(--i, 0) * 160ms), opacity 300ms var(--ease) calc(400ms + var(--i, 0) * 160ms); }
+main[data-motion] .how-card:not([data-in]) .mock-refusals .row { opacity: 0; transform: scale(1.06); }
+main[data-motion] .how-card .mock-prov .anchor { clip-path: inset(0 0 0 0); transition: clip-path 900ms steps(24) calc(400ms + var(--i, 0) * 260ms); }
+main[data-motion] .how-card:not([data-in]) .mock-prov .anchor { clip-path: inset(0 100% 0 0); }
+main[data-motion] .how-card .mock-prov .row > span:last-child { transition: opacity 400ms var(--ease) calc(1000ms + var(--i, 0) * 260ms); }
+main[data-motion] .how-card:not([data-in]) .mock-prov .row > span:last-child { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .how-scene *, .how-card * { transition: none !important; animation: none !important; }
+  .how-scene .par { transform: none !important; }
+}
