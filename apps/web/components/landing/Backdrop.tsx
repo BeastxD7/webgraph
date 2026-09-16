@@ -1,6 +1,6 @@
 /**
- * The landing's ground: a slow gradient field in the ink-green family, a ruled grid — the
- * page is measured, and the ground says so — and a grain. All CSS (`globals.css` §7), no
+ * The landing's ground below the hero: a slow gradient field in the ink-green family and a
+ * grain. (The ruled grid went with the hero it belonged to; the meadow has no grid.) All CSS (`globals.css` §7), no
  * script: the blobs drift on `transform` only, the grain is a static SVG tile, and under
  * `prefers-reduced-motion` the drift stops where it is.
  *
@@ -12,7 +12,6 @@
 export default function Backdrop() {
   return (
     <div aria-hidden className="landing-backdrop">
-      <div className="bd-grid" />
       <div className="bd-blob bd-blob-a" />
       <div className="bd-blob bd-blob-b" />
       <div className="bd-blob bd-blob-c" />
