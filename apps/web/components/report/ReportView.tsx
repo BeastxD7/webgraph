@@ -15,7 +15,7 @@ const SEVERITY: Record<Severity, { tone: ChipTone; label: string }> = {
 
 const ACCESS: Record<BotAccess, { tone: ChipTone; label: string }> = {
   allowed: { tone: "measured", label: "Allowed" },
-  restricted: { tone: "assumed", label: "Restricted" },
+  partly: { tone: "assumed", label: "Partly restricted" },
   blocked: { tone: "refused", label: "Blocked" },
 };
 
@@ -328,7 +328,7 @@ export default function ReportView({ report }: { report: SiteReport }) {
           title="What robots.txt declares per bot"
           lede={
             robots.found
-              ? "Read as each bot would read the file: the group naming it, else the * group. Blocked means the root is disallowed; restricted means some paths are. Nothing here was fetched as any of these bots."
+              ? "Read as each bot would read the file: the group naming it, else the * group. Blocked means the root is disallowed; partly restricted means content paths are; allowed means nothing is, or only housekeeping paths (/wp-admin/, /login, /search, a bare query string) are. Nothing here was fetched as any of these bots."
               : "No robots.txt was found, so by the convention every crawler follows, every bot is allowed everywhere. Nothing here was fetched as any of these bots."
           }
         >
@@ -341,7 +341,7 @@ export default function ReportView({ report }: { report: SiteReport }) {
                   <th className="py-2 pr-3 font-medium">Purpose</th>
                   <th className="py-2 pr-3 font-medium">Declared</th>
                   <th className="py-2 pr-3 font-medium">Via</th>
-                  <th className="py-2 pr-3 text-right font-medium">Disallowed paths</th>
+                  <th className="py-2 pr-3 text-right font-medium">Content paths disallowed</th>
                   <th className="py-2 pr-3 text-right font-medium">Crawl-delay</th>
                 </tr>
               </thead>
@@ -352,14 +352,24 @@ export default function ReportView({ report }: { report: SiteReport }) {
                     <td className="py-2 pr-3 text-muted">{bot.operator}</td>
                     <td className="py-2 pr-3 text-muted">{bot.purpose}</td>
                     <td className="py-2 pr-3">
-                      {/* A `*` group that disallows /wp-admin/ is the commonest file on the web; the
-                          word stays, the caution colour is kept for a rule that names the bot. */}
-                      <Chip tone={bot.access === "restricted" && bot.via !== "named" ? "plain" : ACCESS[bot.access].tone}>
-                        {ACCESS[bot.access].label}
-                      </Chip>
+                      <Chip tone={ACCESS[bot.access].tone}>{ACCESS[bot.access].label}</Chip>
                     </td>
                     <td className="py-2 pr-3 text-muted">{VIA[bot.via] ?? bot.via}</td>
-                    <td className="tabular py-2 pr-3 text-right font-mono text-code">{bot.disallowed}</td>
+                    <td className="py-2 pr-3 text-right">
+                      {bot.content_paths.length > 0 ? (
+                        <>
+                          <span className="tabular font-mono text-code">{bot.content_paths.length}</span>
+                          <span className="block font-mono text-caption text-muted">
+                            {bot.content_paths.slice(0, 2).join(", ")}
+                            {bot.content_paths.length > 2 ? " …" : ""}
+                          </span>
+                        </>
+                      ) : bot.disallowed > 0 ? (
+                        <span className="text-caption text-muted">{bot.disallowed} administrative</span>
+                      ) : (
+                        <span className="tabular font-mono text-code">0</span>
+                      )}
+                    </td>
                     <td className="tabular py-2 pr-3 text-right font-mono text-code">{bot.crawl_delay === null ? "—" : `${bot.crawl_delay}s`}</td>
                   </tr>
                 ))}

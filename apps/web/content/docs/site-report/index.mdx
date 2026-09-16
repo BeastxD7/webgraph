@@ -53,9 +53,14 @@ case-insensitively, combined; the `*` group when none names it; nothing when the
 file. `Googlebot-Image` in the file does not govern Googlebot.
 
 The verdict is read at the root by the same longest-match rule the crawl's own refusals
-use: **blocked** when `/` is disallowed, **restricted** when some paths are, **allowed**
-otherwise -- with `via` saying whether the bot was named or fell under `*`, the count of
-`Disallow` lines that decide something, any `Crawl-delay`, and the lines verbatim. The
+use: **blocked** when `/` is disallowed, **partly restricted** when content paths are
+(the count and the paths are shown), **allowed** otherwise -- including when the only
+`Disallow` lines are housekeeping: `/wp-admin/`, `/wp-login.php`, `/cgi-bin/`, `/admin/`,
+`/login`, `/account`, `/cart`, `/checkout`, `/search`, a bare query-string pattern such as
+`/*?` (`report.bots.ADMIN_PATHS`, a small literal list). Measured on vtu.ac.in, an earlier
+version called all fifteen bots "restricted" for `Disallow: /wp-admin/`, which an owner
+reads as "all AI bots restricted" and is false. `via` says whether the bot was named or
+fell under `*`; any `Crawl-delay` and the lines verbatim are beside it. The
 report's plain fetches identify themselves as webgraph with a contact URL; its browser
 fetch is a real Chromium under its own User-Agent, as every render in the engine is; both
 obey the file like every other fetch the engine makes. The report's own requests -- the

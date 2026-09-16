@@ -122,8 +122,31 @@ class TestReadingRobotsPerBot:
         by = {b.token: policy_for_bot(robots, b) for b in BOTS}
         assert by["GPTBot"].access == "blocked" and by["GPTBot"].via == "named"
         assert by["GPTBot"].lines == ("Disallow: /",)
-        assert by["ClaudeBot"].access == "restricted" and by["ClaudeBot"].via == "wildcard"
-        assert by["ClaudeBot"].disallowed == 1
+        assert by["ClaudeBot"].access == "partly" and by["ClaudeBot"].via == "wildcard"
+        assert by["ClaudeBot"].disallowed == 1 and by["ClaudeBot"].content_paths == ("/private/",)
+        # Every other bot follows `*`: GPTBot is the only one blocked.
+        assert [t for t, b in by.items() if b.access == "blocked"] == ["GPTBot"]
+        assert all(b.via == "wildcard" for t, b in by.items() if t != "GPTBot")
+
+    def test_administrative_disallows_leave_a_bot_allowed(self) -> None:
+        """`Disallow: /wp-admin/` is housekeeping on nearly every WordPress site. Measured on
+        vtu.ac.in: the first version called all fifteen bots "restricted" for it."""
+        from webgraph.report.bots import BOTS, is_administrative, policy_for_bot
+
+        robots = "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\nDisallow: /*?\nDisallow: /search/\n"
+        policies = [policy_for_bot(robots, b) for b in BOTS]
+        assert all(p.access == "allowed" for p in policies)
+        assert all(p.disallowed == 3 and p.content_paths == () for p in policies)
+        assert is_administrative("/cgi-bin/") and is_administrative("/login") and is_administrative("/?s=")
+        assert not is_administrative("/news/") and not is_administrative("/wp-content/uploads/")
+
+    def test_content_disallows_are_partly_restricted_with_the_paths(self) -> None:
+        from webgraph.report.bots import BOTS, policy_for_bot
+
+        robots = "User-agent: *\nDisallow: /wp-admin/\nDisallow: /news/\nDisallow: /reports/\nDisallow: /drafts/\n"
+        bot = policy_for_bot(robots, BOTS[0])
+        assert bot.access == "partly"
+        assert bot.disallowed == 4 and bot.content_paths == ("/news/", "/reports/", "/drafts/")
 
     def test_matching_is_the_whole_token_not_a_substring(self) -> None:
         """`Googlebot-Image` in the file is not a rule for Googlebot, and `gptbot` is GPTBot."""
@@ -142,7 +165,7 @@ class TestReadingRobotsPerBot:
             "User-agent: ClaudeBot\nUser-agent: CCBot\nDisallow: /private/\nCrawl-delay: 5\n"
         )
         claude = policy_for_bot(robots, next(b for b in BOTS if b.token == "ClaudeBot"))
-        assert claude.disallowed == 2 and claude.access == "restricted"
+        assert claude.disallowed == 2 and claude.access == "partly"
         assert claude.crawl_delay == 5.0
         assert claude.lines == ("Disallow: /drafts/", "Disallow: /private/", "Crawl-delay: 5")
 
@@ -154,6 +177,8 @@ class TestReadingRobotsPerBot:
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /$\n", bot).access == "blocked"
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /*\n", bot).access == "blocked"
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow:\n", bot).access == "allowed"
+        # `?` is literal in a robots pattern, not a one-character wildcard: `/*?` must not match `/`.
+        assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /*?\n", bot).access == "allowed"
 
     def test_no_file_is_allowed_and_unmentioned_for_every_bot(self) -> None:
         from webgraph.report.bots import BOTS, declared_policies
@@ -549,7 +574,8 @@ class TestCli:
         assert main(["report", "https://acme.test/", "--pages", "2"]) == 0
         out = capsys.readouterr().out
         assert "AI-READINESS" in out and "/100" in out
-        assert "GPTBot               blocked    named" in out
+        assert "GPTBot               blocked            named" in out
+        assert "ClaudeBot            allowed            not mentioned" in out
         assert "SUGGESTED robots.txt" in out and "# User-agent: GPTBot\n# Allow: /" in out
         assert "SUGGESTED llms.txt" in out and "# Acme College" in out
         assert "never impersonates" in out

@@ -255,7 +255,9 @@ export interface ConfigResponse {
 }
 
 /** `POST /api/site/report` -- the shape of `webgraph.report.SiteReport.as_dict()`. */
-export type BotAccess = "allowed" | "restricted" | "blocked";
+/** At the root: `blocked` when `/` is disallowed, `partly` when content paths are, `allowed`
+ *  when nothing is or only administrative paths (`/wp-admin/`, `/login`, `/search` …) are. */
+export type BotAccess = "allowed" | "partly" | "blocked";
 export type BotVia = "named" | "wildcard" | "none";
 export type BotPurpose = "search" | "assistant" | "training";
 export type Severity = "high" | "medium" | "low" | "info";
@@ -267,7 +269,10 @@ export interface BotPolicy {
   via: BotVia;
   mentioned: boolean;
   access: BotAccess;
+  /** `Disallow` lines that apply and decide something, administrative ones included. */
   disallowed: number;
+  /** The disallowed paths that are content, not housekeeping, in file order. */
+  content_paths: string[];
   crawl_delay: number | null;
   /** The directives that apply, verbatim from the file. */
   lines: string[];

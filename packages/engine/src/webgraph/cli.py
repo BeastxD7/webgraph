@@ -240,7 +240,11 @@ def format_site_report(report: Any) -> list[str]:
     for bot in robots.bots:
         via = {"named": "named", "wildcard": "via *", "none": "not mentioned"}[bot.via]
         delay = f", crawl-delay {bot.crawl_delay:g}s" if bot.crawl_delay else ""
-        lines.append(f"      {bot.token:<20} {bot.access:<10} {via}{delay}")
+        word = {"allowed": "allowed", "partly": "partly restricted", "blocked": "blocked"}[bot.access]
+        paths = ""
+        if bot.content_paths:
+            paths = f"; {len(bot.content_paths)} content paths: " + ", ".join(bot.content_paths[:2])
+        lines.append(f"      {bot.token:<20} {word:<18} {via}{delay}{paths}")
     llms = report.llms_txt
     lines += [
         "",

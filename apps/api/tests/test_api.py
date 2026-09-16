@@ -800,7 +800,9 @@ class TestSiteReport:
         bots = {b["token"]: b for b in body["robots"]["bots"]}
         assert bots["GPTBot"]["access"] == "blocked" and bots["GPTBot"]["via"] == "named"
         assert bots["GPTBot"]["lines"] == ["Disallow: /"]
-        assert bots["ClaudeBot"]["access"] == "restricted" and bots["ClaudeBot"]["via"] == "wildcard"
+        # `/wp-admin/` under `*` is housekeeping, not a restriction on reading the site.
+        assert bots["ClaudeBot"]["access"] == "allowed" and bots["ClaudeBot"]["via"] == "wildcard"
+        assert bots["ClaudeBot"]["disallowed"] == 1 and bots["ClaudeBot"]["content_paths"] == []
 
         root = body["pages"][0]
         assert root["hidden_links"] == 8

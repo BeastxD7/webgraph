@@ -157,6 +157,12 @@ def _readable(pages: list[PageReport]) -> SubScore:
     )
 
 
+def _paths(bot: BotPolicy) -> str:
+    shown = ", ".join(bot.content_paths[:2])
+    more = f" and {len(bot.content_paths) - 2} more" if len(bot.content_paths) > 2 else ""
+    return f"{len(bot.content_paths)} content path{'s' if len(bot.content_paths) != 1 else ''}: {shown}{more}"
+
+
 def _robots(bots: Iterable[BotPolicy], found: bool) -> SubScore:
     weight = WEIGHTS["robots_ai_bots"]
     label = "robots.txt does not block AI bots wholesale"
@@ -169,14 +175,26 @@ def _robots(bots: Iterable[BotPolicy], found: bool) -> SubScore:
         named = [b for b in policies if b.via == "named"]
         wildcard = [b for b in policies if b.via == "wildcard"]
         parts: list[str] = []
-        for verdict in ("blocked", "restricted", "allowed"):
+        for verdict, word in (("blocked", "blocked"), ("partly", "partly restricted"), ("allowed", "allowed")):
             these = [b for b in named if b.access == verdict]
             if these:
-                parts.append(f"{verdict} by name: " + ", ".join(b.token for b in these))
+                detail = f" ({_paths(these[0])})" if verdict == "partly" else ""
+                parts.append(f"{word} by name: " + ", ".join(b.token for b in these) + detail)
         if wildcard:
             sample = wildcard[0]
-            paths = f" ({sample.disallowed} path{'s' if sample.disallowed != 1 else ''} disallowed)" if sample.disallowed else ""
-            parts.append(f"the other {len(wildcard)} fall under `User-agent: *`, {sample.access}{paths}")
+            if sample.access == "blocked":
+                fell = "blocked -- the root is disallowed"
+            elif sample.access == "partly":
+                fell = f"partly restricted ({_paths(sample)})"
+            elif sample.disallowed:
+                count = sample.disallowed
+                fell = (
+                    f"allowed -- the {count} disallowed path{'s are' if count != 1 else ' is'} "
+                    "administrative (a back office, sign-in, search), not content"
+                )
+            else:
+                fell = "allowed"
+            parts.append(f"the other {len(wildcard)} fall under `User-agent: *`, {fell}")
         unmentioned = [b for b in policies if b.via == "none"]
         if unmentioned and not wildcard:
             parts.append(f"{len(unmentioned)} not mentioned, so allowed")
