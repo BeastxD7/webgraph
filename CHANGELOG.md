@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (2026-09-16, PR #NN) — WebGraph page: the graph, and the query path lit in real time (behind WEBGRAPH_KG)
+### Added (2026-09-16, PR #100) — WebGraph page: the graph, and the query path lit in real time (behind WEBGRAPH_KG)
 - `/graph?url=` (`apps/web/app/graph/page.tsx`, client components under
   `components/graph/`): the site, a model panel (presets for Ollama, LM Studio, vLLM,
   OpenAI, Anthropic, Gemini, Groq, OpenRouter, Together, DeepSeek, Mistral, xAI, or a
