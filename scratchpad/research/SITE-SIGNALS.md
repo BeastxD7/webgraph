@@ -244,9 +244,10 @@ sites has one.
 - **JSON-LD / Schema.org.** `<script type="application/ld+json">`; the report lists distinct
   `@type`s (Organization, WebSite+SearchAction, WebPage, FAQPage, Product, Article...).
   Honoured by Google/Bing rich results and read by every serious extractor. Real:
-  cloudflare.com 3 blocks (Organization, WebSite, SearchAction, WebPage); vercel.com's types
-  (Organization, Person, Service, SoftwareApplication) arrive via a JS-injected block, so the
-  plain fetch sees none -- which is exactly the kind of gap the report exists to show.
+  cloudflare.com 3 blocks in the head (Organization, WebSite, SearchAction, WebPage);
+  vercel.com's (Organization, ImageObject, Person, ContactPoint, PostalAddress, Service,
+  SoftwareApplication, Offer) sit in the body of the plain HTML -- a first pass that read
+  only `<head>` missed them, which is why the detector walks the whole document.
 - **OpenGraph / Twitter cards.** `<meta property="og:*">`, `<meta name="twitter:*">`
   (<https://ogp.me/>). Honoured by every link-unfurler (Slack, iMessage, LinkedIn, X) and
   used by assistants for titles/images. All five roots carry OG; docs.python.org and gov.uk

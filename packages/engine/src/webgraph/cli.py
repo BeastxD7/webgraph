@@ -300,7 +300,8 @@ def format_site_report(report: Any) -> list[str]:
 def signals_group_label(group: str) -> str:
     from webgraph.report.signals import GROUPS
 
-    return GROUPS.get(group, group)  # type: ignore[call-overload]
+    labels: dict[str, str] = {str(key): label for key, label in GROUPS.items()}
+    return labels.get(group, group)
 
 
 def _cmd_site(args: argparse.Namespace) -> int:

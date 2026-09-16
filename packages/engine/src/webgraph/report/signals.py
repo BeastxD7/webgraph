@@ -28,7 +28,7 @@ this client (recorded as unchecked, not absent), and identified as webgraph like
 request the engine makes. The root is fetched once more, plainly, for its response headers
 (`X-Robots-Tag`, `Link`, `TDM-Reservation`, `Content-Usage`) and the HTML a machine that
 runs no JavaScript sees; the rendered document the report already holds is the wrong
-witness for that -- vercel.com's JSON-LD arrives with JavaScript. Advertised files are
+witness for that, since it carries what the browser added. Advertised files are
 followed from the root's `Link:` header and `<link>` elements (`rel="manifest"`,
 `rel="license"`, `rel="describedby"`, `rel="api-catalog"`); hard-coded paths are tried only
 for the conventions that have one.
@@ -938,8 +938,8 @@ def collect_signals(
     signals.append(_signal("sitemap", sitemap_found, detail, meaning, source=declared[0] if declared else urljoin(origin, "/sitemap.xml")))
 
     if head.feeds:
-        names = {"application/rss+xml": "RSS", "application/atom+xml": "Atom", "application/feed+json": "JSON Feed", "application/json": "JSON Feed"}
-        kinds = ", ".join(dict.fromkeys(names.get(k, k) for k, _ in head.feeds))
+        feed_names = {"application/rss+xml": "RSS", "application/atom+xml": "Atom", "application/feed+json": "JSON Feed", "application/json": "JSON Feed"}
+        kinds = ", ".join(dict.fromkeys(feed_names.get(k, k) for k, _ in head.feeds))
         detail = f"{len(head.feeds)} feed link{'s' if len(head.feeds) != 1 else ''} ({kinds}): " + ", ".join(u for _, u in head.feeds[:2])
         meaning = "The root advertises a feed: readers and aggregators, AI ones included, get what changed without crawling."
     else:
