@@ -38,7 +38,7 @@ export default async function ExtractPage({
       <>
         <RunBanner url="nothing to extract" mode="site" />
         <div className="page-col pb-20">
-          <p className="rounded-2xl border border-line bg-surface px-5 py-6 text-[14px] text-ink-soft">
+          <p className="rounded-2xl border border-line bg-surface px-5 py-6 text-small text-ink-soft">
             {normalized.reason ?? "No website address was supplied."}{" "}
             <Link href="/#start" className="font-semibold text-leaf-700 underline underline-offset-2">
               Start from the home page

@@ -51,7 +51,7 @@ export default function BenchmarksPage() {
             only board that scores a real fetch. It is still behind the leader wherever tables
             and equations are graded on their own. All of it is below.
           </p>
-          <p className="mt-4 font-mono text-[11.5px] text-ink-faint">
+          <p className="mt-4 font-mono text-caption text-ink-faint max-sm:text-code">
             Rows for this engine measured {MEASURED.date} on <code>main@{MEASURED.commit}</code>,
             with the runners in <code>benchmark/</code>. Every other row is its authors&rsquo;
             published figure.
@@ -64,12 +64,12 @@ export default function BenchmarksPage() {
               <h2 className="font-display text-[1.8rem] leading-tight">
                 Fetching and extracting are two different problems
               </h2>
-              <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
+              <p className="mt-4 text-small leading-relaxed text-ink-soft">
                 Five of the six boards below hand every engine the same saved HTML file, so they
                 measure only the second problem. This one measures both, on a thousand live
                 URLs, which makes it the only place the two can be told apart.
               </p>
-              <p className="mt-3 text-[14px] leading-relaxed text-ink-soft">
+              <p className="mt-3 text-small leading-relaxed text-ink-soft">
                 Read it left to right. The distance between the clusters is what anti-bot
                 infrastructure buys, and it buys pages, not quality.
               </p>
@@ -98,10 +98,10 @@ export default function BenchmarksPage() {
                   {TRUST[board.trust].label}
                 </span>
               </div>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">{board.asks}</p>
-              <p className="mt-1 font-mono text-[11.5px] text-ink-faint">{board.metric}</p>
+              <p className="mt-2 text-small leading-relaxed text-ink-soft">{board.asks}</p>
+              <p className="mt-1 font-mono text-caption text-ink-faint">{board.metric}</p>
               {board.trust === "not-compared" ? (
-                <p className="mt-4 rounded-md bg-clay/10 px-3 py-2.5 text-[12.5px] leading-relaxed text-clay">
+                <p className="mt-4 rounded-md bg-clay/10 px-3 py-2.5 text-small leading-relaxed text-clay">
                   <strong className="font-bold">Read the order as nothing.</strong>{" "}
                   {board.comparability}
                 </p>
@@ -109,11 +109,11 @@ export default function BenchmarksPage() {
               <div className={`mt-6 ${board.trust === "not-compared" ? "opacity-70" : ""}`}>
                 <RankChart board={board} />
               </div>
-              <p className="mt-5 border-l-2 border-clay/40 pl-3 text-[12.5px] leading-relaxed text-ink-faint">
+              <p className="mt-5 border-l-2 border-clay/40 pl-3 text-small leading-relaxed text-ink-soft">
                 {board.caveat}
               </p>
               {board.trust !== "not-compared" ? (
-                <p className="mt-2 pl-3 text-[12px] leading-relaxed text-ink-faint">
+                <p className="mt-2 pl-3 text-caption leading-relaxed text-ink-faint max-sm:text-small">
                   <span className="font-semibold">How the rows were produced.</span>{" "}
                   {board.comparability}
                 </p>
@@ -124,7 +124,7 @@ export default function BenchmarksPage() {
 
         <section className="mt-20 border-t border-line pt-14">
           <h2 className="font-display text-[1.5rem] leading-tight">WCXB by page type</h2>
-          <p className="mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
+          <p className="mt-2 max-w-prose text-small leading-relaxed text-ink-soft">
             The overall number is 53% articles, which every system reads well. The corpus was
             built to show the other six, and that is where the systems separate: within a few
             points on articles, twenty apart on collections. Best cell in each row in bold,
@@ -138,7 +138,7 @@ export default function BenchmarksPage() {
         <section className="mt-20 grid gap-x-12 gap-y-14 border-t border-line pt-14 md:grid-cols-2">
           <article className="min-w-0">
             <h2 className="font-display text-[1.5rem] leading-tight">Where the distance sits</h2>
-            <p className="mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
+            <p className="mt-2 max-w-prose text-small leading-relaxed text-ink-soft">
               An overall score averages five columns and hides that four of them are close. The
               honest picture is per column.
             </p>
@@ -149,7 +149,7 @@ export default function BenchmarksPage() {
 
           <article className="min-w-0">
             <h2 className="font-display text-[1.5rem] leading-tight">One round on WCXB</h2>
-            <p className="mt-2 max-w-prose text-[13.5px] leading-relaxed text-ink-soft">
+            <p className="mt-2 max-w-prose text-small leading-relaxed text-ink-soft">
               Eight merged fixes in one night, each traced to a page that was being extracted
               wrongly and each measured before it shipped. The rejected experiments are recorded
               in the commits beside the accepted ones.
@@ -162,7 +162,7 @@ export default function BenchmarksPage() {
 
         <section className="mt-20 max-w-3xl border-t border-line pt-14">
           <h2 className="font-display text-[1.6rem] leading-tight">Looked at and not run</h2>
-          <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
+          <p className="mt-2 text-small leading-relaxed text-ink-soft">
             A page that lists only the boards it scores on is an advertisement. These are the
             ones a reader would expect to see here, and why they are not.
           </p>
@@ -173,7 +173,7 @@ export default function BenchmarksPage() {
 
         <section className="mt-20 max-w-3xl border-t border-line pt-14">
           <h2 className="font-display text-[1.6rem] leading-tight">How to read these</h2>
-          <div className="mt-5 flex flex-col gap-4 text-[14px] leading-relaxed text-ink-soft">
+          <div className="mt-5 flex flex-col gap-4 text-small leading-relaxed text-ink-soft">
             <p>
               Rows marked as this engine are runs of the benchmark runners in this repository,
               on one machine, against a local clone of each corpus. Every other row is the

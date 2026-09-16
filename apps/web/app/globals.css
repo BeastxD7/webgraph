@@ -367,8 +367,11 @@
 @utility measure-lede { max-width: var(--measure-lede); }
 
 @theme {
-  /* The nav folds to a Menu button below this (DESIGN.md §4d). */
-  --breakpoint-nav: 56.25rem;
+  /* The nav folds to a Menu button below this (DESIGN.md §4d). Eight items, the wordmark,
+     the theme control and the button need ~1,060px as a bar and ~1,140px as the landing's
+     pill; at 900px the bar wrapped to two lines at 1024, and the pill ran under the
+     controls. */
+  --breakpoint-nav: 72rem;
 }
 
 /* ---------------------------------------------------------------------------

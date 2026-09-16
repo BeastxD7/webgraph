@@ -78,7 +78,7 @@ export default function SiteRun({
   return (
     <div className="page-col space-y-5 pb-20">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="flex items-center gap-2 text-[13.5px] font-semibold">
+        <span className="flex items-center gap-2 text-small font-semibold">
           <span aria-hidden className={`size-2 rounded-full ${PHASE_DOT[run.phase]}`} />
           {run.phase === "done" && run.summary && run.summary.stopped_by
             ? `${STOPPED_BY_LABEL[run.summary.stopped_by]} · ${run.summary.remaining_queued.toLocaleString("en-US")} pages not crawled`
@@ -90,14 +90,14 @@ export default function SiteRun({
             <button
               type="button"
               onClick={run.stop}
-              className="rounded-full border border-line-strong bg-surface px-4 py-1.5 text-[13px] font-bold transition-colors hover:bg-haze"
+              className="inline-flex items-center rounded-full border border-line-strong bg-surface px-4 py-1.5 text-small font-bold transition-colors hover:bg-haze pointer-coarse:min-h-11"
             >
               Stop
             </button>
           ) : (
             <Link
               href="/#start"
-              className="rounded-full bg-leaf-600 px-4 py-1.5 text-[13px] font-bold text-inverse transition-colors hover:bg-leaf-700"
+              className="inline-flex items-center rounded-full bg-leaf-600 px-4 py-1.5 text-small font-bold text-inverse transition-colors hover:bg-leaf-700 pointer-coarse:min-h-11"
             >
               Extract another site
             </Link>
@@ -127,7 +127,7 @@ export default function SiteRun({
       {run.error && (
         <p
           role="alert"
-          className="rounded-2xl border border-flag-bad/25 bg-flag-bad/5 px-5 py-4 text-[13.5px] font-semibold text-flag-bad"
+          className="rounded-2xl border border-flag-bad/25 bg-flag-bad/5 px-5 py-4 text-small font-semibold text-flag-bad"
         >
           {run.error}
         </p>
@@ -155,8 +155,8 @@ export default function SiteRun({
             onClick={() => setTab(view)}
             className={
               tab === view
-                ? "rounded-full bg-ink px-3.5 py-1.5 text-[12.5px] font-bold text-inverse"
-                : "rounded-full border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-ink-soft transition-colors hover:bg-haze"
+                ? "inline-flex items-center rounded-full bg-ink px-3.5 py-1.5 text-caption font-bold text-inverse pointer-coarse:min-h-10"
+                : "inline-flex items-center rounded-full border border-line px-3.5 py-1.5 text-caption font-semibold text-ink-soft transition-colors hover:bg-haze pointer-coarse:min-h-10"
             }
           >
             {view === "extracted" ? "Pages" : view === "depth" ? "Depth tree" : "Site graph"}
@@ -203,7 +203,7 @@ export default function SiteRun({
         (succeeded.length > 0 ? (
           <PageList pages={succeeded} siteUrl={url} />
         ) : (
-          <p className="rounded-2xl border border-line bg-surface px-5 py-8 text-center text-[13.5px] text-ink-faint">
+          <p className="rounded-2xl border border-line bg-surface px-5 py-8 text-center text-small text-ink-faint">
             {run.running
               ? "Working through the first pages. Results appear here as they land."
               : "No page was extracted."}
@@ -235,11 +235,11 @@ export default function SiteRun({
                     href={page.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="truncate font-mono text-[12.5px] text-ink-soft hover:text-ink hover:underline"
+                    className="truncate font-mono text-caption text-ink-soft hover:text-ink hover:underline"
                   >
                     {page.url}
                   </a>
-                  <span className="text-[12.5px] font-semibold text-flag-bad">{page.error}</span>
+                  <span className="text-small font-semibold text-flag-bad">{page.error}</span>
                   {/* Where the crawl got this address. On a failure it is the only fact a
                       reader can act on: a link that 404s from one page is that page's bug. */}
                   <Citation citation={page.citation} />
@@ -248,7 +248,7 @@ export default function SiteRun({
             </ul>
           </section>
         ) : (
-          <p className="rounded-2xl border border-line bg-surface px-5 py-8 text-center text-[13.5px] text-ink-faint">
+          <p className="rounded-2xl border border-line bg-surface px-5 py-8 text-center text-small text-ink-faint">
             Nothing has failed.
           </p>
         ))}

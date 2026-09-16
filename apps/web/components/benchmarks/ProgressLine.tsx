@@ -108,7 +108,7 @@ export default function ProgressLine() {
         </svg>
       </div>
 
-      <ol className="mt-4 flex flex-col gap-1.5 text-[12px] leading-snug text-ink-faint">
+      <ol className="mt-4 flex flex-col gap-1.5 text-caption leading-snug text-ink-faint max-sm:text-small">
         {PROGRESSION.map((step, i) => (
           <li key={step.label}>
             <span className="font-mono">{String(i + 1).padStart(2, "0")}</span>{" "}
@@ -117,7 +117,7 @@ export default function ProgressLine() {
         ))}
       </ol>
 
-      <figcaption className="mt-3 text-[12px] leading-relaxed text-ink-faint">
+      <figcaption className="mt-3 text-caption leading-relaxed text-ink-faint max-sm:text-small">
         Axis runs {Y0.toFixed(2)}–{Y1.toFixed(2)}; the production path, routed by page type,
         on the dev split. Every step is a bug found by a page-level diagnostic and measured
         before it shipped, never a threshold tuned until the number moved.

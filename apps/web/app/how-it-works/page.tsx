@@ -33,11 +33,11 @@ export default function HowItWorksPage() {
               <a
                 key={stage.id}
                 href={`#${stage.id}`}
-                className="rounded-full border border-line bg-surface px-3 py-1.5 text-[12.5px] text-ink-soft transition-colors hover:border-leaf-300 hover:text-ink"
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-caption text-ink-soft transition-colors hover:border-leaf-300 hover:text-ink pointer-coarse:min-h-10"
               >
                 <span className="font-mono text-[11px] text-ink-faint">
                   {String(index + 1).padStart(2, "0")}
-                </span>{" "}
+                </span>
                 {stage.title.split(",")[0]}
               </a>
             ))}
@@ -54,13 +54,13 @@ export default function HowItWorksPage() {
             {PRINCIPLES.map((principle) => (
               <div key={principle.title} className="rounded-2xl border border-line bg-surface p-5 shadow-card">
                 <h3 className="text-[15px] font-bold leading-snug">{principle.title}</h3>
-                <p className="mt-2 text-[13.5px] leading-relaxed text-ink-soft">
+                <p className="mt-2 text-small leading-relaxed text-ink-soft">
                   {principle.body}
                 </p>
               </div>
             ))}
           </div>
-          <p className="mt-8 text-[14px] leading-relaxed text-ink-soft">
+          <p className="mt-8 text-small leading-relaxed text-ink-soft">
             Where the engine places against every public benchmark, including the ones it
             loses, is on the{" "}
             <Link href="/benchmarks" className="font-semibold text-leaf-700 underline underline-offset-2">

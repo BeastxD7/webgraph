@@ -6,6 +6,64 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #107) — every route responsive
+- The owner's brief: the website on every device. Every route now lays out at 320, 390 and
+  430 px (phones), 768 and 1024 (tablet portrait and landscape), 1280, 1440 and 1920, and a
+  short 1440×640, in both themes, and `tools/check_responsive.py` asserts it in CI
+  (`make check-responsive`). The check grew from two routes at three widths to fourteen
+  routes at nine viewports: `/`, `/products`, `/report`, `/report/example.com` (its
+  no-API state), `/watch`, `/graph`, `/extract?…` (its error state), `/benchmarks`,
+  `/how-it-works`, `/settings`, `/docs`, `/docs/getting-started`, `/docs/api/errors` (the
+  widest tables) and `/docs/api/text` (the longest code). It keeps the horizontal-overflow
+  rule and adds two for phones: fixed and sticky elements may cover at most 35% of the
+  viewport's height (measured at the top and after a scroll), and body text -- paragraphs,
+  list items, cells, controls -- is at least 14 px, with short captions and labels exempt at
+  the type scale's own 13 and 11 px. Tap targets under 44 px are counted and printed, not
+  failed. `--out` writes a full-page screenshot per route and viewport, `--theme both` takes
+  the dark set too, `--only`/`--sizes` narrow a run, `--verbose` names every offender. The
+  API-dependent routes settle on their `role=alert` instead of a fixed wait, so the full
+  matrix runs in about four minutes. Before: 21 of 126 route×viewport checks failed per
+  theme, all on phones (no route overflowed); after: 0, with two findings on the landing
+  waived by name (below). CI runs the light theme; the layout is the same CSS in both.
+- Header: eight items, the wordmark, the theme control and the button need ~1,060 px in a
+  line, so the fold to the "Menu" button moves from 900 px to 1,152 px -- at 1024 the bar
+  wrapped "How it works" and "GitHub" onto a second line. On the landing the floating pill
+  was centred on the page and ran under the controls at every width (by 10 px even at
+  1440); it now sits in the flow between the wordmark and the controls, centred in the room
+  they leave. Items no longer wrap inside a link; the open menu sheet scrolls on a short
+  viewport instead of running under the fold.
+- Docs: below 1024 px a table takes the width its content asks for (capped at 56 rem) inside
+  the scroll wrapper Fumadocs gives it, instead of squeezing its columns into the 358 px a
+  phone leaves -- the three request-options tables on `/docs/api/text` stood 1,924, 1,922
+  and 1,461 px tall at 390 px (and the same at 768, beside the sidebar); they are 556, 694
+  and 643 px now and scroll sideways. The errors table's `code` spans already held it at
+  1,015 px, so it scrolled before and scrolls the same now.
+- `/products`, `/report`, `/watch`: the closing note under each page is caption size on a
+  laptop and body-small on a phone.
+- `/benchmarks`: every paragraph of prose (a board's question, its caveat, "How the rows
+  were produced", the type-table copy, the not-run reasons, the chart captions) moves from
+  12–13.5 px arbitrary sizes to the `text-small`/`text-caption` tokens, 14 px on a phone;
+  the type table's header row takes `text-label`. Forty-eight elements were under 14 px on a
+  phone; none are.
+- `/how-it-works`: the nine stage chips are a nav on a phone -- `text-caption`, 40 px tall
+  under a coarse pointer; the stage prose, rescues, failure rows, notes and the principles
+  cards take `text-small` (23 elements were under 14 px).
+- `/extract`: the timeline's step titles, descriptions and the "Show all details" toggle,
+  the stage rows (which no longer truncate "0s ela…" at 320 px), the phase line, the Stop /
+  Extract-another / view buttons and the empty and error notices take the tokens, and the
+  buttons are 40–44 px tall under a coarse pointer; `CopyButton` likewise (`text-caption`,
+  40 px). `/settings`: the lede takes `text-small`.
+- Not fixed here, waived by name in the checker's `WAIVED` table and reported to the owner
+  of `components/landing/**`: the story stage is sticky under the header on phones and the
+  two together cover 45–48% of the viewport (the rule allows 35%), and seven chapter notes
+  are `text-caption` prose at 13 px. Overflow stays enforced on the landing. Also out of
+  scope: `RankChart`'s rotated labels clip at the SVG's left edge at every width (its
+  `PAD.left`, not a layout matter).
+- After #105 replaced the sticky story stage, the landing needed no waivers: the two
+  `WAIVED` entries are gone and the note paragraphs under the story cards, proof strip and
+  standings (and `EvidenceRow`'s source line) are `text-small` (14px) instead of
+  `text-caption` (13px). 126 route × viewport checks pass with no waiver.
+
 ### Changed (2026-09-17, PR #106) — hero: the Earth by day and by night
 - The hero follows the page's theme, both photoreal, from the same orbit. Dark: the night
   scene as before, with the sun now rising from behind the limb -- half hidden, the rays and

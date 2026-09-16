@@ -106,7 +106,7 @@ export default function RefusesDrops() {
         </div>
       </div>
 
-      <p className="mt-8 max-w-prose text-caption text-muted" data-reveal>
+      <p className="mt-8 max-w-prose text-small text-muted" data-reveal>
         Refusal kinds are login · challenge · block · undeclared, from the engine&rsquo;s own
         error types. An open cookie prompt is on the page and is judged like anything else.
       </p>

@@ -56,7 +56,7 @@ export default function CopyButton({
       disabled={text === ""}
       // `aria-live` on the label, not the button: a screen reader should hear the outcome,
       // not the whole control again.
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-caption font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:min-h-10 ${
         state === "copied"
           ? "border-leaf-300 bg-leaf-50 text-leaf-700"
           : state === "failed"

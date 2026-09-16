@@ -55,18 +55,23 @@ export default function SiteHeader() {
       className={`sticky top-0 z-30 border-b transition-colors duration-(--dur-base) ease-(--ease) ${bar}`}
     >
       <div className="page-col relative flex h-14 items-center gap-4">
-        <Wordmark />
+        <Wordmark className="shrink-0" />
 
-        <nav
-          aria-label="Site"
-          className={`items-center max-nav:hidden nav:flex ${
-            floating ? `absolute left-1/2 h-10 -translate-x-1/2 gap-0.5 px-1.5 ${pill}` : "flex-1 gap-6"
-          }`}
-        >
-          {NAV.map((item) => (
-            <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} floating={floating} />
-          ))}
-        </nav>
+        {/* The floating pill sits in the flow between the wordmark and the controls, centred
+            in the room they leave. Centred on the page it ran under the controls: eight
+            items are wider than half the column, at every width. */}
+        <div className={floating ? "flex min-w-0 flex-1 justify-center max-nav:hidden" : "contents"}>
+          <nav
+            aria-label="Site"
+            className={`items-center max-nav:hidden nav:flex ${
+              floating ? `h-10 gap-0.5 px-1.5 ${pill}` : "min-w-0 flex-1 gap-5 xl:gap-6"
+            }`}
+          >
+            {NAV.map((item) => (
+              <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} floating={floating} />
+            ))}
+          </nav>
+        </div>
 
         <div className={`ml-auto flex items-center gap-1 nav:gap-1.5 ${floating ? `min-h-10 px-1 ${pill}` : ""}`}>
           <ThemeToggle className={floating ? "rounded-pill" : ""} />
@@ -92,7 +97,7 @@ export default function SiteHeader() {
       {open && (
         <div
           id={sheetId}
-          className="absolute inset-x-0 top-full border-b border-rule bg-surface max-nav:block nav:hidden"
+          className="absolute inset-x-0 top-full max-h-[calc(100dvh-3.5rem)] overflow-y-auto border-b border-rule bg-surface max-nav:block nav:hidden"
         >
           <nav aria-label="Site, menu" className="page-col">
             <ul className="divide-y divide-rule">
@@ -135,7 +140,7 @@ function NavLink({ item, active, floating }: { item: NavItem; active: boolean; f
     ? `inline-flex h-8 items-center whitespace-nowrap rounded-pill px-3 text-small font-medium transition-colors duration-(--dur-fast) ${
         active ? "bg-ink text-inverse" : "text-muted hover:bg-sunk hover:text-ink"
       }`
-    : `text-small font-medium transition-colors duration-(--dur-fast) hover:text-ink ${
+    : `whitespace-nowrap text-small font-medium transition-colors duration-(--dur-fast) hover:text-ink ${
         active ? "text-ink" : "text-muted"
       }`;
   if (item.external) {

@@ -50,7 +50,7 @@ export default function ProofStrip() {
           source="schema fields with no evidence return nothing; enforced by test"
         />
       </div>
-      <p className="mt-8 max-w-prose text-caption text-muted" data-reveal style={idx(4)}>
+      <p className="mt-8 max-w-prose text-small text-muted" data-reveal style={idx(4)}>
         Rows for this engine measured {MEASURED_DAY} on{" "}
         <code className="font-mono">main@{MEASURED.commit}</code> with the runners in{" "}
         <code className="font-mono">benchmark/</code>. Every other row is its authors&rsquo;

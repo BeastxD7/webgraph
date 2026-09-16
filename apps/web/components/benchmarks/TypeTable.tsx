@@ -13,9 +13,9 @@ import { TYPE_ROWS, TYPE_SYSTEMS } from "@/lib/benchmarks";
 export default function TypeTable() {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[560px] border-collapse text-[13px]">
+      <table className="w-full min-w-[560px] border-collapse text-small">
         <thead>
-          <tr className="border-b border-line-strong text-left font-mono text-[10.5px] uppercase tracking-[0.06em] text-ink-faint">
+          <tr className="border-b border-line-strong text-left font-mono text-label uppercase text-ink-faint">
             <th className="py-2 pr-3 font-medium">Page type</th>
             <th className="py-2 pr-3 text-right font-medium">n</th>
             {TYPE_SYSTEMS.map((system) => (

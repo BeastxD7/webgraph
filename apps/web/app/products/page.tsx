@@ -23,7 +23,7 @@ export default function ProductsPage() {
         <ProductGrid />
       </div>
 
-      <p className="mt-8 max-w-prose text-caption text-muted">
+      <p className="mt-8 max-w-prose text-caption text-muted max-sm:text-small">
         &ldquo;Coming soon&rdquo; is the only future-tense claim on this site. Nothing marked so
         exists yet; the repository today has the crawler, the API, the CLI, the Site Truth
         Report, Watch, and WebGraph behind{" "}

@@ -16,7 +16,7 @@ export default function NotRun() {
             <h3 className="font-display text-[1.15rem] leading-tight">{item.name}</h3>
             <span className="font-mono text-[11px] text-ink-faint">{item.what}</span>
           </div>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">{item.why}</p>
+          <p className="mt-1.5 text-small leading-relaxed text-ink-soft">{item.why}</p>
         </li>
       ))}
     </ul>
