@@ -76,6 +76,85 @@ class TestSections:
         assert [s.order for s in sections] == sorted(s.order for s in sections)
 
 
+class TestBlockRefs:
+    """A section remembers which block each run of its text came from (design item 2).
+
+    Without this a fact read out of a section can cite the page and nothing finer; with it
+    the knowledge graph cites `url#xpath` and a verbatim span, which is the product rule.
+    """
+
+    def test_each_ref_slices_back_to_its_blocks_text(self) -> None:
+        doc = document(
+            "<h1>Fees</h1><p>" + "Tuition is 120000 rupees a year. " * 3 + "</p>"
+            "<ul><li>" + "Hostel fee is 45000 rupees. " * 2 + "</li></ul>"
+        )
+        [section] = sections_from_document(doc)
+        assert len(section.blocks) == 2
+        by_xpath = {b.xpath: b for b in doc.blocks}
+        for ref in section.blocks:
+            block = by_xpath[ref.xpath]
+            assert ref.slice(section.text) == (block.rich_text or block.text).strip()
+            assert ref.kind == block.kind.value
+        assert section.block_at(0) is section.blocks[0]
+        assert section.block_at(len(section.text) - 1) is section.blocks[1]
+
+    def test_text_is_unchanged_by_recording_refs(self) -> None:
+        """The join is exactly what it was: stripped block texts, two newlines between."""
+        doc = document(
+            "<h1>A</h1><p>" + "alpha " * 20 + "</p><p>" + "beta " * 20 + "</p>"
+        )
+        [section] = sections_from_document(doc)
+        expected = "\n\n".join(
+            (b.rich_text or b.text).strip() for b in doc.blocks if b.kind.value != "heading"
+        )
+        assert section.text == expected
+        assert section.blocks[-1].end == len(section.text)
+
+    def test_refs_are_rebased_across_a_split(self) -> None:
+        """An oversized section is cut into pieces; every piece's refs index its own text."""
+        big = "".join(f"<p>{f'word{i} ' * 200}</p>" for i in range(12))
+        doc = document(f"<h1>Long</h1>{big}")
+        sections = sections_from_document(doc)
+        assert len(sections) > 1
+        by_xpath = {b.xpath: b for b in doc.blocks}
+        seen: set[str] = set()
+        for section in sections:
+            assert section.blocks, "every piece keeps its refs"
+            assert section.blocks[0].start == 0
+            assert section.blocks[-1].end == len(section.text)
+            for ref in section.blocks:
+                assert ref.slice(section.text) == by_xpath[ref.xpath].text.strip()
+                seen.add(ref.xpath)
+        assert len(seen) == 12
+
+    def test_refs_survive_the_jsonl_round_trip(self, tmp_path) -> None:
+        from webgraph.graph.export import load_jsonl, write_jsonl
+
+        builder = GraphBuilder(BASE)
+        builder.add(document("<h1>A</h1><p>" + "alpha " * 20 + "</p>"))
+        write_jsonl(builder.graph, tmp_path / "g.jsonl")
+        restored = load_jsonl(tmp_path / "g.jsonl")
+        [original] = builder.graph.sections.values()
+        [loaded] = restored.sections.values()
+        assert loaded.blocks == original.blocks
+
+    def test_a_graph_stored_without_refs_still_loads(self, tmp_path) -> None:
+        import json
+
+        lines = [
+            json.dumps({"kind": "site", "root": BASE}),
+            json.dumps({"kind": "page", "key": "example.com", "url": BASE, "title": "t", "depth": 0, "chars": 5, "sections": ["example.com#s0"]}),
+            json.dumps({"kind": "section", "id": "example.com#s0", "page_key": "example.com", "order": 0, "heading": "A", "level": 1, "text": "hello"}),
+        ]
+        from webgraph.graph.export import load_jsonl
+
+        (tmp_path / "old.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        graph = load_jsonl(tmp_path / "old.jsonl")
+        [section] = graph.sections.values()
+        assert section.blocks == ()
+        assert section.block_at(0) is None
+
+
 class TestGraphEdges:
     def test_anchor_text_is_kept_on_the_link(self) -> None:
         """The anchor is a human-written label for the target -- the relation label an
