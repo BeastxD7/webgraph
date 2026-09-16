@@ -1,6 +1,6 @@
 import type { Route } from "next";
 
-import { DOCS, REPO_ISSUES } from "@/components/site/links";
+import { DOCS } from "@/components/site/links";
 
 /**
  * The five products, as data. Availability is a fact about the repository today, and the
@@ -24,12 +24,6 @@ export type Product = {
   readonly body: readonly string[];
   readonly ctas: readonly Cta[];
 };
-
-const NOTIFY = (product: string): Cta => ({
-  label: "Notify me — GitHub issue",
-  href: `${REPO_ISSUES}?title=${encodeURIComponent(`${product}: notify me`)}`,
-  external: true,
-});
 
 export const PRODUCTS: readonly Product[] = [
   {
