@@ -116,6 +116,11 @@ class TestBuildAndQuery:
         events = _events(client.post("/api/graph/query", json={"url": ROOT, "question": "TechFest 2026"}))
         assert events[-1]["type"] == "answer" and events[-1]["usage"]["model"] == "none" and events[-1]["citations"]
 
+    def test_no_model_wins_over_a_configured_model(self, client: TestClient) -> None:
+        _events(client.post("/api/graph/build", json={"url": ROOT, "provider": FAKE}))
+        events = _events(client.post("/api/graph/query", json={"url": ROOT, "question": "TechFest 2026", "provider": FAKE, "no_model": True}))
+        assert events[-1]["type"] == "answer" and events[-1]["usage"]["model"] == "none"
+
     def test_query_before_build_is_404(self, client: TestClient) -> None:
         response = client.post("/api/graph/query", json={"url": ROOT, "question": "q"})
         assert response.status_code == 404 and "graph/build" in response.json()["detail"]

@@ -88,6 +88,7 @@ class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     provider: ProviderIn | None = None
     max_hops: int = Field(default=2, ge=0, le=3)
+    no_model: bool = Field(default=False, description="Answer with the top quotes verbatim; no answer model, even if the server has one configured.")
 
 
 class SyncRequest(BaseModel):
@@ -226,7 +227,7 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
         """
         _require_enabled()
         store = _store_for(request.url, must_exist=True)
-        provider = _provider_for(request.provider, required=False)
+        provider = None if request.no_model else _provider_for(request.provider, required=False)
         retriever = KGRetriever(store, provider, graph=recall_graph(request.url), retrieval=RetrievalConfig(max_hops=request.max_hops))
 
         def events() -> Iterator[dict[str, Any]]:
