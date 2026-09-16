@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #TBD) — landing: how it reads a page, as one panel
+### Changed (2026-09-17, PR #105) — landing: how it reads a page, as one panel
 - Chapters 01–03 of the landing (the pain, the turn, the result) were a sticky Canvas-2D
   stage the copy scrolled past; the owner's verdict was that the illustrations and their
   animations were not good. Replaced, after the way LlamaIndex and landing.ai do it, by one
