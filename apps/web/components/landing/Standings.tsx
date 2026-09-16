@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import Link from "next/link";
 
 import { board, leaderScore, runnerUp, selfScore, WCXB_TEST } from "@/lib/benchmarks";
@@ -6,7 +7,13 @@ import { board, leaderScore, runnerUp, selfScore, WCXB_TEST } from "@/lib/benchm
  * Five boards in one table, this engine's row against the leader's, with the place said in
  * words. The self column is marked by a rule-strong edge, not a colour: the same form for a
  * first and a tenth (DESIGN.md §1.4). Every score is read from `lib/benchmarks.ts`.
+ *
+ * Under each score a 2px bar draws the engine's share of the leader's score when the row
+ * scrolls into view — full for a first place, 0.78 of the track for WebMainBench — so a loss
+ * is drawn with exactly the form of a win.
  */
+const idx = (i: number) => ({ "--i": i }) as CSSProperties;
+
 const WCXB_RUNNER_UP = runnerUp(board("wcxb"));
 
 const ROWS: ReadonlyArray<{ id: string; label: string; pages: string; place: string }> = [
@@ -35,7 +42,7 @@ const ROWS: ReadonlyArray<{ id: string; label: string; pages: string; place: str
 export default function Standings() {
   return (
     <section aria-labelledby="standings" className="page-col border-t border-rule max-md:py-16 md:py-24">
-      <h2 id="standings" className="font-display text-h2 text-ink">
+      <h2 id="standings" className="font-display text-h2 text-ink" data-reveal>
         Where it stands, including where it does not
       </h2>
 
@@ -67,10 +74,11 @@ export default function Standings() {
             </tr>
           </thead>
           <tbody>
-            {ROWS.map((row) => {
+            {ROWS.map((row, i) => {
               const data = board(row.id);
+              const share = Math.min(1, selfScore(data) / leaderScore(data));
               return (
-                <tr key={row.id} className="border-b border-rule">
+                <tr key={row.id} className="border-b border-rule" data-reveal style={idx(i)}>
                   <th
                     scope="row"
                     className="py-3 pr-4 text-left font-semibold text-ink"
@@ -83,6 +91,12 @@ export default function Standings() {
                   <td className="py-3 pr-4 text-muted">{data.metric}</td>
                   <td className="tabular py-3 pl-3 pr-4 text-right font-semibold text-ink shadow-[inset_2px_0_0_var(--rule-strong)]">
                     {selfScore(data).toFixed(3)}
+                    <span className="mt-1.5 block h-0.5 w-full bg-rule" aria-hidden>
+                      <span
+                        className="score-bar block h-full bg-accent"
+                        style={{ "--v": share.toFixed(3) } as CSSProperties}
+                      />
+                    </span>
                   </td>
                   <td className="tabular py-3 pr-4 text-right text-ink">
                     {leaderScore(data).toFixed(3)}
@@ -95,7 +109,7 @@ export default function Standings() {
         </table>
       </div>
 
-      <p className="mt-6 max-w-prose text-caption text-muted">
+      <p className="mt-6 max-w-prose text-caption text-muted" data-reveal style={idx(5)}>
         On the held-out WCXB test split ({WCXB_TEST.pages} pages) this engine scores{" "}
         {WCXB_TEST.us}; {WCXB_TEST.rival}&rsquo;s author reports {WCXB_TEST.rivalScore} there.{" "}
         <Link href="/benchmarks" className="font-medium text-accent-ink underline underline-offset-2">

@@ -91,9 +91,18 @@
 
 /* Inside the layout only. */
 #nd-docs-layout {
-  /* The reading measure: long-form text stops at about 68 characters. */
+  /* The article sits centred in the main column: `main` is `justify-items-center`, so
+     capping the article is what centres it between the sidebar and the table of
+     contents. 76ch of docs prose plus its own padding; the layout itself is capped at
+     --docs-max (87.5rem) and centred, so a wide screen gets margins, not a left-hugging
+     column. Fumadocs' own `max-w-[900px]` on #nd-page is what this overrides. */
+  #nd-page {
+    max-width: calc(76ch + 4rem);
+  }
+
+  /* The reading measure: long-form text fills the article, which is the measure. */
   .prose {
-    max-width: 68ch;
+    max-width: 76ch;
   }
 
   .prose table {

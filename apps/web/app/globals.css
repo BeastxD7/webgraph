@@ -100,7 +100,7 @@
   --space-12: 3rem;    --space-16: 4rem;    --space-20: 5rem;   --space-24: 6rem;
   --gutter: 1rem;                 /* phone; 2rem from 640px, 3rem from 1024px */
   --page-max: 72rem;              /* landing/products/benchmarks column */
-  --docs-max: 90rem;              /* Fumadocs --fd-layout-width */
+  --docs-max: 87.5rem;            /* Fumadocs --fd-layout-width: ~1400px, centred */
 
   /* Radii live only in @theme below (Tailwind owns --radius-*). */
 
@@ -391,4 +391,149 @@
   --color-flag-warn:     var(--warn);
   --color-flag-bad:      var(--bad);
   --shadow-lift:         var(--float-shadow);
+}
+
+/* ---------------------------------------------------------------------------
+   7. Landing: ground, stage and motion
+   Everything here is enhancement. Without JavaScript the page is complete:
+   `main[data-motion]` is stamped by components/landing/Motion.tsx, and it is
+   the only selector that ever hides a [data-reveal] element. The stage's
+   scroll state arrives as --story-heat on .story-stage and data-chapter on the section.
+   --------------------------------------------------------------------------- */
+
+/* The ground: a gradient field in the ink-green family, a ruled grid, grain. */
+.landing-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.bd-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--rule) 1px, transparent 1px),
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center top;
+  opacity: 0.4;
+  mask-image: linear-gradient(to bottom, black 0, black 45%, rgb(0 0 0 / 0.3) 70%, transparent 100%);
+}
+.bd-blob {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+  animation: bd-drift 46s ease-in-out infinite alternate;
+}
+.bd-blob-a {
+  /* the top-left corner, mostly off the page */
+  top: -18vw;
+  left: -22vw;
+  width: 46vw;
+  height: 46vw;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent-ink) 14%, transparent), transparent 72%);
+  animation-duration: 61s;
+  animation-direction: alternate-reverse;
+}
+.bd-blob-b {
+  /* the far right edge, top */
+  top: 30vh;
+  right: -28vw;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 12%, transparent), transparent 72%);
+}
+.bd-blob-c {
+  /* the bottom-left edge, behind nothing that is read */
+  bottom: -24vw;
+  left: -26vw;
+  width: 56vw;
+  height: 56vw;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 10%, transparent), transparent 72%);
+  animation-duration: 53s;
+}
+.bd-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
+  background-size: 160px 160px;
+  /* Normal blend, so the grain lightens as much as it darkens and the mean ground is
+     unchanged; at 0.04 the darkest grains take muted-on-ground from 7.1:1 to ~6.9:1. */
+}
+@keyframes bd-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(-5%, 4%, 0) scale(1.08); }
+  100% { transform: translate3d(3%, -3%, 0) scale(0.96); }
+}
+
+/* The field behind the stage travels with it (it is sticky): a green field, and a warmer
+   one the stage fades in through --story-heat while the pain chapter is on screen. */
+.story-stage { isolation: isolate; }
+.story-stage::before,
+.story-stage::after {
+  content: "";
+  position: absolute;
+  inset: -12% -18%;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.story-stage::before {
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%);
+  animation: bd-drift 46s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.story-stage::after {
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--bad) 22%, transparent), transparent 72%);
+  opacity: var(--story-heat, 0);
+  transition: opacity 500ms var(--ease);
+}
+
+/* The stage: once the canvas draws, the server-rendered still steps aside. */
+.story-stage[data-stage] svg { display: none; }
+.story-stage canvas { display: block; }
+
+/* The chapter label of the panel on stage turns accent. */
+[data-story][data-chapter="1"] [data-panel="1"] .story-label,
+[data-story][data-chapter="2"] [data-panel="2"] .story-label,
+[data-story][data-chapter="3"] [data-panel="3"] .story-label { color: var(--accent-ink); }
+.story-label { transition: color var(--dur-base) var(--ease); }
+
+/* Reveals: hidden only once Motion has mounted (and never under reduced motion). */
+main[data-motion] [data-reveal]:not([data-in]) {
+  opacity: 0;
+  transform: translateY(14px);
+}
+main[data-motion] [data-reveal="slide"]:not([data-in]) {
+  transform: translateX(-18px);
+}
+main[data-motion] [data-reveal] {
+  transition:
+    opacity 600ms var(--ease),
+    transform 700ms var(--ease);
+  transition-delay: calc(var(--i, 0) * 70ms);
+}
+/* A table row cannot be transformed everywhere; fade it and slide its cells. */
+main[data-motion] tr[data-reveal]:not([data-in]) { transform: none; }
+main[data-motion] tr[data-reveal]:not([data-in]) > * { transform: translateY(8px); }
+main[data-motion] tr[data-reveal] > * { transition: transform 700ms var(--ease); transition-delay: calc(var(--i, 0) * 70ms); }
+
+/* The standings bars: drawn from the left when their row arrives. */
+.score-bar {
+  transform: scaleX(var(--v, 1));
+  transform-origin: left center;
+}
+main[data-motion] [data-reveal]:not([data-in]) .score-bar { transform: scaleX(0); }
+main[data-motion] .score-bar { transition: transform 900ms var(--ease); transition-delay: calc(var(--i, 0) * 70ms + 200ms); }
+
+/* Micro-interactions: the primary button lifts a hair; focus rings are the global ones. */
+.landing a.bg-ink:hover:not(:active), .landing button.bg-ink:hover:not(:active) { transform: translateY(-1px); }
+.landing a.bg-ink, .landing button.bg-ink { transition-property: color, background-color, opacity, border-color, transform; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bd-blob, .story-stage::before { animation: none; }
+  .story-stage::after { transition: none; }
 }

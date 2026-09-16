@@ -6,6 +6,31 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-16, PR #98) — landing page motion and docs alignment
+- The landing page is a scroll-driven story on one sticky, code-drawn stage
+  (`components/landing/Story.tsx`, `Stage.tsx`, `scene/scene.ts`): the promise (the hero;
+  eight blocks drop in, settle, are numbered in reading order and typed out as Markdown), the
+  pain (a cookie banner, a login modal, a 503, off-screen links and a `display:none` dialog
+  fall onto the page in oxide red; what a naive reader emits is listed beside them), the turn
+  (a plain fetch and a Chromium render converge, a scan refuses each wall in the engine's own
+  words and leaves the XY-cut behind), the result (Markdown in reading order, `recall 1.000
+  on 22 of 29 sites · floor 0.945` from `FIDELITY`, a graph of the site, the Site Truth
+  Report card, linking to `/report`), then the proof and the prompt. The scene is hand-written
+  Canvas 2D -- gravity and a bounce for falling blocks, critically damped springs to their
+  slots, an impulse and fade for refused ones -- with no library; the landing route's JS
+  grows 176.7 → 183.5 KB gz (+6.8). Without JavaScript the stage is a server-rendered SVG of
+  the final frame; under `prefers-reduced-motion` it is four still frames and nothing on the
+  page is hidden. Reveals, count-ups and the standings' score bars come from one
+  IntersectionObserver (`Motion.tsx`). The ground is CSS: a green field and a warm glow that
+  travel with the stage, edge blobs, a 48px ruled grid and a 0.04 grain, kept off the copy
+  columns and measured (dark ≥ 7.6:1; light `muted` 6.9:1 at the darkest grain pixel, 7.1:1
+  on the mean ground). `Hero.tsx` and `Pipeline.tsx` are folded into the story with their
+  copy; the URL prompt closes the page as `#start`.
+- Docs: the article is centred between the sidebar and the table of contents --
+  `#nd-page` capped at 76ch plus padding inside Fumadocs' centred `main`, `.prose` at 76ch,
+  `--docs-max` 87.5rem (the owner's ~1400px, over DESIGN.md's 90rem). Content unchanged.
+
+
 ### Changed (2026-09-16, PR #94) — a crawl has limits by default
 - `CRAWL_MAX_PAGES` is 500, not 0. `0` still means unbounded and now has to be asked for:
   the API's `SiteRequest.max_pages` defaults to the engine's cap, and the web app leaves
@@ -61,6 +86,7 @@ All notable changes to this project are documented here. The format follows
   keeps entity payloads and facts and drops blocks; the throttle spaces two real workers);
   `apps/api/tests/test_api.py::TestCrawlLimits` (request defaults, `/api/config`, `done`
   carries `stopped_by`, a local server records that the PDF was never requested).
+
 ### Added (2026-09-16, PR #95) — Site Report
 - `webgraph report <url> [--pages N] [--json]`, `POST /api/site/report` and `/report` in
   the web app: what a site shows people, what it shows machines, and how ready it is for
