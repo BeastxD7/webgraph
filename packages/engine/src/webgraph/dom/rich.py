@@ -35,7 +35,7 @@ MAX_EMPTY_ROW_SHARE = config.MAX_EMPTY_ROW_SHARE
 SVG_MIN_TEXT_NODES = config.SVG_MIN_TEXT_NODES
 SVG_MIN_WORDS = config.SVG_MIN_WORDS
 
-__all__ = ["extract_rich_blocks"]
+__all__ = ["extract_rich_blocks", "styled_off_the_page"]
 
 _HEADINGS: Final[frozenset[str]] = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
@@ -1527,6 +1527,12 @@ def _styled_off_the_page(element: HtmlElement) -> bool:
             continue
         return True
     return False
+
+
+def styled_off_the_page(element: HtmlElement) -> bool:
+    """`_styled_off_the_page`, for a reader outside this module: the site report asks it
+    of a plain-fetched page's links, where no renderer has marked anything."""
+    return _styled_off_the_page(element)
 
 
 def _drop_offscreen_styled(root: HtmlElement) -> None:

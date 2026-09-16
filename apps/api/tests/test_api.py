@@ -744,3 +744,104 @@ class TestRobotsOnASinglePage:
         )
         assert response.status_code == 200
         assert "An article" in response.json()["text"]
+
+
+REPORT_ROBOTS = "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nDisallow: /wp-admin/\n"
+REPORT_INDEX = (
+    "<html lang='en'><head><title>Acme College | Home</title>"
+    "<meta name='description' content='A college that teaches things.'></head><body>"
+    "<h1>Acme College</h1><p>Enough words here to be a page of its own, with a second sentence "
+    "so the boundary step has something to keep, and a third for good measure.</p>"
+    "<nav><a href='/about.html'>About</a> <a href='/gone.html'>Gone</a></nav>"
+    "<div style='position:absolute; left:-20914565266523px'>"
+    + "".join(f"<a href='https://spam{i}.example/slot'>casino slot {i}</a> " for i in range(8))
+    + "</div></body></html>"
+)
+REPORT_ABOUT = (
+    "<html lang='en'><head><title>About | Acme College</title></head><body><h1>About</h1>"
+    "<p>Enough words here to be a page of its own, with a second sentence so the boundary "
+    "step has something to keep.</p><a href='/'>Home</a></body></html>"
+)
+
+
+@pytest.fixture
+def report_server(tmp_path: Path) -> Iterator[str]:
+    """A small site with a robots.txt naming GPTBot and an off-screen block of links to
+    eight foreign hosts on its front page."""
+    (tmp_path / "robots.txt").write_text(REPORT_ROBOTS, encoding="utf-8")
+    (tmp_path / "index.html").write_text(REPORT_INDEX, encoding="utf-8")
+    (tmp_path / "about.html").write_text(REPORT_ABOUT, encoding="utf-8")
+    handler = partial(_QuietHandler, directory=str(tmp_path))
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class TestSiteReport:
+    def test_the_report_reads_robots_per_bot_and_finds_the_injected_links(
+        self, client: TestClient, report_server: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import config
+        from webgraph.fetch import robots
+
+        monkeypatch.setattr(config, "REPORT_REQUEST_INTERVAL_SECONDS", 0.0)
+        robots.forget()
+        response = client.post("/api/site/report", json={"url": f"{report_server}/", "pages": 2})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reachable"] is True
+        # Without a working browser (CI's API job has the Playwright package but no
+        # Chromium) the render-dependent parts are rescaled out of the score, and
+        # `measured_weight` says so -- that is the contract: 100 with a browser, 75 without.
+        assert body["score"]["total"] < 100
+        assert body["score"]["measured_weight"] in (75, 100)
+
+        bots = {b["token"]: b for b in body["robots"]["bots"]}
+        assert bots["GPTBot"]["access"] == "blocked" and bots["GPTBot"]["via"] == "named"
+        assert bots["GPTBot"]["lines"] == ["Disallow: /"]
+        # `/wp-admin/` under `*` is housekeeping, not a restriction on reading the site.
+        assert bots["ClaudeBot"]["access"] == "allowed" and bots["ClaudeBot"]["via"] == "wildcard"
+        assert bots["ClaudeBot"]["disallowed"] == 1 and bots["ClaudeBot"]["content_paths"] == []
+
+        root = body["pages"][0]
+        assert root["hidden_links"] == 8
+        assert root["hidden_external_hosts"] == 8
+        assert root["static_words"] > 0
+        # `rendered_words` is 0 wherever no browser could run (CI's API job); with one it
+        # is the page's word count. Either is a true report, and the score's
+        # `measured_weight` already said which case this is.
+        assert root["rendered_words"] > 0 or body["score"]["measured_weight"] == 75
+        assert "casino" not in root["title"]
+        assert [p["requested_url"] for p in body["pages"]] == [f"{report_server}/", f"{report_server}/about.html"]
+        assert [d["status"] for d in root["dead_links"]] == [404]
+
+        kinds = [f["kind"] for f in body["findings"]]
+        assert kinds[0] == "injected_links"
+        assert body["findings"][0]["severity"] == "high"
+
+        assert body["suggested_robots_txt"].startswith(REPORT_ROBOTS)
+        assert body["suggested_llms_txt"].startswith("# Acme College\n")
+        assert "never impersonates" in body["measured"]["statement"]
+
+    def test_a_root_disallowed_for_this_client_is_a_report_with_a_refusal(
+        self, client: TestClient, closed_server: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import config
+        from webgraph.fetch import robots
+
+        monkeypatch.setattr(config, "REPORT_REQUEST_INTERVAL_SECONDS", 0.0)
+        robots.forget()
+        response = client.post("/api/site/report", json={"url": f"{closed_server}/article.html"})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reachable"] is False and body["score"] is None and body["pages"] == []
+        assert "robots.txt disallows /article.html for this client" in body["refusal"]
+
+    def test_pages_is_bounded(self, client: TestClient) -> None:
+        response = client.post("/api/site/report", json={"url": "https://example.com/", "pages": 500})
+        assert response.status_code == 422

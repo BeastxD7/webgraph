@@ -314,6 +314,18 @@ class ResolvedPage:
     blocks_only_in_static: int
     blocks_only_in_rendered: int
     render_error: str | None = None
+    static_error: str | None = None
+    """Why the plain fetch contributed nothing, when it did not: an HTTP error, a wall it was
+    served and that was left out, a body that was not a page. None when the plain fetch
+    gave the page or part of it. The counterpart of `render_error`, for the side a reader
+    without a browser is on -- the site report reads it to say "the plain fetch was walled"
+    rather than "0 characters"."""
+    static_words: int = 0
+    rendered_words: int = 0
+    union_words: int = 0
+    """The same three measurements in words (`str.split`). Characters are what the
+    completeness claim is made in; words are what a person is told -- "41 words without
+    JavaScript, 1,312 with it" reads, "228 of 19,000 characters" has to be explained."""
     identity_declared: bool = False
     """The site asked automated clients to say who runs them, and this fetch did (see
     `FetchConfig.declared`). False for the ordinary fetch every other page gets."""
@@ -360,6 +372,10 @@ class ResolvedPage:
             f"+{self.blocks_only_in_rendered} render-only blocks, "
             f"+{self.blocks_only_in_static} static-only blocks)"
         )
+
+
+def _words(text: str) -> int:
+    return len(text.split())
 
 
 _RUN_IN_MIN_CHARS: Final[int] = 20
@@ -818,6 +834,20 @@ def _refuse_block_page(
     )
 
 
+def _static_failure(static: FetchResult) -> str:
+    """Why the plain fetch gave no document, for `ResolvedPage.static_error`: the status
+    and what it means, the transport error, or the fact that the body was not a page."""
+    if static.status in BLOCKING_STATUSES:
+        said = _server_said(static.html)
+        quoted = f'; it said: "{said}"' if said else ""
+        return f"HTTP {static.status} -- {BLOCKING_STATUSES[static.status]}{quoted}"
+    if static.error:
+        return static.error
+    if not static.is_html:
+        return f"the response was {static.content_type or 'not HTML'}, not a page"
+    return "the response held no markup that could be read as a page"
+
+
 def _both_failed(url: str, static: FetchResult, render_error: str | None) -> str:
     """One message covering both paths, because both were tried and both have something to say."""
     parts: list[str] = []
@@ -945,6 +975,7 @@ def _resolve_fetched(
         if composed is not None:
             _refuse_block_page(composed, status=static_result.status, requested_url=url)
             chars = len(composed.text)
+            words = _words(composed.text)
             return ResolvedPage(
                 url=composed.url,
                 document=composed,
@@ -955,6 +986,8 @@ def _resolve_fetched(
                 blocks_only_in_static=0,
                 blocks_only_in_rendered=0,
                 render_error="frameset: frames read statically, in frameset order",
+                static_words=words,
+                union_words=words,
             )
 
     static_doc: Document | None = None
@@ -978,6 +1011,7 @@ def _resolve_fetched(
             raise ValueError(_both_failed(url, static_result, None))
         _refuse_block_page(static_doc, status=static_result.status, requested_url=url)
         chars = len(static_doc.text)
+        words = _words(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
             document=static_doc,
@@ -987,6 +1021,8 @@ def _resolve_fetched(
             union_chars=chars,
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
+            static_words=words,
+            union_words=words,
         )
 
     # Everything that is not STATIC_ONLY renders. There is deliberately no profile check
@@ -997,6 +1033,7 @@ def _resolve_fetched(
             raise ValueError(_both_failed(url, static_result, "rendering not installed"))
         _refuse_block_page(static_doc, requested_url=url)
         chars = len(static_doc.text)
+        words = _words(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
             document=static_doc,
@@ -1007,6 +1044,8 @@ def _resolve_fetched(
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
             render_error="rendering not available",
+            static_words=words,
+            union_words=words,
         )
 
     rendered = render_page(url, config=render_config)
@@ -1029,6 +1068,7 @@ def _resolve_fetched(
             raise ValueError(_both_failed(url, static_result, rendered.error))
         _refuse_block_page(static_doc, requested_url=url)
         chars = len(static_doc.text)
+        words = _words(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
             document=static_doc,
@@ -1039,6 +1079,8 @@ def _resolve_fetched(
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
             render_error=rendered.error,
+            static_words=words,
+            union_words=words,
         )
 
     geometry = geometry_by_xpath(rendered.html, rendered.rects)
@@ -1056,6 +1098,7 @@ def _resolve_fetched(
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:
         _refuse_block_page(rendered_doc, requested_url=url)
         chars = len(rendered_doc.text)
+        words = _words(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
             document=rendered_doc,
@@ -1068,6 +1111,10 @@ def _resolve_fetched(
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
             runtime=observed,
+            static_error=None if static_doc is not None else _static_failure(static_result),
+            static_words=_words(static_doc.text) if static_doc is not None else 0,
+            rendered_words=words,
+            union_words=words,
         )
 
     # A wall on one side only is that side's failure, not part of the page. Cloudflare
@@ -1086,6 +1133,7 @@ def _resolve_fetched(
     rendered_wall = wall_evidence(rendered_doc, requested_url=url)
     if rendered_wall is not None and static_wall is None and _is_a_page(static_doc):
         chars = len(static_doc.text)
+        words = _words(static_doc.text)
         return ResolvedPage(
             url=static_doc.url,
             document=static_doc,
@@ -1097,9 +1145,12 @@ def _resolve_fetched(
             blocks_only_in_rendered=0,
             render_error=f'the browser was served a wall, left out: "{rendered_wall}"',
             runtime=observed,
+            static_words=words,
+            union_words=words,
         )
     if static_wall is not None and rendered_wall is None and _is_a_page(rendered_doc):
         chars = len(rendered_doc.text)
+        words = _words(rendered_doc.text)
         return ResolvedPage(
             url=rendered_doc.url,
             document=rendered_doc,
@@ -1110,6 +1161,9 @@ def _resolve_fetched(
             blocks_only_in_static=0,
             blocks_only_in_rendered=0,
             runtime=observed,
+            static_error=f'the plain fetch was served a wall, left out: "{static_wall}"',
+            rendered_words=words,
+            union_words=words,
         )
 
     merged, only_static, only_rendered = union_documents(
@@ -1127,6 +1181,9 @@ def _resolve_fetched(
         blocks_only_in_static=only_static,
         blocks_only_in_rendered=only_rendered,
         runtime=observed,
+        static_words=_words(static_doc.text),
+        rendered_words=_words(rendered_doc.text),
+        union_words=_words(merged.text),
     )
 
 
@@ -1242,6 +1299,7 @@ def resolve_supplied(
     _refuse_block_page(document, requested_url=url)
 
     chars = len(document.text)
+    words = _words(document.text)
     return ResolvedPage(
         url=document.url,
         document=document,
@@ -1252,4 +1310,6 @@ def resolve_supplied(
         blocks_only_in_static=0,
         blocks_only_in_rendered=0,
         render_error=SUPPLIED_RENDER_NOTE,
+        static_words=words,
+        union_words=words,
     )
