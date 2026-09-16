@@ -32,7 +32,11 @@ actually acts on. The report should say which is which in the owner's words.
   domains" at launch, which is the adoption number to quote; it says nothing about how many
   crawlers read it.
 - **Detect.** Parse robots.txt for lines whose key is `content-signal` (case-insensitive) and
-  split the value on commas into `key=yes|no`. Record which group it sits in.
+  split the value on commas into `key=yes|no`. Record which group it sits in. Whether the
+  policy scopes the line to its `User-agent` group (as every other robots.txt directive is)
+  or reads it site-wide is **[unverified]**: Cloudflare's docs place it under a group, and
+  the policy text at contentsignals.org could not be read; the report says "as written, it
+  applies only to that bot" when the group is not `*`.
 - **Real examples.** `vercel.com/robots.txt`: `Content-Signal: search=yes, ai-input=yes,
   ai-train=no` under `User-Agent: *`. `www.cloudflare.com/robots.txt`: `Content-Signal:
   ai-train=yes, search=yes, ai-input=yes`. anthropic.com, docs.python.org and gov.uk have none.

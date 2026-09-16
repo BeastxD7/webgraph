@@ -186,6 +186,25 @@ class TestLinkHeader:
         assert parsed[1][1] == {"rel": "ai-catalog", "type": "application/ai-catalog+json"}
 
 
+class TestRepeatedHeaders:
+    def test_two_link_headers_both_survive(self) -> None:
+        # www.cloudflare.com, 16 Sep 2026: fonts and preconnects in one Link header, the
+        # agents.json / webmcp.json one in a second; the CDN and the origin each add X-Robots-Tag.
+        from webgraph.report.signals import joined_headers, parse_link_header, robots_tokens
+
+        got = joined_headers([
+            ("Link", '</fonts/a.woff2>; as=font; rel=preload'),
+            ("Link", '<https://www.cloudflare.com/.well-known/agents.json>; rel="api-catalog"'),
+            ("X-Robots-Tag", "noarchive"),
+            ("X-Robots-Tag", "googlebot: nosnippet"),
+            ("Content-Type", "text/html"),
+        ])
+        rels = {params.get("rel") for _, params in parse_link_header(got["link"], "https://www.cloudflare.com/")}
+        assert rels == {"preload", "api-catalog"}
+        assert robots_tokens([got["x-robots-tag"]]) == ("noarchive", "nosnippet")
+        assert got["content-type"] == "text/html"
+
+
 class TestRobotsTokens:
     def test_meta_and_x_robots_tag_values_become_tokens(self) -> None:
         from webgraph.report.signals import robots_tokens

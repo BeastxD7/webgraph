@@ -61,6 +61,7 @@ __all__ = [
     "Signals",
     "collect_signals",
     "fetch_capped",
+    "joined_headers",
     "parse_content_signals",
     "parse_content_usage",
     "parse_license_lines",
@@ -266,7 +267,7 @@ def fetch_capped(url: str, *, config: FetchConfig, cap: int = SMALL_CAP) -> Fetc
             event_hooks={"request": [guard.hook]},
         ) as client, client.stream("GET", url) as response:
             status = int(response.status_code)
-            got = {k.lower(): v for k, v in response.headers.items()}
+            got = joined_headers(response.headers.multi_items())
             body = b""
             if status < 400 and cap > 0:
                 chunks: list[bytes] = []
@@ -294,6 +295,18 @@ def fetch_capped(url: str, *, config: FetchConfig, cap: int = SMALL_CAP) -> Fetc
             url=url, requested_url=url, status=0, html="", content_type="",
             elapsed_seconds=0.0, ok=False, error=f"{type(exc).__name__}: {exc}",
         )
+
+
+def joined_headers(items: Iterable[tuple[str, str]]) -> dict[str, str]:
+    """Response headers lowercased, a repeated field joined with `, ` as RFC 9110 §5.3
+    allows. www.cloudflare.com sends two `Link:` headers -- fonts and preconnects first,
+    the agents.json / webmcp.json / llms.txt one second -- and a CDN and its origin often
+    each add an `X-Robots-Tag`; a dict comprehension kept only the last of each."""
+    joined: dict[str, str] = {}
+    for key, value in items:
+        name = key.lower()
+        joined[name] = f"{joined[name]}, {value}" if name in joined and value else joined.get(name, value) or value
+    return joined
 
 
 def _is_html(result: FetchResult) -> bool:
@@ -425,12 +438,14 @@ def robots_tokens(values: Iterable[str]) -> tuple[str, ...]:
     prefix is dropped and the token kept."""
     seen: dict[str, None] = {}
     for value in values:
-        body = value
-        head, sep, tail = value.partition(":")
-        if sep and "," not in head and " " not in head.strip() and not head.strip().lower().startswith(("max-", "unavailable_after")):
-            body = tail
-        for token in body.split(","):
-            token = token.strip().lower()
+        for raw in value.split(","):
+            token = raw.strip()
+            head, sep, tail = token.partition(":")
+            # `googlebot: noindex` names a bot; `max-snippet:160` and `unavailable_after:
+            # <date>` are directives that carry a value of their own.
+            if sep and not head.strip().lower().startswith(("max-", "unavailable_after")):
+                token = tail.strip()
+            token = token.lower()
             if token:
                 seen.setdefault(token, None)
     return tuple(seen)
@@ -779,8 +794,9 @@ def collect_signals(
         meaning = content_signal_meaning(first.values)
         if first.agents and "*" not in first.agents and len(content_signals) == 1:
             meaning += (
-                f" Note: the line sits in the group for {', '.join(first.agents)}; robots.txt "
-                "directives apply per group, so for every other bot the file states no signal."
+                f" Note: the line sits in the group for {', '.join(first.agents)}; as written, "
+                "under robots.txt's group rule it applies only to that bot, and the file states "
+                "no signal for the rest."
             )
         signals.append(_signal("content_signal", True, detail, meaning, source=robots_url))
     else:
