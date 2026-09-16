@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #TBD) — hero: the Earth by day and by night
+- The hero follows the page's theme, both photoreal, from the same orbit. Dark: the night
+  scene as before, with the sun now rising from behind the limb -- half hidden, the rays and
+  core occluded where the planet stands in front (the scene pass writes the ground into
+  alpha; the post pass reads it), the rim warmest at the sun and blue along the limb. Light:
+  the same Earth in full day -- the sun high behind the viewer, bright ocean (the water a
+  little bluer and deeper than the map's), cloud decks with their shadows, the thick pale-
+  blue air at the limb fading into a light sky (deep blue-grey at the top, near-white at the
+  limb); no stars, no flare; the country marker a green pin with a ring instead of the warm
+  glow. Switching the theme (the toggle or the system) crosses the scene over 600 ms --
+  the light's direction, the sky, the sun, the exposure, the grain and the vignette all
+  interpolate on `uTheme` -- while the frame's own palette (`--scene-*`, now defined light
+  first and overridden in the dark blocks like the site's tokens) transitions in step: ink
+  copy and light glass by day, light copy and dark glass by night. Two stills,
+  `public/earth/still-1440-light.jpg` and `-dark.jpg` (80 / 100 KB), rendered by
+  `tools/render_hero_still.py` (now one run per theme), chosen by the stylesheet.
+- The run card can no longer touch the sub-line: the copy, the card's room and the prompt
+  are three rows over the scene, the middle one a size container, and the card shows only
+  where that row is tall enough (`@container (min-height: 19.5rem)`); the card itself is
+  shorter (a header and three rows). The sub-line and the credit carry a soft shadow in
+  the ground's colour so they hold their contrast beside the flare (measured 8:1 dark,
+  9:1 light against the sampled ground).
+- Fixed: the country turn took the wrong of the two tilt solutions and hit the clamp, so a
+  country could end at the limb rather than beside the prompt (India did); it now takes
+  the solution nearer the resting tilt, and the frame point moved a little inward.
+- Bytes and frames: the hero chunk 23.4 KB / 8.8 KB gz (was 8.0); p50 16.7 / p95 18.7 ms
+  in both themes and across the switch, headed Chromium on an M2 at DPR 2 → 1.5.
+
 ### Changed (2026-09-17, PR #105) — landing: how it reads a page, as one panel
 - Chapters 01–03 of the landing (the pain, the turn, the result) were a sticky Canvas-2D
   stage the copy scrolled past; the owner's verdict was that the illustrations and their

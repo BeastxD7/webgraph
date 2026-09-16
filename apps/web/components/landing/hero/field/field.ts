@@ -13,7 +13,10 @@ import { BLUR_FRAG, BRIGHT_FRAG, EARTH_FRAG, FULLSCREEN_VERT, POST_FRAG } from "
  * sun disc. A bright pass at half size and two Gaussian passes at quarter size make the
  * bloom; the final pass adds it with the sun's rays, FXAA, ACES tone mapping, grain and a
  * vignette. Textures arrive small first (512×256) and are replaced by the 2k ones when they
- * land, so the first frame is never blank.
+ * land, so the first frame is never blank. The scene follows the page's theme: by night
+ * (dark) the sunrise from behind the limb, stars and city lights; by day (light) the sun
+ * high behind the viewer, a pale sky, and the marker as a green pin; `uTheme` crosses
+ * between them over 600 ms when the toggle or the system setting changes.
  *
  * The planet turns once in five minutes on its own. A host in the frame's `data-hero-host`
  * (written by the prompt as an address is typed or an example hovered) turns it, on a
@@ -27,6 +30,13 @@ export type MountOptions = { frame: HTMLElement; canvas: HTMLCanvasElement };
 
 type V3 = [number, number, number];
 const REDUCE = "(prefers-reduced-motion: reduce)";
+
+/** Whether the page is in its dark theme: the explicit toggle first, then the system. */
+function isDark(): boolean {
+  const set = document.documentElement.dataset.theme;
+  if (set === "dark" || set === "light") return set === "dark";
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
 
 // ---- GL helpers --------------------------------------------------------------------------------
 
@@ -200,6 +210,9 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
   let tiltTarget = EARTH.tilt;
   let marker: { lat: number; lon: number; s: number } = { lat: 0, lon: 0, s: 0 };
   let host = "";
+  // The theme: 0 is the night scene, 1 the day scene; it crosses over 600 ms.
+  let themeTarget = isDark() ? 0 : 1;
+  let theme = themeTarget;
   const par = { x: 0, y: 0, tx: 0, ty: 0, vx: 0, vy: 0 };
   const rest: Camera = { eye: [0, 0, 0], yaw: 0, pitch: 0, fov: (CAM.fovDeg * Math.PI) / 180 };
   const live: Camera = { eye: [0, 0, 0], yaw: 0, pitch: 0, fov: rest.fov };
@@ -260,14 +273,17 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     const c = next ? countryOf(next) : null;
     const lat = c ? (c.lat * Math.PI) / 180 : 0;
     const lon = c ? (c.lon * Math.PI) / 180 : 0;
-    const n = c ? (normalUnder(-0.46, -0.66) ?? normalUnder(0, -0.62)) : null;
+    const n = c ? (normalUnder(-0.4, -0.72) ?? normalUnder(0, -0.62)) : null;
     if (c && n) {
-      // nl.y = n.y cos t - n.z sin t must equal sin(lat): R cos(t + phi) = sin(lat).
+      // nl.y = n.y cos t - n.z sin t must equal sin(lat): R cos(t + phi) = sin(lat), two
+      // solutions; take the one nearer the resting tilt, within the lean the scene allows.
       const R = Math.hypot(n[1], n[2]);
       const phi = Math.atan2(n[2], n[1]);
       const ratio = Math.max(-1, Math.min(1, Math.sin(lat) / R));
-      let t = Math.acos(ratio) - phi;
-      t = Math.min((70 * Math.PI) / 180, Math.max((-75 * Math.PI) / 180, t));
+      const clampT = (v: number) => Math.min((70 * Math.PI) / 180, Math.max((-75 * Math.PI) / 180, v));
+      const t1 = clampT(Math.acos(ratio) - phi);
+      const t2 = clampT(-Math.acos(ratio) - phi);
+      const t = Math.abs(t1 - EARTH.tilt) <= Math.abs(t2 - EARTH.tilt) ? t1 : t2;
       tiltTarget = t;
       const ct = Math.cos(t), st = Math.sin(t);
       const nlx = n[0], nlz = n[1] * st + n[2] * ct;
@@ -312,6 +328,7 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     }
     const running = frame.dataset.heroState === "running";
     push += ((running ? 1 : 0) - push) * Math.min(1, dt * 6);
+    theme += Math.sign(themeTarget - theme) * Math.min(Math.abs(themeTarget - theme), dt / 0.6);
   };
 
   const draw = () => {
@@ -322,6 +339,9 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     // The sun sits at 62% of the half-width on any aspect, so a phone keeps it in frame.
     const sunAz = Math.min(EARTH.sunAz, Math.atan(Math.tan(live.fov / 2) * aspect * 0.62));
     const sunS = norm([Math.sin(sunAz) * Math.cos(EARTH.sunEl), Math.sin(EARTH.sunEl), Math.cos(sunAz) * Math.cos(EARTH.sunEl)]);
+    const nightL = norm([...EARTH.light] as V3);
+    const dayL = norm([...EARTH.dayLight] as V3);
+    const sunL = norm([nightL[0] + (dayL[0] - nightL[0]) * theme, nightL[1] + (dayL[1] - nightL[1]) * theme, nightL[2] + (dayL[2] - nightL[2]) * theme]);
 
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
@@ -336,11 +356,12 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     gl.uniform1f(u.uTanHalf!, Math.tan(live.fov / 2));
     gl.uniform1f(u.uTime!, time);
     gl.uniform3fv(u.uCentre!, centre);
-    gl.uniform3fv(u.uSunL!, norm([...EARTH.light] as V3));
+    gl.uniform3fv(u.uSunL!, sunL);
     gl.uniform3fv(u.uSunS!, sunS);
     gl.uniform1f(u.uRot!, rot);
     gl.uniform1f(u.uTilt!, tilt);
     gl.uniform4f(u.uMarker!, marker.lat, marker.lon, marker.s, 0);
+    gl.uniform1f(u.uTheme!, theme);
     gl.uniform1i(u.uStarOct!, q.starOct);
     const bind = (unit: number, tex: WebGLTexture, name: string) => {
       gl.activeTexture(gl.TEXTURE0 + unit);
@@ -394,12 +415,12 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     const toC = norm(centre);
     const angC = Math.acos(Math.max(-1, Math.min(1, toC[0] * sunS[0] + toC[1] * sunS[1] + toC[2] * sunS[2])));
     const angR = Math.asin(1 / Math.hypot(centre[0], centre[1], centre[2]));
-    const vis = Math.min(1, Math.max(0, (angC - angR + 0.03) / 0.06));
+    const vis = Math.min(1, Math.max(0, (angC - angR + 0.05) / 0.07)) * (1 - theme);
     gl.uniform1f(pu.uSunVis!, vis);
     gl.uniform1f(pu.uAspect!, aspect);
-    gl.uniform1f(pu.uExposure!, 1.1);
-    gl.uniform1f(pu.uGrain!, 0.028);
-    gl.uniform1f(pu.uVignette!, 0.28);
+    gl.uniform1f(pu.uExposure!, 1.1 - 0.15 * theme);
+    gl.uniform1f(pu.uGrain!, 0.028 - 0.008 * theme);
+    gl.uniform1f(pu.uVignette!, 0.28 - 0.14 * theme);
     gl.uniform1f(pu.uTime!, time);
     gl.uniform1f(pu.uBloomK!, q.bloom);
     gl.uniform1i(pu.uFxaa!, q.fxaa);
@@ -492,6 +513,18 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
   canvas.addEventListener("webglcontextlost", onLost);
   const stateMo = new MutationObserver(() => (reduce ? still() : wake()));
   stateMo.observe(frame, { attributes: true, attributeFilter: ["data-hero-state", "data-hero-host"] });
+  // The theme: the toggle writes data-theme on the root; the system setting may change too.
+  const onTheme = () => {
+    themeTarget = isDark() ? 0 : 1;
+    if (reduce) {
+      theme = themeTarget;
+      still();
+    } else wake();
+  };
+  const themeMo = new MutationObserver(onTheme);
+  themeMo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  const scheme = matchMedia("(prefers-color-scheme: dark)");
+  scheme.addEventListener("change", onTheme);
   document.addEventListener("visibilitychange", onVisibility);
   const onScroll = () => wake();
   window.addEventListener("scroll", onScroll, { passive: true });
@@ -512,6 +545,8 @@ export function mountField({ frame, canvas }: MountOptions): () => void {
     ro.disconnect();
     io.disconnect();
     stateMo.disconnect();
+    themeMo.disconnect();
+    scheme.removeEventListener("change", onTheme);
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("scroll", onScroll);
     frame.removeEventListener("pointermove", onPointer);
