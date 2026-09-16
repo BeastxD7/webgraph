@@ -361,16 +361,21 @@ def stream_watch(
             kind = event.get("type")
             if kind == "page":
                 record = _record_from_event(event)
-                db.save_page(run.id, record)
                 key = canonical_key(record.url)
+                forwarded = {k: v for k, v in event.items() if k not in {"markdown", "content_markdown"}}
+                forwarded["content_hash"] = record.content_hash
+                yield forwarded
+                if key in seen_keys:
+                    # Two requested addresses served the same page (a redirect, a link
+                    # written two ways). The crawl reports both; the watch counts and
+                    # compares a served page once.
+                    continue
                 seen_keys.add(key)
+                db.save_page(run.id, record)
                 if record.ok:
                     pages_ok += 1
                 else:
                     pages_failed += 1
-                forwarded = {k: v for k, v in event.items() if k not in {"markdown", "content_markdown"}}
-                forwarded["content_hash"] = record.content_hash
-                yield forwarded
                 if baseline:
                     continue
                 verdict = _compare(previous_by_key.get(key), record, rules)

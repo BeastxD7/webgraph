@@ -201,6 +201,21 @@ for the next); a cache miss means a fresh baseline and a quiet run. `webgraph di
 
 ## Measured
 
-Two runs of a watch on `https://sode-edu.in/smvitm/` (80 pages, union fetch), the second
-after the first — see the pull request for the numbers: what changed between them and what
-the noise rules suppressed.
+Two runs of a watch on `https://sode-edu.in/smvitm/` (`max_pages: 80`, union fetch, four
+workers), 16 September 2026, the second started 14 minutes after the first finished and
+driven from the web page's "Run now":
+
+| | run 1 (baseline) | run 2 |
+|---|---:|---:|
+| pages read / refused | 80 / 0 | 80 / 0 |
+| wall time | 98.7 s | 98.8 s |
+| verdict | baseline | **no change** — 79 served pages hash-identical, 0 changed, 0 suppressed, 1 not reached |
+
+The one page "not reached" is `http://mitie.sode-edu.in`: a page of run 1 that was served
+from a subdomain after a redirect, so its address is outside the watch's scope and cannot
+be re-verified from inside it. Nothing was suppressed because nothing differed: the site
+carries no per-visit timestamp or counter in its content, and 14 minutes is not long enough
+for a college site to change. The noise rules are exercised deterministically by the test
+suite's two-version fixture instead (`tests/test_watch.py`: a front page whose "Last
+updated" line and visitor counter were bumped is suppressed, while a changed "Contact"
+section and a new circular under "2026" are reported).
