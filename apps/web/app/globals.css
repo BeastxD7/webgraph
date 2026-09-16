@@ -418,7 +418,7 @@
     linear-gradient(90deg, var(--rule) 1px, transparent 1px);
   background-size: 48px 48px;
   background-position: center top;
-  opacity: 0.55;
+  opacity: 0.4;
   mask-image: linear-gradient(to bottom, black 0, black 45%, rgb(0 0 0 / 0.3) 70%, transparent 100%);
 }
 .bd-blob {
@@ -446,11 +446,11 @@
   background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 12%, transparent), transparent 72%);
 }
 .bd-blob-c {
-  /* the bottom of the page, behind the run prompt */
-  bottom: -20vw;
-  left: 20vw;
-  width: 60vw;
-  height: 60vw;
+  /* the bottom-left edge, behind nothing that is read */
+  bottom: -24vw;
+  left: -26vw;
+  width: 56vw;
+  height: 56vw;
   background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 10%, transparent), transparent 72%);
   animation-duration: 53s;
 }
@@ -458,14 +458,11 @@
 .bd-grain {
   position: absolute;
   inset: 0;
-  opacity: 0.07;
+  opacity: 0.04;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
   background-size: 160px 160px;
-  mix-blend-mode: multiply;
-}
-:root[data-theme="dark"] .bd-grain { mix-blend-mode: screen; opacity: 0.05; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .bd-grain { mix-blend-mode: screen; opacity: 0.05; }
+  /* Normal blend, so the grain lightens as much as it darkens and the mean ground is
+     unchanged; at 0.04 the darkest grains take muted-on-ground from 7.1:1 to ~6.9:1. */
 }
 @keyframes bd-drift {
   0%   { transform: translate3d(0, 0, 0) scale(1); }
