@@ -32,7 +32,17 @@ All notable changes to this project are documented here. The format follows
   that each page keeps its URL, its facts and its schema.org payloads -- what
   `_aggregate_entities` and the site facts read -- and its blocks, Markdown and images go
   (`_kept`). The `page` event already carried each of them to the consumer. Measured on
-  sode-edu.in, 300 pages, four workers, `union`: see the PR.
+  sode-edu.in, 300 pages, four workers, `union`, same machine and hour: peak RSS of the
+  crawl process 412 MB -> 332 MB, 715 s -> 484 s, 25.2 -> 37.2 pages/min, 25 PDFs fetched
+  and refused -> 199 counted and not fetched.
+- The crawl loop keeps its pool full and refills it as each page lands, instead of running
+  batches of `concurrency` pages that start together and end when the slowest does. With
+  the per-host interval a batch of four took slots 0-3 s apart and paid that tail every
+  time -- measured 20.1 pages/min against 25.2 before -- and the rolling pool removed it
+  along with the tail the batches always had (37.2). `fetching` events now carry
+  everything in flight, sent whenever that set changes; the time limit and the caller's
+  stop are checked as each page lands, and pages already in flight are finished and
+  reported.
 - Politeness is per host, not per worker. `CRAWL_HOST_INTERVAL_SECONDS` (1.0;
   `crawl.host_interval_seconds`) is a minimum interval between two pages from the same host
   across every worker of a crawl, enforced by a shared throttle that reserves the next slot

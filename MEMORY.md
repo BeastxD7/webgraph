@@ -3308,10 +3308,15 @@ Four changes, each with the number that justified it:
   the end to compute entity counts and site facts, which read only the URL, the facts and
   the schema.org payloads. `_kept` keeps those; the six full pages chrome detection needs
   are released once it is known. Measured on sode-edu.in, 300 pages, 4 workers, `union`:
-  before 412 MB peak RSS in the crawl process at 25.2 pages/min (715 s); after in PR #94.
+  peak RSS of the crawl process 412 MB -> 332 MB, 715 s -> 484 s, 25.2 -> 37.2 pages/min
+  (the speed is the rolling pool, below; RSS is the retention plus the PDFs not fetched).
 - **Politeness per host.** `delay_seconds` was slept per worker, so `Crawl-delay: 1` with
   four workers was four requests a second. `HostThrottle` reserves the next slot per host
   under a lock (`crawl/politeness.py`); `CRAWL_HOST_INTERVAL_SECONDS = 1.0` or the site's
   `Crawl-delay`, whichever is larger. The per-worker pause stays. At 25-35 pages a minute a
   `union` crawl never reaches the interval; it binds on a fast static-only crawl, where it
-  should.
+  should. **The crawl loop is a rolling pool, not lockstep batches:** measured with the
+  interval in place, the batch loop fell to 20.1 pages/min (894 s) because four pages
+  starting together took slots 0-3 s apart and every batch paid the tail; the rolling
+  pool ran 37.2 pages/min -- faster than before the interval existed, because the batch
+  tail the crawl always had is gone too.

@@ -128,10 +128,19 @@ restores the old behaviour for `.pdf` links, for a caller that wants the refusal
 
 The same run (`max_pages=300`, four workers, `union`) on the commit before and after:
 
-| | before (`b28a326`) | after |
-|---|---:|---:|
-| wall time | 715 s | see PR #94 |
-| pages / min | 25.2 | |
-| peak RSS of the crawl process | 412 MB | |
-| pages refused | 25 (PDFs fetched) | |
-| PDFs counted, not fetched | — | |
+| | before (`b28a326`) | batch loop + per-host interval | after (rolling pool) |
+|---|---:|---:|---:|
+| wall time | 715 s | 894 s | **484 s** |
+| pages / min | 25.2 | 20.1 | **37.2** |
+| peak RSS of the crawl process (`ru_maxrss`) | 412 MB | 315 MB | **332 MB** |
+| pages refused | 25 (PDFs fetched to be refused) | 13 | 13 |
+| PDFs counted, not fetched | — | 190 | 199 |
+
+The middle column is why the crawl loop changed in the same pull request: with the
+per-host interval, four workers starting a batch together took slots 0, 1, 2 and 3 s
+apart and every batch paid the tail. Keeping the pool full instead removed that and the
+batch tail the crawl always had, so the run is faster than before the interval existed.
+Browsers are separate processes and are not in these RSS figures; the 5 GB of the vtu run
+was theirs, and `WEBGRAPH_MAX_BROWSERS` bounds them. The driver is a 60-line script that
+consumes `stream_site` and prints `resource.getrusage`; the three runs were made within
+an hour of each other on the same machine and network.

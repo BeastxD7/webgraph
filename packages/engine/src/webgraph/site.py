@@ -1057,9 +1057,9 @@ def stream_site(
     # lands, rather than run in batches of `concurrency` that all start together and end
     # when the slowest does. Batches cost the tail of every batch, and with a per-host
     # interval they cost more: four pages starting at once take slots 0, 1, 2 and 3 s apart,
-    # so every batch was the slowest page plus three seconds. Measured on sode-edu.in with
-    # 4 workers under `union`: batches ran 19 pages a minute against the interval, the
-    # rolling pool the same 25-30 the crawl managed before there was one.
+    # so every batch was the slowest page plus three seconds. Measured on sode-edu.in, 300
+    # pages, 4 workers, `union`: batches ran 25.2 pages a minute before the interval and
+    # 20.1 with it; the rolling pool runs 37.2, because the tail is gone either way.
     in_flight: dict[Future[_Fetched], str] = {}
     announced: list[str] = []
 
