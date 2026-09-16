@@ -421,6 +421,54 @@ MAX_ANCHOR_CHARS = 160
 IDENTICAL_CONTENT_WARNING = 3
 
 # ======================================================================================
+# Watch (change monitoring)
+# ======================================================================================
+
+# A block whose text is a date, a time or a counter -- rather than a sentence that contains
+# one -- is left out before two versions of a section are compared. Each pattern is removed
+# from the block's text; if fewer than WATCH_NOISE_MIN_WORDS alphabetic words remain, the
+# block was the pattern and is ignored; a block no pattern touches is always compared.
+# Case-insensitive. The rule is deliberately narrow: "Results announced on 12/09/2026" is a
+# sentence and is compared; "12/09/2026" alone, "Last updated: 12 Sep 2026",
+# "Visitors: 1,204,551" and "10:42 am" are not. Known edge: a block that is only a label
+# and a four-digit number ("Total seats: 1200") reads as a counter and is ignored.
+WATCH_NOISE_PATTERNS = (
+    # Dates: 12/09/2026, 2026-09-12T10:42:00Z, 12.09.26, 12 Sep 2026, September 12, 2026.
+    r"\b\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}\b",
+    r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?\b",
+    r"\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?,?\s+\d{2,4}\b",
+    r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{2,4}\b",
+    # A weekday only when written as a date's prefix: "Friday, 12 ..." or "Fri 12".
+    r"\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day|nesday|rsday|urday)?\b,?(?=\s+\d)",
+    # Times: 10:42, 10:42:07, 10:42 am, 22:15 IST.
+    r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)?\s*(?:[A-Z]{2,4}|UTC[+-]\d{1,2}(?::\d{2})?)?\b",
+    # The label of a timestamp: "Last updated on", "Published:", "Page generated in".
+    r"\b(?:last\s+)?(?:updated|modified|published|posted|generated|revised|refreshed)(?:\s+on|\s+at|\s+in)?\b:?",
+    # A counter: a label beside a number, either way round; "You are visitor number 1204".
+    r"\b(?:visitors?|views?|hits|visits|online|users\s+online|page\s*views?|total\s+visitors?|counter)\b\s*:?\s*\d[\d,.]*",
+    r"\b\d[\d,.]*\s*(?:visitors?|views?|hits|visits|online|page\s*views?)\b",
+    r"\byou\s+are\s+visitor\s+(?:number|no\.?)?\s*\d[\d,.]*",
+    # Counter-shaped numbers on their own: four or more digits, or thousands separators.
+    r"\b\d{1,3}(?:,\d{3})+\b",
+    r"\b\d{4,}\b",
+    # Relative times.
+    r"\b\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b",
+    r"\bjust\s+now\b",
+    # Copyright lines.
+    r"(?:©|\(c\)|copyright)\s*\d{4}(?:\s*[-\u2013]\s*\d{4})?",
+)
+
+# Alphabetic words a block must keep, once the noise patterns are removed, to be compared.
+WATCH_NOISE_MIN_WORDS = 3
+
+# Characters of a section's text kept on each side of a recorded change. Provenance is the
+# heading and the page; the text is context, and a 40 kB table is not context.
+WATCH_SECTION_TEXT_CHARS = 2_000
+
+# Sections reported per changed page before the page counts as rewritten.
+WATCH_MAX_SECTIONS_PER_PAGE = 40
+
+# ======================================================================================
 # Knowledge graph
 # ======================================================================================
 
@@ -519,6 +567,10 @@ DEPLOY_TRACE_FILE = None
 
 # WEBGRAPH_GRAPH_DIR: where crawled graphs are kept. None = ~/.cache/webgraph/graphs.
 DEPLOY_GRAPH_DIR = None
+
+# WEBGRAPH_WATCH_DB: the SQLite file that holds watches, their runs, pages and changes.
+# None = ~/.cache/webgraph/watch.sqlite3 (XDG_CACHE_HOME respected).
+DEPLOY_WATCH_DB = None
 
 # WEBGRAPH_ALLOWED_ORIGINS: browser origins the API answers, comma-separated. Never "*".
 # Empty = the dev frontend (http://localhost:3000, http://127.0.0.1:3000).

@@ -43,6 +43,101 @@ All notable changes to this project are documented here. The format follows
   on the shared machine (56–60 fps mean), once the per-frame instance upload re-specified
   its buffer instead of patching one still in flight (p95 34 ms before, every run). Phones
   draw 450 pages and three cloud octaves.
+### Added (2026-09-16, PR #102) — machine-readable site signals in the report
+- **What the site declares to machines** (`report/signals.py`; `SiteReport.signals`, the
+  CLI's SIGNALS section, `signals` in `POST /api/site/report`, a section of `/report`, a
+  docs section). Twenty-four signals in five groups, each with `present` (true / false /
+  null for not measurable), the detail in the file's own terms, who honours it, the spec
+  URL and a plain-words meaning for the owner ("Your robots.txt tells AI systems they may
+  index it for search and link back and use it as input to AI answers, but should not
+  train AI models on it. Honoured voluntarily by the bots that read Content-Signal; not
+  enforced."). *Declarations to AI*: robots.txt `Content-Signal` read per `User-agent`
+  group (www.cloudflare.com's line sits in its `Cohere-ai` group, and the report says so),
+  IETF aipref `Content-Usage` (header and robots line), `llms.txt` / `llms-full.txt` with a
+  sample of five links checked, `ai.txt`, RSL (`License:` line, `Link rel=license`,
+  `<link>`, inline block, `/rsl.xml`), TDM reservation (header, meta, `tdmrep.json`),
+  `noai` / `noimageai`, the indexing directives from `X-Robots-Tag` and meta robots.
+  *Discovery*: sitemap, feed autodiscovery, Markdown twin (`text/markdown` alternate,
+  `describedby`), IndexNow (not measurable). *Agents*: A2A agent card at
+  `agent-card.json` and the pre-0.3 `agent.json`, `agents.json`, MCP (`mcp.json`, MCP
+  `Link` rels), RFC 9727 `api-catalog` plus `ai-catalog` / `agent-skills`. *Metadata*:
+  JSON-LD `@type`s in the plain HTML, OpenGraph / Twitter, `hreflang`, canonical. *Trust*:
+  `security.txt` (both paths, `Expires` checked), `humans.txt`, web app manifest,
+  speculation rules. A `402` on the root is noted as pay-per-crawl.
+- Every probe is one streaming GET that reads status and headers first and at most a small
+  cap of body (`fetch_capped`: 64 KB, 512 KB for the llms files, 1 MB for the root), paced
+  with the report, skipped when robots.txt disallows the path for this client, under the
+  engine's own User-Agent. Presence is never the status alone: vercel.com answers
+  `/ai.txt`, `/rsl.xml`, `/humans.txt`, `/manifest.json` with its 2.5 MB HTML shell and
+  200, so each signal has a shape test. Typically 12-18 requests.
+- The suggested `robots.txt` gains a commented `Content-Signal` block -- search and AI
+  input yes / training no; or all yes -- with the note that it is a declaration, not
+  enforcement, shown back rather than proposed when the file already has one, and a
+  comment when no feed is advertised. `suggested_security_txt` (RFC 9116 template) is
+  offered when the site has none.
+- `crawl.discovery.parse_groups` keeps `Content-Signal` and `Content-Usage` lines in the
+  group they sit in. `PageReport.has_open_graph`; `LlmsFile` gains `links_checked` /
+  `links_answering` and moves to `report/signals.py` (re-exported).
+
+### Changed (2026-09-16, PR #99)
+- The 10-point *Structured data and page metadata* sub-score's 4 page-field points now
+  count OpenGraph beside title, description and `lang` (four fields; a page with the
+  older three and no `og:*` earns 3 of 4). Weights unchanged; total stays 100. No new
+  sub-score: declarations to AI are choices, not virtues, and agent cards are too rare to
+  score. `llms.txt` stays at 5.
+
+### Added (2026-09-16, PR #101) — Watch
+- `webgraph.watch`: change monitoring on top of the crawl. A watch is a root and a
+  config; `run_watch` / `stream_watch` crawl it again with the previous run's URL set as
+  seeds (`stream_site(..., seeds=)`), compare every page against the last finished run by
+  the engine's `content_hash` first and section by section second
+  (`graph.diff.diff_sections`, now public, over sections cut from the content Markdown),
+  and record `added` / `removed` / `changed` with the section heading and the text on each
+  side. The first run is a baseline. `removed` is claimed only on an HTTP 4xx; a page the
+  cap never reached is `unverified`. No model anywhere: two runs over the same two versions
+  of a site produce the same changes. The `page` event now carries `content_hash`.
+- Noise rules, documented and configurable (`config.WATCH_NOISE_PATTERNS`,
+  `WATCH_NOISE_MIN_WORDS`; per watch `noise_patterns`, `noise: false`): a block whose text
+  *is* a date, a time or a counter -- patterns removed, fewer than three alphabetic words
+  left -- is left out before two versions of a section are compared; a sentence that
+  contains one is compared; query strings are stripped from link and image targets.
+  Navigation, footers and comments are already gone (the content Markdown); the
+  main-content boundary is off for a watch unless asked, because a watched page is as
+  likely a list of circulars as an article. A page whose blocks all survive and merely sit
+  under different headings is suppressed too -- measured on vtu.ac.in's front page, two
+  static fetches 11 minutes apart put the same social-links list under different headings.
+  Every run reports how many pages it `suppressed`.
+- Storage: one SQLite file, standard library only, `~/.cache/webgraph/watch.sqlite3`
+  (`XDG_CACHE_HOME`, `WEBGRAPH_WATCH_DB`): `watches(id, root, config_json, created_at,
+  schedule_seconds)`, `runs(id, watch_id, started_at, finished_at, pages_ok, pages_failed,
+  stopped_by)`, `pages(run_id, url, content_hash, title, markdown, fetched_at, strategy,
+  error, sections_json)`, `changes(id, run_id, watch_id, url, kind, before_hash,
+  after_hash, diff_json, detected_at)`.
+- `export_changes(fmt="json" | "md" | "rss" | "atom")`: an RSS 2.0 or Atom 1.0 feed of
+  changes, one entry per change titled with the page and its section headings -- the
+  cheapest "notify me" there is, and a university's circulars as a feed (the research
+  found VTU's reach 16,600 people through a volunteer Telegram channel that reposts them
+  by hand).
+- CLI: `webgraph watch create <url> [--max-pages] [--complete] [--no-noise] [--config]`,
+  `watch list`, `watch run <id> [--fail-on-change]` (non-zero on change, for a scheduled
+  job), `watch changes <id> [--since 12h|ISO|epoch] [--format md|json|rss|atom]`.
+  `webgraph diff --fail-on-change` remains. `.github/workflows/example-watch.yml` is an
+  Action that runs a watch and opens an issue with the digest; shipped with a manual
+  trigger only and its six-hourly `schedule` commented out, so it never runs unattended.
+- API: `POST /api/watch`, `GET /api/watch`, `GET /api/watch/{id}`, `DELETE /api/watch/{id}`,
+  `POST /api/watch/{id}/run` (SSE: the crawl's events plus `watch`, `change`, `done`;
+  the same crawl slot, trace and caps as `/api/site/stream`), `GET /api/watch/{id}/changes?since=`,
+  `GET /api/watch/{id}/feed.xml[?format=atom]`.
+- Web: `/watch` -- the watches, a URL to add one, "Run now" streaming the run, and the
+  changes per watch (kind, page, section heading, before and after, when), in the design
+  system, both themes, phone width. "Watch" in the header; a fifth product card, marked
+  available (the grid's odd last card spans the row). Docs: `/docs/watch`.
+- Tests (fail on the base branch): `packages/engine/tests/test_watch.py` (47: store round
+  trip; two versions of a local site -- one page added, one gone, two changed with the
+  section heading and the text on each side, the front page's bumped timestamp and
+  counter suppressed; a 500 is not a removed page; a page behind the cap is unverified;
+  noise rules on 19 blocks; RSS and Atom well-formed with every required element; the CLI
+  end to end), `apps/api/tests/test_api.py::TestWatch` (4).
 
 ### Changed (2026-09-16, PR #98) — landing page motion and docs alignment
 - The landing page is a scroll-driven story on one sticky, code-drawn stage

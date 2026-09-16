@@ -5,9 +5,11 @@ description: What a site shows people, what it shows machines, and how ready it 
 
 A site report is a check anyone can run on any website: is it readable by an agent that
 does not run JavaScript? What does its `robots.txt` say about each well-known AI and search
-bot? Is anything hidden from readers that is shown to machines -- off-screen links, the
-shape of an SEO-spam injection? Are there walls, dead links, an old CMS? It ends with a
-suggested `robots.txt` and `llms.txt`. Run it at [/report](/report), with
+bot? What does it declare to machines -- a `Content-Signal`, an `llms.txt`, an RSL licence,
+an agent card, a feed, JSON-LD, a `security.txt` -- and who honours each? Is anything hidden
+from readers that is shown to machines -- off-screen links, the shape of an SEO-spam
+injection? Are there walls, dead links, an old CMS? It ends with a suggested `robots.txt`,
+`llms.txt` and, when missing, `security.txt`. Run it at [/report](/report), with
 `webgraph report <url>`, or `POST /api/site/report`.
 
 Everything in it comes from a measurement the engine already makes when it reads a page
@@ -68,6 +70,48 @@ sampled pages, `/llms.txt`, the link checks -- are spaced `REPORT_REQUEST_INTERV
 (1 s) apart per host; the root probe (root, robots.txt, sitemaps) is fetched as every
 crawl starts.
 
+## What the site declares to machines
+
+A site in 2026 can say a great deal to machines, and almost none of it is enforced. The
+report reads every such signal it can find without impersonating anyone and shows each
+with three things: what was found, in the file's own terms; who honours it; and what it
+means to the owner in plain words -- "Your robots.txt tells AI systems they may index it
+for search and link back and use it as input to AI answers, but should not train AI models
+on it. Honoured voluntarily by the bots that read Content-Signal; not enforced." Twenty-four
+signals in five groups (`packages/engine/src/webgraph/report/signals.py`):
+
+| group | signals | read from |
+|---|---|---|
+| Declarations to AI | `Content-Signal` (contentsignals.org; the line belongs to the `User-agent` group it sits in -- www.cloudflare.com's sits in its `Cohere-ai` group), `Content-Usage` (the IETF aipref drafts), `llms.txt` / `llms-full.txt` (present only when plain text starting with an H1; sections, links, a sample of five links checked), `ai.txt` (Spawning), RSL licence (`License:` line, `Link: rel="license"; type="application/rsl+xml"`, `<link rel=license>`, inline block, `/rsl.xml` with the RSL namespace), TDM reservation (`TDM-Reservation` header, `<meta name=tdm-reservation>`, `/.well-known/tdmrep.json`), `noai` / `noimageai`, the indexing directives (`X-Robots-Tag`, `<meta name=robots>`, `googlebot`, `bingbot`: `noindex`, `nosnippet`, `max-snippet`, `max-image-preview` …) | robots.txt; the root's headers and plain HTML; the files |
+| Discovery | sitemap (from the probe already made: found, URLs read, index or not, declared in robots.txt), feed autodiscovery (RSS / Atom / JSON Feed `<link rel=alternate>`), Markdown twin (`<link rel=alternate type=text/markdown>`, `rel=describedby`, a root that answers `text/markdown`), IndexNow (recorded as *not measurable*: the key file is named by the key) | the root's `<head>` and `Link:` header |
+| Agents | A2A agent card (`/.well-known/agent-card.json`, then the pre-0.3 `/.well-known/agent.json`, which www.cloudflare.com still uses: name, skills, protocol version), `agents.json` (agentprotocol.ai: site name, capabilities), MCP advertisement (`/.well-known/mcp.json` `mcpServers`, or a `Link` to an MCP/WebMCP description -- MCP itself defines no site-level discovery file), API catalog (RFC 9727 `rel="api-catalog"`, plus `ai-catalog` and `agent-skills` rels as vercel.com sends them) | the files and the root's `Link:` header |
+| Metadata | JSON-LD `@type`s in the plain HTML (what an agent without JavaScript learns the site is), OpenGraph / Twitter card counts, `hreflang` count, `rel=canonical` | the root's plain HTML |
+| Trust | `security.txt` (RFC 9116: `/.well-known/security.txt`, then `/security.txt`; `Contact`, `Expires` -- required, and missing on www.cloudflare.com), `humans.txt`, web app manifest (followed from `<link rel=manifest>`), speculation rules | the files; the root's `<head>` |
+
+**How it is read.** Every probe is one streaming GET that reads the status and headers and
+stops there on an error, else at most 64 KB of body (512 KB for the llms files, 1 MB for the
+root) -- HEAD-then-GET in a single request, because a server that refuses HEAD would cost the
+second request anyway. Presence is never the status alone: vercel.com answers `/ai.txt`,
+`/rsl.xml`, `/humans.txt` and `/manifest.json` with its 2.5 MB HTML shell and status 200
+(16 Sep 2026), so each signal has a shape test -- an H1 for llms.txt, the RSL namespace, a
+JSON array for tdmrep.json, a `Contact:` line, a `name` in an agent card -- and an HTML body
+fails every one of them. Probes are paced with the rest of the report, skipped (recorded as
+*not measured*, not absent) when robots.txt disallows the path for this client, and made
+under the engine's own User-Agent; the root is fetched once more, plainly, for the headers
+and the HTML a machine without JavaScript sees. Typically 12-18 requests. A `402 Payment
+Required` on the root is noted as a pay-per-crawl wall. Web Bot Auth (RFC 9421 signatures a
+*crawler* presents) is not measured: a site cannot be tested for it without impersonating a
+signed bot.
+
+**What it does to the score.** Nothing new: declarations to AI are choices, not virtues -- a
+site that says `ai-train=no` is not less ready -- and agent cards are rare enough that
+scoring their absence would penalise nearly every site. The one change is inside the
+existing 10-point *Structured data and page metadata* sub-score, whose 4 page-field points
+now count OpenGraph beside title, description and `lang` (a page with the three older
+fields and no `og:*` earns 3 of the 4). `llms.txt` stays at 5 points for the reason in the
+table below. The full research behind the list -- specs, adoption numbers, real-site
+examples, what could not be verified -- is in `scratchpad/research/SITE-SIGNALS.md`.
+
 ## The score
 
 An AI-readiness score out of 100 is the weighted sum of eight sub-scores, each from one
@@ -84,7 +128,7 @@ checked) is left out and the total is rescaled to the weight that was measured;
 | robots.txt does not block AI bots wholesale | 20 | share of the fifteen bots not blocked at the root. A measure of reach, not virtue: blocking training crawlers is a legitimate choice and the report never recommends against it |
 | No walls to identified crawlers | 15 | share of sampled pages served to both the plain fetch and the browser |
 | Sitemap exists and lists the sampled pages | 10 | 6 for a sitemap that parses, 4 × the share of sampled pages it lists |
-| Structured data and page metadata | 10 | 6 × pages with JSON-LD or microdata, 4 × presence of title, description and `lang` |
+| Structured data and page metadata | 10 | 6 × pages with JSON-LD or microdata, 4 × presence of title, description, `lang` and OpenGraph (four page-fields; OpenGraph joined in PR #99) |
 | No hidden or injected content | 10 | 0 when a page links to `REPORT_SPAM_MIN_HOSTS` (5) or more foreign hosts from elements parked off the page; 5 for fewer; 10 for none. Hidden dropdowns are not penalised |
 | llms.txt present | 5 | present or not. Five points because the file is close to worthless in practice: Ahrefs' June 2026 log study of 137,000 domains found 97% of `llms.txt` files received no requests, and Google says it does not read them |
 | Internal links answer | 5 | 5 × (1 − dead ÷ checked) |
@@ -106,6 +150,13 @@ The suggested `robots.txt` keeps the site's existing file byte for byte and appe
 in which every line is a comment: pasting it back changes nothing until the owner
 uncomments one of two variants -- allow every well-known bot, or allow the search and
 assistant bots and disallow the training crawlers. Neither is a recommendation.
+
+The commented block also carries the `Content-Signal` line (contentsignals.org) in its two
+common forms -- `search=yes, ai-input=yes, ai-train=no` and all three `yes` -- with a note
+that it is a declaration a crawler chooses to read, not enforcement; a file that already has
+the line is shown its own values and nothing is proposed. When no feed is advertised on the
+root, a comment says so. A `security.txt` template (RFC 9116: `Contact`, `Expires` a year
+out, `Preferred-Languages`, `Canonical`) is offered only when the site has none.
 
 The `llms.txt` draft follows llmstxt.org -- an H1 with the site's name, a blockquote
 summary, H2 sections of `- [title](url): description` -- built from the sampled pages'
@@ -144,6 +195,9 @@ curl -s -X POST localhost:8000/api/site/report \
 
 The JSON carries `score.subscores[]` (key, weight, score, evidence, recommendation,
 source), `findings[]` (severity, kind, title, detail, page), `pages[]`, `robots.bots[]`,
-`stack[]`, `suggested_robots_txt`, `suggested_llms_txt`, and `measured` -- the engine
+`stack[]`, `signals` (`signals[]` with key, label, group, present -- `true` / `false` /
+`null` for not measured -- detail, meaning, who_honours, spec_url, source_url, status;
+`groups[]`; `content_signals[]`; `root_headers`; `requests`), `suggested_robots_txt`,
+`suggested_llms_txt`, `suggested_security_txt`, and `measured` -- the engine
 version and commit, the plain fetches' User-Agent, pages sampled, the request interval, the
 duration, and the statement that nothing was fetched as another bot.

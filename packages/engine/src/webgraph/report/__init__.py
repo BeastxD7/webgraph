@@ -11,21 +11,26 @@ from webgraph.report.build import (
 )
 from webgraph.report.pages import PageReport
 from webgraph.report.score import Finding, SiteScore, SubScore
+from webgraph.report.signals import GROUPS, Signal, Signals, collect_signals
 from webgraph.report.stack import StackEntry
 
 __all__ = [
     "BOTS",
+    "GROUPS",
     "BotPolicy",
     "Finding",
     "LlmsFile",
     "MeasuredHow",
     "PageReport",
     "RobotsReport",
+    "Signal",
+    "Signals",
     "SiteReport",
     "SiteScore",
     "StackEntry",
     "SubScore",
     "WellKnownBot",
     "build_site_report",
+    "collect_signals",
     "declared_policies",
 ]
