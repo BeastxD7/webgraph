@@ -63,16 +63,22 @@ export const PRODUCTS: readonly Product[] = [
   {
     id: "site-truth-report",
     name: "Site Truth Report",
-    availability: "coming",
+    availability: "available",
     body: [
-      "What a site shows people against what it sends to search engines and crawlers: hidden " +
-        "text and links, off-screen spam, closed dialogs, the stack and its age, dead links, " +
-        "consent boilerplate — as a report you can share.",
-      "The crawler already finds the material. On vtu.ac.in a crawl met about 60 gambling " +
-        "links on every page, each positioned twenty trillion pixels off the left edge; the " +
-        "extraction drops them, and the report would say they are there.",
+      "What a site shows people, what it shows machines, and how ready it is for AI agents: " +
+        "words without JavaScript against words with it, what robots.txt declares for each " +
+        "well-known bot, hidden and off-screen links, walls, dead links, the stack and its " +
+        "age — an AI-readiness score with the evidence for every part, and a suggested " +
+        "robots.txt and llms.txt. A link you can share.",
+      "The crawler already found the material. On vtu.ac.in it met about 60 gambling links " +
+        "on every page, each positioned twenty trillion pixels off the left edge; the " +
+        "extraction drops them, and the report says they are there. It never fetches as " +
+        "another bot: the bots table is what the site's file declares.",
     ],
-    ctas: [NOTIFY("Site Truth Report")],
+    ctas: [
+      { label: "Run a report", href: "/report" },
+      { label: "Read the docs", href: DOCS },
+    ],
   },
   {
     id: "cli",

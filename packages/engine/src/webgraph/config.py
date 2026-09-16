@@ -458,6 +458,34 @@ PROFILE_MAX_SCRIPTS = 4
 PROFILE_MAX_TOTAL_BYTES = 3_000_000
 
 # ======================================================================================
+# Site report (what a site shows people, what it shows machines, how ready it is for agents)
+# ======================================================================================
+
+# Pages a report samples: the root, then the first internal links the root offers, one per
+# path prefix where the root links to several sections. Each is fetched both ways.
+REPORT_PAGES = 5
+
+# Most pages one report may sample, whatever the caller asks for.
+REPORT_MAX_PAGES = 10
+
+# Seconds between the report's own requests to one host -- pages, robots.txt, llms.txt,
+# sitemaps, dead-link checks. One a second at most; a report is a courtesy call.
+REPORT_REQUEST_INTERVAL_SECONDS = 1.0
+
+# Internal links checked for a dead answer (HEAD, GET on 405; status >= 400) per sampled
+# page. Each address is checked once per report, however many pages link to it.
+REPORT_DEAD_LINK_CHECKS_PER_PAGE = 30
+
+# Distinct external hosts linked from hidden or off-screen elements before the report
+# calls it a likely SEO-spam injection. vtu.ac.in carried ~60 such links to dozens of
+# gambling hosts per page (14 Sep 2026); a site's own off-canvas menu links to one host.
+REPORT_SPAM_MIN_HOSTS = 5
+
+# A CMS release older than this many years, when the version is known and its release
+# date is in the report's table, is flagged as an outdated stack.
+REPORT_STACK_OLD_YEARS = 3
+
+# ======================================================================================
 # Run traces
 # ======================================================================================
 

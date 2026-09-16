@@ -17,6 +17,7 @@ export const DOCS: Route = "/docs" as Route;
 export const NAV: readonly NavItem[] = [
   { label: "Home", href: "/" },
   { label: "Products", href: "/products" },
+  { label: "Report", href: "/report" },
   { label: "Docs", href: DOCS },
   { label: "Benchmarks", href: "/benchmarks" },
   { label: "How it works", href: "/how-it-works" },
@@ -24,6 +25,7 @@ export const NAV: readonly NavItem[] = [
 ];
 
 export const FOOTER_LINKS: readonly NavItem[] = [
+  { label: "Report", href: "/report" },
   { label: "Docs", href: DOCS },
   { label: "Benchmarks", href: "/benchmarks" },
   { label: "How it works", href: "/how-it-works" },
