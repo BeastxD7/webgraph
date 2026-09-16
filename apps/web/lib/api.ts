@@ -254,8 +254,164 @@ export interface ConfigResponse {
   caps: Record<string, number>;
 }
 
+/** `POST /api/site/report` -- the shape of `webgraph.report.SiteReport.as_dict()`. */
+/** At the root: `blocked` when `/` is disallowed, `partly` when content paths are, `allowed`
+ *  when nothing is or only administrative paths (`/wp-admin/`, `/login`, `/search` …) are. */
+export type BotAccess = "allowed" | "partly" | "blocked";
+export type BotVia = "named" | "wildcard" | "none";
+export type BotPurpose = "search" | "assistant" | "training";
+export type Severity = "high" | "medium" | "low" | "info";
+
+export interface BotPolicy {
+  token: string;
+  operator: string;
+  purpose: BotPurpose;
+  via: BotVia;
+  mentioned: boolean;
+  access: BotAccess;
+  /** `Disallow` lines that apply and decide something, administrative ones included. */
+  disallowed: number;
+  /** The disallowed paths that are content, not housekeeping, in file order. */
+  content_paths: string[];
+  crawl_delay: number | null;
+  /** The directives that apply, verbatim from the file. */
+  lines: string[];
+}
+
+export interface ReportRobots {
+  found: boolean;
+  status: number;
+  text: string;
+  group_for_us: string | null;
+  rules_for_us: string[];
+  crawl_delay_for_us: number | null;
+  allows_us_root: boolean;
+  sitemaps_declared: string[];
+  bots: BotPolicy[];
+}
+
+export interface ReportPage {
+  requested_url: string;
+  url: string;
+  section: string;
+  title: string;
+  description: string;
+  strategy: string;
+  static_chars: number;
+  rendered_chars: number;
+  union_chars: number;
+  static_words: number;
+  rendered_words: number;
+  union_words: number;
+  static_coverage: number;
+  render_error: string | null;
+  static_error: string | null;
+  /** Which side was served a wall: `browser`, `plain fetch`, or `both`. */
+  wall: string | null;
+  hidden_words: Record<string, number>;
+  /** Links inside hidden elements of any kind (a dropdown menu counts). */
+  hidden_links: number;
+  hidden_hosts: { host: string; links: number; offscreen: number; external: boolean }[];
+  hidden_external_hosts: number;
+  /** Links inside elements parked off the page -- the shape of an injection. */
+  offscreen_links: number;
+  /** Foreign hosts among them; the spam verdict reads this number and no other. */
+  offscreen_external_hosts: number;
+  consent_words: number;
+  total_words: number;
+  consent_share: number;
+  canonical: string | null;
+  lang: string | null;
+  structured_data: string[];
+  has_schema: boolean;
+  internal_links: number;
+  links_checked: number;
+  dead_links: { url: string; status: number }[];
+  dead_count: number;
+  links_unreachable: number;
+  in_sitemap: boolean | null;
+  /** Set when the page could not be read at all; every number is then zero. */
+  error: string | null;
+}
+
+export interface SubScore {
+  key: string;
+  label: string;
+  weight: number;
+  /** Points out of `weight`; null when the measurement could not be made. */
+  score: number | null;
+  measured: boolean;
+  evidence: string;
+  recommendation: string | null;
+  source: string | null;
+}
+
+export interface Finding {
+  severity: Severity;
+  kind: string;
+  title: string;
+  detail: string;
+  page: string | null;
+}
+
+export interface StackEntry {
+  name: string;
+  category: string;
+  version: string | null;
+  released: string | null;
+  age_years: number | null;
+}
+
+export interface LlmsFile {
+  path: string;
+  found: boolean;
+  status: number;
+  bytes: number;
+  sections: number;
+  links: number;
+  title: string | null;
+}
+
+export interface SiteReport {
+  url: string;
+  root: string;
+  host: string;
+  generated_at: string;
+  reachable: boolean;
+  /** The engine's own refusal when the root could not be read; no score then. */
+  refusal: string | null;
+  stack: StackEntry[];
+  robots: ReportRobots | null;
+  sitemap_found: boolean;
+  sitemap_urls: number;
+  sitemap_attempts: { url: string; status: number; ok: boolean; urls: number; index: boolean; source: string }[];
+  llms_txt: LlmsFile | null;
+  llms_full_txt: LlmsFile | null;
+  pages: ReportPage[];
+  score: { total: number; measured_weight: number; subscores: SubScore[] } | null;
+  findings: Finding[];
+  suggested_robots_txt: string | null;
+  suggested_llms_txt: string | null;
+  llms_txt_note: string;
+  measured: {
+    engine_version: string;
+    commit: string;
+    user_agent: string;
+    pages_requested: number;
+    pages_sampled: number;
+    request_interval_seconds: number;
+    duration_seconds: number;
+    render_available: boolean;
+    statement: string;
+  } | null;
+  notes: string[];
+}
+
 export const api = {
   config: () => requestGet<ConfigResponse>("/api/config"),
+
+  siteReport: (input: { url: string; pages?: number }) =>
+    request<SiteReport>("/api/site/report", input),
 
   health: () => request<HealthResponse>("/api/health"),
 
