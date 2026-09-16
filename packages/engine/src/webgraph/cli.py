@@ -476,6 +476,107 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     return 1 if (result.any_change and args.fail_on_change) else 0
 
 
+def _since(raw: str | None) -> float | None:
+    """`--since` as an epoch timestamp: seconds, an ISO date or datetime, or `3d`/`12h`."""
+    if not raw:
+        return None
+    import re
+    import time
+    from datetime import datetime
+
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+        return float(raw)
+    relative = re.fullmatch(r"(\d+)([smhdw])", raw)
+    if relative:
+        unit = {"s": 1, "m": 60, "h": 3600, "d": 86_400, "w": 604_800}[relative.group(2)]
+        return time.time() - int(relative.group(1)) * unit
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None:
+        from datetime import UTC
+
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.timestamp()
+
+
+def _cmd_watch_create(args: argparse.Namespace) -> int:
+    """Register a site to watch and print its id."""
+    from webgraph.watch import create_watch
+
+    options: dict[str, Any] = {}
+    if args.max_pages is not None:
+        options["max_pages"] = args.max_pages
+    if args.max_seconds is not None:
+        options["max_seconds"] = args.max_seconds
+    if args.complete:
+        options["complete"] = True
+    if args.no_noise:
+        options["noise"] = False
+    if args.config:
+        options.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
+    watch = create_watch(
+        args.url, options, schedule_seconds=args.schedule_seconds, store=args.db
+    )
+    if args.json:
+        print(json.dumps(watch.as_dict(), indent=2))
+    else:
+        print(watch.id)
+        print(f"watching {watch.root}", file=sys.stderr)
+        print("run it with: webgraph watch run " + watch.id, file=sys.stderr)
+    return 0
+
+
+def _cmd_watch_list(args: argparse.Namespace) -> int:
+    from webgraph.watch import list_watches
+
+    watches = list_watches(store=args.db)
+    if args.json:
+        print(json.dumps([w.as_dict() for w in watches], indent=2))
+        return 0
+    for watch in watches:
+        print(f"{watch.id}  {watch.root}")
+    if not watches:
+        print("no watches. create one with: webgraph watch create <url>", file=sys.stderr)
+    return 0
+
+
+def _cmd_watch_run(args: argparse.Namespace) -> int:
+    """Run a watch once; print what changed. Non-zero on change with --fail-on-change."""
+    from webgraph.watch import run_watch
+
+    def progress(event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind == "page" and not args.quiet:
+            mark = "ok " if event.get("ok") else "err"
+            print(f"  [{event['index']:>4}] {mark} {event['url'][:96]}", file=sys.stderr)
+        elif kind == "change":
+            headings = ", ".join(
+                (s.get("heading") or "(opening)") for s in event.get("sections", [])[:3]
+            )
+            print(f"  {event['kind']:<8} {event['url']}  {headings}", file=sys.stderr)
+        elif kind == "error":
+            print(f"  error: {event['message']}", file=sys.stderr)
+
+    summary = run_watch(args.id, store=args.db, on_event=progress)
+    if args.json:
+        print(json.dumps(summary.as_dict(), indent=2))
+    else:
+        print(summary.summary())
+        for change in summary.changes:
+            print(f"  {change.kind:<8} {change.url}")
+            for section in change.sections[: args.detail]:
+                heading = section.get("heading") or "(opening)"
+                print(f"      {section.get('kind', 'edited'):<8} {heading}")
+    return 1 if (args.fail_on_change and summary.any_change) else 0
+
+
+def _cmd_watch_changes(args: argparse.Namespace) -> int:
+    """Print a watch's changes as json, md, rss or atom."""
+    from webgraph.watch import export_changes
+
+    print(export_changes(args.id, _since(args.since), fmt=args.format, store=args.db), end="")
+    return 0
+
+
 def _cmd_bench(args: argparse.Namespace) -> int:
     cases = load_corpus(Path(args.corpus))
     score = run_corpus(cases)
@@ -624,6 +725,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="exit non-zero when anything changed, for a scheduled job",
     )
     diff.set_defaults(func=_cmd_diff)
+
+    watch = subparsers.add_parser(
+        "watch", help="watch a site for changes: create, run, changes, list"
+    )
+    watch_sub = watch.add_subparsers(dest="watch_command", required=True)
+
+    def db_flag(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument(
+            "--db", help="SQLite file (default: ~/.cache/webgraph/watch.sqlite3 or WEBGRAPH_WATCH_DB)"
+        )
+        sub.add_argument("--json", action="store_true", help="emit JSON")
+
+    create = watch_sub.add_parser("create", help="register a site to watch; prints its id")
+    create.add_argument("url", help="site root URL")
+    create.add_argument("--max-pages", type=int, default=None, help="0 for unlimited")
+    create.add_argument("--max-seconds", type=float, default=None)
+    create.add_argument("--complete", action="store_true", help="union fetch (static + rendered)")
+    create.add_argument("--no-noise", action="store_true", help="compare dates and counters too")
+    create.add_argument(
+        "--schedule-seconds", type=int, default=0, help="advisory: how often you mean to run it"
+    )
+    create.add_argument("--config", help="JSON file of SiteConfig fields and watch options")
+    db_flag(create)
+    create.set_defaults(func=_cmd_watch_create)
+
+    listing = watch_sub.add_parser("list", help="list watches")
+    db_flag(listing)
+    listing.set_defaults(func=_cmd_watch_list)
+
+    run = watch_sub.add_parser("run", help="crawl again and record what changed")
+    run.add_argument("id", help="watch id")
+    run.add_argument("--detail", type=int, default=8, help="sections listed per page")
+    run.add_argument(
+        "--fail-on-change",
+        action="store_true",
+        help="exit non-zero when anything changed, for a scheduled job",
+    )
+    db_flag(run)
+    run.set_defaults(func=_cmd_watch_run)
+
+    changes = watch_sub.add_parser("changes", help="print recorded changes")
+    changes.add_argument("id", help="watch id")
+    changes.add_argument(
+        "--since", help="epoch seconds, an ISO date, or a span such as 12h or 7d"
+    )
+    changes.add_argument("--format", choices=("json", "md", "rss", "atom"), default="md")
+    db_flag(changes)
+    changes.set_defaults(func=_cmd_watch_changes)
 
     bench = subparsers.add_parser("bench", help="score the engine against a labelled corpus")
     bench.add_argument("corpus", help="corpus directory containing gold.json")

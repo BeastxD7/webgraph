@@ -30,7 +30,7 @@ from typing import Final
 
 from webgraph.graph.model import PageNode, Section, SiteGraph
 
-__all__ = ["PageChange", "SectionChange", "SiteDiff", "diff_graphs"]
+__all__ = ["PageChange", "SectionChange", "SiteDiff", "diff_graphs", "diff_sections"]
 
 MAX_SECTION_DETAIL: Final[int] = 40
 """Sections reported per changed page. Beyond this the page was rewritten, not edited."""
@@ -103,7 +103,7 @@ def diff_graphs(before: SiteGraph, after: SiteGraph) -> SiteDiff:
         if previous.content_hash and previous.content_hash == page.content_hash:
             result.unchanged += 1
             continue
-        changes = _diff_sections(before.sections_of(key), after.sections_of(key))
+        changes = diff_sections(before.sections_of(key), after.sections_of(key))
         if changes:
             result.changed.append(
                 PageChange(url=page.url, title=page.title, sections=tuple(changes))
@@ -121,10 +121,13 @@ def diff_graphs(before: SiteGraph, after: SiteGraph) -> SiteDiff:
     return result
 
 
-def _diff_sections(
+def diff_sections(
     before: list[Section], after: list[Section]
 ) -> list[SectionChange]:
     """Match sections across crawls by heading, falling back to position.
+
+    Public since the watch (`webgraph.watch`) diffs the same way over sections it cut from
+    a page's content Markdown rather than from a stored graph.
 
     Heading first, because matching on index reports every section below an inserted one as
     changed -- which is how a one-paragraph addition turns into "the whole page changed".

@@ -452,8 +452,109 @@ export interface SiteReport {
   notes: string[];
 }
 
+// ---------------------------------------------------------------------------------------
+// Watch: change monitoring on top of the crawl (`/api/watch`).
+// ---------------------------------------------------------------------------------------
+
+export type ChangeKind = "added" | "removed" | "changed";
+
+export interface SectionChange {
+  kind: "added" | "removed" | "edited";
+  heading: string;
+  before: string;
+  after: string;
+}
+
+export interface WatchChange {
+  id: number;
+  run_id: number;
+  watch_id: string;
+  url: string;
+  kind: ChangeKind;
+  detected_at: number;
+  before_hash: string;
+  after_hash: string;
+  title: string;
+  /** The provenance: which sections, in the page's own words. */
+  sections: SectionChange[];
+}
+
+export interface WatchRun {
+  id: number;
+  watch_id: string;
+  started_at: number;
+  finished_at: number | null;
+  pages_ok: number;
+  pages_failed: number;
+  stopped_by: StoppedBy;
+}
+
+export interface Watch {
+  id: string;
+  root: string;
+  config: Record<string, unknown>;
+  created_at: number;
+  schedule_seconds: number;
+  last_run: WatchRun | null;
+  runs: number;
+  changes: number;
+}
+
+/** First event of a watch run: what it is being compared against. */
+export interface WatchStartEvent {
+  type: "watch";
+  watch_id: string;
+  run_id: number;
+  root: string;
+  baseline: boolean;
+  previous_run: WatchRun | null;
+  previous_pages: number;
+}
+
+/** One page that differed from the previous run, as it is found. */
+export type ChangeEvent = WatchChange & { type: "change" };
+
+/** The crawl's `done` plus the run's own numbers. */
+export type WatchDoneEvent = DoneEvent & {
+  watch_id: string;
+  run_id: number;
+  baseline: boolean;
+  changes: { added: number; removed: number; changed: number };
+  /** Pages whose text differed only in what the noise rules ignore. */
+  suppressed: number;
+  unchanged: number;
+  /** Pages the previous run read that this run never reached. */
+  unverified: number;
+};
+
+export type WatchEvent =
+  | Exclude<SiteEvent, DoneEvent>
+  | WatchStartEvent
+  | ChangeEvent
+  | WatchDoneEvent;
+
+
 export const api = {
   config: () => requestGet<ConfigResponse>("/api/config"),
+
+  watches: () => requestGet<Watch[]>("/api/watch"),
+
+  watch: (id: string) => requestGet<Watch>(`/api/watch/${encodeURIComponent(id)}`),
+
+  createWatch: (input: {
+    url: string;
+    config?: Record<string, unknown>;
+    schedule_seconds?: number;
+  }) => request<Watch>("/api/watch", input),
+
+  watchChanges: (id: string, since?: string) =>
+    requestGet<{ watch: Watch; changes: WatchChange[] }>(
+      `/api/watch/${encodeURIComponent(id)}/changes${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+    ),
+
+  /** The feed's address, for a reader or an Action to subscribe to. */
+  watchFeedUrl: (id: string, format: "rss" | "atom" = "rss") =>
+    `${API_BASE}/api/watch/${encodeURIComponent(id)}/feed.xml${format === "atom" ? "?format=atom" : ""}`,
 
   siteReport: (input: { url: string; pages?: number }) =>
     request<SiteReport>("/api/site/report", input),
@@ -1044,6 +1145,21 @@ async function streamFrames(
     }
   }
 }
+
+/** Run a watch once; the stream is the crawl's events plus `watch`, `change` and `done`. */
+export async function streamWatchRun(
+  id: string,
+  onEvent: (event: WatchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamFrames(
+    `/api/watch/${encodeURIComponent(id)}/run`,
+    {},
+    onEvent as (event: unknown) => void,
+    signal,
+  );
+}
+
 
 export async function streamSite(
   /**
