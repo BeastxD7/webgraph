@@ -46,7 +46,7 @@ export default function SiteHeader() {
   const bar =
     scrolled || open ? "bg-surface border-rule" : floating ? "border-transparent" : "bg-ground border-transparent";
   const pill = floating
-    ? "rounded-pill border border-rule bg-surface/85 shadow-float backdrop-blur-md supports-[backdrop-filter]:bg-surface/75"
+    ? "rounded-pill border border-rule bg-surface/92 shadow-float"
     : "";
 
   return (

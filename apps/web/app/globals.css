@@ -635,8 +635,8 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   padding-inline: 0.75rem;
   border-radius: var(--radius-pill);
   border: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  backdrop-filter: blur(8px);
+  /* No backdrop blur: a blur over a canvas that repaints every frame costs a frame. */
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
   font-size: var(--text-caption);
   font-weight: 600;
   color: var(--ink);
@@ -680,10 +680,6 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
     0 1px 2px rgb(15 26 20 / 0.08),
     0 18px 36px -14px rgb(15 26 20 / 0.35),
     0 40px 60px -30px rgb(15 26 20 / 0.25);
-}
-.example-chip {
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
-  backdrop-filter: blur(6px);
 }
 /* The run card rises above the prompt while an example is hovered or a run starts. */
 .hero-preview {

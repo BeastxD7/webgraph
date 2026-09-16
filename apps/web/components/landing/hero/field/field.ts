@@ -387,7 +387,7 @@ export function mountField({ frame, back, front }: MountOptions): () => void {
     }
     const gl = layer.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, layer.threadBuf);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, threadData, 0, v * 5);
+    gl.bufferData(gl.ARRAY_BUFFER, threadData.subarray(0, v * 5), gl.DYNAMIC_DRAW);
     return v;
   };
 
@@ -452,7 +452,9 @@ export function mountField({ frame, back, front }: MountOptions): () => void {
     const first = isFront ? 0 : sim.frontCount;
     const n = isFront ? sim.frontCount : sim.n - sim.frontCount;
     if (n > 0) {
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, sim.data, first * STRIDE, n * STRIDE);
+      // Re-specified, not patched: a new store each frame, so the upload never waits on the
+      // frame still drawing from the old one.
+      gl.bufferData(gl.ARRAY_BUFFER, sim.data.subarray(first * STRIDE, (first + n) * STRIDE), gl.DYNAMIC_DRAW);
       gl.drawElementsInstanced(gl.TRIANGLES, 24, gl.UNSIGNED_SHORT, 0, n);
     }
 
