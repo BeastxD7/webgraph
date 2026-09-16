@@ -27,7 +27,7 @@ from webgraph.types import Document
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from webgraph.graph.model import SiteGraph
 
-__all__ = ["main"]
+__all__ = ["format_site_report", "main"]
 
 
 def _load_source(url: str, *, render: bool, quiet: bool) -> tuple[str, dict[str, Any], str]:
@@ -168,6 +168,109 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
     else:
         print(analysis.report())
     return 0 if analysis.reachable else 1
+
+
+def _cmd_report(args: argparse.Namespace) -> int:
+    """Site report: what the site shows people, what it shows machines, how ready it is
+    for agents. `--json` is the whole report; the default is a readable summary."""
+    from webgraph.report import build_site_report
+
+    report = build_site_report(args.url, pages=args.pages)
+    if args.json:
+        print(json.dumps(report.as_dict(), indent=2, default=str))
+        return 0 if report.reachable else 1
+    for line in format_site_report(report):
+        print(line)
+    return 0 if report.reachable else 1
+
+
+def format_site_report(report: Any) -> list[str]:
+    """The report as lines for a terminal: the score and its parts, the integrity
+    findings, the pages, the bots, and how it was measured. The suggested files are
+    printed in full at the end so they can be cut out."""
+    lines: list[str] = []
+    rule = "=" * 66
+    lines += [rule, f"SITE REPORT  {report.url}", rule]
+    if not report.reachable:
+        lines += ["", "  NO REPORT: " + (report.refusal or "the root could not be read"), ""]
+        lines.append("  The engine does not disguise itself to get past a refusal; see the message above.")
+        return lines
+    score = report.score
+    lines += ["", f"  AI-READINESS  {score.total}/100" + (
+        f"  (of {score.measured_weight} measured points)" if score.measured_weight < 100 else ""
+    )]
+    for sub in score.subscores:
+        earned = "unmeasured" if sub.score is None else f"{sub.score:>4.1f}/{sub.weight}"
+        lines.append(f"    {earned:>12}  {sub.label}")
+        lines.append(f"                  {sub.evidence}")
+        if sub.recommendation:
+            lines.append(f"                  -> {sub.recommendation}")
+    lines += ["", "  INTEGRITY"]
+    if report.findings:
+        for finding in report.findings:
+            where = f"  ({finding.page})" if finding.page else ""
+            lines.append(f"    [{finding.severity}] {finding.title}{where}")
+            lines.append(f"      {finding.detail}")
+    else:
+        lines.append("    nothing found")
+    lines += ["", "  STACK"]
+    if report.stack:
+        for entry in report.stack:
+            when = f"  released {entry.released.isoformat()}, {entry.age_years:g} years ago" if entry.released else ""
+            version = f" {entry.version}" if entry.version else ""
+            lines.append(f"    {entry.name}{version}{when}")
+    else:
+        lines.append("    none detected")
+    lines += ["", "  PAGES  (static words / rendered words / union; wall; hidden links; dead links; consent)"]
+    for page in report.pages:
+        if page.error:
+            lines.append(f"    {page.requested_url}")
+            lines.append(f"      not read: {page.error}")
+            continue
+        lines.append(
+            f"    {page.requested_url}\n      {page.static_words:,} / {page.rendered_words:,} / "
+            f"{page.union_words:,} words  ({page.static_coverage:.0%} without JavaScript); "
+            f"wall: {page.wall or 'none'}; hidden links: {page.hidden_links} "
+            f"({page.offscreen_links} off-screen, {page.offscreen_external_hosts} foreign hosts); "
+            f"dead links: {page.dead_count}/{page.links_checked}; consent text: {page.consent_share:.0%}"
+        )
+    robots = report.robots
+    lines += ["", f"  ROBOTS.TXT  {'found' if robots.found else 'not found'}"]
+    lines.append("    what the file declares per bot (the engine never fetched as any of them):")
+    for bot in robots.bots:
+        via = {"named": "named", "wildcard": "via *", "none": "not mentioned"}[bot.via]
+        delay = f", crawl-delay {bot.crawl_delay:g}s" if bot.crawl_delay else ""
+        word = {"allowed": "allowed", "partly": "partly restricted", "blocked": "blocked"}[bot.access]
+        paths = ""
+        if bot.content_paths:
+            paths = f"; {len(bot.content_paths)} content paths: " + ", ".join(bot.content_paths[:2])
+        lines.append(f"      {bot.token:<20} {word:<18} {via}{delay}{paths}")
+    llms = report.llms_txt
+    lines += [
+        "",
+        f"  LLMS.TXT  {'found' if llms and llms.found else 'not found'}"
+        + (f"  ({llms.sections} sections, {llms.links} links)" if llms and llms.found else ""),
+        f"    {report.llms_txt_note}",
+    ]
+    how = report.measured
+    lines += [
+        "",
+        "  MEASURED",
+        f"    webgraph {how.engine_version} @ {how.commit}; {how.pages_sampled} pages sampled; "
+        f"{how.request_interval_seconds:g}s between requests; {how.duration_seconds:.0f}s in all",
+        f"    {how.statement}",
+        "",
+        "  SUGGESTED robots.txt",
+        "  " + "-" * 40,
+        *report.suggested_robots_txt.splitlines(),
+        "  " + "-" * 40,
+        "",
+        "  SUGGESTED llms.txt  (optional -- see the note above)",
+        "  " + "-" * 40,
+        *report.suggested_llms_txt.splitlines(),
+        "  " + "-" * 40,
+    ]
+    return lines
 
 
 def _cmd_site(args: argparse.Namespace) -> int:
@@ -515,6 +618,18 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("url", help="site root URL")
     analyze.add_argument("--json", action="store_true", help="emit JSON")
     analyze.set_defaults(func=_cmd_analyze)
+
+    report = subparsers.add_parser(
+        "report",
+        help="site report: what the site shows people, what it shows machines, "
+        "how ready it is for AI agents",
+    )
+    report.add_argument("url", help="site root URL")
+    report.add_argument(
+        "--pages", type=int, default=None, help="pages to sample (default REPORT_PAGES)"
+    )
+    report.add_argument("--json", action="store_true", help="emit the whole report as JSON")
+    report.set_defaults(func=_cmd_report)
 
     site = subparsers.add_parser(
         "site", help="analyse, enumerate and extract an entire site"
