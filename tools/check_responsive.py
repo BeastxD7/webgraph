@@ -87,8 +87,8 @@ SIZES: Final[tuple[tuple[str, int, int], ...]] = (
 # owner and are recorded here rather than silently passed. Remove the entry when they are
 # fixed, and the rule takes over again.
 WAIVED: Final[dict[tuple[str, str], str]] = {
-    ("landing", "pinned"): "story stage is sticky on phones by design (components/landing, PR #105)",
-    ("landing", "text"): "chapter notes are text-caption prose (components/landing, PR #105)",
+    ("landing", "pinned"): "story stage is sticky on phones by design (components/landing, PR #107)",
+    ("landing", "text"): "chapter notes are text-caption prose (components/landing, PR #107)",
 }
 
 PHONE_MAX_WIDTH: Final[int] = 480

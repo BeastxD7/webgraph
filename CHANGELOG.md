@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #NNN) — every route responsive
+### Changed (2026-09-17, PR #107) — every route responsive
 - The owner's brief: the website on every device. Every route now lays out at 320, 390 and
   430 px (phones), 768 and 1024 (tablet portrait and landscape), 1280, 1440 and 1920, and a
   short 1440×640, in both themes, and `tools/check_responsive.py` asserts it in CI
