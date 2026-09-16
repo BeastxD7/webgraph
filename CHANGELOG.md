@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #NN) — WebGraph page: the graph, and the query path lit in real time (behind WEBGRAPH_KG)
+- `/graph?url=` (`apps/web/app/graph/page.tsx`, client components under
+  `components/graph/`): the site, a model panel (presets for Ollama, LM Studio, vLLM,
+  OpenAI, Anthropic, Gemini, Groq, OpenRouter, Together, DeepSeek, Mistral, xAI, or a
+  custom OpenAI-compatible endpoint; the key is typed in the browser, sent only in the
+  body of each request, never stored server-side, and kept in page memory unless the reader
+  ticks "remember in this browser"), a build panel that shows the `estimate` first and
+  streams progress, caps and the final stats, the graph, an ask box, export and Neo4j sync.
+- The graph: sigma 3 (WebGL) + graphology, ForceAtlas2 in a worker for a bounded time;
+  colour by type in a fixed eight-slot categorical order validated for both grounds, size by
+  evidence count; hover and selection dim the rest; clicking a node shows every mention with
+  its quote and `url#xpath`, attributes and relations each with their quote. Phone width
+  falls back to a filterable list; the page never scrolls sideways.
+- The path in real time: a store outside React (`pathStore`) receives each query event and
+  sigma's reducers read it on refresh -- seeds amber, hop edges blue with a 350 ms particle
+  on an overlay canvas, evidence nodes enlarged, answer nodes green with a camera pan;
+  everything else ghosted. Answer sentences carry `[n]` superscripts to a numbered source
+  list; an uncited sentence is rendered flagged.
+- npm: `sigma`, `graphology`, `graphology-layout-forceatlas2`, `@react-sigma/core` (the
+  four the design allows; nothing else). `lib/api.ts` exports `streamFrames` and a
+  `requestJson` so the WebGraph client (`lib/kg.ts`) shares one SSE parser and one failure
+  vocabulary. `/api/health` type gains `webgraph`; when it is false the page says how to
+  turn the flag on.
+- API: `no_model: true` on `POST /api/graph/query` forces the extractive answer even when
+  the server has `WEBGRAPH_LLM_MODEL`; the extractive answer is one quoted sentence per
+  row so the sentence splitter keeps their citations apart.
+- `/products`: the WebGraph card is "Available — preview, behind a flag" with CTAs to
+  `/graph` and the docs; the footer gains WebGraph; `/docs/webgraph` gains "The page".
+- Measured only with the fake provider (no key in the environment; Ollama has no models):
+  the fixture site builds, the path streams and lights, every citation resolves to
+  `url#xpath`, both themes, 1440 px and 400 px, no console errors. Not measured: a real
+  model's answers, or a graph above ~40 nodes in the browser.
+
 ### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
 - **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
   model reads every heading-scoped section and states what it says -- entities of twelve

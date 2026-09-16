@@ -17,6 +17,9 @@ export type Product = {
   readonly id: string;
   readonly name: string;
   readonly availability: Availability;
+  /** Qualifies an "available" chip -- "preview, behind a flag" -- and is left off when the
+   *  plain word is the whole truth. */
+  readonly note?: string;
   /** Paragraphs. Inline code is written between backticks and rendered as such. */
   readonly body: readonly string[];
   readonly ctas: readonly Cta[];
@@ -49,16 +52,23 @@ export const PRODUCTS: readonly Product[] = [
   {
     id: "webgraph",
     name: "WebGraph",
-    availability: "coming",
+    availability: "available",
+    note: "preview, behind a flag",
     body: [
-      "An LLM reads every extracted page and builds a knowledge graph of the site — entities " +
+      "A model reads every extracted page and builds a knowledge graph of the site — entities " +
         "(organisations, people, courses, dates, prices, documents) and the relationships " +
-        "between them — stored in a graph database, every node and edge citing the page and " +
-        "block it came from.",
-      "Ask the site a question and get a cited answer; export the graph to your own tools. " +
-        "Bring your own model key or run a local model.",
+        "between them — in SQLite per site, with an export and a sync to Neo4j. Nothing enters " +
+        "the graph without a verbatim quote from the page that states it, and every node and " +
+        "edge cites the page and block it came from.",
+      "Ask the site a question and get an answer whose every sentence cites a quote, while the " +
+        "path the question took lights up on the graph. Bring your own key (OpenAI-compatible, " +
+        "Anthropic, Gemini) or run a local model. Off by default: start the API with " +
+        "`WEBGRAPH_KG=1`.",
     ],
-    ctas: [NOTIFY("WebGraph")],
+    ctas: [
+      { label: "Open WebGraph", href: "/graph" },
+      { label: "Read the docs", href: `${DOCS}/webgraph` as Route },
+    ],
   },
   {
     id: "site-truth-report",
