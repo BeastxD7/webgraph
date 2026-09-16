@@ -403,8 +403,9 @@
    7. Landing: ground, stage and motion
    Everything here is enhancement. Without JavaScript the page is complete:
    `main[data-motion]` is stamped by components/landing/Motion.tsx, and it is
-   the only selector that ever hides a [data-reveal] element. The stage's
-   scroll state arrives as --story-heat on .story-stage and data-chapter on the section.
+   the only selector that ever hides a [data-reveal] element. The "how it
+   reads a page" panel and its scene have their own sheet, imported by the
+   component: components/landing/how/how.css.
    --------------------------------------------------------------------------- */
 
 /* The ground: a gradient field in the ink-green family, a ruled grid, grain. */
@@ -476,39 +477,6 @@
   100% { transform: translate3d(3%, -3%, 0) scale(0.96); }
 }
 
-/* The field behind the stage travels with it (it is sticky): a green field, and a warmer
-   one the stage fades in through --story-heat while the pain chapter is on screen. */
-.story-stage { isolation: isolate; }
-.story-stage::before,
-.story-stage::after {
-  content: "";
-  position: absolute;
-  inset: -12% -18%;
-  z-index: -1;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.story-stage::before {
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%);
-  animation: bd-drift 46s ease-in-out infinite alternate;
-  will-change: transform;
-}
-.story-stage::after {
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--bad) 22%, transparent), transparent 72%);
-  opacity: var(--story-heat, 0);
-  transition: opacity 500ms var(--ease);
-}
-
-/* The stage: once the canvas draws, the server-rendered still steps aside. */
-.story-stage[data-stage] svg { display: none; }
-.story-stage canvas { display: block; }
-
-/* The chapter label of the panel on stage turns accent. */
-[data-story][data-chapter="1"] [data-panel="1"] .story-label,
-[data-story][data-chapter="2"] [data-panel="2"] .story-label,
-[data-story][data-chapter="3"] [data-panel="3"] .story-label { color: var(--accent-ink); }
-.story-label { transition: color var(--dur-base) var(--ease); }
-
 /* Reveals: hidden only once Motion has mounted (and never under reduced motion). */
 main[data-motion] [data-reveal]:not([data-in]) {
   opacity: 0;
@@ -541,8 +509,7 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 .landing a.bg-ink, .landing button.bg-ink { transition-property: color, background-color, opacity, border-color, transform; }
 
 @media (prefers-reduced-motion: reduce) {
-  .bd-blob, .story-stage::before { animation: none; }
-  .story-stage::after { transition: none; }
+  .bd-blob { animation: none; }
 }
 
 /* ---------------------------------------------------------------------------

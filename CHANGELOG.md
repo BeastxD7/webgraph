@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #TBD) — landing: how it reads a page, as one panel
+- Chapters 01–03 of the landing (the pain, the turn, the result) were a sticky Canvas-2D
+  stage the copy scrolled past; the owner's verdict was that the illustrations and their
+  animations were not good. Replaced, after the way LlamaIndex and landing.ai do it, by one
+  framed panel (`components/landing/Story.tsx`): the three steps as an accordion on the
+  left -- Fetch twice · Refuse the walls, drop the hidden · Reading order, then Markdown --
+  and on the right an isometric illustration that changes with the open step
+  (`how/Scene.tsx`, inline SVG rendered on the server; `how/iso.ts` is the 30° projection).
+  One page stands on a ruled floor with a cast shadow; step one adds the plain and the
+  rendered fetch as two sheets with their real word counts (react.dev/learn: static 2,108 ·
+  rendered 2,195 · union 2,198) and dotted paths that draw themselves; step two peels the
+  page into labelled layers -- Heading / Paragraph / Table / Code in ink, and in oxide red
+  the cookie banner, the login modal, the off-screen links and the display:none block,
+  which lift off and dissolve, with the refusal tagged in the engine's words; step three
+  draws the XY-cuts, numbers the blocks in reading order, slides out the Markdown with the
+  same numbers and `reading_order: geometric_xy_cut`, and stands the Site Truth Report
+  beside it. Springs are overshoot curves in CSS; the pieces rise in with a stagger when the
+  panel scrolls into view, switching steps cross-morphs (the page stays, the rest
+  re-sorts), the layers parallax a few pixels with the pointer on a damped spring
+  (`how/HowMotion.tsx`, which also keeps one step open, advances them every 6.5 s until
+  touched, and does nothing under reduced motion). Without JavaScript the accordion is the
+  browser's own and the scene stands complete at step one. `how/how.css` holds the sheet.
+- Below the panel, three cards with pieces of the real output where the old chapter copy
+  had prose: word recall 1.000 on sqlite.org/lang.html (was 0.749) with the bar filling;
+  three refusals stamped in as `resolve.py` words them (login redirect, HTTP 503,
+  robots.txt); three `url#xpath` anchors from docs.python.org/3/tutorial/ with their quotes,
+  typed in. Headline "Reads the page the way a *person* does." -- Manrope with one Instrument
+  Serif italic word -- over a pill eyebrow.
+- Removed: `Stage.tsx`, `StoryStill.tsx`, `scene/scene.ts` and the `.story-stage` /
+  `--story-heat` / `data-chapter` rules in `globals.css` §7. Hero untouched. Landing client
+  JS 14.6 KB / 5.9 KB gz in total (Motion, the prompt and HowMotion together), the panel's
+  sheet 10.6 KB / 2.8 KB gz; frame times while assembling, switching with the pointer moving
+  and idle: p50 16.7 / p95 17.7 / max 17.8 ms at DPR 2 on an M2, production build.
+
 ### Changed (2026-09-17, PR #104) — hero: the Earth from orbit at sunrise
 - The landing opens on the Earth, from orbit, at sunrise -- the owner's brief: websites are
   worldwide, so a universe with the Earth, and HD, realistic. The frame is always dark (space
