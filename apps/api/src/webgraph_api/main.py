@@ -34,6 +34,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from webgraph import config as engine_config
 from webgraph.content import select_content
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
@@ -48,6 +49,7 @@ from webgraph.graph.store import GraphStore
 from webgraph.page import stream_page
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
+from webgraph.report import build_site_report
 from webgraph.resolve import (
     PageBlockedError,
     PageMissingError,
@@ -391,6 +393,21 @@ class SiteRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class SiteReportRequest(BaseModel):
+    url: str = Field(description="Site root URL")
+    pages: int | None = Field(
+        default=None,
+        ge=1,
+        le=engine_config.REPORT_MAX_PAGES,
+        description="Pages to sample: the root, then the first internal links it offers, "
+        "one per path section where it links to several. Defaults to `REPORT_PAGES`.",
+    )
+    fetch: FetchOptions | None = None
+    render_options: RenderOptions | None = Field(default=None, alias="renderOptions")
+
+    model_config = {"populate_by_name": True}
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok"]
     render_available: bool
@@ -552,6 +569,34 @@ async def _resolve(request: TextRequest | ExtractRequest) -> ResolvedPage:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=f"could not fetch page: {exc}") from exc
+
+
+@app.post("/api/site/report")
+async def site_report(request: SiteReportRequest) -> JSONResponse:
+    """The site report: what the site shows people, what it shows machines, and how ready
+    it is for AI agents (`webgraph.report.build_site_report`).
+
+    Runs in a worker thread under one render slot for its whole duration -- it renders up
+    to `pages` pages, one after another, and one slot is the honest cost of that. A root
+    the engine refuses (walled, disallowed for this client, missing) is not an HTTP error:
+    the report comes back with `reachable: false`, the engine's refusal in `refusal`, and
+    no score, because "this site could not be measured, and here is why" is the result.
+    Every request the report makes identifies itself as webgraph and is spaced a second
+    apart per host; nothing is fetched as another bot.
+    """
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=422, detail="url must be http or https")
+    fetch_config = _applied(FetchConfig(), request.fetch)
+    render_config = _applied(RenderConfig(), request.render_options)
+    async with _render_slots:
+        report = await asyncio.to_thread(
+            build_site_report,
+            request.url,
+            pages=request.pages,
+            fetch_config=fetch_config,
+            render_config=render_config,
+        )
+    return JSONResponse(content=json.loads(json.dumps(report.as_dict(), default=str)))
 
 
 @app.get("/api/health", response_model=HealthResponse)

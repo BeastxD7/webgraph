@@ -42,6 +42,7 @@ __all__ = [
     "extract_links",
     "group_for_client",
     "load_robots",
+    "parse_groups",
     "policy_from",
 ]
 
@@ -70,13 +71,13 @@ class RobotsGroup:
         return next((a for a in self.agents if token in a), None) or "*"
 
 
-def group_for_client(robots: str) -> RobotsGroup | None:
-    """The group of `robots` that governs this client, read the way `urllib.robotparser`
-    reads it: the group naming the client first, `*` otherwise, None when neither exists.
+def parse_groups(robots: str) -> tuple[RobotsGroup, ...]:
+    """Every `User-agent:` group of a robots.txt, in file order, comments stripped.
 
-    One parser for two readers. `fetch.robots.rule_that_applied` quotes the rule that
-    refused a page and the crawl's discovery report lists the rules that apply; both
-    used to be, or would have been, a second copy of this loop.
+    One parser for three readers. `group_for_client` picks the group that governs this
+    client; `fetch.robots.rule_that_applied` quotes the rule that refused a page; the site
+    report (`report.bots`) reads what the file declares for each well-known AI and search
+    bot. Each used to be, or would have been, a second copy of this loop.
     """
     groups: list[RobotsGroup] = []
     agents: list[str] = []
@@ -104,7 +105,13 @@ def group_for_client(robots: str) -> RobotsGroup | None:
         elif key == "crawl-delay":
             lines.append(line)
     flush()
+    return tuple(groups)
 
+
+def group_for_client(robots: str) -> RobotsGroup | None:
+    """The group of `robots` that governs this client, read the way `urllib.robotparser`
+    reads it: the group naming the client first, `*` otherwise, None when neither exists."""
+    groups = parse_groups(robots)
     token = ROBOTS_AGENT_TOKEN.lower()
     chosen = next((g for g in groups if any(token in a for a in g.agents)), None)
     if chosen is None:

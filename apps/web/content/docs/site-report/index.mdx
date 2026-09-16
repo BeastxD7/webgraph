@@ -1,0 +1,141 @@
+---
+title: Site report
+description: What a site shows people, what it shows machines, and how ready it is for AI agents -- every number from a measurement the engine already makes, the score's composition, the no-impersonation policy, and the limits.
+---
+
+A site report is a check anyone can run on any website: is it readable by an agent that
+does not run JavaScript? What does its `robots.txt` say about each well-known AI and search
+bot? Is anything hidden from readers that is shown to machines -- off-screen links, the
+shape of an SEO-spam injection? Are there walls, dead links, an old CMS? It ends with a
+suggested `robots.txt` and `llms.txt`. Run it at [/report](/report), with
+`webgraph report <url>`, or `POST /api/site/report`.
+
+Everything in it comes from a measurement the engine already makes when it reads a page
+(`packages/engine/src/webgraph/report/`). Nothing is scored by opinion, and nothing is
+fetched under another bot's name.
+
+## What is measured
+
+The root is probed the way every crawl starts (`analyze.probe_site`): fetched plainly and
+in a real browser, its technologies fingerprinted, its `robots.txt` read, its sitemaps
+tried. Up to `REPORT_PAGES` (5) pages are then sampled -- the root, then the first
+internal links it offers, one per path section where it links to several -- and each is
+resolved both ways (`resolve.resolve_page`). For every page:
+
+| measurement | source |
+|---|---|
+| words in the plain HTML, words after the browser ran the page, and their union; the share the plain fetch holds | `ResolvedPage.static_words / rendered_words / union_words / static_coverage` -- the "228 readable characters out of 19,000 bytes" number, in words |
+| which side was served a wall instead of the page | `ResolvedPage.render_error` / `static_error` |
+| words a reader cannot see, by how they are hidden: `display: none`, `visibility: hidden`, a box parked at negative page coordinates | the renderer's `data-wg-hidden` marks (`fetch/js/collect.js`); on a page the browser never measured, an inline style at -999px or beyond (`dom.rich.styled_off_the_page`) |
+| links inside hidden elements, grouped by host; of those, the ones parked off the page and the foreign hosts they point at | the same marks, hosts compared by registrable domain (`report.vtu.ac.in` is `vtu.ac.in`'s own) |
+| cookie-consent words as a share of the page | blocks the parser marked `widget: consent` |
+| dead internal links | `HEAD` (a `GET` when `HEAD` is refused) of up to `REPORT_DEAD_LINK_CHECKS_PER_PAGE` (30) internal links, each address once per report, status ≥ 400 |
+| title, description, canonical, `lang`, JSON-LD / microdata | the document's own declarations (`Document.structured_data`) |
+
+The site-level measurements: the technology stack with versions, dated when the version's
+branch is in the report's release table (WordPress 4.0-7.1, Drupal 7-11, Joomla 3-6,
+Next.js 13-16, each date verified against the project's own release record on 16 Sep 2026;
+anything else is reported as a version and nothing more); `robots.txt`, `Sitemap:` lines
+and the sitemap walk's attempts; `/llms.txt` and `/llms-full.txt`, counted as found only
+when the body is plain text starting with an H1 -- a catch-all site answers `/llms.txt`
+with its HTML 404 page and status 200.
+
+## What robots.txt declares per bot
+
+The engine never impersonates another bot. Fetching as `GPTBot` or `Googlebot` would ask a
+site to apply a policy it did not set for this client, and the answer would measure the
+disguise rather than the site. What can be measured honestly is the file: for each of
+fifteen well-known bots -- GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-Web,
+anthropic-ai, PerplexityBot, Google-Extended, Googlebot, Bingbot, CCBot, Applebot-Extended,
+meta-externalagent, Bytespider, Amazonbot -- the report reads the site's `robots.txt` the
+way that bot would (RFC 9309): the groups whose `User-agent:` equals the bot's token,
+case-insensitively, combined; the `*` group when none names it; nothing when there is no
+file. `Googlebot-Image` in the file does not govern Googlebot.
+
+The verdict is read at the root by the same longest-match rule the crawl's own refusals
+use: **blocked** when `/` is disallowed, **restricted** when some paths are, **allowed**
+otherwise -- with `via` saying whether the bot was named or fell under `*`, the count of
+`Disallow` lines that decide something, any `Crawl-delay`, and the lines verbatim. Every
+one of the report's own requests identifies itself as webgraph and obeys the file like
+every other fetch the engine makes; it is spaced `REPORT_REQUEST_INTERVAL_SECONDS` (1 s)
+apart per host.
+
+## The score
+
+An AI-readiness score out of 100 is the weighted sum of eight sub-scores, each from one
+measurement, each carrying its evidence and -- when short of full marks -- a
+recommendation in plain words ("`/pricing` has 41 words without JavaScript and 1,312 with
+it; agents that do not run JavaScript see 3% of it. Server-render or pre-render the main
+content."). A sub-score that could not be measured (rendering unavailable, no link
+checked) is left out and the total is rescaled to the weight that was measured;
+`score.measured_weight` says how much that was.
+
+| sub-score | weight | how it is scored |
+|---|---:|---|
+| Readable without JavaScript | 25 | mean static coverage over the pages whose render ran |
+| robots.txt does not block AI bots wholesale | 20 | share of the fifteen bots not blocked at the root. A measure of reach, not virtue: blocking training crawlers is a legitimate choice and the report never recommends against it |
+| No walls to identified crawlers | 15 | share of sampled pages served to both the plain fetch and the browser |
+| Sitemap exists and lists the sampled pages | 10 | 6 for a sitemap that parses, 4 × the share of sampled pages it lists |
+| Structured data and page metadata | 10 | 6 × pages with JSON-LD or microdata, 4 × presence of title, description and `lang` |
+| No hidden or injected content | 10 | 0 when a page links to `REPORT_SPAM_MIN_HOSTS` (5) or more foreign hosts from elements parked off the page; 5 for fewer; 10 for none. Hidden dropdowns are not penalised |
+| llms.txt present | 5 | present or not. Five points because the file is close to worthless in practice: Ahrefs' June 2026 log study of 137,000 domains found 97% of `llms.txt` files received no requests, and Google says it does not read them |
+| Internal links answer | 5 | 5 × (1 − dead ÷ checked) |
+
+## Integrity
+
+A separate section, because an injected link block is not a matter of degree. **"Likely
+SEO-spam injection"** is said only when at least `REPORT_SPAM_MIN_HOSTS` distinct foreign
+hosts are linked from elements parked where no reader can scroll on one page; below that
+the links are reported as off-screen links to other hosts for the owner to read. A hidden
+`display: none` menu -- vtu.ac.in's dropdowns link to 187 affiliated colleges -- is not a
+verdict; its 174 links to 170 foreign hosts positioned twenty trillion pixels off the left
+edge are. Walls, pages that could not be read, and a CMS branch older than
+`REPORT_STACK_OLD_YEARS` (3) years are the other findings.
+
+## Suggested files
+
+The suggested `robots.txt` keeps the site's existing file byte for byte and appends a block
+in which every line is a comment: pasting it back changes nothing until the owner
+uncomments one of two variants -- allow every well-known bot, or allow the search and
+assistant bots and disallow the training crawlers. Neither is a recommendation.
+
+The `llms.txt` draft follows llmstxt.org -- an H1 with the site's name, a blockquote
+summary, H2 sections of `- [title](url): description` -- built from the sampled pages'
+own titles and descriptions. It is marked optional wherever it is offered, for the reason
+in the score table.
+
+## Refusals
+
+A root that is walled, disallowed for this client by `robots.txt`, missing or unreachable
+ends the report: `reachable: false`, the engine's own refusal in `refusal`, no score and no
+pages. The engine does not disguise itself to get past a refusal. A sampled page that
+cannot be read is a row with the refusal, not an abort.
+
+## Limits
+
+- Five pages are a sample, chosen from the root's own links. A site whose problems are
+  deeper than one click from the root will not show them here.
+- The sitemap is read up to 2,000 URLs; a page not in that part is reported as unknown, not
+  absent.
+- Dead-link checks are capped per page and spaced a second apart, so a report takes one to
+  three minutes; a link `robots.txt` disallows for this client is not checked.
+- The stack's age is known only for the versions in the release table above.
+- The bots table is what the file declares. Whether a CDN or a WAF serves those bots
+  something else is not measured, because measuring it would mean impersonating them.
+- The `purpose` recorded for each bot (search, assistant, training) is what its operator
+  documents today, and will need correcting as that changes.
+
+## API and CLI
+
+```bash
+webgraph report https://example.com/ --pages 5          # a readable summary
+webgraph report https://example.com/ --json             # the whole report
+curl -s -X POST localhost:8000/api/site/report \
+  -H 'content-type: application/json' -d '{"url":"https://example.com/","pages":5}'
+```
+
+The JSON carries `score.subscores[]` (key, weight, score, evidence, recommendation,
+source), `findings[]` (severity, kind, title, detail, page), `pages[]`, `robots.bots[]`,
+`stack[]`, `suggested_robots_txt`, `suggested_llms_txt`, and `measured` -- the engine
+version and commit, the User-Agent used, pages sampled, the request interval, the duration,
+and the statement that nothing was fetched as another bot.

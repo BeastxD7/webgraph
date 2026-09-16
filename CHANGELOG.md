@@ -6,6 +6,59 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #95) — Site Report
+- `webgraph report <url> [--pages N] [--json]`, `POST /api/site/report` and `/report` in
+  the web app: what a site shows people, what it shows machines, and how ready it is for
+  AI agents, from the measurements the engine already makes. For the root and up to four
+  more pages (one per path section the root links to), each fetched plainly and in a real
+  browser: words without JavaScript against words with it (`ResolvedPage` now carries
+  `static_words / rendered_words / union_words` beside the character counts, and
+  `static_error` says why the plain fetch gave nothing -- an HTTP error, a wall left out);
+  which side was walled; words and links a reader cannot see, by kind, with links parked
+  off the page and the foreign hosts they point at counted apart from `display: none`
+  dropdowns; consent words; dead internal links (HEAD, 30 per page, each address once per
+  report); title, description, canonical, `lang`, JSON-LD / microdata. Site-wide: the
+  stack with versions dated against a verified release table (WordPress 4.0-7.1, Drupal
+  7-11, Joomla 3-6, Next.js 13-16), `robots.txt`, sitemaps, `/llms.txt`.
+- **What robots.txt declares per bot.** The engine never fetches as another bot. For
+  fifteen well-known AI and search bots (GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot,
+  Claude-Web, anthropic-ai, PerplexityBot, Google-Extended, Googlebot, Bingbot, CCBot,
+  Applebot-Extended, meta-externalagent, Bytespider, Amazonbot) the report reads the site's
+  file as that bot would (RFC 9309: the groups naming it, combined; `*` otherwise) and
+  says allowed / restricted / blocked at the root, how many `Disallow` lines decide
+  something, any `Crawl-delay`, and the lines verbatim. `crawl.discovery.parse_groups` is
+  the one robots.txt group parser, shared with `group_for_client`.
+- **An AI-readiness score out of 100** from eight documented sub-scores -- readable
+  without JavaScript 25, robots does not block AI bots wholesale 20, no walls 15, sitemap
+  10, structured data and metadata 10, no hidden or injected content 10, llms.txt 5, dead
+  links 5 -- each with its evidence and a recommendation in plain words; an unmeasured
+  part is left out and the total rescaled to the measured weight. llms.txt's five points
+  and its "optional" label cite the reason: 97% of such files get no requests (Ahrefs,
+  June 2026). The robots sub-score says it measures reach, not virtue, and never
+  recommends blocking.
+- **Integrity**: "Likely SEO-spam injection" only when `REPORT_SPAM_MIN_HOSTS` (5) or more
+  foreign hosts are linked from elements parked off the page on one page -- vtu.ac.in: 174
+  off-screen links to 170 foreign hosts on every sampled page, beside 187 legitimate
+  affiliated-college hosts in its hidden dropdowns, which are not a verdict; an outdated
+  CMS (WordPress 5.1.1, released 2019-02-21, 7.6 years); walls; unreadable pages. One
+  finding per kind across the sampled pages.
+- **Suggested files**: a `robots.txt` that keeps the site's existing file byte for byte
+  and appends only comments -- two variants, allow all or allow search/assistant bots and
+  disallow training crawlers, the owner's choice -- and an `llms.txt` draft per
+  llmstxt.org from the sampled titles and descriptions, marked optional.
+- A walled or disallowed root ends the report with the engine's own refusal and no score.
+  Every request identifies itself as webgraph, obeys robots.txt and is spaced
+  `REPORT_REQUEST_INTERVAL_SECONDS` (1 s) apart per host; the report's footer says so,
+  with the engine version and commit, pages sampled and duration.
+- Web: `/report?url=…` and `/report/<domain>`; "Report" in the nav; the `/products` Site
+  Truth Report card is now available with a "Run a report" CTA. Docs:
+  `/docs/site-report`. Config: `REPORT_PAGES`, `REPORT_MAX_PAGES`,
+  `REPORT_REQUEST_INTERVAL_SECONDS`, `REPORT_DEAD_LINK_CHECKS_PER_PAGE`,
+  `REPORT_SPAM_MIN_HOSTS`, `REPORT_STACK_OLD_YEARS`.
+- Measured on five live sites (2026-09-16): vtu.ac.in 74/100 (injection + WordPress
+  5.1.1), sode-edu.in 74, vercel.com 90, docs.python.org 83, gov.uk 81; the numbers and
+  their evidence are in the pull request. Extraction is untouched.
+
 ### Changed (2026-09-16, PR #93) — landing page, products page, design tokens
 - The landing page is rebuilt from the design spec. The hero photograph, its glass prompt,
   its CC BY credit and the light-only commitment are gone; the page is the ground colour,
