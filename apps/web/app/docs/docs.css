@@ -109,6 +109,19 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* A wide table in a narrow column: at 100% width the browser squeezes every cell to a
+     word a line, and the request-options tables on /docs/api/text stood 1,900px tall on a
+     phone. Below 1024px a table takes the width its content asks for, capped at 56rem so
+     long cells still wrap, and scrolls sideways inside the wrapper Fumadocs already gives
+     it. */
+  @media (max-width: 64rem) {
+    .prose table {
+      width: max-content;
+      min-width: 100%;
+      max-width: 56rem;
+    }
+  }
+
   .prose code,
   .prose pre {
     font-family: var(--font-mono);

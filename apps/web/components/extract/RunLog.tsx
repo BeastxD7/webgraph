@@ -60,7 +60,7 @@ export default function RunLog({ log, meta }: { log: Log; meta: RunMeta }) {
 
       {open && (
         <div className="border-t border-line bg-haze px-4 py-3">
-          <p className="text-[12.5px] text-ink-soft">
+          <p className="text-small text-ink-soft">
             Every frame this run received, in arrival order, with extracted content replaced
             by its size. The copy includes the header and all{" "}
             {log.count.toLocaleString("en-US")}; the preview below is the last 40.

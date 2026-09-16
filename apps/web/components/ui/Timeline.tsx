@@ -81,7 +81,7 @@ export default function Timeline({
               setToggled({});
               setAll(anyClosed ? "open" : "closed");
             }}
-            className="text-[11.5px] font-semibold text-ink-faint hover:text-ink"
+            className="text-caption font-semibold text-ink-faint hover:text-ink pointer-coarse:min-h-10"
           >
             {anyClosed ? "Show all details" : "Hide all details"}
           </button>
@@ -132,7 +132,7 @@ export default function Timeline({
                     ▶
                   </span>
                 )}
-                <h3 className="text-[13.5px] font-bold">{step.title}</h3>
+                <h3 className="text-small font-bold">{step.title}</h3>
                 {BADGE[step.state] && (
                   <span
                     className={`rounded-full px-2 py-0.5 font-mono text-[10.5px] font-semibold ${
@@ -156,7 +156,7 @@ export default function Timeline({
                 )}
               </button>
               {open && step.description && (
-                <p className="mt-1 max-w-[62ch] text-[12.5px] leading-relaxed text-ink-faint">
+                <p className="mt-1 max-w-[62ch] text-caption leading-relaxed text-ink-faint max-sm:text-small">
                   {step.description}
                 </p>
               )}

@@ -26,7 +26,7 @@ export default function WatchPage() {
         <WatchPanel />
       </div>
 
-      <p className="mt-8 max-w-prose text-caption text-muted">
+      <p className="mt-8 max-w-prose text-caption text-muted max-sm:text-small">
         Nothing here runs on a schedule by itself. <code>webgraph watch run &lt;id&gt;</code>{" "}
         or <code>POST /api/watch/&#123;id&#125;/run</code> is what a cron entry or a GitHub
         Action calls; the repository ships an example workflow.

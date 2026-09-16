@@ -16,7 +16,7 @@ export default function SettingsPage() {
           <h1 className="mt-2 font-display text-[2rem] leading-tight tracking-tight">
             How your runs behave
           </h1>
-          <p className="mt-3 max-w-[62ch] text-[14px] leading-relaxed text-ink-soft">
+          <p className="mt-3 max-w-[62ch] text-small leading-relaxed text-ink-soft">
             Every default comes from <code className="rounded bg-sunk px-1 py-0.5 font-mono text-[12.5px]">webgraph/config.py</code>.
             Change a value here and it is sent with every run from this browser; clear it and
             the file&rsquo;s value applies again. Settings the API does not let a request change

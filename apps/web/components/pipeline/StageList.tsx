@@ -51,8 +51,8 @@ export default function StageList() {
               <ul className="mt-5 flex flex-col gap-3 border-l-2 border-leaf-300 pl-4">
                 {stage.rescues.map((rescue) => (
                   <li key={rescue.what} className="max-w-[62ch]">
-                    <span className="text-[14px] font-bold">{rescue.what}</span>
-                    <span className="block text-[13.5px] leading-relaxed text-ink-soft">
+                    <span className="text-small font-bold">{rescue.what}</span>
+                    <span className="block text-small leading-relaxed text-ink-soft">
                       {rescue.why}
                     </span>
                   </li>
@@ -61,7 +61,7 @@ export default function StageList() {
             ) : null}
 
             {stage.note ? (
-              <p className="mt-5 max-w-[62ch] rounded-xl border border-line bg-surface px-4 py-3 text-[13.5px] leading-relaxed text-ink-soft shadow-card">
+              <p className="mt-5 max-w-[62ch] rounded-xl border border-line bg-surface px-4 py-3 text-small leading-relaxed text-ink-soft shadow-card">
                 {stage.note}
               </p>
             ) : null}
@@ -77,8 +77,8 @@ export default function StageList() {
                       key={failure.when}
                       className="grid gap-x-5 gap-y-0.5 sm:grid-cols-[minmax(0,11rem)_1fr]"
                     >
-                      <dt className="text-[13.5px] font-bold">{failure.when}</dt>
-                      <dd className="max-w-[56ch] text-[13.5px] leading-relaxed text-ink-soft">
+                      <dt className="text-small font-bold">{failure.when}</dt>
+                      <dd className="max-w-[56ch] text-small leading-relaxed text-ink-soft">
                         {failure.then}
                       </dd>
                     </div>

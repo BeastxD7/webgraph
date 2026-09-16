@@ -70,7 +70,7 @@ export default async function ReportPage({
       )}
 
       {!normalized && (
-        <p className="mt-8 max-w-prose text-caption text-muted">
+        <p className="mt-8 max-w-prose text-caption text-muted max-sm:text-small">
           The engine never impersonates other bots: every request identifies itself as webgraph
           and obeys robots.txt. The bots table is what the site&apos;s file declares for each
           name, not what that bot would be served.

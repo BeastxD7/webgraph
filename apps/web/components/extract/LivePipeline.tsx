@@ -71,8 +71,8 @@ function seconds(timing: PhaseTiming | undefined, now: number): string {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-line-soft py-1 last:border-b-0">
-      <dt className="shrink-0 text-[12px] text-ink-faint">{label}</dt>
-      <dd className="tabular truncate text-right font-mono text-[12px] text-ink-soft">{value}</dd>
+      <dt className="shrink-0 text-caption text-ink-faint">{label}</dt>
+      <dd className="tabular min-w-0 break-words text-right font-mono text-caption text-ink-soft">{value}</dd>
     </div>
   );
 }

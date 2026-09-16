@@ -120,7 +120,7 @@ export default function ColumnGap() {
         </span>
       </div>
 
-      <figcaption className="mt-4 text-[12.5px] leading-relaxed text-ink-faint">
+      <figcaption className="mt-4 text-caption leading-relaxed text-ink-faint max-sm:text-small">
         Equations started the day at 0.307 and half the gap was currency: an unescaped dollar
         amount reads as a maths delimiter, so two prices in one paragraph scored as a formula
         wrapping the prose between them. The rest was MathML, which the engine deleted before
