@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { hostOf } from "@/lib/country";
 import { normalizeInput } from "@/lib/url";
 
 import RunCard from "./RunCard";
@@ -25,10 +26,11 @@ const EXAMPLES: readonly string[] = ["vtu.ac.in", "docs.python.org", "gov.uk/bro
  * Submitting normalises the address (`lib/url`) and routes it: a page or a site to
  * `/extract`, a report to `/report`.
  *
- * In the hero (`scene`) it also drives the field: while an example is hovered, or once Run
- * is pressed, the frame's `data-hero-state` becomes `preview`/`running`, the pages organise
- * into reading order, and the run card rises above the prompt as what the address becomes.
- * Focusing the field alone tidies the pages a little (`focus`).
+ * In the hero (`scene`) it also drives the Earth: the frame's `data-hero-host` is the host
+ * typed or hovered, and the planet turns to its country; `data-hero-state` becomes
+ * `preview` while an example is hovered (the run card rises above the prompt as what the
+ * address becomes) and `running` once Run is pressed, when the camera pushes in for 620 ms
+ * before the app navigates.
  */
 export default function SitePrompt({ id, scene = false }: { id?: string; scene?: boolean }) {
   const router = useRouter();
@@ -54,6 +56,13 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
   );
   const state = running ? "running" : preview ? "preview" : focused ? "focus" : "idle";
   useEffect(() => setState(state), [state, setState]);
+  // The host the scene should turn to: the example under the pointer, else what is typed.
+  const sceneHost = preview ?? hostOf(value) ?? "";
+  useEffect(() => {
+    if (!scene) return;
+    const frame = box.current?.closest<HTMLElement>("[data-hero-frame]");
+    if (frame) frame.dataset.heroHost = sceneHost;
+  }, [scene, sceneHost]);
 
   const submit = useCallback(() => {
     const normalized = normalizeInput(value);
@@ -63,13 +72,18 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
     }
     setError(null);
     setRunning(true);
-    if (mode === "report") {
-      router.push(`/report?url=${encodeURIComponent(normalized.url)}`);
-      return;
-    }
-    const params = new URLSearchParams({ url: normalized.url, mode, complete: "true" });
-    router.push(`/extract?${params.toString()}`);
-  }, [value, mode, router]);
+    const go = () => {
+      if (mode === "report") {
+        router.push(`/report?url=${encodeURIComponent(normalized.url)}`);
+        return;
+      }
+      const params = new URLSearchParams({ url: normalized.url, mode, complete: "true" });
+      router.push(`/extract?${params.toString()}`);
+    };
+    // In the scene the camera pushes in toward the site first; the run follows it.
+    if (scene && !matchMedia("(prefers-reduced-motion: reduce)").matches) window.setTimeout(go, 620);
+    else go();
+  }, [value, mode, router, scene]);
 
   const current = MODES.find((m) => m.id === mode) ?? MODES[1]!;
   const shownHost = preview ?? (value.trim() ? normalizeHost(value) : null);
