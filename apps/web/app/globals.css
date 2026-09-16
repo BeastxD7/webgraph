@@ -1,127 +1,394 @@
 @import "tailwindcss";
 
-/* ---------------------------------------------------------------------------
-   Design tokens
+/* ===========================================================================
+   webgraph design tokens
    ---------------------------------------------------------------------------
-   The palette is sampled from the hero photograph -- deep field green, hazy
-   sky, warm earth -- so type and chrome sit inside the image's world rather
-   than on top of it.
+   Drop-in replacement for the token half of apps/web/app/globals.css.
 
-   The page commits to a single light treatment on purpose: the hero is a
-   photograph with a bright sky, and a dark variant would either lose the
-   photograph or invert its meaning. Every colour below is stated explicitly so
-   the page never borrows a host background.
+   Structure, and why:
+     1. Raw values live on :root (light), then two dark blocks -- system dark,
+        and an explicit data-theme="dark" that wins over the system setting.
+        Tailwind 4's @theme block cannot hold a media query, so themed values
+        cannot be declared there directly.
+     2. `@theme inline` maps the raw values onto Tailwind's namespaces
+        (--color-*, --font-*, --radius-*, --shadow-*). `inline` makes each
+        utility reference var(--x) at use time, so `bg-surface` follows the
+        theme instead of freezing the light value at build time.
+   Utilities keep their existing names (bg-surface, text-ink, text-muted,
+   border-rule, text-accent, bg-sunk ...) so the run UI migrates by search
+   and replace, not by redesign.
+
+   Retired from the previous file: --color-clay (a terracotta; its one job,
+   "not a ranking", moves to the warn role), --color-haze (renamed ground),
+   --color-line/--color-line-strong (renamed rule/rule-strong), the leaf-50..
+   700 ramp (collapsed to accent / accent-ink / accent-soft), the glass
+   shadow, and the drift/sweep animations (they belonged to the photograph).
+   =========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   1. Raw values -- light
+   Five named colours: bone (ground), white (surface), ink (a green-black),
+   leaf (the accent), and two flags. Everything else is a tint of ink.
    --------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Grounds. ground is the page; surface is anything that sits on it (a
+     table, a code block, the nav on scroll); sunk is one step below ground
+     (an input well, a quiet chip). */
+  --ground:        #f6f7f4;
+  --surface:       #ffffff;
+  --sunk:          #eceee8;
+
+  /* Text. ink for body and headings (16.6:1 on ground, AAA). muted for
+     secondary prose (7.2:1, AAA). faint only for text >= 18.66px or bold
+     >= 14px (4.2:1, AA large) and for non-text marks; never for body. */
+  --ink:           #0f1a14;
+  --muted:         #46574d;
+  --faint:         #6b7a70;
+  --inverse:       #ffffff;
+
+  /* Rules. Hairlines, table borders, dividers. Alpha so they read the same
+     over ground, surface and sunk. */
+  --rule:          rgb(15 26 20 / 0.12);
+  --rule-strong:   rgb(15 26 20 / 0.24);
+
+  /* Accent: leaf. Green means "measured": it is the colour of a verified
+     value, an available product, a passing check, links and focus. It is not
+     a decorative colour and is never a large fill. accent is the fill/mark
+     (4.6:1 with white on it -- AA, so white text on it is allowed only at
+     >= 14px 600); accent-ink is the text colour (6.5:1 on white, 6.1 on
+     ground); accent-soft is the tint behind a chip (accent-ink on it 5.6:1). */
+  --accent:        #3f8527;
+  --accent-ink:    #326a20;
+  --accent-soft:   #e4f1dc;
+
+  /* Flags. good reuses the accent on purpose: the product has one meaning
+     of good, "measured". warn is an ochre (5.9:1 on white), bad an oxide red
+     (7.1:1). Each has a soft tint for a chip/callout ground; the flag colour
+     on its own tint reads 5.6 / 5.0 / 5.8:1 (AA). */
+  --good:          #326a20;
+  --good-soft:     #e4f1dc;
+  --warn:          #8a5a0b;
+  --warn-soft:     #f6ecd6;
+  --bad:           #9e3328;
+  --bad-soft:      #f7e3e0;
+
+  /* Selection + focus */
+  --selection:     #dcebd2;
+  --focus:         #3f8527;
+
+  /* Type. Exact Google Fonts families and the weights to load:
+       Instrument Serif  400 normal + 400 italic   (it ships nothing else)
+       Manrope           400, 500, 600, 700         (700 replaces every
+                                                      font-extrabold today)
+       JetBrains Mono    400, 500
+     next/font variables keep their current names. */
+  --font-display-stack: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
+  --font-sans-stack:    var(--font-manrope), ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  --font-mono-stack:    var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale: see the @theme block below (Tailwind owns --text-*). */
+
+  /* Measure */
+  --measure-prose: 68ch;
+  --measure-lede:  56ch;
+
+  /* Spacing (4px base). Use these, not arbitrary values. */
+  --space-1: 0.25rem;  --space-2: 0.5rem;   --space-3: 0.75rem; --space-4: 1rem;
+  --space-5: 1.25rem;  --space-6: 1.5rem;   --space-8: 2rem;    --space-10: 2.5rem;
+  --space-12: 3rem;    --space-16: 4rem;    --space-20: 5rem;   --space-24: 6rem;
+  --gutter: 1rem;                 /* phone; 2rem from 640px, 3rem from 1024px */
+  --page-max: 72rem;              /* landing/products/benchmarks column */
+  --docs-max: 90rem;              /* Fumadocs --fd-layout-width */
+
+  /* Radii live only in @theme below (Tailwind owns --radius-*). */
+
+  /* Shadow. One, and only for things that float over content (menus,
+     popovers). Cards and panels use a rule, never a shadow. Named outside
+     Tailwind's --shadow-* namespace; @theme maps it. */
+  --float-shadow: 0 1px 2px rgb(15 26 20 / 0.06), 0 8px 24px rgb(15 26 20 / 0.10);
+
+  /* Motion. Two durations, one curve. Nothing loops except the run's
+     breathing dot, which reduced-motion turns into a static ring. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   1b. Raw values -- dark
+   Same hues, inverted roles. ink stays a green-tinted near-white so the
+   two themes read as one product. Accent lightens two steps so it holds
+   contrast as text (10.1:1 on ground); as a fill it takes ink text, not white.
+   --------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --ground:        #0e1310;
+    --surface:       #151b17;
+    --sunk:          #1b2320;
+
+    --ink:           #e7ebe6;   /* 15.6:1 on ground */
+    --muted:         #a3aea7;   /* 8.2:1 */
+    --faint:         #7c877f;   /* 5.0:1 */
+    --inverse:       #0e1310;
+
+    --rule:          rgb(231 235 230 / 0.10);
+    --rule-strong:   rgb(231 235 230 / 0.22);
+
+    --accent:        #7fc063;   /* fill; ink text on it 8.6:1 */
+    --accent-ink:    #8fcf74;   /* text; 10.1:1 on ground */
+    --accent-soft:   rgb(143 207 116 / 0.14);
+
+    --good:          #8fcf74;
+    --good-soft:     rgb(143 207 116 / 0.14);
+    --warn:          #e0b04a;   /* 9.4:1 */
+    --warn-soft:     rgb(224 176 74 / 0.14);
+    --bad:           #f08b7e;   /* 7.8:1 */
+    --bad-soft:      rgb(240 139 126 / 0.14);
+
+    --selection:     rgb(143 207 116 / 0.28);
+    --focus:         #8fcf74;
+
+    --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ground:        #0e1310;
+  --surface:       #151b17;
+  --sunk:          #1b2320;
+
+  --ink:           #e7ebe6;
+  --muted:         #a3aea7;
+  --faint:         #7c877f;
+  --inverse:       #0e1310;
+
+  --rule:          rgb(231 235 230 / 0.10);
+  --rule-strong:   rgb(231 235 230 / 0.22);
+
+  --accent:        #7fc063;
+  --accent-ink:    #8fcf74;
+  --accent-soft:   rgb(143 207 116 / 0.14);
+
+  --good:          #8fcf74;
+  --good-soft:     rgb(143 207 116 / 0.14);
+  --warn:          #e0b04a;
+  --warn-soft:     rgb(224 176 74 / 0.14);
+  --bad:           #f08b7e;
+  --bad-soft:      rgb(240 139 126 / 0.14);
+
+  --selection:     rgb(143 207 116 / 0.28);
+  --focus:         #8fcf74;
+
+  --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   2. Tailwind 4 mapping
+   `@theme inline` so utilities resolve the variable at use time (per theme).
+   Utility names: bg-ground, bg-surface, bg-sunk, text-ink, text-muted,
+   text-faint, text-inverse, border-rule, border-rule-strong, bg-accent,
+   text-accent-ink, bg-accent-soft, text-good/warn/bad, bg-good-soft ...,
+   font-display, font-sans, font-mono, rounded-sm/md/lg/pill, shadow-float.
+   --------------------------------------------------------------------------- */
+@theme inline {
+  --color-ground:        var(--ground);
+  --color-surface:       var(--surface);
+  --color-sunk:          var(--sunk);
+
+  --color-ink:           var(--ink);
+  --color-muted:         var(--muted);
+  --color-faint:         var(--faint);
+  --color-inverse:       var(--inverse);
+
+  --color-rule:          var(--rule);
+  --color-rule-strong:   var(--rule-strong);
+
+  --color-accent:        var(--accent);
+  --color-accent-ink:    var(--accent-ink);
+  --color-accent-soft:   var(--accent-soft);
+
+  --color-good:          var(--good);
+  --color-good-soft:     var(--good-soft);
+  --color-warn:          var(--warn);
+  --color-warn-soft:     var(--warn-soft);
+  --color-bad:           var(--bad);
+  --color-bad-soft:      var(--bad-soft);
+
+  --color-selection:     var(--selection);
+  --color-focus:         var(--focus);
+
+  --font-display:        var(--font-display-stack);
+  --font-sans:           var(--font-sans-stack);
+  --font-mono:           var(--font-mono-stack);
+
+  --shadow-float:        var(--float-shadow);
+  --ease-out:            var(--ease);
+}
+
+/* Static tokens: plain @theme (no `inline` needed; nothing here changes per
+   theme). Replaces Tailwind's radius ramp so third-party utilities (Fumadocs
+   uses rounded-lg / rounded-xl) land on our three values, and defines the
+   type scale so `text-caption`, `text-stat` etc. exist as utilities -- write
+   those, never `text-[13px]`. Each size carries its line-height. */
 @theme {
-  --color-ink: #0f1a14;
-  --color-ink-soft: #4f6157;
-  --color-ink-faint: #8a988f;
-  --color-inverse: #ffffff;
+  --radius-sm:           4px;    /* chips, inline code, small inputs */
+  --radius-md:           6px;    /* buttons, inputs, code blocks, callouts, cards */
+  --radius-lg:           6px;
+  --radius-xl:           10px;   /* the URL prompt, dialogs */
+  --radius-2xl:          10px;
+  --radius-3xl:          10px;
+  --radius-pill:         999px;  /* chips only */
 
-  --color-haze: #f5f7f3;
-  --color-surface: #ffffff;
-  --color-sunk: #eef1ea;
-
-  --color-line: rgb(15 26 20 / 0.10);
-  --color-line-strong: rgb(15 26 20 / 0.18);
-
-  /* Accent: the green of spring wheat in the photograph. */
-  --color-leaf-50: #f1f8ec;
-  --color-leaf-100: #ddefd0;
-  --color-leaf-300: #93c874;
-  --color-leaf-500: #4d9a2f;
-  --color-leaf-600: #3f8527;
-  --color-leaf-700: #326a20;
-
-  --color-clay: #a9784a;
-  --color-flag-warn: #9a6b12;
-  --color-flag-bad: #a63a2f;
-
-  --font-display: var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
-  --font-sans: var(--font-manrope), ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SF Mono", Menlo, monospace;
-
-  --shadow-card: 0 1px 2px rgb(15 26 20 / 0.04), 0 10px 30px rgb(15 26 20 / 0.06);
-  --shadow-lift: 0 2px 8px rgb(15 26 20 / 0.07), 0 24px 60px rgb(15 26 20 / 0.14);
-  --shadow-glass: inset 0 1px 0 rgb(255 255 255 / 0.5), 0 20px 50px rgb(15 26 20 / 0.16);
-
-  --animate-drift: drift 9s ease-in-out infinite;
+  --text-display:  clamp(2.5rem, 1.6rem + 3.6vw, 4.25rem); --text-display--line-height: 1.02; --text-display--letter-spacing: -0.01em; /* Instrument Serif 400 */
+  --text-h1:       clamp(2rem, 1.5rem + 2vw, 2.75rem);     --text-h1--line-height: 1.1;       /* Instrument Serif 400 */
+  --text-h2:       clamp(1.5rem, 1.25rem + 1vw, 1.875rem); --text-h2--line-height: 1.2;       /* Instrument Serif 400 */
+  --text-h3:       1.125rem;  --text-h3--line-height: 1.35;  --text-h3--letter-spacing: -0.01em; /* Manrope 700 */
+  --text-body:     1rem;      --text-body--line-height: 1.6;     /* Manrope 400 */
+  --text-prose:    1.0625rem; --text-prose--line-height: 1.65;   /* docs body */
+  --text-small:    0.875rem;  --text-small--line-height: 1.5;    /* Manrope 400/500: table cells, chips, run rows */
+  --text-caption:  0.8125rem; --text-caption--line-height: 1.45; /* Manrope 500, colour muted: sources, notes */
+  --text-label:    0.6875rem; --text-label--line-height: 1.2; --text-label--letter-spacing: 0.12em; /* Manrope 700 uppercase, or JetBrains Mono 500 */
+  --text-code:     0.875rem;  --text-code--line-height: 1.6;     /* JetBrains Mono 400; inline code 0.9em of parent */
+  --text-stat:     clamp(2rem, 1.5rem + 2vw, 3rem); --text-stat--line-height: 1; /* Instrument Serif 400, tabular-nums */
 }
 
-@keyframes sweep {
-  0% { left: -25%; }
-  100% { left: 100%; }
+/* Dark variant on the attribute, not a class. Fumadocs' own `dark:` utilities
+   and next-themes must agree with this: RootProvider theme={{ attribute:
+   "data-theme" }} for the whole site (see DESIGN.md §4c). */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"]), :not([data-theme="light"]) *) { @slot; }
+  }
 }
 
-@keyframes drift {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+/* ---------------------------------------------------------------------------
+   3. Fumadocs bridge
+   fumadocs-ui/css/preset.css reads --color-fd-*. Point every one at ours so
+   the docs are the same site. Import order in the docs stylesheet:
+     @import "tailwindcss";
+     @import "fumadocs-ui/css/neutral.css";   (kept only for what we do not set)
+     @import "fumadocs-ui/css/preset.css";
+     @import "./tokens.css";                   (this file, last, so it wins)
+   Plain :root suffices: every value is a var() reference that follows the
+   theme on its own.
+   --------------------------------------------------------------------------- */
+:root {
+  --color-fd-background:         var(--ground);
+  --color-fd-foreground:         var(--ink);
+  --color-fd-muted:              var(--sunk);
+  --color-fd-muted-foreground:   var(--muted);
+  --color-fd-popover:            var(--surface);
+  --color-fd-popover-foreground: var(--ink);
+  --color-fd-card:               var(--surface);
+  --color-fd-card-foreground:    var(--ink);
+  --color-fd-border:             var(--rule);
+  --color-fd-primary:            var(--accent-ink);
+  --color-fd-primary-foreground: var(--inverse);
+  --color-fd-secondary:          var(--sunk);
+  --color-fd-secondary-foreground: var(--ink);
+  --color-fd-accent:             var(--accent-soft);
+  --color-fd-accent-foreground:  var(--ink);
+  --color-fd-ring:               var(--focus);
+  --fd-layout-width:             var(--docs-max);
 }
 
-/* A timeline step arriving: it slides up into place rather than popping, so the eye is led
-   to the new bottom of the list. Reduced-motion collapses it to nothing, below. */
-@keyframes reveal {
-  0% { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-/* The running step's dot: a soft ring that breathes, in place of a spinner. */
-@keyframes breathe {
-  0%, 100% { box-shadow: 0 0 0 0 rgb(63 133 39 / 0.35); }
-  50% { box-shadow: 0 0 0 6px rgb(63 133 39 / 0); }
-}
-
+/* ---------------------------------------------------------------------------
+   4. Base
+   --------------------------------------------------------------------------- */
 @layer base {
-  :root {
-    color-scheme: light;
-  }
-
-  html {
-    background: var(--color-haze);
-    -webkit-text-size-adjust: 100%;
-  }
-
+  html { background: var(--ground); -webkit-text-size-adjust: 100%; }
   body {
-    background: var(--color-haze);
-    color: var(--color-ink);
-    font-family: var(--font-sans);
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans-stack);
+    font-size: 1rem;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-
-  ::selection {
-    background: var(--color-leaf-100);
-  }
-
-  :focus-visible {
-    outline: 2px solid var(--color-leaf-600);
-    outline-offset: 2px;
-    border-radius: 6px;
-  }
-
-  /* Displayed numbers line up in columns all over the run view. */
-  .tabular {
-    font-variant-numeric: tabular-nums;
-  }
+  ::selection { background: var(--selection); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--radius-sm); }
+  .tabular { font-variant-numeric: tabular-nums; }
 }
 
-@layer utilities {
-  /* The crop marks bracketing the prompt card in the reference design. */
-  .crop-mark::before,
-  .crop-mark::after {
-    content: "";
-    position: absolute;
-    width: 1px;
-    background: rgb(255 255 255 / 0.75);
-  }
+/* The running step's dot: a ring that breathes, in place of a spinner. */
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
+  50%      { box-shadow: 0 0 0 6px transparent; }
+}
+/* A timeline step arriving. */
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+  /* The running dot keeps a static ring so state is still visible. */
+  .is-running { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+
+/* ---------------------------------------------------------------------------
+   5. App additions (not in tokens.css)
+   --------------------------------------------------------------------------- */
+
+/* Gutter steps the tokens file names but leaves to the app. */
+@media (min-width: 40rem) { :root { --gutter: 2rem; } }
+@media (min-width: 64rem) { :root { --gutter: 3rem; } }
+
+/* The page column: landing, products, benchmarks. One place for the width and the gutter,
+   so a 16px side margin at phone width is not re-typed per page. */
+@utility page-col {
+  width: 100%;
+  max-width: var(--page-max);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* Prose measures, as utilities so they read beside the type utilities. */
+@utility measure-prose { max-width: var(--measure-prose); }
+@utility measure-lede { max-width: var(--measure-lede); }
+
+@theme {
+  /* The nav folds to a Menu button below this (DESIGN.md §4d). */
+  --breakpoint-nav: 56.25rem;
+}
+
+/* ---------------------------------------------------------------------------
+   6. Legacy aliases -- run UI only
+   The live run view (components/extract/*, /benchmarks, /how-it-works, /settings) still
+   writes the previous token names. Each maps onto exactly one role above so those screens
+   follow the theme without a redesign; new code writes the role names, never these.
+   Not aliased on purpose: shadow-card and shadow-glass (a card gets a rule, not a shadow;
+   the utility now emits nothing), animate-drift (belonged to the photograph).
+   --------------------------------------------------------------------------- */
+@theme inline {
+  --color-ink-soft:      var(--muted);
+  --color-ink-faint:     var(--faint);
+  --color-haze:          var(--ground);
+  --color-line:          var(--rule);
+  --color-line-soft:     var(--rule);
+  --color-line-strong:   var(--rule-strong);
+  --color-leaf-50:       var(--accent-soft);
+  --color-leaf-100:      var(--accent-soft);
+  --color-leaf-200:      var(--accent-soft);
+  --color-leaf-300:      var(--accent);
+  --color-leaf-500:      var(--accent);
+  --color-leaf-600:      var(--accent);
+  --color-leaf-700:      var(--accent-ink);
+  --color-clay:          var(--warn);
+  --color-flag-warn:     var(--warn);
+  --color-flag-bad:      var(--bad);
+  --shadow-lift:         var(--float-shadow);
 }

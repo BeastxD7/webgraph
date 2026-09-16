@@ -4,7 +4,6 @@ import Link from "next/link";
 import RunBanner from "@/components/extract/RunBanner";
 import SingleServerRun from "@/components/extract/SinglePageRun";
 import SiteRun from "@/components/extract/SiteRun";
-import SiteFooter from "@/components/site/SiteFooter";
 import { normalizeInput } from "@/lib/url";
 
 export const metadata: Metadata = {
@@ -38,7 +37,7 @@ export default async function ExtractPage({
     return (
       <>
         <RunBanner url="nothing to extract" mode="site" />
-        <div className="mx-auto w-full max-w-6xl px-5 pb-20 sm:px-8">
+        <div className="page-col pb-20">
           <p className="rounded-2xl border border-line bg-surface px-5 py-6 text-[14px] text-ink-soft">
             {normalized.reason ?? "No website address was supplied."}{" "}
             <Link href="/#start" className="font-semibold text-leaf-700 underline underline-offset-2">
@@ -47,7 +46,6 @@ export default async function ExtractPage({
             .
           </p>
         </div>
-        <SiteFooter />
       </>
     );
   }
@@ -69,7 +67,6 @@ export default async function ExtractPage({
         )}
       </main>
 
-      <SiteFooter />
     </>
   );
 }

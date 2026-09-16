@@ -2,26 +2,27 @@ import UrlPrompt from "./UrlPrompt";
 
 export default function Hero() {
   return (
-    <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col items-center px-5 pb-36 pt-10 text-center sm:px-8 sm:pb-48 sm:pt-16">
-      <p className="text-[11.5px] font-bold uppercase tracking-[0.18em] text-ink-soft">
-        Open-source extraction engine
-      </p>
+    <section className="page-col max-md:pb-12 max-md:pt-12 md:pb-16 md:pt-20">
+      <div className="grid grid-cols-12 gap-x-6 gap-y-10">
+        <div className="max-lg:col-span-12 lg:col-span-8">
+          <p className="text-label font-bold uppercase text-muted">
+            Open-source · Runs locally · MIT
+          </p>
+          <h1 className="mt-5 font-display text-display text-ink">The honest web reader.</h1>
+          <p className="measure-lede mt-6 text-body text-muted">
+            Point it at a website. Every public page comes back as Markdown in the order a
+            reader sees it, with a note of how each page was obtained — and a refusal, named,
+            for every page it could not read.
+          </p>
+        </div>
 
-      <h1 className="mt-5 max-w-3xl text-balance font-display text-[clamp(2.6rem,8vw,4.6rem)] leading-[1.02] tracking-[-0.015em]">
-        Every page of a website,
-        <br />
-        as <em className="italic text-leaf-700">clean Markdown</em>
-      </h1>
-
-      <p className="mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-ink-soft sm:text-base">
-        webgraph detects the stack, enumerates every public route, and extracts rich Markdown
-        — with reading order recovered from the rendered layout rather than guessed from the
-        HTML.
-      </p>
-
-      <div className="mt-12 w-full sm:mt-16">
-        <UrlPrompt />
+        <div className="max-lg:col-span-12 lg:col-span-8 lg:col-start-3">
+          <UrlPrompt />
+          <p className="mt-3 text-caption text-muted lg:text-right">
+            Runs on your machine. The only requests made are to the site you name.
+          </p>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

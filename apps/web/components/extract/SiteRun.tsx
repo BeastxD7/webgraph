@@ -76,7 +76,7 @@ export default function SiteRun({
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 px-5 pb-20 sm:px-8">
+    <div className="page-col space-y-5 pb-20">
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-[13.5px] font-semibold">
           <span aria-hidden className={`size-2 rounded-full ${PHASE_DOT[run.phase]}`} />

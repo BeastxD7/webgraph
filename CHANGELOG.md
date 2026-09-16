@@ -6,6 +6,61 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-16, PR #93) — landing page, products page, design tokens
+- The landing page is rebuilt from the design spec. The hero photograph, its glass prompt,
+  its CC BY credit and the light-only commitment are gone; the page is the ground colour,
+  one display line ("The honest web reader."), the URL prompt, and four measured numbers
+  with their caveats beside them (WCXB 0.862 dev split, first of seven by a margin the
+  board calls a tie; WCEB 0.883 with content and comments joined, content alone 0.856;
+  route recall 98.1% on 96 sites against a real-browser oracle, static alone 31.0%; 0%
+  wrong-value rate). Two columns list what the engine refuses, in its own error messages,
+  and what it drops because a reader would not have seen it; three steps say how a page is
+  read; a five-board table gives this engine's score, the leader's and the place in words,
+  scrape-evals marked "not a ranking". Every figure is read from `lib/benchmarks.ts`
+  (`selfScore`, `leaderScore`, new `ROUTE_RECALL`, `FIDELITY`, `WCXB_TEST`,
+  `RENDER_PREDICTION`); the earlier `Pipeline.tsx` copy with 132 rules across 18
+  categories is replaced.
+- `/products`: one composed 2×2 grid. Crawler and CLI are marked available (a filled dot);
+  WebGraph -- an LLM-built knowledge graph of a site with every node and edge cited to its
+  page and block -- and Site Truth Report -- what a site shows people against what it sends
+  crawlers, grounded in vtu.ac.in's ~60 off-screen gambling links per page (#88) -- are
+  marked coming soon (a hollow ring). The chip carries the state in word and form; nothing
+  coming soon is described as existing.
+- Design tokens: `globals.css` now carries the spec's `tokens.css` -- light values on
+  `:root`, a system-dark block and a `data-theme="dark"` block that wins over it, mapped
+  onto Tailwind with `@theme inline` so utilities follow the theme; a type scale as
+  utilities (`text-display` … `text-stat`); three radii (4 / 6 / 10px, replacing the
+  Tailwind ramp so the run view's `rounded-2xl` panels flatten to 10px); one shadow, for
+  things that float; reduced motion collapses every transition and turns the running dot
+  into a static ring. The `--color-fd-*` bridge for the docs shell is in place. The run
+  view, benchmarks, how-it-works and settings keep their earlier utility names through an
+  alias block (`ink-soft`→`muted`, `ink-faint`→`faint`, `haze`→`ground`,
+  `line`/`line-soft`→`rule`, `line-strong`→`rule-strong`, `leaf-*`→`accent`/`accent-ink`/
+  `accent-soft`, `clay`/`flag-warn`→`warn`, `flag-bad`→`bad`, `shadow-lift`→`shadow-float`);
+  `shadow-card` and `shadow-glass` are not aliased and now emit nothing.
+- One header and footer for every page, from `layout.tsx`: Home, Products, Docs (the route
+  is being built alongside), Benchmarks, How it works, GitHub; a theme toggle cycling
+  System → Light → Dark, written to `data-theme` on `<html>` and remembered in
+  `localStorage` under next-themes' key so the docs shell can share it; a "Run a site"
+  button to `/#start`. Below 900px the items fold behind a "Menu" button that opens a
+  full-width sheet with 48px rows. The bar takes the surface colour and a rule after 8px of
+  scroll. The run view's banner loses the photograph band and its duplicate back link.
+  Under `/docs` the header and footer step aside (`SiteChrome`): the docs shell draws its
+  own bar and sidebar, and two navigations on one page is one too many.
+- Known and open: `app/docs/docs.css` is a second Tailwind entry, and its utilities land
+  after `globals.css`'s in the shared `utilities` layer. Once `/docs` has been visited the
+  stylesheet stays loaded across client-side navigation, and any `hidden md:flex`-style
+  pair on the rest of the site then loses to the docs copy of `.hidden` (measured: the
+  nav collapsed to "Menu" at 1280px after visiting the docs). The new components write
+  symmetric `max-md:` / `md:` pairs so no base utility is left to be overridden; the
+  older pages (`/benchmarks`, `/how-it-works`, `/settings`, the run view) still carry
+  such pairs. The fix is one Tailwind entry -- the Fumadocs preset imported from
+  `globals.css`, as DESIGN.md §4c has it -- and belongs with the docs shell.
+- Measured with Playwright at 1280 and 400px, light and dark: no page scrolls
+  horizontally; the phone gutter is 16px; buttons are 44px under a coarse pointer; a
+  remembered theme is on `<html>` at DOMContentLoaded (a `next/script` beforeInteractive
+  variant was measured to set it after, and was not used).
+
 ### Added (2026-09-16, PR #92) — documentation site
 - The web app serves documentation at `/docs`, built with Fumadocs from MDX files under
   `apps/web/content/docs/`. The sidebar has seven sections in a fixed order -- getting

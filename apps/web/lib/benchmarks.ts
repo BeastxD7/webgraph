@@ -326,3 +326,57 @@ export const NOT_RUN: readonly NotRunItem[] = [
     why: "Both are among the eight corpora WCEB combines (Dragnet as its own set; the Boilerpipe-era L3S-GN1 and Google-Trends sets alongside it), so they are scored above under WCEB rather than a second time on their own.",
   },
 ];
+
+/**
+ * The headline figures the landing page repeats. Kept here beside the boards so the front
+ * page and the boards page cannot disagree, and so each carries what it was measured on.
+ */
+
+/** Route discovery against a real-browser oracle (benchmark/route_discovery, D61). */
+export const ROUTE_RECALL = {
+  sites: 96,
+  engine: "98.1%",
+  static: "31.0%",
+} as const;
+
+/**
+ * Whole-page fidelity against Chromium's innerText (benchmark/fidelity). A suite, not yet a
+ * per-page score in the UI.
+ */
+export const FIDELITY = {
+  sites: 29,
+  perfect: 22,
+  floor: "0.945",
+} as const;
+
+/** The WCXB held-out test split, never used for a decision here. */
+export const WCXB_TEST = {
+  pages: 511,
+  us: "0.875",
+  rival: "rs-trafilatura",
+  rivalScore: "0.893",
+} as const;
+
+/** How many pages that demonstrably needed a render were predicted to need one. */
+export const RENDER_PREDICTION = { hit: 0, of: 7 } as const;
+
+/** Where each board is read from: the entry marked as this engine and the board's best. */
+export function selfScore(board: Board): number {
+  return board.entries.find((entry) => entry.self)?.score ?? 0;
+}
+
+export function leaderScore(board: Board): number {
+  return Math.max(...board.entries.filter((entry) => !entry.reference).map((entry) => entry.score));
+}
+
+/** The best entry that is not this engine: what the margin is measured against. */
+export function runnerUp(board: Board): Entry {
+  const others = board.entries.filter((entry) => !entry.self && !entry.reference);
+  return others.reduce((best, entry) => (entry.score > best.score ? entry : best));
+}
+
+export function board(id: string): Board {
+  const found = BOARDS.find((candidate) => candidate.id === id);
+  if (!found) throw new Error(`no board ${id}`);
+  return found;
+}

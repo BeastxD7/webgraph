@@ -1,43 +1,52 @@
-const REPO = "https://github.com/BeastxD7/webgraph";
+import Link from "next/link";
+
+import { MEASURED } from "@/lib/benchmarks";
+
+import { FOOTER_LINKS } from "./links";
+import Wordmark from "./Wordmark";
+
+/** The measured date without its "(evening)" qualifier, which belongs on the boards page. */
+export const MEASURED_DAY = MEASURED.date.replace(/\s*\(.*\)$/, "");
 
 export default function SiteFooter() {
   return (
-    <footer className="mx-auto w-full max-w-6xl px-5 pb-12 pt-16 sm:px-8">
-      <div className="flex flex-col gap-6 border-t border-line pt-8 text-[13px] text-ink-soft sm:flex-row sm:items-start sm:justify-between">
-        <p className="max-w-md">
-          <strong className="font-extrabold text-ink">webgraph</strong> — an open-source
-          extraction engine. Reading order is recovered from the rendered layout; site chrome
-          is identified by cross-page analysis rather than per-page heuristics.
-        </p>
-
-        <div className="flex flex-col gap-1.5 sm:items-end">
-          <a href={REPO} target="_blank" rel="noreferrer" className="hover:text-ink">
-            Source on GitHub
-          </a>
-          {/* CC BY 4.0 requires attribution wherever the work is used, not only in the
-              repository, so the credit lives in the page itself. */}
-          <p className="text-ink-faint">
-            Hero photograph{" "}
-            <a
-              className="underline underline-offset-2 hover:text-ink-soft"
-              href="https://commons.wikimedia.org/wiki/File:PalouseFromSteptoeButteMay2023-2.jpg"
-              target="_blank"
-              rel="noreferrer"
-            >
-              “The Palouse from Steptoe Butte”
-            </a>{" "}
-            by Caleb Riston,{" "}
-            <a
-              className="underline underline-offset-2 hover:text-ink-soft"
-              href="https://creativecommons.org/licenses/by/4.0/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              CC BY 4.0
-            </a>
-            .
+    <footer className="border-t border-rule max-sm:mt-16 sm:mt-24">
+      <div className="page-col grid py-10 text-small text-muted max-md:gap-8 md:grid-cols-3 md:gap-12">
+        <div className="flex flex-col gap-3">
+          <Wordmark />
+          <p className="measure-lede">
+            An open-source extraction engine. It reports how it knows, and declines when it
+            does not.
           </p>
         </div>
+
+        <nav aria-label="Footer">
+          <ul className="grid gap-x-6 gap-y-2 max-sm:grid-cols-2 sm:grid-cols-3 md:grid-cols-2">
+            {FOOTER_LINKS.map((item) => (
+              <li key={item.label}>
+                {item.external ? (
+                  <a
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-ink"
+                  >
+                    {item.label} <span aria-hidden>↗</span>
+                  </a>
+                ) : (
+                  <Link href={item.href} className="hover:text-ink">
+                    {item.label}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <p className="text-caption md:text-right">
+          Last measured {MEASURED_DAY} ·{" "}
+          <code className="font-mono">main@{MEASURED.commit}</code>
+        </p>
       </div>
     </footer>
   );

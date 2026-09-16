@@ -1,48 +1,65 @@
-const STAGES: ReadonlyArray<{ title: string; body: string; note: string }> = [
+import { FIDELITY, RENDER_PREDICTION } from "@/lib/benchmarks";
+
+/**
+ * How a page is read: three steps on rules, numbered in mono. Replaces the earlier
+ * three-stage list, whose counts (132 rules, 18 categories) no longer described the engine;
+ * every figure here comes from `lib/benchmarks.ts`.
+ */
+const STEPS: ReadonlyArray<{ title: string; body: string }> = [
   {
-    title: "Detect the stack",
+    title: "Fetch twice",
     body:
-      "Fingerprints markup, response headers and runtime JavaScript globals against 132 rules " +
-      "across 18 categories, then measures how much of the page survives without a browser.",
-    note: "Host rules are anchored to src/href, so a page that merely documents a framework is not mistaken for one built with it.",
+      "A plain request and a real Chromium render, 1440×900. Neither alone is complete: " +
+      "rendering loses server markup on hydration; static misses what scripts insert. " +
+      `Predicting which a page needs scored ${RENDER_PREDICTION.hit} of ${RENDER_PREDICTION.of}, ` +
+      "so the engine stopped predicting.",
   },
   {
-    title: "Enumerate the routes",
+    title: "Merge",
     body:
-      "Robots and sitemaps seed a frontier that a two-level link crawl extends. Every candidate " +
-      "is verified live, and redirects are resolved before scoping so a moved root does not end the crawl.",
-    note: "Unlimited by default. If a site has 19,999 pages, the frontier keeps going until it is exhausted.",
+      "Blocks are matched by content and unioned. What the browser hid is not put back. A " +
+      "wall on one side is left out and named.",
   },
   {
-    title: "Extract each page",
+    title: "Order by layout",
     body:
-      "Headings, lists, tables, code fences, images and inline links become Markdown, ordered by " +
-      "geometry. Chrome detected across the corpus is offered as a separate content-only view.",
-    note: "Results stream as they land, so a large crawl is readable long before it finishes.",
+      "Every element is measured. Reading order is a recursive XY-cut over the boxes — " +
+      "columns stay columns. Where no geometry exists the order is source order and the " +
+      "page says “assumed”, not “measured”.",
   },
 ];
 
 export default function Pipeline() {
   return (
-    <section id="pipeline" className="scroll-mt-20 border-y border-line bg-surface">
-      <div className="mx-auto w-full max-w-6xl px-5 py-20 sm:px-8">
-        <h2 className="max-w-2xl font-display text-[clamp(1.9rem,4.5vw,2.9rem)] leading-tight">
-          Three stages, in order
-        </h2>
+    <section aria-labelledby="reads" className="page-col border-t border-rule max-md:py-16 md:py-24">
+      <h2 id="reads" className="font-display text-h2 text-ink">
+        Two fetches, one page, the reader&rsquo;s order
+      </h2>
 
-        <ol className="mt-10 grid gap-10 md:grid-cols-3 md:gap-8">
-          {STAGES.map((stage, index) => (
-            <li key={stage.title} className="relative">
-              <span className="font-mono text-[12px] font-medium tracking-widest text-leaf-600">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <h3 className="mt-2 text-[19px] font-extrabold tracking-tight">{stage.title}</h3>
-              <p className="mt-3 text-[14px] leading-relaxed text-ink-soft">{stage.body}</p>
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-faint">{stage.note}</p>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <ol className="mt-8 border-t border-rule">
+        {STEPS.map((step, index) => (
+          <li
+            key={step.title}
+            className="grid gap-x-8 gap-y-2 border-b border-rule max-md:py-6 sm:grid-cols-[3rem_14rem_1fr] md:py-8"
+          >
+            <span className="font-mono text-label font-medium text-accent-ink" aria-hidden>
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <h3 className="text-h3 font-bold text-ink">
+              <span className="sr-only">Step {index + 1}: </span>
+              {step.title}
+            </h3>
+            <p className="measure-prose text-body text-muted">{step.body}</p>
+          </li>
+        ))}
+      </ol>
+
+      <p className="mt-8 max-w-prose text-caption text-muted">
+        Whole-page fidelity, measured against Chromium&rsquo;s innerText on {FIDELITY.sites}{" "}
+        sites: word recall 1.000 on {FIDELITY.perfect}, nothing below {FIDELITY.floor}. This is
+        a suite in <code className="font-mono">benchmark/fidelity</code>, not yet a per-page
+        score in the UI.
+      </p>
     </section>
   );
 }
