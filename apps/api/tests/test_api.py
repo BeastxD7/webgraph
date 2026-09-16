@@ -811,7 +811,11 @@ class TestSiteReport:
         root = body["pages"][0]
         assert root["hidden_links"] == 8
         assert root["hidden_external_hosts"] == 8
-        assert root["static_words"] > 0 and root["rendered_words"] > 0
+        assert root["static_words"] > 0
+        # `rendered_words` is 0 wherever no browser could run (CI's API job); with one it
+        # is the page's word count. Either is a true report, and the score's
+        # `measured_weight` already said which case this is.
+        assert root["rendered_words"] > 0 or body["score"]["measured_weight"] == 75
         assert "casino" not in root["title"]
         assert [p["requested_url"] for p in body["pages"]] == [f"{report_server}/", f"{report_server}/about.html"]
         assert [d["status"] for d in root["dead_links"]] == [404]
