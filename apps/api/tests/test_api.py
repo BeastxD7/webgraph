@@ -795,7 +795,12 @@ class TestSiteReport:
         assert response.status_code == 200
         body = response.json()
         assert body["reachable"] is True
-        assert body["score"]["total"] < 100 and body["score"]["measured_weight"] == 100
+        # Without a browser (CI's API job has no Chromium) the render-dependent parts are
+        # rescaled out of the score, and `measured_weight` says so -- that is the contract.
+        from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE
+
+        assert body["score"]["total"] < 100
+        assert body["score"]["measured_weight"] == (100 if PLAYWRIGHT_AVAILABLE else 75)
 
         bots = {b["token"]: b for b in body["robots"]["bots"]}
         assert bots["GPTBot"]["access"] == "blocked" and bots["GPTBot"]["via"] == "named"
