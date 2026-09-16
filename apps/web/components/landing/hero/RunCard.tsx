@@ -30,7 +30,7 @@ const ROWS: Record<Mode, ReadonlyArray<readonly [string, string]>> = {
 
 export default function RunCard({ host, mode }: { host: string; mode: Mode }) {
   return (
-    <div aria-hidden className="hero-card rounded-xl border border-rule bg-surface text-left">
+    <div aria-hidden className="hero-card rounded-xl border text-left">
       <div className="flex items-center gap-2.5 border-b border-rule px-4 py-2.5">
         <span className="size-2 shrink-0 rounded-full bg-accent shadow-[0_0_0_3px_var(--accent-soft)]" />
         <span className="min-w-0 flex-1 truncate font-mono text-caption text-muted">

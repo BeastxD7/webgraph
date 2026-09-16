@@ -17,7 +17,7 @@ export default function Wordmark({ className = "" }: { className?: string }) {
   return (
     <Link
       href="/"
-      className={`inline-flex items-center gap-2.5 text-[15px] font-bold tracking-tight text-ink ${className}`}
+      className={`wordmark-text inline-flex items-center gap-2.5 text-[15px] font-bold tracking-tight text-ink ${className}`}
     >
       <Mark />
       webgraph

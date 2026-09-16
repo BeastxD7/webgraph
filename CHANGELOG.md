@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #104) — hero: the Earth from orbit at sunrise
+- The landing opens on the Earth, from orbit, at sunrise -- the owner's brief: websites are
+  worldwide, so a universe with the Earth, and HD, realistic. The frame is always dark (space
+  in both themes; the page below keeps its theme). Hand-written WebGL2, lazy-loaded
+  (`components/landing/hero/field/`): a star field with a magnitude distribution (many faint,
+  a few bright, slight colour temperature, a barely perceptible scintillation) and a faint
+  Milky Way; the planet in the lower third as an analytic sphere textured with NASA's public
+  domain Blue Marble (day), Black Marble (city lights) and cloud map, downsampled to 2k
+  (`public/earth/`, 1.4 MB, recorded in `ASSETS.md`, credited at the frame's edge), lit by the
+  sun with a soft terminator, the clouds' shadow on the ground, a glint on the ocean (from
+  a mask derived from the day map), the night side's lights; a Rayleigh-style rim -- a thin
+  bright line at the surface, a blue glow thickening and warming toward the sun; the sun
+  rising just above the limb beside the prompt with long soft rays, a tight core and a halo,
+  plus bloom (a bright pass and two Gaussian passes at quarter size), ACES tone mapping,
+  film grain, a vignette and FXAA. The 512-px textures load first and the 2k ones replace
+  them, so the first frame is never blank; before JavaScript the page shows the resting
+  frame as a JPEG rendered by the same code (`tools/render_hero_still.py`).
+- Motion: the planet turns once in five minutes; the camera settles in from further out over
+  1.5 s while the copy and the prompt rise in staggered, parallaxes with the pointer on a
+  spring, drifts when idle, and tilts down as the frame scrolls away. Websites are worldwide:
+  typing an address or hovering an example turns the planet (spring-damped, ~1.2 s) so the
+  site's country sits beside the prompt on the night side, with a warm marker glowing there;
+  pressing Run pushes the camera in for 620 ms before the app opens the run. The country
+  comes from the hostname's country-code domain alone (`lib/country.ts`, 70 countries, with
+  `.ac.in`/`.co.uk` and the US-only `.edu`/`.gov`/`.mil`; `pnpm --filter @webgraph/web test`);
+  nothing is looked up anywhere, so the landing's promise -- the only requests made are to the
+  site you name -- stands. A generic domain leaves the planet turning.
+- The prompt is dark glass over space; the run card the same. `prefers-reduced-motion`
+  draws one still frame per state. Frame time in headed Chromium on an M2 at DPR 2 (capped
+  1.5), 1440×900: p50 16.7 ms, p95 17.7 ms (60 fps) at every quality tier; tiers (DPR, star
+  octaves, bloom, FXAA) drop after a second over budget. The vertical fov is capped by a
+  62-degree horizontal so 1440×700 does not stretch, and the sun sits at 62% of the
+  half-width on any aspect so a phone keeps the sunrise in frame.
+
 ### Added (2026-09-16, PR #91) — the random-web sample
 - `benchmark/random_web/`: `sample.py` draws domains uniformly over Tranco's top-1M ranks
   and takes one random 200/HTML Common Crawl capture per domain (seeded), so the pages are
