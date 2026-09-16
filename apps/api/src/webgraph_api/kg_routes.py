@@ -146,7 +146,9 @@ def _stream(events: Iterator[dict[str, Any]], *, on_end: Callable[[], None] | No
 
 def _provider_for(body: ProviderIn | None, *, required: bool) -> Provider | None:
     try:
-        config = ProviderConfig.from_dict(body.model_dump(exclude_none=True) if body else {}, base=ProviderConfig.from_env())
+        config = ProviderConfig.from_dict(
+            body.model_dump(exclude_none=True) if body else {}, base=ProviderConfig.from_env(), trusted=False
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     if not config.model and config.provider != "fake":

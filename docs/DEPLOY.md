@@ -138,7 +138,7 @@ Everything is read at process start. Nothing has to be set for local development
 | Variable | Default | What it does |
 |---|---|---|
 | `WEBGRAPH_ALLOWED_ORIGINS` | the dev frontend | Comma-separated CORS origins. |
-| `WEBGRAPH_MAX_PAGES` | `0` (unbounded) | Ceiling on pages per crawl. `0` from a client means "until the frontier is exhausted", so on a shared host this must be set. |
+| `WEBGRAPH_MAX_PAGES` | `0` (no ceiling) | Hard ceiling on pages per crawl, whatever a client asks. The engine's own default is 500 pages and an hour (`CRAWL_MAX_PAGES`, `CRAWL_MAX_SECONDS`), but a client may ask for `0` -- "until the frontier is exhausted" -- so on a shared host this should still be set. |
 | `WEBGRAPH_MAX_CONCURRENCY` | `0` (unbounded) | Ceiling on per-crawl worker concurrency. The request model allows 12; a two-core container should not. |
 | `WEBGRAPH_MAX_CONCURRENT_CRAWLS` | `2` in the image, `3` otherwise | Whole-site crawls in flight across all callers. |
 | `WEBGRAPH_MAX_CONCURRENT_RENDERS` | `2` | Single-page render requests in flight. |

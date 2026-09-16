@@ -3,7 +3,7 @@ import type { Route } from "next";
 import { DOCS, REPO_ISSUES } from "@/components/site/links";
 
 /**
- * The four products, as data. Availability is a fact about the repository today, and the
+ * The five products, as data. Availability is a fact about the repository today, and the
  * card's chip carries it in word and form; the description is limited to what exists (or,
  * for a coming product, to what it will be, said once and in the future tense only there).
  */
@@ -73,16 +73,41 @@ export const PRODUCTS: readonly Product[] = [
   {
     id: "site-truth-report",
     name: "Site Truth Report",
-    availability: "coming",
+    availability: "available",
     body: [
-      "What a site shows people against what it sends to search engines and crawlers: hidden " +
-        "text and links, off-screen spam, closed dialogs, the stack and its age, dead links, " +
-        "consent boilerplate — as a report you can share.",
-      "The crawler already finds the material. On vtu.ac.in a crawl met about 60 gambling " +
-        "links on every page, each positioned twenty trillion pixels off the left edge; the " +
-        "extraction drops them, and the report would say they are there.",
+      "What a site shows people, what it shows machines, and how ready it is for AI agents: " +
+        "words without JavaScript against words with it, what robots.txt declares for each " +
+        "well-known bot, hidden and off-screen links, walls, dead links, the stack and its " +
+        "age — an AI-readiness score with the evidence for every part, and a suggested " +
+        "robots.txt and llms.txt. A link you can share.",
+      "The crawler already found the material. On vtu.ac.in it met about 60 gambling links " +
+        "on every page, each positioned twenty trillion pixels off the left edge; the " +
+        "extraction drops them, and the report says they are there. It never fetches as " +
+        "another bot: the bots table is what the site's file declares.",
     ],
-    ctas: [NOTIFY("Site Truth Report")],
+    ctas: [
+      { label: "Run a report", href: "/report" },
+      { label: "Read the docs", href: DOCS },
+    ],
+  },
+  {
+    id: "watch",
+    name: "Watch",
+    availability: "available",
+    body: [
+      "Tell it a site; run it again whenever you like. Each run crawls with the previous " +
+        "run's pages as seeds, compares every page by its content hash and then section by " +
+        "section, and records what changed with the section heading and the page — in the " +
+        "page's own words, with no model involved.",
+      "Navigation, footers, comments, timestamps and visitor counters are left out before " +
+        "comparing, so a bumped \"last updated\" line is not news. Changes come out as a list, " +
+        "a Markdown digest or an RSS/Atom feed — a university's circulars as a feed. " +
+        "`webgraph watch run` is what a cron entry or a GitHub Action calls.",
+    ],
+    ctas: [
+      { label: "Open Watch", href: "/watch" },
+      { label: "Read the docs", href: DOCS },
+    ],
   },
   {
     id: "cli",
@@ -90,9 +115,9 @@ export const PRODUCTS: readonly Product[] = [
     availability: "available",
     body: [
       "`webgraph site example.com` — analyse, enumerate and extract a whole site from the " +
-        "terminal. `webgraph text <url>` for one page in reading order, `webgraph diff` for " +
-        "what changed since the last crawl, `webgraph bench` to score the engine against a " +
-        "labelled corpus.",
+        "terminal. `webgraph text <url>` for one page in reading order, `webgraph diff` and " +
+        "`webgraph watch` for what changed since the last crawl, `webgraph bench` to score " +
+        "the engine against a labelled corpus.",
       "The same refusals and provenance as the API: a wall is named, an assumed order says so.",
     ],
     ctas: [{ label: "Read the docs", href: DOCS }],

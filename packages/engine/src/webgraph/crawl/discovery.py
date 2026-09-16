@@ -42,6 +42,7 @@ __all__ = [
     "extract_links",
     "group_for_client",
     "load_robots",
+    "parse_groups",
     "policy_from",
 ]
 
@@ -70,13 +71,13 @@ class RobotsGroup:
         return next((a for a in self.agents if token in a), None) or "*"
 
 
-def group_for_client(robots: str) -> RobotsGroup | None:
-    """The group of `robots` that governs this client, read the way `urllib.robotparser`
-    reads it: the group naming the client first, `*` otherwise, None when neither exists.
+def parse_groups(robots: str) -> tuple[RobotsGroup, ...]:
+    """Every `User-agent:` group of a robots.txt, in file order, comments stripped.
 
-    One parser for two readers. `fetch.robots.rule_that_applied` quotes the rule that
-    refused a page and the crawl's discovery report lists the rules that apply; both
-    used to be, or would have been, a second copy of this loop.
+    One parser for three readers. `group_for_client` picks the group that governs this
+    client; `fetch.robots.rule_that_applied` quotes the rule that refused a page; the site
+    report (`report.bots`) reads what the file declares for each well-known AI and search
+    bot. Each used to be, or would have been, a second copy of this loop.
     """
     groups: list[RobotsGroup] = []
     agents: list[str] = []
@@ -101,10 +102,19 @@ def group_for_client(robots: str) -> RobotsGroup | None:
         elif key in ("allow", "disallow"):
             rules.append((key, value))
             lines.append(line)
-        elif key == "crawl-delay":
+        elif key in ("crawl-delay", "content-signal", "content-usage"):
+            # Crawl-delay is a directive; Content-Signal (contentsignals.org) and
+            # Content-Usage (IETF aipref) are declarations that belong to the group they
+            # sit in, read by `report.signals`. Kept verbatim like the rest.
             lines.append(line)
     flush()
+    return tuple(groups)
 
+
+def group_for_client(robots: str) -> RobotsGroup | None:
+    """The group of `robots` that governs this client, read the way `urllib.robotparser`
+    reads it: the group naming the client first, `*` otherwise, None when neither exists."""
+    groups = parse_groups(robots)
     token = ROBOTS_AGENT_TOKEN.lower()
     chosen = next((g for g in groups if any(token in a for a in g.agents)), None)
     if chosen is None:
@@ -381,6 +391,7 @@ def discover_by_crawling(
     config: FetchConfig | None = None,
     policy: RobotsPolicy | None = None,
     delay_seconds: float = 0.1,
+    fetch_files: bool = False,
 ) -> list[str]:
     """Harvest on-site URLs by following links, breadth-first.
 
@@ -398,7 +409,7 @@ def discover_by_crawling(
     from webgraph.crawl.frontier import CrawlScope, Frontier
 
     scope = CrawlScope(root=root, max_depth=max_depth, allow_subdomains=allow_subdomains)
-    frontier = Frontier(scope=scope)
+    frontier = Frontier(scope=scope, fetch_files=fetch_files)
     frontier.add(root, 0)
 
     found: list[str] = []

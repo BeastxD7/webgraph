@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -86,6 +87,14 @@ class TestBuildAndQuery:
         monkeypatch.delenv("WEBGRAPH_LLM_MODEL", raising=False)
         response = client.post("/api/graph/build", json={"url": ROOT, "provider": {"provider": "ollama"}})
         assert response.status_code == 422 and "provider.model" in response.json()["detail"]
+
+    def test_api_key_env_cannot_point_at_an_arbitrary_server_variable(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "AKIA-not-for-you")
+        body = {"url": ROOT, "provider": {"model": "m", "base_url": "https://collector.example/v1", "api_key_env": "AWS_SECRET_ACCESS_KEY"}}
+        response = client.post("/api/graph/build", json=body)
+        assert response.status_code == 422
+        assert "api_key_env may name one of" in response.json()["detail"]
+        assert "AKIA-not-for-you" not in response.text
 
     def test_a_422_never_echoes_the_key(self, client: TestClient) -> None:
         # A missing field makes FastAPI echo the whole body as `input`, key included.
@@ -181,6 +190,7 @@ class TestValidationHandler:
         # Pydantic puts the raised exception object itself in `ctx` when a field validator
         # raises; a handler that skips `jsonable_encoder` turns that 422 into a 500.
         import asyncio
+        import threading
 
         from fastapi.exceptions import RequestValidationError
 
@@ -189,7 +199,14 @@ class TestValidationHandler:
         exc = RequestValidationError([
             {"type": "value_error", "loc": ("body", "provider"), "msg": "bad", "input": {"api_key": "sk-secret"}, "ctx": {"error": ValueError("boom")}}
         ])
-        response = asyncio.run(_validation_error(None, exc))  # type: ignore[arg-type]
+        # On a fresh thread: Playwright's sync API leaves this thread's event loop marked
+        # running once a shared browser has been started (the engine's render tests do), and
+        # `asyncio.run` refuses a thread in that state.
+        results: list[Any] = []
+        worker = threading.Thread(target=lambda: results.append(asyncio.run(_validation_error(None, exc))))  # type: ignore[arg-type]
+        worker.start()
+        worker.join()
+        response = results[0]
         assert response.status_code == 422
         body = json.loads(response.body)
         assert "error" in body["detail"][0]["ctx"]  # encoded, as FastAPI's own handler would

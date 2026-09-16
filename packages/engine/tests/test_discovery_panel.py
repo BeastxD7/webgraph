@@ -247,7 +247,9 @@ class TestFrontierTallies:
             "mailto:someone@x.test",
         ]
         accepted = frontier.extend(links, 1, base=ROOT)
-        assert f"{ROOT}circulars/a.pdf" in accepted
+        # Since #94 a PDF is counted and cited but not queued; `fetch_files` restores the
+        # old behaviour and is pinned in `test_crawl_limits.py`.
+        assert f"{ROOT}circulars/a.pdf" not in accepted, "files are counted, not queued"
         assert f"{ROOT}img/logo.png" not in accepted, "images are not queued"
         assert frontier.kinds == {
             "page": 2,  # the root and /about
@@ -324,7 +326,7 @@ class TestTheStreamReportsIt:
         from webgraph.site import SiteConfig, stream_site
 
         return list(
-            stream_site(ROOT, config=SiteConfig(max_pages=1, concurrency=1, delay_seconds=0.0))
+            stream_site(ROOT, config=SiteConfig(max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0))
         )
 
     def test_a_discovery_event_follows_the_analysis(self) -> None:

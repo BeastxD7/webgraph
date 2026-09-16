@@ -7,6 +7,7 @@ import {
   type DiscoveredKinds,
   type DiscoveryEvent,
   type DoneEvent,
+  type StoppedBy,
   type PageEvent,
   type SiteEvent,
   streamSite,
@@ -29,6 +30,13 @@ export const PHASE_LABEL: Record<Phase, string> = {
   done: "Complete",
   stopped: "Stopped",
   failed: "Failed",
+};
+
+/** What a finished run says when a limit, rather than the site, ended it. */
+export const STOPPED_BY_LABEL: Record<NonNullable<StoppedBy>, string> = {
+  pages: "Reached the page cap",
+  time: "Reached the time limit",
+  queue: "Reached the queue cap",
 };
 
 export interface Live {
@@ -177,8 +185,8 @@ function reduce(state: RunState, action: Action): RunState {
       };
     }
     case "fetching":
-      // Replaces rather than appends: one batch is in flight at a time, and anything left
-      // over from the previous one has already been accounted for by its `page` event.
+      // Replaces rather than appends: the event carries everything in flight right now,
+      // sent whenever that set changes, and a landed page leaves it via its `page` event.
       return { ...state, inFlight: event.urls };
     case "page": {
       // Newest first: on a long crawl the interesting thing is what just landed.
@@ -284,12 +292,15 @@ export function useSiteStream(request: SiteStreamRequest): SiteStream {
     void (async () => {
       try {
         // The reader's saved settings ride along. A page cap given in the address wins
-        // over a saved one -- it is the more deliberate of the two.
+        // over a saved one -- it is the more deliberate of the two -- and when neither
+        // says anything the field is left out, so the API's own cap applies rather than
+        // `0`, which would ask for an unbounded crawl.
         const saved = readOverrides();
+        const cap = maxPages || saved.max_pages;
         await streamSite(
           {
             url,
-            max_pages: maxPages || saved.max_pages || 0,
+            ...(cap ? { max_pages: cap } : {}),
             concurrency: saved.concurrency ?? 6,
             complete,
             crawl: saved.crawl,

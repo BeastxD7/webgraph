@@ -281,8 +281,310 @@ export interface ConfigResponse {
   caps: Record<string, number>;
 }
 
+/** `POST /api/site/report` -- the shape of `webgraph.report.SiteReport.as_dict()`. */
+/** At the root: `blocked` when `/` is disallowed, `partly` when content paths are, `allowed`
+ *  when nothing is or only administrative paths (`/wp-admin/`, `/login`, `/search` …) are. */
+export type BotAccess = "allowed" | "partly" | "blocked";
+export type BotVia = "named" | "wildcard" | "none";
+export type BotPurpose = "search" | "assistant" | "training";
+export type Severity = "high" | "medium" | "low" | "info";
+
+export interface BotPolicy {
+  token: string;
+  operator: string;
+  purpose: BotPurpose;
+  via: BotVia;
+  mentioned: boolean;
+  access: BotAccess;
+  /** `Disallow` lines that apply and decide something, administrative ones included. */
+  disallowed: number;
+  /** The disallowed paths that are content, not housekeeping, in file order. */
+  content_paths: string[];
+  crawl_delay: number | null;
+  /** The directives that apply, verbatim from the file. */
+  lines: string[];
+}
+
+export interface ReportRobots {
+  found: boolean;
+  status: number;
+  text: string;
+  group_for_us: string | null;
+  rules_for_us: string[];
+  crawl_delay_for_us: number | null;
+  allows_us_root: boolean;
+  sitemaps_declared: string[];
+  bots: BotPolicy[];
+}
+
+export interface ReportPage {
+  requested_url: string;
+  url: string;
+  section: string;
+  title: string;
+  description: string;
+  strategy: string;
+  static_chars: number;
+  rendered_chars: number;
+  union_chars: number;
+  static_words: number;
+  rendered_words: number;
+  union_words: number;
+  static_coverage: number;
+  render_error: string | null;
+  static_error: string | null;
+  /** Which side was served a wall: `browser`, `plain fetch`, or `both`. */
+  wall: string | null;
+  hidden_words: Record<string, number>;
+  /** Links inside hidden elements of any kind (a dropdown menu counts). */
+  hidden_links: number;
+  hidden_hosts: { host: string; links: number; offscreen: number; external: boolean }[];
+  hidden_external_hosts: number;
+  /** Links inside elements parked off the page -- the shape of an injection. */
+  offscreen_links: number;
+  /** Foreign hosts among them; the spam verdict reads this number and no other. */
+  offscreen_external_hosts: number;
+  consent_words: number;
+  total_words: number;
+  consent_share: number;
+  canonical: string | null;
+  lang: string | null;
+  structured_data: string[];
+  has_schema: boolean;
+  /** `og:*` / `twitter:*` tags on the page; the fourth page-field of the metadata sub-score. */
+  has_open_graph: boolean;
+  internal_links: number;
+  links_checked: number;
+  dead_links: { url: string; status: number }[];
+  dead_count: number;
+  links_unreachable: number;
+  in_sitemap: boolean | null;
+  /** Set when the page could not be read at all; every number is then zero. */
+  error: string | null;
+}
+
+export interface SubScore {
+  key: string;
+  label: string;
+  weight: number;
+  /** Points out of `weight`; null when the measurement could not be made. */
+  score: number | null;
+  measured: boolean;
+  evidence: string;
+  recommendation: string | null;
+  source: string | null;
+}
+
+export interface Finding {
+  severity: Severity;
+  kind: string;
+  title: string;
+  detail: string;
+  page: string | null;
+}
+
+export interface StackEntry {
+  name: string;
+  category: string;
+  version: string | null;
+  released: string | null;
+  age_years: number | null;
+}
+
+export interface LlmsFile {
+  path: string;
+  found: boolean;
+  status: number;
+  bytes: number;
+  sections: number;
+  links: number;
+  title: string | null;
+  /** A sample of the file's links (up to 5) checked for an answer, and how many did. */
+  links_checked: number;
+  links_answering: number;
+}
+
+/** The five groups of `SiteSignal`, in report order (`webgraph.report.signals.GROUPS`). */
+export type SignalGroup = "ai" | "discovery" | "agents" | "metadata" | "trust";
+
+/** One thing the site does or does not publish for machines. */
+export interface SiteSignal {
+  key: string;
+  label: string;
+  group: SignalGroup;
+  group_label: string;
+  /** true: found and shaped like the thing; false: looked for, absent; null: could not be
+   *  looked for (robots.txt disallows the path for this client; IndexNow's key is secret). */
+  present: boolean | null;
+  /** What was found, in the file's own terms. */
+  detail: string;
+  /** Plain words for the owner: what this says to machines and whether anyone is bound. */
+  meaning: string;
+  who_honours: string;
+  spec_url: string;
+  source_url: string | null;
+  status: number | null;
+}
+
+export interface SiteSignals {
+  signals: SiteSignal[];
+  groups: { key: SignalGroup; label: string; signals: string[] }[];
+  llms_txt: LlmsFile;
+  llms_full_txt: LlmsFile;
+  content_signals: { agents: string[]; values: Record<string, string>; line: string }[];
+  root_status: number;
+  /** The root's response headers that are signals: x-robots-tag, link, tdm-reservation … */
+  root_headers: Record<string, string>;
+  /** Requests the collection made, the root included. */
+  requests: number;
+  notes: string[];
+}
+
+export interface SiteReport {
+  url: string;
+  root: string;
+  host: string;
+  generated_at: string;
+  reachable: boolean;
+  /** The engine's own refusal when the root could not be read; no score then. */
+  refusal: string | null;
+  stack: StackEntry[];
+  robots: ReportRobots | null;
+  sitemap_found: boolean;
+  sitemap_urls: number;
+  sitemap_attempts: { url: string; status: number; ok: boolean; urls: number; index: boolean; source: string }[];
+  llms_txt: LlmsFile | null;
+  llms_full_txt: LlmsFile | null;
+  /** What the site declares to machines, in five groups; null only when unreachable. */
+  signals: SiteSignals | null;
+  pages: ReportPage[];
+  score: { total: number; measured_weight: number; subscores: SubScore[] } | null;
+  findings: Finding[];
+  suggested_robots_txt: string | null;
+  suggested_llms_txt: string | null;
+  /** An RFC 9116 template, offered only when the site has no security.txt. */
+  suggested_security_txt: string | null;
+  llms_txt_note: string;
+  measured: {
+    engine_version: string;
+    commit: string;
+    user_agent: string;
+    pages_requested: number;
+    pages_sampled: number;
+    request_interval_seconds: number;
+    duration_seconds: number;
+    render_available: boolean;
+    statement: string;
+  } | null;
+  notes: string[];
+}
+
+// ---------------------------------------------------------------------------------------
+// Watch: change monitoring on top of the crawl (`/api/watch`).
+// ---------------------------------------------------------------------------------------
+
+export type ChangeKind = "added" | "removed" | "changed";
+
+export interface SectionChange {
+  kind: "added" | "removed" | "edited";
+  heading: string;
+  before: string;
+  after: string;
+}
+
+export interface WatchChange {
+  id: number;
+  run_id: number;
+  watch_id: string;
+  url: string;
+  kind: ChangeKind;
+  detected_at: number;
+  before_hash: string;
+  after_hash: string;
+  title: string;
+  /** The provenance: which sections, in the page's own words. */
+  sections: SectionChange[];
+}
+
+export interface WatchRun {
+  id: number;
+  watch_id: string;
+  started_at: number;
+  finished_at: number | null;
+  pages_ok: number;
+  pages_failed: number;
+  stopped_by: StoppedBy;
+}
+
+export interface Watch {
+  id: string;
+  root: string;
+  config: Record<string, unknown>;
+  created_at: number;
+  schedule_seconds: number;
+  last_run: WatchRun | null;
+  runs: number;
+  changes: number;
+}
+
+/** First event of a watch run: what it is being compared against. */
+export interface WatchStartEvent {
+  type: "watch";
+  watch_id: string;
+  run_id: number;
+  root: string;
+  baseline: boolean;
+  previous_run: WatchRun | null;
+  previous_pages: number;
+}
+
+/** One page that differed from the previous run, as it is found. */
+export type ChangeEvent = WatchChange & { type: "change" };
+
+/** The crawl's `done` plus the run's own numbers. */
+export type WatchDoneEvent = DoneEvent & {
+  watch_id: string;
+  run_id: number;
+  baseline: boolean;
+  changes: { added: number; removed: number; changed: number };
+  /** Pages whose text differed only in what the noise rules ignore. */
+  suppressed: number;
+  unchanged: number;
+  /** Pages the previous run read that this run never reached. */
+  unverified: number;
+};
+
+export type WatchEvent =
+  | Exclude<SiteEvent, DoneEvent>
+  | WatchStartEvent
+  | ChangeEvent
+  | WatchDoneEvent;
+
+
 export const api = {
   config: () => requestGet<ConfigResponse>("/api/config"),
+
+  watches: () => requestGet<Watch[]>("/api/watch"),
+
+  watch: (id: string) => requestGet<Watch>(`/api/watch/${encodeURIComponent(id)}`),
+
+  createWatch: (input: {
+    url: string;
+    config?: Record<string, unknown>;
+    schedule_seconds?: number;
+  }) => request<Watch>("/api/watch", input),
+
+  watchChanges: (id: string, since?: string) =>
+    requestGet<{ watch: Watch; changes: WatchChange[] }>(
+      `/api/watch/${encodeURIComponent(id)}/changes${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+    ),
+
+  /** The feed's address, for a reader or an Action to subscribe to. */
+  watchFeedUrl: (id: string, format: "rss" | "atom" = "rss") =>
+    `${API_BASE}/api/watch/${encodeURIComponent(id)}/feed.xml${format === "atom" ? "?format=atom" : ""}`,
+
+  siteReport: (input: { url: string; pages?: number }) =>
+    request<SiteReport>("/api/site/report", input),
 
   health: () => request<HealthResponse>("/api/health"),
 
@@ -505,7 +807,8 @@ export interface FrontierEvent {
 }
 
 /**
- * A batch about to be fetched, announced before the work starts.
+ * Everything in flight right now, sent whenever that set changes. The pool is kept full and
+ * refilled as each page lands (since #94; before, a batch of `concurrency` went out together).
  *
  * Completion events alone can only ever describe the past. This is what lets a live view show
  * the pages being fetched *now*, and remove each one as its result arrives.
@@ -588,6 +891,17 @@ export interface GraphStats {
   mentions: number;
 }
 
+export type StoppedBy = "pages" | "time" | "queue" | null;
+
+export interface SkippedUrl {
+  url: string;
+  kind: "pdf" | "image" | "other_file";
+  via?: string;
+  found_on?: string | null;
+  anchor?: string | null;
+  depth?: number;
+}
+
 export interface DoneEvent {
   type: "done";
   pages_ok: number;
@@ -602,6 +916,22 @@ export interface DoneEvent {
   exhausted: boolean;
   /** True when the crawl ended because the caller stopped it. */
   stopped: boolean;
+  /**
+   * Which limit ended the run: the page cap, the time limit, or a queue cap that turned
+   * addresses away. Null when the frontier ran dry or the caller stopped it.
+   */
+  stopped_by: StoppedBy;
+  /** The limits this run ran under; 0 means none. */
+  limits: { max_pages: number; max_seconds: number; max_queue: number };
+  /** Addresses the queue cap turned away. */
+  queue_refused: number;
+  /** Whether links to PDFs and other files were fetched, or only counted. */
+  fetch_files: boolean;
+  /** Same-site files counted and never fetched, by kind. */
+  skipped: { pdf: number; image: number; other_file: number };
+  skipped_total: number;
+  /** The first of those, each with the page that linked to it. Capped server-side. */
+  skipped_urls: SkippedUrl[];
   /** Repeated text blocks identified as site chrome. */
   chrome_blocks: number;
   /** Template slots that never vary across pages. */
@@ -844,9 +1174,33 @@ export async function streamFrames(
   }
 }
 
+/** Run a watch once; the stream is the crawl's events plus `watch`, `change` and `done`. */
+export async function streamWatchRun(
+  id: string,
+  onEvent: (event: WatchEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  await streamFrames(
+    `/api/watch/${encodeURIComponent(id)}/run`,
+    {},
+    onEvent as (event: unknown) => void,
+    signal,
+  );
+}
+
+
 export async function streamSite(
-  input: { url: string; max_pages: number; concurrency: number; complete: boolean } &
-    Pick<RunOptions, "crawl" | "fetch" | "renderOptions">,
+  /**
+   * `max_pages` and `max_seconds` are optional: left out, the API applies the engine's
+   * caps (500 pages, an hour). Sending `0` is an explicit ask for an unbounded crawl.
+   */
+  input: {
+    url: string;
+    max_pages?: number;
+    max_seconds?: number;
+    concurrency: number;
+    complete: boolean;
+  } & Pick<RunOptions, "crawl" | "fetch" | "renderOptions">,
   onEvent: (event: SiteEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {

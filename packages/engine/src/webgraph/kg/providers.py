@@ -31,6 +31,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal, Protocol
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -179,10 +180,18 @@ class ProviderConfig:
         )
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, Any], *, base: ProviderConfig | None = None) -> ProviderConfig:
+    def from_dict(
+        cls, data: Mapping[str, Any], *, base: ProviderConfig | None = None, trusted: bool = True
+    ) -> ProviderConfig:
         """A request-body config over an environment default. Unknown keys are ignored;
-        `provider` may be a preset name."""
+        `provider` may be a preset name. With `trusted=False` (a body from the network)
+        `api_key_env` may only name a variable in `KEY_ENVS_A_CALLER_MAY_NAME`."""
         current = base or cls.from_env()
+        named_env = data.get("api_key_env")
+        if not trusted and isinstance(named_env, str) and named_env.strip() and named_env.strip() not in KEY_ENVS_A_CALLER_MAY_NAME:
+            raise ValueError(
+                f"api_key_env may name one of {', '.join(sorted(KEY_ENVS_A_CALLER_MAY_NAME))}; send api_key instead"
+            )
         raw = str(data.get("provider") or "").strip().lower()
         preset = PRESETS.get(raw, {})
         updates: dict[str, Any] = {}
@@ -215,10 +224,26 @@ def _json_mode(value: str) -> JsonMode:
 
 
 def _preset_key_env(base_url: str) -> str | None:
+    """The conventional key variable for a `base_url`, decided by the host it names, never
+    by a string prefix: `https://api.openai.com.evil.example/v1` starts with OpenAI's URL
+    and is not OpenAI, and a key sent there is a key given away."""
+    target = urlsplit(base_url)
     for preset in PRESETS.values():
-        if preset["base_url"] and base_url.rstrip("/").startswith(preset["base_url"].rstrip("/")):
+        if not preset["base_url"]:
+            continue
+        known = urlsplit(preset["base_url"])
+        if (target.scheme, target.netloc.lower()) == (known.scheme, known.netloc.lower()):
             return preset["api_key_env"] or None
     return None
+
+
+KEY_ENVS_A_CALLER_MAY_NAME: frozenset[str] = frozenset(
+    {preset["api_key_env"] for preset in PRESETS.values() if preset["api_key_env"]} | {"WEBGRAPH_LLM_API_KEY"}
+)
+"""The environment variables a request over the API may point `api_key_env` at. Anything
+else -- `AWS_SECRET_ACCESS_KEY`, `DATABASE_URL` -- would be read off the server and sent as
+a bearer token to whatever `base_url` the same request named. The CLI is the operator's own
+shell and is not limited."""
 
 
 class Provider(Protocol):

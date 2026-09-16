@@ -19,8 +19,10 @@ crawl at all (`packages/engine/src/webgraph/site.py`, `crawl/frontier.py`,
 `stream_site` is what `POST /api/site/stream` and the web UI run. Discovery and extraction
 are **interleaved**: the root is measured once (Stage 0), the sitemap seeds the frontier,
 and every page that comes back has its links read and fed into the frontier before the
-next batch is taken. Enumerating a whole site first would mean minutes of no output and a
-crawl capped at whatever the sitemap lists; here the first result arrives in seconds.
+next page is taken. The pool of `concurrency` workers is kept full and refilled as each
+page lands (since #94; before, pages went out in batches that ended when the slowest did).
+Enumerating a whole site first would mean minutes of no output and a crawl capped at
+whatever the sitemap lists; here the first result arrives in seconds.
 
 It yields one event per thing that happens — `stage`, `analysis`, `discovery`, `frontier`,
 `fetching`, `page`, `warning`, `done`, `error` — and the `page` event carries the whole
@@ -61,9 +63,13 @@ Not every knob applies to both entry points.
 
 | field | default | applies to | meaning |
 |---|---|---|---|
-| `max_pages` | `0` | both | Pages to extract. `0` is unbounded: until the frontier is exhausted. |
+| `max_pages` | `500` | both | Pages to attempt, refusals included. `0` is unbounded: until the frontier is exhausted. |
+| `max_seconds` | `3600` | `stream_site` | Wall time before the run stops; `0` is no limit. The `done` event's `stopped_by` names the limit that ended a run. |
+| `max_queue` | `20_000` | `stream_site` | Queued addresses beyond which discovery stops accepting; `0` is no limit. |
+| `fetch_files` | `False` | both | Fetch `.pdf` links. Off, PDFs, images and downloads are counted and cited, never requested. |
 | `concurrency` | `4` | both | Worker threads fetching in parallel within one crawl. |
-| `delay_seconds` | `0.3` | both | Pause per worker before each fetch, or the site's `Crawl-delay` if larger. |
+| `delay_seconds` | `0.3` | both | Pause per worker before each fetch. |
+| `host_interval_seconds` | `1.0` | both | Minimum seconds between two pages from the same host, across every worker; the site's `Crawl-delay` replaces it when larger. |
 | `max_depth` | `12` | both | Links away from the root; `0` is the root alone. Breadth-first, so a bounded budget is spent near the root. |
 | `strict_domain` | `True` | both | Stay on the root's host (`www.` and bare are one). `False` also follows subdomains, never other sites. |
 | `sitemap_limit` | `50_000` | `stream_site` | URLs read from sitemaps, at most (`extract_site` uses `probe_site`'s own 5,000). |
