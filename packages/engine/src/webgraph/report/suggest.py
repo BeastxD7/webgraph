@@ -9,6 +9,18 @@ owner uncomments a variant. Two variants are offered and neither is recommended:
 every well-known bot, or allow the search and assistant bots and disallow the training
 crawlers. Blocking is the owner's call; the report never makes it for them.
 
+Content-Signal
+--------------
+The same commented block offers the Content Signals line (contentsignals.org) in its two
+common forms -- search and AI input yes, training no; or all three yes -- and says what it
+is: a declaration a crawler chooses to read, not enforcement. A site that already has the
+line is shown its own values and nothing is proposed. Silence is neither yes nor no.
+
+security.txt
+------------
+RFC 9116, offered only when the site has none: `Contact`, `Expires` (required by the RFC,
+a year out), `Preferred-Languages`, `Canonical`. Every value the owner must fill is marked.
+
 llms.txt
 --------
 The format at llmstxt.org: an H1 with the site's name, a blockquote summary, then H2
@@ -20,14 +32,15 @@ no traffic (Ahrefs, June 2026: 97% of llms.txt files received no requests).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import date
+from typing import Any
 from urllib.parse import urlsplit
 
 from webgraph.report.bots import BOTS, WellKnownBot
 from webgraph.report.pages import PageReport
 
-__all__ = ["LLMS_TXT_NOTE", "suggest_llms_txt", "suggest_robots_txt"]
+__all__ = ["LLMS_TXT_NOTE", "suggest_llms_txt", "suggest_robots_txt", "suggest_security_txt"]
 
 _TITLE_SEPARATORS = (" | ", " \u2013 ", " \u2014 ", " - ", " :: ")
 """Pipe, en dash, em dash, hyphen, double colon: how a page's title carries the site's name."""
@@ -54,11 +67,15 @@ def suggest_robots_txt(
     origin: str,
     sitemap_found: bool,
     sitemaps_declared: Iterable[str],
+    content_signals: Iterable[Any] = (),
+    has_feed: bool | None = None,
     today: date | None = None,
 ) -> str:
     """The site's robots.txt with a commented block of choices appended. `existing` is
     kept verbatim; None or empty means there was no file and the suggestion starts with
-    the conventional open group."""
+    the conventional open group. `content_signals` are the file's parsed `Content-Signal`
+    lines (`signals.ContentSignal`), shown back rather than proposed when present;
+    `has_feed` False adds a note that no feed is advertised."""
     when = (today or date.today()).isoformat()
     head = existing if existing and existing.strip() else "User-agent: *\nAllow: /\n"
     if not head.endswith("\n"):
@@ -83,6 +100,14 @@ def suggest_robots_txt(
         *_lines_for(search, "Allow: /"),
         *_lines_for(training, "Disallow: /"),
     ]
+    block += _content_signal_lines(content_signals)
+    if has_feed is False:
+        block += [
+            "# No RSS/Atom/JSON feed is advertised on the root. A feed is the cheapest",
+            "# 'what changed' a site can offer crawlers and readers; it is a <link",
+            '# rel="alternate" type="application/rss+xml"> in the page, not a robots.txt line.',
+            "#",
+        ]
     declared = list(sitemaps_declared)
     if not declared:
         block += [
@@ -92,6 +117,59 @@ def suggest_robots_txt(
         if not sitemap_found:
             block.append("# (no sitemap was found at /sitemap.xml or /sitemap_index.xml either)")
     return head + "\n".join(block).rstrip("#\n") + "\n"
+
+
+def _content_signal_lines(content_signals: Iterable[Any]) -> list[str]:
+    found = list(content_signals)
+    lines = [
+        "# ---- Content-Signal (contentsignals.org) ----",
+        "# A declaration, not enforcement: it tells AI systems what the owner prefers, in",
+        "# three yes/no signals -- search (index and link back), ai-input (use in AI answers),",
+        "# ai-train (train models on it). A crawler chooses to read it; Cloudflare-verified",
+        "# bots see it on 3.8M managed sites. An omitted signal grants and restricts nothing.",
+        "# The line belongs inside a User-agent group, normally `User-agent: *`.",
+        "#",
+    ]
+    if found:
+        first = found[0]
+        values: Mapping[str, str] = getattr(first, "values", {})
+        agents = ", ".join(getattr(first, "agents", ()) or ("(no group)",))
+        lines += [
+            f"# The file already declares: {', '.join(f'{k}={v}' for k, v in values.items())}"
+            f"  (under User-agent: {agents}). Nothing is proposed.",
+        ]
+        return lines
+    lines += [
+        "# Variant 1 -- findable by search and AI answers, not used for training:",
+        "# Content-Signal: search=yes, ai-input=yes, ai-train=no",
+        "#",
+        "# Variant 2 -- every use allowed:",
+        "# Content-Signal: search=yes, ai-input=yes, ai-train=yes",
+        "#",
+    ]
+    return lines
+
+
+def suggest_security_txt(*, origin: str, today: date | None = None) -> str:
+    """An RFC 9116 security.txt for `/.well-known/security.txt`, every value to fill marked
+    `<...>`. `Expires` is a year from `today`, the RFC's recommended horizon."""
+    when = today or date.today()
+    try:
+        expires = when.replace(year=when.year + 1)
+    except ValueError:  # 29 February
+        expires = when.replace(year=when.year + 1, day=28)
+    return "\n".join(
+        [
+            "# security.txt (RFC 9116) -- publish at /.well-known/security.txt",
+            "# Fill the <...> values. Contact and Expires are required by the RFC.",
+            "Contact: mailto:<security@your-domain>",
+            f"Expires: {expires.isoformat()}T00:00:00.000Z",
+            "Preferred-Languages: en",
+            f"Canonical: {origin.rstrip('/')}/.well-known/security.txt",
+            "# Policy: <https://your-domain/security-policy>",
+            "# Hiring: <https://your-domain/careers>",
+        ]
+    ) + "\n"
 
 
 _GENERIC_PARTS = frozenset({"home", "homepage", "home page", "welcome", "index", "main"})

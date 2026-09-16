@@ -5,7 +5,8 @@ One report is: the root probed both ways (`analyze.probe_site`: stack, robots.tx
 sitemaps), up to `pages` further pages resolved both ways (`resolve.resolve_page`), each
 read for what the plain fetch missed, what was hidden and from whom, what was walled and
 what was declared (`report.pages`); the robots.txt read for each well-known bot
-(`report.bots`); `/llms.txt` looked for; a score with its evidence (`report.score`); and a
+(`report.bots`); what the site declares to machines -- `/llms.txt`, `Content-Signal`, RSL,
+TDM, agent cards, feeds, JSON-LD, `security.txt` and the rest (`report.signals`); a score with its evidence (`report.score`); and a
 suggested `robots.txt` and `llms.txt` (`report.suggest`).
 
 What it refuses to do
@@ -25,20 +26,19 @@ a courtesy call, not a crawl.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Final
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 from webgraph import config
 from webgraph.analyze import probe_site
 from webgraph.crawl.discovery import RobotsPolicy
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
-from webgraph.fetch.static import FetchConfig, FetchResult, fetch_static
+from webgraph.fetch.static import FetchConfig
 from webgraph.report.bots import BotPolicy, declared_policies
 from webgraph.report.pages import (
     LinkChecker,
@@ -55,8 +55,14 @@ from webgraph.report.score import (
     integrity_findings,
     score_site,
 )
+from webgraph.report.signals import LlmsFile, Signals, collect_signals, read_llms_file
 from webgraph.report.stack import StackEntry, stack_entries
-from webgraph.report.suggest import LLMS_TXT_NOTE, suggest_llms_txt, suggest_robots_txt
+from webgraph.report.suggest import (
+    LLMS_TXT_NOTE,
+    suggest_llms_txt,
+    suggest_robots_txt,
+    suggest_security_txt,
+)
 from webgraph.resolve import (
     PageBlockedError,
     PageDisallowedError,
@@ -65,7 +71,15 @@ from webgraph.resolve import (
     resolve_page,
 )
 
-__all__ = ["LlmsFile", "MeasuredHow", "RobotsReport", "SiteReport", "build_site_report", "choose_sample"]
+__all__ = [
+    "LlmsFile",
+    "MeasuredHow",
+    "RobotsReport",
+    "SiteReport",
+    "build_site_report",
+    "choose_sample",
+    "read_llms_file",
+]
 
 NO_IMPERSONATION: Final[str] = (
     "The engine never impersonates other bots. The plain fetches identified themselves as "
@@ -77,31 +91,6 @@ NO_IMPERSONATION: Final[str] = (
 
 _ROBOTS_TEXT_CHARS: Final[int] = 8_000
 _SITEMAP_LIMIT: Final[int] = 2_000
-
-
-@dataclass(frozen=True, slots=True)
-class LlmsFile:
-    path: str
-    found: bool
-    status: int
-    bytes: int = 0
-    sections: int = 0
-    """H2 headings, the llmstxt.org sections."""
-    links: int = 0
-    """Markdown links, `[title](url)`."""
-    title: str | None = None
-    """The H1, when the file has one."""
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "path": self.path,
-            "found": self.found,
-            "status": self.status,
-            "bytes": self.bytes,
-            "sections": self.sections,
-            "links": self.links,
-            "title": self.title,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,11 +166,15 @@ class SiteReport:
     sitemap_attempts: tuple[dict[str, Any], ...] = ()
     llms_txt: LlmsFile | None = None
     llms_full_txt: LlmsFile | None = None
+    signals: Signals | None = None
+    """What the site declares to machines (`report.signals`): Content-Signal, llms.txt,
+    RSL, TDM, agent cards, feeds, JSON-LD, security.txt ... each with who honours it."""
     pages: tuple[PageReport, ...] = ()
     score: SiteScore | None = None
     findings: tuple[Finding, ...] = ()
     suggested_robots_txt: str | None = None
     suggested_llms_txt: str | None = None
+    suggested_security_txt: str | None = None
     llms_txt_note: str = LLMS_TXT_NOTE
     measured: MeasuredHow | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
@@ -201,11 +194,13 @@ class SiteReport:
             "sitemap_attempts": list(self.sitemap_attempts),
             "llms_txt": self.llms_txt.as_dict() if self.llms_txt else None,
             "llms_full_txt": self.llms_full_txt.as_dict() if self.llms_full_txt else None,
+            "signals": self.signals.as_dict() if self.signals else None,
             "pages": [p.as_dict() for p in self.pages],
             "score": self.score.as_dict() if self.score else None,
             "findings": [f.as_dict() for f in self.findings],
             "suggested_robots_txt": self.suggested_robots_txt,
             "suggested_llms_txt": self.suggested_llms_txt,
+            "suggested_security_txt": self.suggested_security_txt,
             "llms_txt_note": self.llms_txt_note,
             "measured": self.measured.as_dict() if self.measured else None,
             "notes": list(self.notes),
@@ -237,32 +232,6 @@ def engine_build() -> tuple[str, str]:
         except (OSError, subprocess.SubprocessError):
             commit = ""
     return installed, commit or "unknown"
-
-
-_H1: Final[re.Pattern[str]] = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
-_H2: Final[re.Pattern[str]] = re.compile(r"^##\s+\S", re.MULTILINE)
-_MD_LINK: Final[re.Pattern[str]] = re.compile(r"\[[^\]]+\]\((?:https?://|/)[^)\s]+\)")
-
-
-def read_llms_file(result: FetchResult, path: str) -> LlmsFile:
-    """Whether `result` is an llms.txt. A catch-all site answers `/llms.txt` with its HTML
-    404 page and status 200, so a body has to look like the format -- plain text, an H1 on
-    its first non-blank line -- before it counts as found."""
-    body = result.html
-    is_html = "html" in result.content_type.lower() or body.lstrip()[:1] == "<"
-    first = next((line for line in body.splitlines() if line.strip()), "")
-    if not result.ok or not body.strip() or is_html or not first.startswith("# "):
-        return LlmsFile(path=path, found=False, status=result.status, bytes=len(body.encode("utf-8", "replace")))
-    title = _H1.search(body)
-    return LlmsFile(
-        path=path,
-        found=True,
-        status=result.status,
-        bytes=len(body.encode("utf-8", "replace")),
-        sections=len(_H2.findall(body)),
-        links=len(_MD_LINK.findall(body)),
-        title=title.group(1) if title else None,
-    )
 
 
 def choose_sample(html: str, root_url: str, *, count: int, policy: RobotsPolicy | None = None) -> list[str]:
@@ -365,15 +334,19 @@ def build_site_report(
     sitemap_pages = {u.rstrip("/") for u in probe.sitemap_pages}
     sitemap_found = any(a.ok for a in probe.sitemap_attempts)
 
-    llms: dict[str, LlmsFile] = {}
-    for path in ("/llms.txt", "/llms-full.txt"):
-        target = urljoin(origin, path)
-        if not policy.allows(target):
-            llms[path] = LlmsFile(path=path, found=False, status=0)
-            notes.append(f"{path} is disallowed for this client by robots.txt and was not fetched")
-            continue
-        pacer.wait(target)
-        llms[path] = read_llms_file(fetch_static(target, config=fetch_config), path)
+    # What the site declares to machines -- llms.txt among it -- fetched through the same
+    # pacer, the same robots.txt, the same User-Agent (`report.signals`).
+    signals = collect_signals(
+        root.url,
+        fetch_config=fetch_config,
+        policy=policy,
+        pacer=pacer,
+        sitemap_found=sitemap_found,
+        sitemap_urls=len(probe.sitemap_pages),
+        sitemap_index=any(a.ok and a.index for a in probe.sitemap_attempts),
+    )
+    notes.extend(signals.notes)
+    llms: dict[str, LlmsFile] = {"/llms.txt": signals.llms_txt, "/llms-full.txt": signals.llms_full_txt}
 
     checker = LinkChecker(fetch_config=fetch_config, policy=policy, pacer=pacer)
     reports: list[PageReport] = [measure_page(root, requested_url=url, host=host, checker=checker)]
@@ -429,6 +402,7 @@ def build_site_report(
         sitemap_attempts=tuple(a.as_dict() for a in probe.sitemap_attempts),
         llms_txt=llms["/llms.txt"],
         llms_full_txt=llms["/llms-full.txt"],
+        signals=signals,
         pages=tuple(reports),
         score=score,
         findings=findings,
@@ -437,9 +411,16 @@ def build_site_report(
             origin=origin,
             sitemap_found=sitemap_found,
             sitemaps_declared=policy.sitemaps,
+            content_signals=signals.content_signals,
+            has_feed=any(s.key == "feeds" and s.present for s in signals.signals),
             today=today,
         ),
         suggested_llms_txt=suggest_llms_txt(reports, host=host),
+        suggested_security_txt=(
+            None
+            if any(s.key == "security_txt" and s.present for s in signals.signals)
+            else suggest_security_txt(origin=origin, today=today)
+        ),
         measured=measured(len(reports)),
         notes=tuple(notes),
     )

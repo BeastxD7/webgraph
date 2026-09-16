@@ -2,8 +2,8 @@
 agents -- from the measurements the engine already makes (`webgraph.report`).
 
 Network-free. One fake host (`serve`) answers every seam the report fetches through --
-the plain fetch, the browser, robots.txt, sitemaps, llms.txt, the dead-link HEADs -- from
-a map of paths, and the pacing interval is zero. The engine never fetches as another bot,
+the plain fetch, the browser, robots.txt, sitemaps, the well-known files, the dead-link
+HEADs -- from a map of paths, and the pacing interval is zero. The engine never fetches as another bot,
 so the bots table is tested as a *reading* of robots.txt: the group that names the bot,
 combined groups, `*`, crawl-delay, and the longest-match rule at the root.
 """
@@ -16,7 +16,8 @@ import pytest
 
 from webgraph.fetch.static import FetchConfig, FetchResult
 
-Served = dict[str, tuple[int, str] | tuple[int, str, str]]
+Served = dict[str, tuple[int, str] | tuple[int, str, str] | tuple[int, str, str, dict[str, str]]]
+"""path -> (status, body[, content-type[, response headers]])."""
 
 PAGE_WORDS = "Enough words here to be a page of its own, with a second sentence so nothing is refused."
 
@@ -39,7 +40,9 @@ ABOUT = f"<html><head><title>About</title></head><body><h1>About</h1><p>{PAGE_WO
 BLOG = f"<html><head><title>Post 1 - Acme</title></head><body><h1>Post 1</h1><p>{PAGE_WORDS}</p></body></html>"
 
 
-def _result(url: str, status: int, body: str, content_type: str = "text/html") -> FetchResult:
+def _result(
+    url: str, status: int, body: str, content_type: str = "text/html", headers: dict[str, str] | None = None
+) -> FetchResult:
     return FetchResult(
         url=url,
         requested_url=url,
@@ -49,6 +52,7 @@ def _result(url: str, status: int, body: str, content_type: str = "text/html") -
         elapsed_seconds=0.01,
         ok=status < 400,
         error=None if status < 400 else f"HTTP {status}",
+        headers={"content-type": content_type, **(headers or {})},
     )
 
 
@@ -68,7 +72,7 @@ def serve(
     from webgraph.crawl import discovery
     from webgraph.fetch import robots as robots_module
     from webgraph.fetch.render import RenderResult
-    from webgraph.report import build, pages
+    from webgraph.report import build, pages, signals
 
     fetched: list[str] = []
 
@@ -78,10 +82,15 @@ def serve(
         if entry is None:
             return _result(url, 404, "<html><body>not found</body></html>")
         status, body = entry[0], entry[1]
-        content_type = entry[2] if len(entry) == 3 else "text/html"
-        return _result(url, status, body, content_type)
+        content_type = entry[2] if len(entry) >= 3 else "text/html"
+        headers = entry[3] if len(entry) == 4 else None
+        return _result(url, status, body, content_type, headers)
 
     def fetch(url: str, *, config: FetchConfig | None = None) -> FetchResult:  # noqa: ARG001
+        fetched.append(url)
+        return lookup(url)
+
+    def fetch_capped(url: str, *, config: FetchConfig, cap: int = 0) -> FetchResult:  # noqa: ARG001
         fetched.append(url)
         return lookup(url)
 
@@ -94,8 +103,9 @@ def serve(
         result = lookup(url)
         return RenderResult(url=url, html=result.html, rects={}, ok=result.ok, status=result.status)
 
-    for module in (resolve, robots_module, discovery, build):
+    for module in (resolve, robots_module, discovery):
         monkeypatch.setattr(module, "fetch_static", fetch)
+    monkeypatch.setattr(signals, "fetch_capped", fetch_capped)
     monkeypatch.setattr(resolve, "render_page", render)
     for module in (resolve, analyze, build):
         monkeypatch.setattr(module, "PLAYWRIGHT_AVAILABLE", True)
