@@ -38,10 +38,11 @@ All notable changes to this project are documented here. The format follows
   draws one settled frame and each state change as a new still; no WebGL2 or a lost context
   leaves the still. Bytes: the field is its own lazy chunk, 25.8 KB raw / 10.5 KB gz, loaded
   after mount; the landing's initial JS is 185.4 KB gz (183.5 on main). Frame times in
-  headed Chromium on an Apple M2 at DPR 2 (capped to 1.5): p50 16.7 ms, p95 17.6 ms, flat 60
-  fps at 1440×900 idle, organising and under the gust, once the per-frame instance upload
-  re-specified its buffer instead of patching one still in flight. Phones draw 450 pages and
-  three cloud octaves.
+  headed Chromium on an Apple M2 at DPR 2 (capped to 1.5), 1440×900, idle, organising and
+  under the gust: p50 16.7 ms in every run; p95 17.6 ms in the quiet runs and 33 ms in runs
+  on the shared machine (56–60 fps mean), once the per-frame instance upload re-specified
+  its buffer instead of patching one still in flight (p95 34 ms before, every run). Phones
+  draw 450 pages and three cloud octaves.
 
 ### Changed (2026-09-16, PR #98) — landing page motion and docs alignment
 - The landing page is a scroll-driven story on one sticky, code-drawn stage
