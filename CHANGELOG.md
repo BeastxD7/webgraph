@@ -30,6 +30,63 @@ All notable changes to this project are documented here. The format follows
   `#nd-page` capped at 76ch plus padding inside Fumadocs' centred `main`, `.prose` at 76ch,
   `--docs-max` 87.5rem (the owner's ~1400px, over DESIGN.md's 90rem). Content unchanged.
 
+
+### Changed (2026-09-16, PR #94) — a crawl has limits by default
+- `CRAWL_MAX_PAGES` is 500, not 0. `0` still means unbounded and now has to be asked for:
+  the API's `SiteRequest.max_pages` defaults to the engine's cap, and the web app leaves
+  the field out unless a cap was given, so the API's default applies rather than `0`. Two
+  new limits beside it: `CRAWL_MAX_SECONDS` (3,600; `SiteRequest.max_seconds`) ends a run
+  by wall time, checked between batches; `CRAWL_MAX_QUEUE` (20,000; `crawl.max_queue`)
+  stops the frontier accepting addresses past that many queued -- a refused address is not
+  marked seen, so it is taken if linked again once the queue has drained. The `done` event
+  says which limit ended the run in `stopped_by` (`"pages"`, `"time"`, `"queue"`, or
+  `null` when the frontier ran dry or the caller stopped it), repeats the caps in `limits`,
+  and counts `queue_refused`; `exhausted` is now false for a run whose frontier had turned
+  addresses away. The reason: a whole-site run of vtu.ac.in with the old defaults ran six
+  hours, held six gigabytes, and was stopped by hand (#87).
+- Files are counted, not fetched. A link whose `url_kind` is `pdf`, `image` or `other_file`
+  (`FILE_KINDS`) is tallied in `discovered_kinds`, recorded with the page that linked to it
+  and the link's text (the frontier's `skipped`, `skipped_urls` and a citation in
+  `origin`), and never requested. The `done` event carries `skipped` by kind,
+  `skipped_total`, and the first `CRAWL_SKIPPED_URLS_REPORTED` (200) addresses with their
+  citations -- a university's circulars as a list, none fetched. `SiteConfig.fetch_files`
+  (`crawl.fetch_files`) queues `.pdf` links as before, for a caller that wants the refusals
+  on record. vtu.ac.in spent a third of six hours fetching 5,730 PDFs to refuse each.
+- `stream_site` no longer holds every page until the end of the run. The full pages are
+  kept only until cross-page chrome is known (six of them, released the moment it is); after
+  that each page keeps its URL, its facts and its schema.org payloads -- what
+  `_aggregate_entities` and the site facts read -- and its blocks, Markdown and images go
+  (`_kept`). The `page` event already carried each of them to the consumer. Measured on
+  sode-edu.in, 300 pages, four workers, `union`, same machine and hour: peak RSS of the
+  crawl process 412 MB -> 332 MB, 715 s -> 484 s, 25.2 -> 37.2 pages/min, 25 PDFs fetched
+  and refused -> 199 counted and not fetched.
+- The crawl loop keeps its pool full and refills it as each page lands, instead of running
+  batches of `concurrency` pages that start together and end when the slowest does. With
+  the per-host interval a batch of four took slots 0-3 s apart and paid that tail every
+  time -- measured 20.1 pages/min against 25.2 before -- and the rolling pool removed it
+  along with the tail the batches always had (37.2). `fetching` events now carry
+  everything in flight, sent whenever that set changes; the time limit and the caller's
+  stop are checked as each page lands, and pages already in flight are finished and
+  reported.
+- Politeness is per host, not per worker. `CRAWL_HOST_INTERVAL_SECONDS` (1.0;
+  `crawl.host_interval_seconds`) is a minimum interval between two pages from the same host
+  across every worker of a crawl, enforced by a shared throttle that reserves the next slot
+  under a lock (`crawl/politeness.py`); the site's `Crawl-delay` replaces it when larger.
+  Before, `max(delay_seconds, crawl_delay)` was slept per worker, and `Crawl-delay: 1` with
+  four workers was four requests a second. `delay_seconds` (0.3) is still the per-worker
+  pause. Under `union` a page is two requests made together; the interval spaces pages.
+- API: `SiteRequest.max_seconds`; `CrawlOptions.fetch_files`, `max_queue`,
+  `host_interval_seconds` (all in `/api/config`'s `overridable.crawl`); the `run` header
+  reports the five limits applied. Web: `DoneEvent.stopped_by`, `limits`, `skipped`,
+  `skipped_urls`; the run summary says which limit ended the run and how many files were
+  counted and not fetched, instead of inferring "the page cap" from `!exhausted`.
+- Tests: `packages/engine/tests/test_crawl_limits.py` (defaults; `stopped_by` for each
+  limit, for a cap that lands on the last page, and for the caller's stop; a `.pdf` link is
+  never resolved but is counted and cited, and `fetch_files` restores the fetch; retention
+  keeps entity payloads and facts and drops blocks; the throttle spaces two real workers);
+  `apps/api/tests/test_api.py::TestCrawlLimits` (request defaults, `/api/config`, `done`
+  carries `stopped_by`, a local server records that the PDF was never requested).
+
 ### Added (2026-09-16, PR #95) — Site Report
 - `webgraph report <url> [--pages N] [--json]`, `POST /api/site/report` and `/report` in
   the web app: what a site shows people, what it shows machines, and how ready it is for

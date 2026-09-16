@@ -29,8 +29,8 @@ after the host's caps, the engine version and the trace file's name.
 - **`frontier`** — the queue after seeding: `queued`, `discovered`, `depth_counts`,
   `discovered_kinds`, `from_sitemap`, and `new_urls`. Clients rebuild the discovered set
   from these deltas rather than receiving the whole frontier each time.
-- **`fetching`** — the `urls` of the batch about to go out, so a live view can show work
-  in flight and not only work finished.
+- **`fetching`** — the `urls` in flight right now, sent whenever that set changes, so a
+  live view can show work in flight and not only work finished.
 
 ## The `page` event
 

@@ -388,6 +388,7 @@ def discover_by_crawling(
     config: FetchConfig | None = None,
     policy: RobotsPolicy | None = None,
     delay_seconds: float = 0.1,
+    fetch_files: bool = False,
 ) -> list[str]:
     """Harvest on-site URLs by following links, breadth-first.
 
@@ -405,7 +406,7 @@ def discover_by_crawling(
     from webgraph.crawl.frontier import CrawlScope, Frontier
 
     scope = CrawlScope(root=root, max_depth=max_depth, allow_subdomains=allow_subdomains)
-    frontier = Frontier(scope=scope)
+    frontier = Frontier(scope=scope, fetch_files=fetch_files)
     frontier.add(root, 0)
 
     found: list[str] = []
