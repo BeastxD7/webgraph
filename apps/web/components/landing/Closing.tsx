@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
 
-import UrlPrompt from "./UrlPrompt";
+import SitePrompt from "./hero/SitePrompt";
 
 /**
- * The fifth chapter: run it. The prompt is the one centred thing on the page (DESIGN.md
- * §1.3) and carries `id="start"`, where the nav's "Run a site" and the hero's button land.
+ * The fifth chapter: run it. The same prompt as the hero's, plain -- no scene to drive -- so
+ * a reader who has read the whole story does not have to scroll back up. `#start` is the
+ * hero's; the nav's "Run a site" lands there.
  */
 export default function Closing() {
   return (
@@ -17,7 +18,7 @@ export default function Closing() {
           Point it at a site.
         </h2>
         <div className="mt-8" data-reveal style={{ "--i": 2 } as CSSProperties}>
-          <UrlPrompt />
+          <SitePrompt />
         </div>
         <p className="mt-3 text-caption text-muted" data-reveal style={{ "--i": 3 } as CSSProperties}>
           Runs on your machine. The only requests made are to the site you name.

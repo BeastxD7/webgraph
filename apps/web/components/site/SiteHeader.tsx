@@ -20,10 +20,15 @@ export { Mark } from "./Wordmark";
  * 8px, so the bar reads as part of the page at rest and as a bar once content scrolls under
  * it. Below the `nav` breakpoint the items fold behind a button that says "Menu" -- the word,
  * not a glyph alone -- and open as a full-width sheet under the bar.
+ *
+ * On the landing the bar floats over the hero's sky: transparent, the items in a pill and
+ * the controls in another, until the hero frame has scrolled past, when it becomes the bar.
  */
 export default function SiteHeader() {
   const pathname = usePathname();
-  const scrolled = useSyncExternalStore(subscribeScroll, isScrolled, () => false);
+  const landing = pathname === "/";
+  const scrolled = useSyncExternalStore(subscribeScroll, landing ? isPastHero : isScrolled, () => false);
+  const floating = landing && !scrolled;
   // The sheet is open *for a path*: a navigation changes the path and so closes it, with no
   // effect needed to do the closing.
   const [openAt, setOpenAt] = useState<string | null>(null);
@@ -38,33 +43,45 @@ export default function SiteHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const bar = scrolled || open ? "bg-surface border-rule" : "bg-ground border-transparent";
+  const bar =
+    scrolled || open ? "bg-surface border-rule" : floating ? "border-transparent" : "bg-ground border-transparent";
+  const pill = floating
+    ? "rounded-pill border border-rule bg-surface/92 shadow-float"
+    : "";
 
   return (
     <header
+      data-floating={floating || undefined}
       className={`sticky top-0 z-30 border-b transition-colors duration-(--dur-base) ease-(--ease) ${bar}`}
     >
-      <div className="page-col flex h-14 items-center gap-4">
+      <div className="page-col relative flex h-14 items-center gap-4">
         <Wordmark />
 
-        <nav aria-label="Site" className="flex-1 items-center gap-6 max-nav:hidden nav:flex">
+        <nav
+          aria-label="Site"
+          className={`items-center max-nav:hidden nav:flex ${
+            floating ? `absolute left-1/2 h-10 -translate-x-1/2 gap-0.5 px-1.5 ${pill}` : "flex-1 gap-6"
+          }`}
+        >
           {NAV.map((item) => (
-            <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} />
+            <NavLink key={item.label} item={item} active={isActive(pathname, item.href)} floating={floating} />
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-1.5">
-          <ThemeToggle />
+        <div className={`ml-auto flex items-center gap-1 nav:gap-1.5 ${floating ? `min-h-10 px-1 ${pill}` : ""}`}>
+          <ThemeToggle className={floating ? "rounded-pill" : ""} />
           {/* Wrapped: the button's own `inline-flex` would otherwise fight `hidden`. */}
           <div className="max-nav:hidden nav:block">
-            <Button href="/#start">Run a site</Button>
+            <Button href="/#start" className={floating ? "h-8 rounded-pill" : ""}>
+              Run a site
+            </Button>
           </div>
           <button
             type="button"
             aria-expanded={open}
             aria-controls={sheetId}
             onClick={() => setOpen(!open)}
-            className="h-9 items-center rounded-md px-3 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 max-nav:inline-flex nav:hidden"
+            className="h-9 items-center rounded-md px-2 text-small font-semibold text-muted hover:text-ink active:bg-sunk pointer-coarse:min-h-11 max-nav:inline-flex nav:hidden"
           >
             {open ? "Close" : "Menu"}
           </button>
@@ -106,10 +123,21 @@ function isScrolled(): boolean {
   return window.scrollY > 8;
 }
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
-  const classes = `text-small font-medium transition-colors duration-(--dur-fast) hover:text-ink ${
-    active ? "text-ink" : "text-muted"
-  }`;
+/** The landing: the bar floats until the hero frame's bottom edge has passed under it. */
+function isPastHero(): boolean {
+  const frame = document.querySelector("[data-hero-frame]");
+  if (!frame) return window.scrollY > 8;
+  return frame.getBoundingClientRect().bottom < 72;
+}
+
+function NavLink({ item, active, floating }: { item: NavItem; active: boolean; floating: boolean }) {
+  const classes = floating
+    ? `inline-flex h-8 items-center whitespace-nowrap rounded-pill px-3 text-small font-medium transition-colors duration-(--dur-fast) ${
+        active ? "bg-ink text-inverse" : "text-muted hover:bg-sunk hover:text-ink"
+      }`
+    : `text-small font-medium transition-colors duration-(--dur-fast) hover:text-ink ${
+        active ? "text-ink" : "text-muted"
+      }`;
   if (item.external) {
     return (
       <a href={item.href} target="_blank" rel="noreferrer" className={classes}>

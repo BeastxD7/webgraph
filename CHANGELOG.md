@@ -43,6 +43,43 @@ All notable changes to this project are documented here. The format follows
   954 relations; 1,500 shown by degree) draws in 1.5 s, answers in 0.8 s and holds 61 fps
   after the path lands. Not measured: a real model's answers.
 
+### Changed (2026-09-16, PR #103) — hero: a field of pages
+- The landing opens on a scene, not a grid: a rounded full-bleed frame (`hero/Hero.tsx`) of a
+  meadow of ~1,000 small paper pages -- the web, as a reader meets it -- under a golden-hour
+  sky, with the prompt standing on a low plinth in the mid-ground and the nearest pages rising
+  past its foot. Hand-written WebGL2, no library (`hero/field/`): the sky, ground and plinth
+  are one ray-cast full-screen pass that also writes depth (a low sun with bloom and a warm
+  horizon band, two fbm cloud layers lit from below, atmospheric fade, film grain, a soft
+  vignette; at dusk in the dark theme the sun is under the horizon and there are stars); the
+  pages are instanced 2×5 strips bent by a noise wind in the vertex shader, with procedural
+  text lines; the graph's threads are additive. Two canvases share one simulation so the
+  pages between the camera and the plinth draw over the prompt's foot, as the reference's
+  grass overlaps its card. The plinth is placed by unprojecting the prompt's DOM box onto the
+  ground, so it stands there at every frame size. The pointer's gust bends nearby pages.
+- The prompt is the hero's centrepiece (`hero/SitePrompt.tsx`): a wide field with a round
+  dark submit, a segmented mode row (Read a page · Run a site · Site report) and example
+  chips inside the box; it normalises with `lib/url` and routes to `/extract` or `/report`.
+  `Closing` renders the same component plain; `UrlPrompt.tsx` is gone. Hovering an example or
+  pressing Run drives the field through the frame's `data-hero-state`: a lightly under-damped
+  spring per page follows targets that are a function of that state, so the scattered pages
+  align into rows spaced one page-height apart on screen (reading order), the oxide-red and
+  dark ones (what a naive reader emits; what the site hides) sink under the ground, nine lift
+  and thread into a graph, and the run card rises above the prompt as what the address
+  becomes. Leaving scatters them again.
+- The site header floats over the sky on `/` -- transparent, items in a pill, controls in a
+  pill -- until the frame has scrolled past; `Story` starts at "01 · The problem" (the promise
+  is the hero's, verbatim) and `Stage` reads chapter numbers from `data-panel`, not index.
+  The ruled ground begins below the frame.
+- Complete without JavaScript: the still is inline SVG from the same seed and camera
+  (`hero/geometry.ts`, `HeroStill.tsx`), hidden only once the renderer draws. Reduced motion
+  draws one settled frame and each state change as a new still; no WebGL2 or a lost context
+  leaves the still. Bytes: the field is its own lazy chunk, 25.8 KB raw / 10.5 KB gz, loaded
+  after mount; the landing's initial JS is 185.4 KB gz (183.5 on main). Frame times in
+  headed Chromium on an Apple M2 at DPR 2 (capped to 1.5), 1440×900, idle, organising and
+  under the gust: p50 16.7 ms in every run; p95 17.6 ms in the quiet runs and 33 ms in runs
+  on the shared machine (56–60 fps mean), once the per-frame instance upload re-specified
+  its buffer instead of patching one still in flight (p95 34 ms before, every run). Phones
+  draw 450 pages and three cloud octaves.
 ### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
 - **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
   model reads every heading-scoped section and states what it says -- entities of twelve
