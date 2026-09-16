@@ -414,7 +414,13 @@ def stream_watch(
         # not the next run's baseline (`WatchStore.baseline_run`).
         db.finish_run(run.id, pages_ok=pages_ok, pages_failed=pages_failed, stopped_by=stopped_by)
 
-    unverified = [url for url in previous_pages if canonical_key(url) not in seen_keys]
+    # Pages the previous run *read* and this run never reached. A page the previous run
+    # only failed on was never watched content, and is not owed a verdict.
+    unverified = [
+        url
+        for url, page in previous_pages.items()
+        if page.ok and canonical_key(url) not in seen_keys
+    ]
     summary = RunSummary(
         watch_id=watch.id,
         run_id=run.id,

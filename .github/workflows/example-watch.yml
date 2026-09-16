@@ -1,51 +1,58 @@
 # Example: run a webgraph watch on a schedule and open an issue when something changed.
 #
-# Shipped commented out, so it does not run in this repository. To use it, copy it into
-# your own repository, set WATCH_URL, and remove the leading "# " from every line below.
-# The watch database lives in the Actions cache between runs, so the last finished run is
-# the baseline for the next; a cache miss means a fresh baseline and a quiet run.
+# Not enabled: the only trigger here is a manual one, and the `schedule` block is commented
+# out. To use it in your own repository, copy the file, set WATCH_URL, and uncomment the
+# schedule. The watch database lives in the Actions cache between runs, so the last finished
+# run is the baseline for the next; a cache miss means a fresh baseline and a quiet run.
 # See apps/web/content/docs/watch/index.mdx.
-#
-# name: watch
-# on:
-#   schedule:
-#     - cron: "17 */6 * * *"
-#   workflow_dispatch:
-# jobs:
-#   watch:
-#     runs-on: ubuntu-latest
-#     permissions:
-#       contents: read
-#       issues: write
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: astral-sh/setup-uv@v5
-#       - run: uv sync --all-packages
-#       - uses: actions/cache@v4
-#         with:
-#           path: ~/.cache/webgraph/watch.sqlite3
-#           key: webgraph-watch-${{ github.run_id }}
-#           restore-keys: webgraph-watch-
-#       - name: Create the watch on first run
-#         run: |
-#           test -f ~/.cache/webgraph/watch.sqlite3 || \
-#             uv run --package webgraph webgraph watch create "$WATCH_URL" --max-pages 200 > watch-id
-#         env:
-#           WATCH_URL: https://vtu.ac.in/
-#       - name: Run it
-#         id: run
-#         run: |
-#           ID=$(uv run --package webgraph webgraph watch list --json | jq -r '.[0].id')
-#           if uv run --package webgraph webgraph --quiet watch run "$ID" --fail-on-change; then
-#             echo "changed=0" >> "$GITHUB_OUTPUT"
-#           else
-#             echo "changed=1" >> "$GITHUB_OUTPUT"
-#           fi
-#           uv run --package webgraph webgraph watch changes "$ID" --since 12h --format md > digest.md
-#       - name: Open or update the issue
-#         if: steps.run.outputs.changed == '1'
-#         uses: peter-evans/create-issue-from-file@v5
-#         with:
-#           title: "Site changed: what moved since the last run"
-#           content-filepath: digest.md
-#           labels: watch
+
+name: example-watch (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Site root to watch
+        default: https://vtu.ac.in/
+        required: true
+  # schedule:
+  #   - cron: "17 */6 * * *"
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-packages
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/webgraph/watch.sqlite3
+          key: webgraph-watch-${{ github.run_id }}
+          restore-keys: webgraph-watch-
+      - name: Create the watch on first run
+        run: |
+          test -f ~/.cache/webgraph/watch.sqlite3 || \
+            uv run --package webgraph webgraph watch create "$WATCH_URL" --max-pages 200 > watch-id
+        env:
+          WATCH_URL: ${{ inputs.url }}
+      - name: Run it
+        id: run
+        run: |
+          ID=$(uv run --package webgraph webgraph watch list --json | jq -r '.[0].id')
+          if uv run --package webgraph webgraph --quiet watch run "$ID" --fail-on-change; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+          uv run --package webgraph webgraph watch changes "$ID" --since 12h --format md > digest.md
+      - name: Open or update the issue
+        if: steps.run.outputs.changed == '1'
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Site changed: what moved since the last run"
+          content-filepath: digest.md
+          labels: watch

@@ -1336,7 +1336,7 @@ def _watch_out(store: WatchStore, watch_id: str) -> WatchOut:
         schedule_seconds=watch.schedule_seconds,
         last_run=last.as_dict() if last else None,
         runs=len(runs),
-        changes=len(store.changes(watch.id, limit=10_000)),
+        changes=store.count_changes(watch.id),
     )
 
 

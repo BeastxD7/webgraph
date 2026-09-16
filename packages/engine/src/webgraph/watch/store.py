@@ -383,6 +383,11 @@ class WatchStore:
             sections=tuple(sections),
         )
 
+    def count_changes(self, watch_id: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM changes WHERE watch_id = ?", (watch_id,)).fetchone()
+        return int(row[0]) if row else 0
+
     def changes(
         self,
         watch_id: str,

@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (2026-09-16, PR #95) — Watch
+### Added (2026-09-16, PR #96) — Watch
 - `webgraph.watch`: change monitoring on top of the crawl. A watch is a root and a
   config; `run_watch` / `stream_watch` crawl it again with the previous run's URL set as
   seeds (`stream_site(..., seeds=)`), compare every page against the last finished run by
@@ -39,9 +39,9 @@ All notable changes to this project are documented here. The format follows
 - CLI: `webgraph watch create <url> [--max-pages] [--complete] [--no-noise] [--config]`,
   `watch list`, `watch run <id> [--fail-on-change]` (non-zero on change, for a scheduled
   job), `watch changes <id> [--since 12h|ISO|epoch] [--format md|json|rss|atom]`.
-  `webgraph diff --fail-on-change` remains. `.github/workflows/example-watch.yml` is a
-  scheduled Action, shipped commented out, that runs a watch every six hours and opens an
-  issue with the digest.
+  `webgraph diff --fail-on-change` remains. `.github/workflows/example-watch.yml` is an
+  Action that runs a watch and opens an issue with the digest; shipped with a manual
+  trigger only and its six-hourly `schedule` commented out, so it never runs unattended.
 - API: `POST /api/watch`, `GET /api/watch`, `GET /api/watch/{id}`, `DELETE /api/watch/{id}`,
   `POST /api/watch/{id}/run` (SSE: the crawl's events plus `watch`, `change`, `done`;
   the same crawl slot, trace and caps as `/api/site/stream`), `GET /api/watch/{id}/changes?since=`,

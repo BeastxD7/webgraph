@@ -145,9 +145,9 @@ after — and any reader, a Slack integration or an Action can subscribe. Each e
 
 ## A scheduled GitHub Action
 
-`.github/workflows/example-watch.yml` is shipped commented out. Uncommented, it runs a
-watch every six hours and opens or updates an issue with the Markdown digest when anything
-changed:
+`.github/workflows/example-watch.yml` is shipped with a manual trigger only and its
+`schedule` commented out, so it never runs unattended. With the schedule in, it runs a
+watch every six hours and opens an issue with the Markdown digest when anything changed:
 
 ```yaml
 name: watch
