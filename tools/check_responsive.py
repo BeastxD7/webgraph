@@ -13,15 +13,16 @@ the offending elements are named with enough of their class list to find them.
 
 Usage
 -----
-    make check-responsive          # with the web app running on :3000
+    make check-responsive          # with the web app running on :3000 (or WEBGRAPH_WEB_BASE)
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Final
 
-BASE: Final[str] = "http://localhost:3000"
+BASE: Final[str] = os.environ.get("WEBGRAPH_WEB_BASE", "http://localhost:3000")
 
 PAGES: Final[tuple[tuple[str, str], ...]] = (
     ("landing", f"{BASE}/"),
