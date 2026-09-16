@@ -14,10 +14,87 @@ All notable changes to this project are documented here. The format follows
   refused / oracle blocked / oracle failed), recall and extra bands, and the worst pages
   with their missing and extra words. `make bench-random-web` runs both.
 - `REPORT-2026-09.md`: the baseline on main@b618443 -- 258 scored, recall median 0.986 /
-  mean 0.916, 27 pages under 0.80, `extra > 0.30` on 53 (consent dialogs and spinner
-  pages lead), 16 honest refusals. The tail is the work list; nothing in it is diagnosed
-  by this PR.
+  mean 0.916, 27 pages under 0.80, `extra > 0.30` on 53 (consent dialogs lead), 16
+  honest refusals. The report also names two gaps in `report.py`'s own classification --
+  an oracle that rendered an HTTP error page is scored as a page, and a zero-word
+  non-refusal output has no bucket of its own -- and one page (gokitetours.com) where the
+  engine returned nothing without refusing. The tail is the work list; nothing in it is
+  diagnosed by this PR.
 
+### Added (2026-09-16, PR #100) — WebGraph page: the graph, and the query path lit in real time (behind WEBGRAPH_KG)
+- `/graph?url=` (`apps/web/app/graph/page.tsx`, client components under
+  `components/graph/`): the site, a model panel (presets for Ollama, LM Studio, vLLM,
+  OpenAI, Anthropic, Gemini, Groq, OpenRouter, Together, DeepSeek, Mistral, xAI, or a
+  custom OpenAI-compatible endpoint; the key is typed in the browser, sent only in the
+  body of each request, never stored server-side, and kept in page memory unless the reader
+  ticks "remember in this browser"), a build panel that shows the `estimate` first and
+  streams progress, caps and the final stats, the graph, an ask box, export and Neo4j sync.
+- The graph: sigma 3 (WebGL) + graphology, ForceAtlas2 in a worker for a bounded time;
+  colour by type in a fixed eight-slot categorical order that passes the dataviz palette
+  checks on both grounds (the light one warns on contrast, answered by labels and the list),
+  size by
+  evidence count; hover and selection dim the rest; clicking a node shows every mention with
+  its quote and `url#xpath`, attributes and relations each with their quote. Phone width
+  falls back to a filterable list; the page never scrolls sideways.
+- The path in real time: a store outside React (`pathStore`) receives each query event and
+  sigma's reducers read it on refresh -- seeds amber, hop edges blue with a 350 ms particle
+  on an overlay canvas, evidence nodes enlarged, answer nodes green with a camera pan;
+  everything else ghosted. Answer sentences carry `[n]` superscripts to a numbered source
+  list; an uncited sentence is rendered flagged.
+- npm: `sigma`, `graphology`, `graphology-layout-forceatlas2`, `@react-sigma/core` (the
+  four the design allows; nothing else). `lib/api.ts` exports `streamFrames` and a
+  `requestJson` so the WebGraph client (`lib/kg.ts`) shares one SSE parser and one failure
+  vocabulary. `/api/health` type gains `webgraph`; when it is false the page says how to
+  turn the flag on.
+- API: `no_model: true` on `POST /api/graph/query` forces the extractive answer even when
+  the server has `WEBGRAPH_LLM_MODEL`; the extractive answer is one quoted sentence per
+  row so the sentence splitter keeps their citations apart.
+- `/products`: the WebGraph card is "Available — preview, behind a flag" with CTAs to
+  `/graph` and the docs; the footer gains WebGraph; `/docs/webgraph` gains "The page".
+- Measured only with the fake provider (no key in the environment; Ollama has no models),
+  in headless Chromium: the fixture site (35 entities) builds, the path streams and lights,
+  every citation resolves to `url#xpath`, both themes, 1440 px and 400 px with no sideways
+  scroll, no console errors; the sode-edu.in crawl's fake-provider graph (4,490 entities,
+  954 relations; 1,500 shown by degree) draws in 1.5 s, answers in 0.8 s and holds 61 fps
+  after the path lands. Not measured: a real model's answers.
+
+### Changed (2026-09-16, PR #103) — hero: a field of pages
+- The landing opens on a scene, not a grid: a rounded full-bleed frame (`hero/Hero.tsx`) of a
+  meadow of ~1,000 small paper pages -- the web, as a reader meets it -- under a golden-hour
+  sky, with the prompt standing on a low plinth in the mid-ground and the nearest pages rising
+  past its foot. Hand-written WebGL2, no library (`hero/field/`): the sky, ground and plinth
+  are one ray-cast full-screen pass that also writes depth (a low sun with bloom and a warm
+  horizon band, two fbm cloud layers lit from below, atmospheric fade, film grain, a soft
+  vignette; at dusk in the dark theme the sun is under the horizon and there are stars); the
+  pages are instanced 2×5 strips bent by a noise wind in the vertex shader, with procedural
+  text lines; the graph's threads are additive. Two canvases share one simulation so the
+  pages between the camera and the plinth draw over the prompt's foot, as the reference's
+  grass overlaps its card. The plinth is placed by unprojecting the prompt's DOM box onto the
+  ground, so it stands there at every frame size. The pointer's gust bends nearby pages.
+- The prompt is the hero's centrepiece (`hero/SitePrompt.tsx`): a wide field with a round
+  dark submit, a segmented mode row (Read a page · Run a site · Site report) and example
+  chips inside the box; it normalises with `lib/url` and routes to `/extract` or `/report`.
+  `Closing` renders the same component plain; `UrlPrompt.tsx` is gone. Hovering an example or
+  pressing Run drives the field through the frame's `data-hero-state`: a lightly under-damped
+  spring per page follows targets that are a function of that state, so the scattered pages
+  align into rows spaced one page-height apart on screen (reading order), the oxide-red and
+  dark ones (what a naive reader emits; what the site hides) sink under the ground, nine lift
+  and thread into a graph, and the run card rises above the prompt as what the address
+  becomes. Leaving scatters them again.
+- The site header floats over the sky on `/` -- transparent, items in a pill, controls in a
+  pill -- until the frame has scrolled past; `Story` starts at "01 · The problem" (the promise
+  is the hero's, verbatim) and `Stage` reads chapter numbers from `data-panel`, not index.
+  The ruled ground begins below the frame.
+- Complete without JavaScript: the still is inline SVG from the same seed and camera
+  (`hero/geometry.ts`, `HeroStill.tsx`), hidden only once the renderer draws. Reduced motion
+  draws one settled frame and each state change as a new still; no WebGL2 or a lost context
+  leaves the still. Bytes: the field is its own lazy chunk, 25.8 KB raw / 10.5 KB gz, loaded
+  after mount; the landing's initial JS is 185.4 KB gz (183.5 on main). Frame times in
+  headed Chromium on an Apple M2 at DPR 2 (capped to 1.5), 1440×900, idle, organising and
+  under the gust: p50 16.7 ms in every run; p95 17.6 ms in the quiet runs and 33 ms in runs
+  on the shared machine (56–60 fps mean), once the per-frame instance upload re-specified
+  its buffer instead of patching one still in flight (p95 34 ms before, every run). Phones
+  draw 450 pages and three cloud octaves.
 ### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
 - **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
   model reads every heading-scoped section and states what it says -- entities of twelve
@@ -128,7 +205,7 @@ All notable changes to this project are documented here. The format follows
   group they sit in. `PageReport.has_open_graph`; `LlmsFile` gains `links_checked` /
   `links_answering` and moves to `report/signals.py` (re-exported).
 
-### Changed (2026-09-16, PR #99)
+### Changed (2026-09-16, PR #102) — the metadata sub-score counts OpenGraph
 - The 10-point *Structured data and page metadata* sub-score's 4 page-field points now
   count OpenGraph beside title, description and `lang` (four fields; a page with the
   older three and no `og:*` earns 3 of 4). Weights unchanged; total stays 100. No new

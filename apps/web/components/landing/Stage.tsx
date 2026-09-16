@@ -113,16 +113,20 @@ function Live({ copy }: { copy: StageCopy }) {
       const s = stage.getBoundingClientRect();
       const band = s.width > story.getBoundingClientRect().width * 0.8;
       const ref = band ? s.bottom + (window.innerHeight - s.bottom) * 0.4 : s.top + s.height / 2;
-      let chapter = 0;
+      // Chapter numbers are the panels' own (`data-panel`), not their index: the promise
+      // is the hero now, so the first panel here is chapter 1.
+      let chapter = Number(panels[0]?.dataset.panel ?? 1);
       let t = 0;
+      let last = false;
       panels.forEach((panel, i) => {
         const r = panel.getBoundingClientRect();
         if (ref >= r.top) {
-          chapter = i;
+          chapter = Number(panel.dataset.panel);
           t = (ref - r.top) / Math.max(1, r.height);
+          last = i === panels.length - 1;
         }
       });
-      if (chapter === panels.length - 1 && !band) t *= 2;
+      if (last && !band) t *= 2;
       scene.setChapter(chapter, t);
       if (scene.chapter !== lastChapter) {
         lastChapter = scene.chapter;

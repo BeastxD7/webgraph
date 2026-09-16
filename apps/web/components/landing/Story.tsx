@@ -2,8 +2,6 @@ import type { CSSProperties } from "react";
 
 import Link from "next/link";
 
-import Button from "@/components/ui/Button";
-import { DOCS } from "@/components/site/links";
 import { FIDELITY, RENDER_PREDICTION } from "@/lib/benchmarks";
 
 import type { StageCopy } from "./scene/scene";
@@ -11,8 +9,8 @@ import Stage from "./Stage";
 import StoryStill from "./StoryStill";
 
 /**
- * The landing's first four chapters on one sticky stage: the promise (hero), the pain, the
- * turn and the result. The copy is server-rendered and scrolls past the stage; `Stage`
+ * Chapters one to three on one sticky stage: the pain, the turn and the result. The promise
+ * (the hero) is `hero/Hero.tsx`, a scene of its own. The copy is server-rendered and scrolls past the stage; `Stage`
  * reads how far it has scrolled and morphs the scene. The proof (ProofStrip, RefusesDrops,
  * Standings) and the run prompt (Closing) follow as ordinary sections.
  *
@@ -62,8 +60,8 @@ export default function Story() {
   return (
     <section
       data-story
-      aria-labelledby="hero-title"
-      className="page-col relative lg:grid lg:grid-cols-12 lg:gap-x-8"
+      aria-label="How it reads"
+      className="page-col relative lg:grid lg:grid-cols-12 lg:gap-x-8 max-md:pt-10 md:pt-16"
     >
       {/* The stage: sticky under the header. On a phone it is a band at the top the copy
           slides beneath; from lg it is the right seven columns. */}
@@ -87,28 +85,6 @@ export default function Story() {
       </div>
 
       <div className="lg:order-1 lg:col-span-5">
-        {/* 0 — the promise */}
-        <div className={`${PANEL} max-lg:pt-8`} data-panel="0">
-          <p className="text-label font-bold uppercase text-muted">Open-source · Runs locally · MIT</p>
-          <h1 id="hero-title" className="mt-5 font-display text-display text-ink">
-            The honest web reader.
-          </h1>
-          <p className="measure-lede mt-6 text-body text-muted">
-            Point it at a website. Every public page comes back as Markdown in the order a
-            reader sees it, with a note of how each page was obtained — and a refusal, named,
-            for every page it could not read.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <Button href="/#start">Run a site</Button>
-            <Button href={DOCS} variant="secondary">
-              Read the docs
-            </Button>
-          </div>
-          <p className="mt-4 text-caption text-muted">
-            Runs on your machine. The only requests made are to the site you name.
-          </p>
-        </div>
-
         {/* 1 — the pain */}
         <div className={PANEL} data-panel="1">
           <p className="story-label text-label font-bold uppercase text-muted">

@@ -48,7 +48,7 @@ export default function ProductCard({ product }: { product: Product }) {
     >
       <div>
         <Chip tone={available ? "available" : "coming"}>
-          {available ? "Available" : "Coming soon"}
+          {available ? (product.note ? `Available — ${product.note}` : "Available") : "Coming soon"}
         </Chip>
       </div>
       <h2 id={`${product.id}-title`} className="mt-4 text-h3 font-bold text-ink">
