@@ -12,11 +12,14 @@ export const EARTH = {
   tilt: (-30 * Math.PI) / 180,
   /** One turn in this many seconds when nothing is asked of it. */
   turnSeconds: 300,
-  /** Where the sun disc is drawn, as azimuth and elevation from the line of sight, radians. */
+  /** Where the sun disc is drawn, as azimuth and elevation from the line of sight, radians:
+   *  just behind the limb, so it rises from it, half hidden. */
   sunAz: (18 * Math.PI) / 180,
-  sunEl: (-3.2 * Math.PI) / 180,
+  sunEl: (-5.7 * Math.PI) / 180,
   /** Where the light comes from, so the crescent under the sun is lit. */
   light: [0.78, 0.32, 0.28] as const,
+  /** The day scene (the light theme): the sun high behind the viewer, to the right. */
+  dayLight: [0.5, 0.55, -0.68] as const,
 } as const;
 
 /** The planet's centre for a camera at the origin looking down +z. */

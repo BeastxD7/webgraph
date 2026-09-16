@@ -66,6 +66,7 @@ uniform vec3 uSunL;          // the light's direction (toward the sun)
 uniform vec3 uSunS;          // where the sun disc is drawn (toward it)
 uniform float uRot, uTilt;   // longitude of rotation; the axis tilt toward the camera
 uniform vec4 uMarker;        // lat, lon, strength, unused
+uniform float uTheme;        // 0 the night scene, 1 the day scene; between them while the theme changes
 uniform int uStarOct;
 uniform sampler2D uDay, uNight, uClouds, uSpec;
 ${COMMON}
@@ -115,10 +116,17 @@ void main() {
   float sdisc = max(dot(dir, uSunS), 0.0);
 
   vec3 col = vec3(0.0);
+  float hit = 0.0;
   if (h < 0.0) {
-    col = stars(dir) * 0.55;
+    vec3 night = stars(dir) * 0.55;
     // The sun: a disc far brighter than anything, for the bloom to spread.
-    col += vec3(1.0, 0.95, 0.85) * (smoothstep(0.999955, 0.999985, sdisc) * 30.0 + pow(sdisc, 3000.0) * 4.0 + pow(sdisc, 200.0) * 0.5);
+    night += vec3(1.0, 0.95, 0.85) * (smoothstep(0.999955, 0.999985, sdisc) * 30.0 + pow(sdisc, 3000.0) * 4.0 + pow(sdisc, 200.0) * 0.5);
+    // Daylight: no stars read; the sky is the air's own light, brightest at the limb.
+    vec3 toC = normalize(uCentre);
+    float angR = asin(1.0 / length(uCentre));
+    float above = acos(clamp(dot(dir, toC), -1.0, 1.0)) - angR;
+    vec3 day = mix(vec3(0.8, 0.9, 1.0) * 1.1, vec3(0.38, 0.5, 0.72) * 0.5, smoothstep(0.0, 0.55, above));
+    col = mix(night, day, uTheme);
   }
   // The atmosphere shell, for rays that miss the ground.
   float ha = b * b - (dot(oc, oc) - 1.07 * 1.07);
@@ -128,16 +136,18 @@ void main() {
     float alt = length(cp - uCentre) - 1.0;
     vec3 n = normalize(cp - uCentre);
     float lit = smoothstep(-0.35, 0.25, dot(n, uSunL));
-    float dens = exp(-max(alt, 0.0) / 0.02);
+    float dens = exp(-max(alt, 0.0) / mix(0.02, 0.04, uTheme));
     float path = 2.0 * sqrt(ha);
     // Blue where the air scatters the sun sideways; warm and bright where it comes through toward us.
-    float fwd = pow(sdisc, 30.0);
-    vec3 rim = mix(vec3(0.25, 0.5, 1.0), vec3(1.0, 0.8, 0.6), fwd * 0.7);
-    col += rim * dens * path * (0.08 + 0.9 * lit) * 3.2;
-    col += vec3(0.55, 0.75, 1.0) * exp(-max(alt, 0.0) / 0.004) * (0.15 + lit) * 1.4;
+    float fwd = pow(sdisc, 14.0);
+    vec3 rim = mix(vec3(0.25, 0.5, 1.0), vec3(1.0, 0.78, 0.55), fwd * 0.8);
+    col += rim * dens * path * (0.08 + 0.9 * lit) * (3.2 + 5.0 * fwd) * (1.0 - 0.2 * uTheme);
+    vec3 line = mix(vec3(0.55, 0.75, 1.0), vec3(1.0, 0.85, 0.6), fwd);
+    col += line * exp(-max(alt, 0.0) / 0.004) * (0.15 + lit) * (1.4 + 1.2 * fwd) * (1.0 - 0.5 * uTheme);
   }
 
   if (h >= 0.0) {
+    hit = 1.0;
     float t = -b - sqrt(h);
     vec3 p = ro + dir * t;
     vec3 n = normalize(p - uCentre);
@@ -148,9 +158,12 @@ void main() {
     float lon = atan(nl.x, nl.z) + uRot;
     vec2 uv = vec2(fract(lon / 6.2831853 + 0.5), 0.5 - lat / 3.1415926);
     vec3 dayT = srgb(texture(uDay, uv).rgb);
+    float oceanT = texture(uSpec, uv).r;
+    // By day the water reads as water: a little bluer and deeper than the map's grey-blue.
+    dayT = mix(dayT, dayT * vec3(0.7, 1.0, 1.4) + vec3(0.0, 0.03, 0.08), oceanT * uTheme * 0.8);
     vec3 nightT = srgb(texture(uNight, uv).rgb);
-    float cloud = texture(uClouds, uv).r;
-    float ocean = texture(uSpec, uv).r;
+    float cloud = texture(uClouds, uv).r * (1.0 - 0.15 * uTheme);
+    float ocean = oceanT;
     float ndl = dot(n, uSunL);
     float day = smoothstep(-0.05, 0.22, ndl);
     float ndv = max(dot(n, -dir), 0.0);
@@ -160,7 +173,7 @@ void main() {
     vec2 duv = vec2(nl2.x, -nl2.y) * 0.004;
     float shadow = 1.0 - 0.55 * texture(uClouds, uv + duv).r * day;
     vec3 sun = vec3(1.0, 0.96, 0.9);
-    vec3 ground = dayT * max(ndl, 0.0) * sun * 1.3 * shadow;
+    vec3 ground = dayT * max(ndl, 0.0) * sun * (1.3 + 0.9 * uTheme) * shadow;
     // The glint on the water.
     vec3 refl = reflect(-uSunL, n);
     float glint = pow(max(dot(refl, -dir), 0.0), 90.0) * ocean * (1.0 - cloud) * 1.6;
@@ -171,19 +184,24 @@ void main() {
     c += nightT * vec3(1.0, 0.82, 0.55) * (1.0 - day) * (1.0 - cloud * 0.7) * 7.0;
     c += dayT * 0.006;
     // Air over the ground: bluer toward the limb, only where the sun reaches.
-    float fres = pow(1.0 - ndv, 3.0);
-    c += vec3(0.3, 0.55, 1.0) * fres * (0.05 + 0.7 * day) * 1.3;
+    float fres = pow(1.0 - ndv, 3.0) * (1.0 - 0.6 * uTheme);
+    c += mix(vec3(0.3, 0.55, 1.0), vec3(0.2, 0.42, 0.9), uTheme) * fres * (0.05 + 0.7 * day) * 1.3;
     c = mix(c, vec3(0.5, 0.7, 1.0) * (0.3 + 0.7 * day), fres * 0.4 * day);
     // The marker: a warm point and its halo at the site's country.
     if (uMarker.z > 0.001) {
       vec3 m = vec3(cos(uMarker.x) * sin(uMarker.y - uRot), sin(uMarker.x), cos(uMarker.x) * cos(uMarker.y - uRot));
       float ang = acos(clamp(dot(nl, m), -1.0, 1.0));
       float pulse = 0.85 + 0.15 * sin(uTime * 3.0);
-      c += vec3(1.0, 0.85, 0.6) * (exp(-ang * ang * 6000.0) * 8.0 + exp(-ang * 45.0) * 0.7) * uMarker.z * pulse;
+      // At night a warm point and its halo; by day a green pin with a dark ring, so it reads on the bright ground.
+      c += vec3(1.0, 0.85, 0.6) * (exp(-ang * ang * 6000.0) * 8.0 + exp(-ang * 45.0) * 0.7) * uMarker.z * pulse * (1.0 - uTheme);
+      float pin = exp(-ang * ang * 5000.0);
+      float ring = smoothstep(0.022, 0.026, ang) * (1.0 - smoothstep(0.032, 0.038, ang));
+      float dim = exp(-ang * ang * 600.0) * 0.45;
+      c = mix(c * (1.0 - dim * uMarker.z * uTheme), vec3(0.22, 0.7, 0.18) * (0.7 + 0.3 * pulse), (pin + ring * 0.85) * uMarker.z * uTheme);
     }
     col = c;
   }
-  fragColor = vec4(col, 1.0);
+  fragColor = vec4(col, hit);
 }
 `;
 
@@ -259,7 +277,9 @@ void main() {
     c = (lB < lMin || lB > lMax) ? a : b2;
   }
   vec3 rgb = c.rgb + texture(uBloom, uv).rgb * uBloomK;
-  // The sun's rays: long soft spokes and a horizontal streak, in screen space.
+  // The sun's rays: long soft spokes and a horizontal streak, in screen space; the planet
+  // (alpha 1 where the ground was hit) stands in front of most of them.
+  float occ = 1.0 - c.a * 0.85;
   vec2 d = (vNdc - uSunPx) * vec2(uAspect, 1.0);
   float r = length(d);
   float th = atan(d.y, d.x);
@@ -267,7 +287,7 @@ void main() {
   float rays = spokes * exp(-r * 3.5) * 0.7 + exp(-abs(d.y) * 80.0) * exp(-r * 2.4) * 0.3;
   float core = exp(-r * 70.0) * 7.0 + exp(-r * 24.0) * 0.55;
   float halo = exp(-r * 5.0) * 0.22;
-  rgb += vec3(1.0, 0.97, 0.9) * core * uSunVis + vec3(0.7, 0.85, 1.0) * (rays + halo) * uSunVis;
+  rgb += (vec3(1.0, 0.92, 0.78) * core + vec3(0.75, 0.85, 1.0) * rays + vec3(1.0, 0.85, 0.65) * halo) * uSunVis * occ;
   rgb = aces(rgb * uExposure);
   rgb = pow(rgb, vec3(1.0 / 2.2));
   float vig = 1.0 - uVignette * smoothstep(0.55, 1.5, length(vNdc * vec2(1.0, 1.15)));
