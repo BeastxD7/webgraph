@@ -70,6 +70,7 @@ from webgraph.watch import (
     site_config_from,
     stream_watch,
 )
+from webgraph.watch.store import default_watch_db
 
 # Every value a deployment can set lives in `webgraph.settings.Settings` (defaults in `webgraph.config`), read once here. The
 # reasoning for each cap is beside its field there; these names are kept because the rest of
@@ -1288,8 +1289,9 @@ def _watches() -> WatchStore:
     create a file in the user's cache directory."""
     global _watch_store
     with _watch_store_lock:
-        if _watch_store is None or _watch_store.path != (WATCH_DB or _watch_store.path):
-            _watch_store = WatchStore(WATCH_DB)
+        wanted = Path(WATCH_DB) if WATCH_DB else default_watch_db()
+        if _watch_store is None or _watch_store.path != wanted:
+            _watch_store = WatchStore(wanted)
         return _watch_store
 
 

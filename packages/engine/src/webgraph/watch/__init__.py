@@ -25,8 +25,11 @@ each side. The first run is the baseline and records no changes. No model is inv
 anywhere; two runs over the same two versions of a site produce the same changes.
 
 `removed` is a claim the run can stand behind: a page the previous run read that this run
-asked for and was told is gone (an HTTP 4xx). A page the run did not reach -- the cap was
-hit first -- is counted as `unverified`, not as gone.
+asked for and was told is gone (HTTP 404 or 410). A page the run did not reach -- the cap
+was hit first -- is counted as `unverified`, not as gone. The baseline is the last run that
+finished, read at least one page, and was not cut short by the caller or an error; a run
+that ended at a limit is one, so a watch's `max_pages` is also the size of what it watches,
+and a run that reaches pages an earlier, smaller run did not reports them as `added`.
 
 Scheduling is not the engine's business in v1. `webgraph watch run <id>` (or
 `POST /api/watch/{id}/run`) is what a cron entry or a GitHub Action calls;
@@ -245,8 +248,12 @@ def _cleaned(sections: list[Section], rules: NoiseRules) -> list[Section]:
 
 
 def _gone(error: str | None) -> bool:
-    """An HTTP 4xx is the site saying the page is not there. A timeout is not."""
-    return bool(error) and str(error).startswith("HTTP 4")
+    """`HTTP 404` or `HTTP 410` is the site saying the page is not there
+    (`config.MISSING_STATUSES`, the only statuses the crawl reports as `HTTP <n>`). A wall,
+    a rate limit or a timeout is named in words and is not."""
+    if not error:
+        return False
+    return any(str(error).startswith(f"HTTP {status}") for status in engine_config.MISSING_STATUSES)
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,7 +323,7 @@ def stream_watch(
         site_config = adjust(site_config)
     rules = NoiseRules.from_config(watch.config)
 
-    previous_run = db.last_finished_run(watch.id)
+    previous_run = db.baseline_run(watch.id)
     previous_pages = db.pages_of(previous_run.id) if previous_run is not None else {}
     previous_by_key = {canonical_key(url): page for url, page in previous_pages.items()}
     baseline = previous_run is None
@@ -389,13 +396,17 @@ def stream_watch(
                 yield {"type": "change", "watch_id": watch.id, "run_id": run.id, **change.as_dict()}
             elif kind == "done":
                 crawl_done = event
-                stopped_by = event.get("stopped_by")
+                # The caller's stop is recorded as one, so `baseline_run` can pass over it.
+                stopped_by = "stopped" if event.get("stopped") else event.get("stopped_by")
             else:
                 yield event
+    except BaseException:
+        stopped_by = "error"
+        raise
     finally:
-        # The run is closed however the loop ended -- a caller that stops mid-crawl still
-        # leaves a finished run, which the next run compares against. An error also
-        # closes it, so a run that died is not mistaken for one still going.
+        # The run is closed however the loop ended, so a run that died is not mistaken for
+        # one still going. A run the caller stopped, or that errored, is finished but is
+        # not the next run's baseline (`WatchStore.baseline_run`).
         db.finish_run(run.id, pages_ok=pages_ok, pages_failed=pages_failed, stopped_by=stopped_by)
 
     unverified = [url for url in previous_pages if canonical_key(url) not in seen_keys]

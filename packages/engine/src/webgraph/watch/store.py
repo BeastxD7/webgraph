@@ -294,11 +294,28 @@ class WatchStore:
         return [_run(row) for row in rows]
 
     def last_finished_run(self, watch_id: str) -> Run | None:
-        """The run the next one is compared against. An unfinished run -- one that is still
-        going, or that died -- is not a baseline: its page set is whatever it got to."""
+        """The most recent run that finished, whatever it found."""
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM runs WHERE watch_id = ? AND finished_at IS NOT NULL "
+                "ORDER BY finished_at DESC LIMIT 1",
+                (watch_id,),
+            ).fetchone()
+        return _run(row) if row else None
+
+    def baseline_run(self, watch_id: str) -> Run | None:
+        """The run the next one is compared against: the most recent that finished, read at
+        least one page, and was not cut short by the caller or by an error.
+
+        A run stopped at three pages by a closed browser tab is a finished run, but it is
+        not what the site looked like; comparing against it would report every real page
+        as `added` -- the false-positive storm a watch exists to avoid. A run that ended
+        at a limit (`pages`, `time`, `queue`) *is* a baseline: a watch capped at 80 pages
+        ends that way every time, and its 80 pages are the pages it watches."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM runs WHERE watch_id = ? AND finished_at IS NOT NULL "
+                "AND pages_ok > 0 AND (stopped_by IS NULL OR stopped_by NOT IN ('stopped', 'error')) "
                 "ORDER BY finished_at DESC LIMIT 1",
                 (watch_id,),
             ).fetchone()

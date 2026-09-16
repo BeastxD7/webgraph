@@ -994,9 +994,11 @@ def stream_site(
     frontier.origin.setdefault(
         normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
     )
-    seeded = frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
-    if seeds:
-        seeded += frontier.extend(list(seeds), 1, via="seed", found_on=None)
+    # The caller's seeds go in first: a watch re-verifies what it knows before it explores,
+    # so a capped run spends its pages on the previous run's pages rather than on whatever
+    # the sitemap lists first.
+    seeded = frontier.extend(list(seeds), 1, via="seed", found_on=None) if seeds else []
+    seeded += frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
     yield _discovery_event(policy, probe.sitemap_attempts, len(probe.sitemap_pages), len(seeded))
 

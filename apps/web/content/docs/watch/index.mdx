@@ -37,10 +37,19 @@ For each page a run compares against the last finished run in two steps:
    rules applied to both sides. Sections that still differ are the change. If none do, the
    page is counted as **suppressed**: it differed only in noise.
 
-The first run is the **baseline** and records no changes. `removed` is claimed only when
-the site said so: a page the previous run read that this run asked for and got an HTTP 4xx
-back. A page the run did not reach — the page cap was hit first — is **unverified**, not
-gone; a page that failed for another reason (a timeout, a 500) is neither.
+The first run is the **baseline** and records no changes. After that the baseline is the
+last run that finished, read at least one page, and was not cut short by the caller or by
+an error — a run stopped at three pages from a closed browser tab is finished but is not
+what the site looked like, and comparing against it would report every real page as new.
+A run that ended at a limit *is* a baseline: a watch capped at 80 pages ends that way every
+time, and its 80 pages are the pages it watches, so a later run that reaches pages an
+earlier, smaller run did not reports them as `added`.
+
+`removed` is claimed only when the site said so: a page the previous run read that this run
+asked for and got HTTP 404 or 410 back. A page the run did not reach — the page cap was hit
+first — is **unverified**, not gone; a page that failed for another reason (a wall, a
+timeout, a 500) is neither. The previous run's pages are queued before the sitemap's, so a
+capped run re-verifies what it knows before it explores.
 
 <Callout type="info" title="Why the content Markdown, and why not the main-content boundary">
 Navigation, headers, footers and comment threads come off before comparing — that is what

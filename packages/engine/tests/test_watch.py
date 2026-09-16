@@ -362,11 +362,65 @@ class TestIncrementalRun:
         assert front, "with the rules off, the bumped timestamp is a change"
         assert summary.suppressed == 0
 
-    def test_a_stopped_run_is_still_a_finished_run(self, site: Site, db: Path) -> None:
+    def test_a_stopped_run_is_finished_but_is_not_the_baseline(self, site: Site, db: Path) -> None:
+        """A tab closed at page three must not turn every real page into `added` next time."""
         watch = create_watch(site.url, CONFIG, store=db)
-        events = list(stream_watch(watch.id, store=db, should_stop=lambda: True))
+        first = run_watch(watch.id, store=db)
+        calls = {"n": 0}
+
+        def stop_soon() -> bool:
+            calls["n"] += 1
+            return calls["n"] > 1
+
+        events = list(stream_watch(watch.id, store=db, should_stop=stop_soon))
         assert events[-1]["type"] == "done"
-        assert WatchStore(db).last_finished_run(watch.id) is not None
+        store = WatchStore(db)
+        stopped = store.last_finished_run(watch.id)
+        assert stopped is not None and stopped.id != first.run_id
+        assert stopped.stopped_by == "stopped"
+        baseline = store.baseline_run(watch.id)
+        assert baseline is not None and baseline.id == first.run_id
+
+        third = run_watch(watch.id, store=db)
+        assert not third.any_change
+        assert third.unchanged == 4
+
+    def test_a_run_that_read_nothing_is_not_the_baseline(self, db: Path) -> None:
+        store = WatchStore(db)
+        watch = store.create_watch("https://example.test/")
+        empty = store.start_run(watch.id)
+        store.finish_run(empty.id, pages_ok=0, pages_failed=1, stopped_by=None)
+        assert store.last_finished_run(watch.id) is not None
+        assert store.baseline_run(watch.id) is None
+
+    def test_a_run_that_ended_at_a_limit_is_a_baseline(self, db: Path) -> None:
+        store = WatchStore(db)
+        watch = store.create_watch("https://example.test/")
+        capped = store.start_run(watch.id)
+        store.finish_run(capped.id, pages_ok=80, pages_failed=0, stopped_by="pages")
+        errored = store.start_run(watch.id)
+        store.finish_run(errored.id, pages_ok=3, pages_failed=0, stopped_by="error")
+        baseline = store.baseline_run(watch.id)
+        assert baseline is not None and baseline.id == capped.id
+
+    def test_a_wall_is_not_a_removed_page(self) -> None:
+        from webgraph.watch import _gone
+
+        assert _gone("HTTP 404")
+        assert _gone("HTTP 410: page does not exist")
+        assert not _gone("HTTP 403")
+        assert not _gone("blocked: the server returned a Cloudflare challenge (403)")
+        assert not _gone(None)
+
+    def test_the_previous_runs_pages_are_seeded_before_the_sitemap(self) -> None:
+        from webgraph.crawl.frontier import CrawlScope, Frontier
+
+        frontier = Frontier(scope=CrawlScope(root="https://example.test/"))
+        seeds = frontier.extend(["https://example.test/known"], 1, via="seed")
+        seeds += frontier.extend(["https://example.test/from-sitemap"], 1, via="sitemap")
+        assert frontier.pop() == ("https://example.test/known", 1)
+        citation = frontier.citation("https://example.test/known")
+        assert citation is not None and citation.via == "seed"
 
 
 def _fields(config: Any) -> dict[str, Any]:
