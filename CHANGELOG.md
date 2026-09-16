@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #TBD) — hero: the Earth by day and by night
+### Changed (2026-09-17, PR #106) — hero: the Earth by day and by night
 - The hero follows the page's theme, both photoreal, from the same orbit. Dark: the night
   scene as before, with the sun now rising from behind the limb -- half hidden, the rays and
   core occluded where the planet stands in front (the scene pass writes the ground into
