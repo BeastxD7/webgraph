@@ -1,0 +1,109 @@
+---
+title: Providers
+description: Bring your own key -- OpenAI-compatible endpoints (OpenAI, Groq, Together, OpenRouter, DeepSeek, Mistral, xAI, Ollama, LM Studio, vLLM), Anthropic and Gemini -- through three raw-httpx adapters; where the key travels and where it never goes.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+WebGraph talks to models through three small adapters in
+`packages/engine/src/webgraph/kg/providers.py`, all plain `httpx` -- no vendor SDK, no
+LiteLLM. Every system the design studied ended up with "one module per vendor plus an
+OpenAI-compatible route with a `base_url`"; that is what this is, without adding anything
+to `pip install webgraph`.
+
+| provider | endpoint | structured output |
+|---|---|---|
+| `openai-compatible` | `{base_url}/chat/completions` | `response_format: json_schema` (strict) → `json_object` with the schema in the prompt → plain prompt. A 400 on one rung steps down and remembers. |
+| `anthropic` | `/v1/messages` | `output_config.format: json_schema`; schema-in-prompt fallback |
+| `gemini` | `models/{model}:generateContent` | `responseJsonSchema`; schema-in-prompt fallback |
+| `fake` | none | deterministic; for tests and the CI benchmark |
+
+Responses are validated against the extraction schema with `jsonschema` regardless of
+mode, then every quote is verified against the section (see [the provenance
+rule](/docs/webgraph#the-provenance-rule)). Retries: 408, 409, 429 and 5xx with backoff, four
+attempts; any other 4xx is an error straight away.
+
+## Configuration shape
+
+```json
+{
+  "provider": "openai-compatible",
+  "base_url": "http://localhost:11434/v1",
+  "model": "qwen3:8b",
+  "answer_model": null,
+  "api_key": null,
+  "api_key_env": null,
+  "json_mode": "json_schema",
+  "price_per_m_in": null,
+  "price_per_m_out": null,
+  "max_concurrency": 4
+}
+```
+
+`provider` also accepts a **preset name**, which fills in the `base_url` and the
+conventional key variable: `openai`, `groq`, `together`, `openrouter`, `deepseek`,
+`mistral`, `xai`, `ollama`, `lmstudio`, `vllm`, `anthropic`, `gemini`. `model` is required
+(extraction is the volume; pick a small one); `answer_model` is optional and used for
+questions only. Prices are per million tokens and only turn the estimate and the `max_usd`
+cap into dollars -- nothing is guessed when they are unset.
+
+### From the environment
+
+The server's or shell's defaults, read by `ProviderConfig.from_env()`:
+
+| variable | meaning |
+|---|---|
+| `WEBGRAPH_LLM_PROVIDER` | `openai-compatible`, `anthropic`, `gemini`, or a preset name |
+| `WEBGRAPH_LLM_BASE_URL` | overrides the preset's URL |
+| `WEBGRAPH_LLM_MODEL`, `WEBGRAPH_LLM_ANSWER_MODEL` | the models |
+| `WEBGRAPH_LLM_API_KEY` | a key, for a self-hosted deployment that owns one |
+| `WEBGRAPH_LLM_API_KEY_ENV` | the name of another variable holding the key (e.g. `OPENAI_API_KEY`) |
+| `WEBGRAPH_LLM_JSON_MODE` | `json_schema` (default), `json_object`, `prompt` |
+| `WEBGRAPH_LLM_CONCURRENCY` | sections in flight at once (default 4) |
+| `WEBGRAPH_LLM_PRICE_IN`, `WEBGRAPH_LLM_PRICE_OUT` | dollars per million tokens |
+
+### Per request
+
+`POST /api/graph/build` and `POST /api/graph/query` take a `provider` object of the same
+shape; whatever it carries overrides the environment default for that request.
+
+## Where the key goes, and where it does not
+
+<Callout title="Keys stay local" type="info">
+A key arrives in the request body (the web UI) or from an environment variable (the CLI).
+It is held in a `ProviderConfig` field excluded from `repr`, sent as a header to the
+provider, and nowhere else.
+</Callout>
+
+- **Never persisted.** Nothing writes the config to the SQLite store, a run trace or a
+  log. `ProviderConfig.redacted()` -- provider, URL, model, `has_key: true|false` -- is the
+  only form that appears in an event.
+- **Never echoed.** FastAPI's default 422 handler returns the offending request body; the
+  API replaces it with one that redacts `api_key` and `password` on every route.
+- **Never on a command line.** `webgraph kg` takes `--api-key-env NAME`, not a key, and
+  `sync-neo4j` reads the password from `NEO4J_PASSWORD`.
+- Provider error bodies are truncated to 300 characters before they enter an error message,
+  since some providers echo the request.
+
+## Ollama and other local servers
+
+```bash
+ollama pull qwen3:8b
+WEBGRAPH_KG=1 webgraph kg build https://example.edu/ --provider ollama --model qwen3:8b
+```
+
+Ollama serves `/v1/chat/completions` and accepts `response_format` with a JSON schema; it
+has no `tool_choice`, which is why the adapters never rely on forced tool calls. LM Studio
+(`lmstudio`, port 1234) and vLLM (`vllm`, port 8000) work the same way; for anything else
+that speaks the OpenAI shape, pass `--base-url`. Small local models break schemas more
+often -- the `json_mode` ladder and the one retry bound the damage, and the build's
+`rejection_rate` tells you when a model is not reading the block markers (above ~15% for a
+site, try a larger model or `--json-mode json_object`).
+
+## A custom endpoint
+
+Any URL that serves the OpenAI chat-completions shape:
+
+```json
+{"provider": "openai-compatible", "base_url": "https://llm.internal.example/v1", "model": "my-model", "api_key_env": "INTERNAL_LLM_KEY"}
+```
