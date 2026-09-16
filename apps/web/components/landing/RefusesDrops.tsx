@@ -77,34 +77,36 @@ export default function RefusesDrops() {
     <section aria-labelledby="refuses" className="page-col border-t border-rule max-md:py-16 md:py-24">
       <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
         <div className="min-w-0">
-          <h2 id="refuses" className="font-display text-h2 text-ink">
+          <h2 id="refuses" className="font-display text-h2 text-ink" data-reveal>
             Refuses, and says why
           </h2>
           <p className="measure-lede mt-3 text-body text-muted">
             A page it cannot read is a refusal, not a guess. The message names the wall.
           </p>
           <dl className="mt-6 border-t border-rule">
-            {REFUSES.map((row) => (
-              <EvidenceRow key={row.label} {...row} />
+            {REFUSES.map((row, i) => (
+              <EvidenceRow key={row.label} {...row} index={i} />
             ))}
           </dl>
         </div>
 
         <div className="min-w-0">
-          <h2 className="font-display text-h2 text-ink">Drops what the site hides</h2>
+          <h2 className="font-display text-h2 text-ink" data-reveal>
+            Drops what the site hides
+          </h2>
           <p className="measure-lede mt-3 text-body text-muted">
             What a browser hides from a reader stays hidden in the output, even when the HTML
             holds it.
           </p>
           <dl className="mt-6 border-t border-rule">
-            {DROPS.map((row) => (
-              <EvidenceRow key={row.label} {...row} />
+            {DROPS.map((row, i) => (
+              <EvidenceRow key={row.label} {...row} index={i} />
             ))}
           </dl>
         </div>
       </div>
 
-      <p className="mt-8 max-w-prose text-caption text-muted">
+      <p className="mt-8 max-w-prose text-caption text-muted" data-reveal>
         Refusal kinds are login · challenge · block · undeclared, from the engine&rsquo;s own
         error types. An open cookie prompt is on the page and is judged like anything else.
       </p>
