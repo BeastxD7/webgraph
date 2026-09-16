@@ -87,7 +87,6 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
           event.preventDefault();
           submit();
         }}
-        className="scroll-mt-24"
       >
         <label htmlFor={inputId} className="sr-only">
           Website or page address

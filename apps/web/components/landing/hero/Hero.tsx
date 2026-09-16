@@ -14,12 +14,12 @@ import SitePrompt from "./SitePrompt";
  * Server-rendered and complete without JavaScript: the still is inline SVG of the first
  * frame; `FieldMount` draws the live field over it once the WebGL chunk has loaded. One
  * frame, one viewport tall, no scroll pinning: the story follows below as its own section.
- * The copy is the promise, verbatim from the story's first chapter; the prompt carries
- * `#start`, where the nav's "Run a site" lands.
+ * The copy is the promise, verbatim from the story's first chapter. The section is `#start`,
+ * where the nav's "Run a site" lands: the page top, the prompt in view.
  */
 export default function Hero() {
   return (
-    <section className="landing-hero" aria-labelledby="hero-title">
+    <section id="start" className="landing-hero scroll-mt-0" aria-labelledby="hero-title">
       <div className="hero-frame" data-hero-frame data-hero-state="idle">
         <HeroStill />
         <FieldMount />
@@ -40,7 +40,7 @@ export default function Hero() {
         </div>
 
         <div className="hero-prompt-slot">
-          <SitePrompt id="start" scene />
+          <SitePrompt scene />
         </div>
       </div>
     </section>

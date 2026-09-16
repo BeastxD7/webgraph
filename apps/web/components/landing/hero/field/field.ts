@@ -282,6 +282,7 @@ export function mountField({ frame, back, front }: MountOptions): () => void {
   let time = 0;
   let intro = reduce ? 1 : 0;
   let p = 0;
+  let intersecting = false;
   let visible = false;
   let raf = 0;
   let last = 0;
@@ -522,14 +523,15 @@ export function mountField({ frame, back, front }: MountOptions): () => void {
   ro.observe(frame);
   const io = new IntersectionObserver(
     ([entry]) => {
-      visible = Boolean(entry?.isIntersecting) && document.visibilityState === "visible";
+      intersecting = Boolean(entry?.isIntersecting);
+      visible = intersecting && document.visibilityState === "visible";
       if (visible) wake();
     },
     { threshold: 0.01 },
   );
   io.observe(frame);
   const onVisibility = () => {
-    visible = document.visibilityState === "visible" && visible;
+    visible = intersecting && document.visibilityState === "visible";
     if (visible) wake();
   };
   const onTheme = () => {
@@ -580,7 +582,9 @@ export function mountField({ frame, back, front }: MountOptions): () => void {
     frameStep(0);
   }
   frame.dataset.field = reduce ? "still" : "live";
-  visible = true;
+  // On screen until the observer says otherwise: the first frames must not wait for it.
+  intersecting = true;
+  visible = document.visibilityState === "visible";
   wake();
 
   function dispose() {
