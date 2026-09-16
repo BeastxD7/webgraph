@@ -19,8 +19,9 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
+from itertools import islice
 from typing import Any, Final
 from urllib.parse import urljoin
 
@@ -38,12 +39,15 @@ from webgraph.crawl.discovery import (
     load_robots,
 )
 from webgraph.crawl.frontier import (
+    FILE_KINDS,
     CrawlScope,
     Discovery,
     Frontier,
     normalize_url,
     reconcile_scheme,
+    url_kind,
 )
+from webgraph.crawl.politeness import HostThrottle
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
@@ -55,6 +59,10 @@ from webgraph.types import BlockKind, Document, Fact, PayloadSource
 
 IDENTICAL_CONTENT_WARNING = config.IDENTICAL_CONTENT_WARNING
 DISCOVERY_ROBOTS_TEXT_CHARS = config.DISCOVERY_ROBOTS_TEXT_CHARS
+SKIPPED_URLS_REPORTED = config.CRAWL_SKIPPED_URLS_REPORTED
+
+_monotonic = time.monotonic
+"""The crawl's clock, named so a test can run the time limit down without waiting for it."""
 
 __all__ = [
     "IDENTICAL_CONTENT_WARNING",
@@ -75,9 +83,33 @@ __all__ = [
 @dataclass(frozen=True, slots=True)
 class SiteConfig:
     max_pages: int = config.CRAWL_MAX_PAGES
-    """0 means unbounded: crawl until the frontier is exhausted."""
+    """Pages to attempt, refusals included, before the crawl stops. 0 means unbounded:
+    crawl until the frontier is exhausted -- an explicit ask, since the default is a cap.
+    The `done` event reports `stopped_by: "pages"` when this is what ended the run."""
+
+    max_seconds: float = config.CRAWL_MAX_SECONDS
+    """Seconds the run may take, from the start of the analysis. 0 means no time limit.
+    Checked as each page lands; the pages already in flight are finished and reported, so a
+    run overshoots by at most `concurrency` pages. `stream_site` only; the batch path
+    enumerates before it fetches and has no loop to stop."""
+
+    max_queue: int = config.CRAWL_MAX_QUEUE
+    """Queued addresses beyond which the frontier stops accepting new ones. 0 means no
+    limit. A run that drained a capped frontier reports `stopped_by: "queue"` and is not
+    `exhausted`: there were addresses it turned away. `stream_site` only."""
+
+    fetch_files: bool = config.CRAWL_FETCH_FILES
+    """Queue links to PDFs and other files. Off, they are counted in `discovered_kinds`,
+    listed with their citations under `skipped_urls`, and never requested."""
+
     concurrency: int = config.CRAWL_CONCURRENCY
     delay_seconds: float = config.CRAWL_DELAY_SECONDS
+    """Pause before each fetch, per worker."""
+
+    host_interval_seconds: float = config.CRAWL_HOST_INTERVAL_SECONDS
+    """Minimum seconds between two pages from the same host, across every worker. The
+    site's `Crawl-delay` replaces it when larger. See `crawl.politeness`."""
+
     verify_inventory: bool = config.CRAWL_VERIFY_INVENTORY
     """Check each advertised URL before crawling it. Costs one cheap request per URL and
     prevents a stale sitemap from consuming the whole page budget on 404s."""
@@ -416,6 +448,10 @@ def build_inventory(
         for url in urls:
             normalized = normalize_url(url)
             if normalized and normalized not in seen:
+                if not config.fetch_files and url_kind(normalized) in FILE_KINDS:
+                    # A PDF in a sitemap is a document, not a page: never verified or
+                    # fetched here, for the same reason the streaming crawl skips it.
+                    continue
                 seen.add(normalized)
                 candidates.append(normalized)
                 added += 1
@@ -435,6 +471,7 @@ def build_inventory(
                 config=config.fetch,
                 policy=policy,
                 delay_seconds=config.delay_seconds / 3,
+                fetch_files=config.fetch_files,
             )
         )
 
@@ -553,6 +590,40 @@ def _without_html(page: PageExtraction) -> PageExtraction:
     if page.document is None or not page.document.html:
         return page
     return replace(page, document=page.document.model_copy(update={"html": ""}))
+
+
+def _kept(page: PageExtraction) -> PageExtraction:
+    """What the end of a crawl still needs from a page, and nothing else.
+
+    Two things are computed once every page is in: the distinct entities across the site
+    (`_aggregate_entities`, which reads each page's schema.org payloads) and the site-wide
+    facts (each page's `facts`). Neither reads the blocks, the Markdown or the images, and a
+    streaming crawl that kept them all held every page of the site until the last one
+    arrived: on the six-hour vtu.ac.in run the crawl process alone reached 1.2 GB. The
+    `page` event already carried each of them to the consumer as it was extracted; this
+    keeps the URL, the facts and the entity payloads, and lets the rest go.
+    """
+    document = page.document
+    if document is not None:
+        document = document.model_copy(
+            update={
+                "html": "",
+                "blocks": (),
+                "structured_data": tuple(
+                    payload
+                    for payload in document.structured_data
+                    if payload.source in _ENTITY_SOURCES
+                ),
+            }
+        )
+    return PageExtraction(
+        url=page.url,
+        document=document,
+        facts=page.facts,
+        error=page.error,
+        strategy=page.strategy,
+        title=page.title,
+    )
 
 
 def _content_of(
@@ -685,10 +756,22 @@ def extract_site(
 
     inventory = build_inventory(normalized_root, config=config, probe=probe)
 
-    targets = [u for u in inventory.live if u != normalized_root][: max(config.max_pages - 1, 0)]
+    if config.max_pages > 0:
+        targets = [u for u in inventory.live if u != normalized_root][: max(config.max_pages - 1, 0)]
+    else:
+        targets = [u for u in inventory.live if u != normalized_root]
+
+    # One page a second per host across the pool, or the site's own Crawl-delay if longer.
+    throttle = HostThrottle(
+        max(config.host_interval_seconds, (probe.policy.crawl_delay if probe.policy else None) or 0.0)
+    )
+
+    def one(url: str) -> PageExtraction:
+        throttle.wait(url)
+        return _extract_one(url, schema, strategy, config)
 
     with ThreadPoolExecutor(max_workers=max(1, config.concurrency)) as pool:
-        others = list(pool.map(lambda u: _extract_one(u, schema, strategy, config), targets))
+        others = list(pool.map(one, targets))
 
     # The root was fetched by Stage 0; it is the first page, not a fourth fetch of one URL.
     first = (
@@ -807,8 +890,18 @@ def stream_site(
     extend the frontier, so the crawl reaches everything reachable and the first result
     arrives in seconds.
 
-    With `max_pages = 0` the crawl is unbounded: it runs until the frontier is exhausted.
-    Politeness still applies -- robots.txt, its Crawl-delay, and a bounded worker pool.
+    A crawl has limits by default: `max_pages` (500), `max_seconds` (an hour) and
+    `max_queue` (20,000 queued addresses). The `done` event says which one ended the run
+    in `stopped_by` -- `"pages"`, `"time"`, `"queue"`, or None when the frontier ran dry or
+    the caller stopped it (`stopped`). `max_pages = 0` is an explicit ask for an unbounded
+    crawl: it runs until the frontier is exhausted or another limit is reached. Politeness
+    always applies -- robots.txt, its Crawl-delay, at most one page a second per host across
+    every worker (`host_interval_seconds`), and a bounded worker pool.
+
+    Files are counted, not fetched. A `.pdf` link (or an image, or a download) is tallied in
+    `discovered_kinds`, listed with its citation under the `done` event's `skipped_urls`, and
+    never requested unless `fetch_files` is set: the engine has no document pipeline, so
+    the fetch could only be refused, and 5,730 such refusals were a third of a six-hour run.
 
     Events carry a `type`: `stage`, `analysis`, `discovery`, `frontier`, `fetching`, `page`,
     `warning`, `done`, `error`.
@@ -828,9 +921,9 @@ def stream_site(
     than being returned, because a generator has no way to hand back an object mid-stream and
     the graph is most useful *during* a long crawl -- and remains useful after a stopped one.
 
-    `should_stop` is polled between batches. A generator cannot be interrupted from another
-    thread -- closing it only raises at the next `yield`, which never arrives while a batch
-    of renders is in flight -- so an abandoned crawl needs a flag it checks itself. Without
+    `should_stop` is polled as each page lands. A generator cannot be interrupted from
+    another thread -- closing it only raises at the next `yield`, which never arrives while
+    a render is in flight -- so an abandoned crawl needs a flag it checks itself. Without
     one, a client that disconnects leaves a full-speed crawl running for the life of the
     process, and a handful of those is enough to starve every later request.
 
@@ -839,7 +932,7 @@ def stream_site(
     again. Before this the root cost three static fetches and two renders per crawl.
     """
     config = config or SiteConfig()
-    started = time.monotonic()
+    started = _monotonic()
 
     normalized_root = normalize_url(root)
     if normalized_root is None:
@@ -889,13 +982,8 @@ def stream_site(
         max_depth=config.max_depth,
         allow_subdomains=not config.strict_domain,
     )
-    frontier = Frontier(scope=scope)
+    frontier = Frontier(scope=scope, max_queue=config.max_queue, fetch_files=config.fetch_files)
     frontier.mark_seen(normalized_root)
-    # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
-    # citation, including the one the crawl began from.
-    frontier.origin.setdefault(
-        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
-    )
     # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
     # citation, including the one the crawl began from.
     frontier.origin.setdefault(
@@ -920,15 +1008,21 @@ def stream_site(
 
     unlimited = config.max_pages <= 0
     budget = float("inf") if unlimited else config.max_pages
+    time_limit = config.max_seconds if config.max_seconds > 0 else 0.0
 
     yield {
         "type": "stage",
         "stage": "extract",
         "message": "Crawling and extracting" + ("" if unlimited else f" up to {config.max_pages} pages"),
         "unlimited": unlimited,
+        "max_pages": config.max_pages,
+        "max_seconds": config.max_seconds,
+        "max_queue": config.max_queue,
     }
 
-    delay = max(config.delay_seconds, policy.crawl_delay or 0.0)
+    # Politeness is per host, across the workers: one page a second unless the site asks
+    # for more room. `delay_seconds` is still slept per worker, as it always was.
+    throttle = HostThrottle(max(config.host_interval_seconds, policy.crawl_delay or 0.0))
     chrome: SiteChrome | None = None
     extracted = 0
     failed = 0
@@ -937,57 +1031,92 @@ def stream_site(
     by_content: dict[str, list[str]] = defaultdict(list)
     identical_warned: set[str] = set()
     totals = {"chars": 0, "markdown": 0, "images": 0, "tables": 0}
-    all_pages: list[PageExtraction] = []
+    # What the end of the crawl needs from each page (`_kept`), not the page. The full
+    # pages are held only while cross-page chrome is still unknown, and only as many as it
+    # takes to know it.
+    kept: list[PageExtraction] = []
+    chrome_sample: list[PageExtraction] = []
 
     def work(item: tuple[str, int]) -> _Fetched:
         url, depth = item
-        if delay > 0:
-            time.sleep(delay)
+        if config.delay_seconds > 0:
+            time.sleep(config.delay_seconds)
+        throttle.wait(url)
         page = _extract_one(url, schema, strategy, config)
         return _fetched(page, depth, url, normalized_root)
 
-    # The root is already in hand. It is the first batch, at no cost.
+    # The root is already in hand. It is the first result, at no cost.
     pending: list[_Fetched] = [
         _fetched(_page_from_resolved(probe.resolved, schema), 0, normalized_root, normalized_root)
     ]
     stopped = False
+    stopped_by: str | None = None
+    closing = False
+
+    # Pages in flight, one future each. The pool is kept full and refilled as each page
+    # lands, rather than run in batches of `concurrency` that all start together and end
+    # when the slowest does. Batches cost the tail of every batch, and with a per-host
+    # interval they cost more: four pages starting at once take slots 0, 1, 2 and 3 s apart,
+    # so every batch was the slowest page plus three seconds. Measured on sode-edu.in with
+    # 4 workers under `union`: batches ran 19 pages a minute against the interval, the
+    # rolling pool the same 25-30 the crawl managed before there was one.
+    in_flight: dict[Future[_Fetched], str] = {}
+    announced: list[str] = []
 
     with ThreadPoolExecutor(max_workers=max(1, config.concurrency)) as pool:
-        while extracted + failed < budget and (pending or len(frontier) > 0):
-            if should_stop is not None and should_stop():
-                stopped = True
-                break
+
+        def refill() -> None:
+            while len(in_flight) < max(1, config.concurrency) and len(frontier) > 0:
+                if extracted + failed + len(in_flight) >= budget:
+                    break
+                item = frontier.pop()
+                if item is None:
+                    break
+                if config.respect_robots and not policy.allows(item[0], config.fetch.user_agent):
+                    continue
+                in_flight[pool.submit(work, item)] = item[0]
+
+        while True:
+            if not closing:
+                if should_stop is not None and should_stop():
+                    stopped = True
+                    closing = True
+                elif time_limit and _monotonic() - started >= time_limit:
+                    stopped_by = "time"
+                    closing = True
+                elif extracted + failed >= budget:
+                    # The cap is only what *stopped* the run if there was more to do.
+                    if pending or len(frontier) > 0 or in_flight:
+                        stopped_by = "pages"
+                    closing = True
 
             if pending:
                 results: Iterable[_Fetched] = pending
                 pending = []
             else:
-                batch: list[tuple[str, int]] = []
-                while len(frontier) > 0 and len(batch) < config.concurrency:
-                    if extracted + failed + len(batch) >= budget:
-                        break
-                    item = frontier.pop()
-                    if item is None:
-                        break
-                    if config.respect_robots and not policy.allows(
-                        item[0], config.fetch.user_agent
-                    ):
-                        continue
-                    batch.append(item)
-                if not batch:
+                # Once the run is closing nothing new goes out, but what is already in
+                # flight is finished and reported: a page fetched is a page the site was
+                # asked for, and a run that hides it has fetched it for nothing.
+                if not closing:
+                    refill()
+                if not in_flight:
                     break
-                # Say what is going out *before* it goes, so a consumer can show work in
-                # flight rather than only work finished. Without this the only observable
-                # events are completions, and a live view can show a history and nothing
-                # else -- there is no way to know a page is being fetched right now.
-                yield {
-                    "type": "fetching",
-                    "urls": [url for url, _ in batch],
-                    "queued": len(frontier),
-                    "extracted": extracted,
-                    "failed": failed,
-                }
-                results = pool.map(work, batch)
+                # Say what is out *while* it is out, so a consumer can show work in flight
+                # rather than only work finished. Without this the only observable events
+                # are completions, and a live view can show a history and nothing else.
+                current = list(in_flight.values())
+                if current != announced:
+                    announced = current
+                    yield {
+                        "type": "fetching",
+                        "urls": current,
+                        "queued": len(frontier),
+                        "extracted": extracted,
+                        "failed": failed,
+                    }
+                landed = next(as_completed(in_flight))
+                del in_flight[landed]
+                results = [landed.result()]
 
             for fetched in results:
                 page = fetched.page
@@ -1000,7 +1129,7 @@ def stream_site(
                     totals["tables"] += page.tables
                 else:
                     failed += 1
-                all_pages.append(page)
+                kept.append(_kept(page))
 
                 # The graph is built as the crawl runs, not afterwards. A crawl streams for
                 # minutes; a graph that only exists once it finishes is unavailable during
@@ -1032,9 +1161,14 @@ def stream_site(
 
                 # Chrome is knowable only once several pages exist. Compute it the first
                 # time that is true, then reuse it -- recomputing per page would be
-                # quadratic for no benefit, since the answer stabilises immediately.
-                if chrome is None:
-                    chrome = _chrome_for(all_pages, config)
+                # quadratic for no benefit, since the answer stabilises immediately. The
+                # pages held for it are released the moment it is known.
+                if chrome is None and config.remove_chrome:
+                    if page.document is not None:
+                        chrome_sample.append(page)
+                    chrome = _chrome_for(chrome_sample, config)
+                    if chrome is not None:
+                        chrome_sample = []
 
                 content_md, selection = _content_of(page, chrome, config)
 
@@ -1060,7 +1194,7 @@ def stream_site(
                             "chars": page.text_chars,
                         }
 
-                elapsed = max(time.monotonic() - started, 0.001)
+                elapsed = max(_monotonic() - started, 0.001)
                 yield {
                     "type": "page",
                     "index": extracted + failed,
@@ -1111,11 +1245,16 @@ def stream_site(
                     "graph": builder.graph.describe() if builder is not None else None,
                 }
 
-    entities = _aggregate_entities(all_pages)
+    # A frontier that ran dry because it turned addresses away did not finish the site.
+    if stopped_by is None and not stopped and frontier.queue_capped:
+        stopped_by = "queue"
+    exhausted = len(frontier) == 0 and not pending and not stopped and stopped_by is None
+
+    entities = _aggregate_entities(kept)
 
     site_facts: dict[str, list[Any]] = defaultdict(list)
     fact_sources: dict[str, list[str]] = defaultdict(list)
-    for page in all_pages:
+    for page in kept:
         for path, fact in page.facts.items():
             if fact.value not in site_facts[path]:
                 site_facts[path].append(fact.value)
@@ -1128,8 +1267,30 @@ def stream_site(
         "failed": failed,
         "discovered": frontier.seen_count,
         "remaining_queued": len(frontier) + len(pending),
-        "exhausted": len(frontier) == 0 and not pending and not stopped,
+        "exhausted": exhausted,
         "stopped": stopped,
+        # Which limit ended the run: "pages", "time", "queue", or None when the frontier
+        # ran dry or the caller stopped it (`stopped` says which).
+        "stopped_by": stopped_by,
+        "limits": {
+            "max_pages": config.max_pages,
+            "max_seconds": config.max_seconds,
+            "max_queue": config.max_queue,
+        },
+        "queue_refused": frontier.refused_by_cap,
+        # Files the site links to, counted by kind and never fetched (`fetch_files`). The
+        # counts are complete; the list is capped, each entry with the page that linked it.
+        "fetch_files": config.fetch_files,
+        "skipped": dict(frontier.skipped),
+        "skipped_total": sum(frontier.skipped.values()),
+        "skipped_urls": [
+            {
+                "url": url,
+                "kind": kind,
+                **(citation.as_dict() if (citation := frontier.citation(url)) else {}),
+            }
+            for url, kind in islice(frontier.skipped_urls.items(), SKIPPED_URLS_REPORTED)
+        ],
         "total_chars": totals["chars"],
         "total_markdown_chars": totals["markdown"],
         "total_images": totals["images"],
@@ -1150,5 +1311,5 @@ def stream_site(
         "site_facts": {k: [str(v) for v in vs] for k, vs in site_facts.items()},
         "fact_sources": {k: list(dict.fromkeys(v)) for k, v in fact_sources.items()},
         "graph": builder.graph.describe() if builder is not None else None,
-        "duration_seconds": round(time.monotonic() - started, 1),
+        "duration_seconds": round(_monotonic() - started, 1),
     }

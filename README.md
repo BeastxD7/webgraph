@@ -243,8 +243,11 @@ linked to a PDF hosted on one — which is why asset rules match only same-origi
 **What it does.** Builds a frontier of URLs from `robots.txt`, every sitemap it can find,
 and the links on every page it extracts — then keeps going until the frontier is empty.
 
-**Unlimited by default.** `max_pages = 0`. If a site has 19,999 pages, the crawl visits
-19,999 pages. A default cap is a silent correctness bug for the use case this exists for.
+**Bounded by default, unbounded on request.** The defaults are 500 pages, an hour, and
+20,000 queued addresses; `max_pages = 0` asks for the whole site, and then if a site has
+19,999 pages the crawl visits 19,999 pages. The `done` event says which limit ended a run
+(`stopped_by`), so a cap is never silent. Links to PDFs, images and downloads are counted
+with the page that links to each, and never fetched.
 
 ### Normalisation is the whole game
 
@@ -672,9 +675,10 @@ decisions in it are worth stating:
   strangers, so that is where it defaults on.
 
 `/api/health` reports whether the guard is live, because a deployment with it off looks
-perfectly healthy from the outside. Alongside it, `WEBGRAPH_MAX_PAGES` exists because
-`max_pages: 0` means "crawl until the frontier is exhausted" -- the right default on a
-laptop, and one caller occupying a crawl slot for hours on a shared host.
+perfectly healthy from the outside. Alongside it, `WEBGRAPH_MAX_PAGES` exists because a
+client may still ask for `max_pages: 0` -- "crawl until the frontier is exhausted" -- and
+on a shared host that is one caller occupying a crawl slot for hours. (The engine's own
+default is 500 pages and an hour since #94; `0` has to be asked for.)
 
 What is *not* closed: DNS rebinding. The guard resolves the hostname and httpx resolves it
 again, and a name that answers differently between the two lookups slips through. Fixing it

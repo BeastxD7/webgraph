@@ -12,6 +12,7 @@ from collections.abc import Iterator
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
@@ -744,3 +745,141 @@ class TestRobotsOnASinglePage:
         )
         assert response.status_code == 200
         assert "An article" in response.json()["text"]
+
+
+SMALL_SITE_PROSE = (
+    "The quick brown fox jumped over the lazy dog and continued running through the field "
+    "until it reached the far treeline where it finally stopped to rest a while. "
+)
+
+
+def _small_page(name: str) -> str:
+    body = "".join(f"<p>{SMALL_SITE_PROSE}Paragraph {name} {i}.</p>" for i in range(5))
+    return (
+        f"<html><head><title>{name}</title></head><body>"
+        '<nav><a href="/">home</a> <a href="/a.html">a</a> <a href="/b.html">b</a> '
+        '<a href="/c.html">c</a></nav>'
+        f"<main><h1>Page {name}</h1>{body}"
+        '<p><a href="/circulars/notice.pdf">Notice (PDF)</a></p></main></body></html>'
+    )
+
+
+class _RecordingHandler(SimpleHTTPRequestHandler):
+    """Serves a directory and remembers every path asked for, so a test can prove that a
+    file the crawl counted was never requested."""
+
+    requested: ClassVar[list[str]] = []
+
+    def log_message(self, *args: object) -> None:
+        return
+
+    def do_GET(self) -> None:
+        type(self).requested.append(self.path)
+        super().do_GET()
+
+
+@pytest.fixture
+def small_site(tmp_path: Path) -> Iterator[tuple[str, list[str]]]:
+    """Four linked pages and a PDF, on a local server that records what was fetched."""
+    for name in ("index", "a", "b", "c"):
+        (tmp_path / f"{name}.html").write_text(_small_page(name), encoding="utf-8")
+    (tmp_path / "circulars").mkdir()
+    (tmp_path / "circulars" / "notice.pdf").write_bytes(b"%PDF-1.4 not really")
+    requested: list[str] = []
+    handler = type("Handler", (_RecordingHandler,), {"requested": requested})
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(tmp_path)))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_address[1]}/", requested
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+class TestCrawlLimits:
+    """A crawl has limits by default (#94): the request exposes them, the header reports
+    what was applied, and the `done` event says which one ended the run."""
+
+    @staticmethod
+    def stream(client: TestClient, body: dict) -> list[dict]:
+        import json
+
+        with client.stream("POST", "/api/site/stream", json=body) as response:
+            assert response.status_code == 200
+            return [
+                json.loads(line[len("data: ") :])
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+
+    def test_the_request_defaults_are_the_engines_caps_not_zero(self) -> None:
+        from webgraph import config as engine_config
+
+        from webgraph_api.main import CrawlOptions, SiteRequest
+
+        request = SiteRequest(url="https://example.com/")
+        assert request.max_pages == engine_config.CRAWL_MAX_PAGES == 500
+        assert request.max_seconds == engine_config.CRAWL_MAX_SECONDS == 3600
+        assert "fetch_files" in CrawlOptions.model_fields
+        assert "max_queue" in CrawlOptions.model_fields
+        assert "host_interval_seconds" in CrawlOptions.model_fields
+
+    def test_the_new_knobs_are_overridable_and_reported(self, client: TestClient) -> None:
+        overridable = client.get("/api/config").json()["overridable"]["crawl"]
+        assert {"fetch_files", "max_queue", "host_interval_seconds"} <= set(overridable)
+
+    def test_done_says_the_page_cap_stopped_it(
+        self, client: TestClient, small_site: tuple[str, list[str]]
+    ) -> None:
+        root, _requested = small_site
+        events = self.stream(
+            client,
+            {
+                "url": root,
+                "max_pages": 2,
+                "max_seconds": 120,
+                "concurrency": 1,
+                "complete": False,
+                "crawl": {"host_interval_seconds": 0, "fetch_files": False, "max_queue": 50},
+            },
+        )
+        header = events[0]
+        assert header["type"] == "run"
+        assert header["max_seconds"] == 120
+        assert header["max_queue"] == 50
+        assert header["fetch_files"] is False
+        assert header["host_interval_seconds"] == 0
+        done = events[-1]
+        assert done["type"] == "done"
+        assert done["pages_total"] == 2
+        assert done["stopped_by"] == "pages"
+        assert done["exhausted"] is False
+        assert done["limits"] == {"max_pages": 2, "max_seconds": 120, "max_queue": 50}
+
+    def test_a_pdf_is_counted_and_cited_and_never_requested(
+        self, client: TestClient, small_site: tuple[str, list[str]]
+    ) -> None:
+        root, requested = small_site
+        events = self.stream(
+            client,
+            {
+                "url": root,
+                "max_pages": 0,
+                "concurrency": 1,
+                "complete": False,
+                "crawl": {"host_interval_seconds": 0},
+            },
+        )
+        done = events[-1]
+        assert done["type"] == "done"
+        assert done["stopped_by"] is None
+        assert done["exhausted"] is True
+        assert done["pages_ok"] == 4
+        assert done["failed"] == 0
+        assert done["skipped"]["pdf"] == 1
+        [entry] = done["skipped_urls"]
+        assert entry["url"] == f"{root}circulars/notice.pdf"
+        assert entry["found_on"] == root
+        assert entry["anchor"] == "Notice (PDF)"
+        assert "/circulars/notice.pdf" not in requested, "the crawl fetched a PDF it would refuse"

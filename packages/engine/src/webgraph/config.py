@@ -309,14 +309,44 @@ ROUTER_MIN_CONFIDENCE = 0.5
 # Crawling a whole site
 # ======================================================================================
 
-# Pages to extract. 0 = unbounded, until the frontier is exhausted.
-CRAWL_MAX_PAGES = 0
+# Pages to attempt before the crawl stops, refusals included. 0 = unbounded, until the
+# frontier is exhausted -- an explicit ask, never the default: a whole-site run of
+# vtu.ac.in with no cap ran six hours and held six gigabytes (PR #87, #94).
+CRAWL_MAX_PAGES = 500
+
+# Seconds a crawl may run before it stops, measured from the start of the analysis and
+# checked as each page lands. 0 = no time limit. The `done` event says
+# `stopped_by: "time"` when this ended it.
+CRAWL_MAX_SECONDS = 3600
+
+# Queued addresses beyond which the frontier stops accepting new ones. Discovery on a
+# large site outruns extraction by an order of magnitude (vtu.ac.in: 17,126 found, 12,761
+# fetched), and every queued address is held in memory. 0 = no limit.
+CRAWL_MAX_QUEUE = 20_000
+
+# Fetch links to PDFs and other files. Off, they are counted (`discovered_kinds`), cited
+# (`skipped_urls`, with the page that linked to each) and never requested: the engine has
+# no document pipeline, so a fetched PDF is refused, and 5,730 of them cost a third of a
+# six-hour run. On, `.pdf` links are queued as pages were before (#94).
+CRAWL_FETCH_FILES = False
+
+# How many skipped file addresses the `done` event lists in full (with their citations).
+# The count by kind is always complete; the list is capped so one event cannot carry
+# thousands of lines.
+CRAWL_SKIPPED_URLS_REPORTED = 200
 
 # Pages fetched in parallel within one crawl.
 CRAWL_CONCURRENCY = 4
 
-# Pause between fetches per worker, in seconds.
+# Pause between fetches per worker, in seconds. Per worker: with four workers this alone
+# allows four requests a second. The per-host interval below is what bounds the site's load.
 CRAWL_DELAY_SECONDS = 0.3
+
+# Minimum seconds between two requests to the same host, across every worker of a crawl.
+# 1.0 = at most one page a second per host, whatever the concurrency; the site's
+# `Crawl-delay` replaces it when larger. Under `union` a page is two requests (plain and
+# rendered) made together; the interval spaces pages, not requests.
+CRAWL_HOST_INTERVAL_SECONDS = 1.0
 
 # How many links away from the root the crawl goes. 0 = the root alone; 1 = the root and
 # everything it links to; and so on. The crawl is breadth-first: every page at depth n is
