@@ -324,6 +324,8 @@ export interface ReportPage {
   lang: string | null;
   structured_data: string[];
   has_schema: boolean;
+  /** `og:*` / `twitter:*` tags on the page; the fourth page-field of the metadata sub-score. */
+  has_open_graph: boolean;
   internal_links: number;
   links_checked: number;
   dead_links: { url: string; status: number }[];
@@ -370,6 +372,45 @@ export interface LlmsFile {
   sections: number;
   links: number;
   title: string | null;
+  /** A sample of the file's links (up to 5) checked for an answer, and how many did. */
+  links_checked: number;
+  links_answering: number;
+}
+
+/** The five groups of `SiteSignal`, in report order (`webgraph.report.signals.GROUPS`). */
+export type SignalGroup = "ai" | "discovery" | "agents" | "metadata" | "trust";
+
+/** One thing the site does or does not publish for machines. */
+export interface SiteSignal {
+  key: string;
+  label: string;
+  group: SignalGroup;
+  group_label: string;
+  /** true: found and shaped like the thing; false: looked for, absent; null: could not be
+   *  looked for (robots.txt disallows the path for this client; IndexNow's key is secret). */
+  present: boolean | null;
+  /** What was found, in the file's own terms. */
+  detail: string;
+  /** Plain words for the owner: what this says to machines and whether anyone is bound. */
+  meaning: string;
+  who_honours: string;
+  spec_url: string;
+  source_url: string | null;
+  status: number | null;
+}
+
+export interface SiteSignals {
+  signals: SiteSignal[];
+  groups: { key: SignalGroup; label: string; signals: string[] }[];
+  llms_txt: LlmsFile;
+  llms_full_txt: LlmsFile;
+  content_signals: { agents: string[]; values: Record<string, string>; line: string }[];
+  root_status: number;
+  /** The root's response headers that are signals: x-robots-tag, link, tdm-reservation … */
+  root_headers: Record<string, string>;
+  /** Requests the collection made, the root included. */
+  requests: number;
+  notes: string[];
 }
 
 export interface SiteReport {
@@ -387,11 +428,15 @@ export interface SiteReport {
   sitemap_attempts: { url: string; status: number; ok: boolean; urls: number; index: boolean; source: string }[];
   llms_txt: LlmsFile | null;
   llms_full_txt: LlmsFile | null;
+  /** What the site declares to machines, in five groups; null only when unreachable. */
+  signals: SiteSignals | null;
   pages: ReportPage[];
   score: { total: number; measured_weight: number; subscores: SubScore[] } | null;
   findings: Finding[];
   suggested_robots_txt: string | null;
   suggested_llms_txt: string | null;
+  /** An RFC 9116 template, offered only when the site has no security.txt. */
+  suggested_security_txt: string | null;
   llms_txt_note: string;
   measured: {
     engine_version: string;

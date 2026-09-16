@@ -746,7 +746,12 @@ class TestRobotsOnASinglePage:
         assert "An article" in response.json()["text"]
 
 
-REPORT_ROBOTS = "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nDisallow: /wp-admin/\n"
+REPORT_ROBOTS = (
+    "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=no\n"
+    "Disallow: /wp-admin/\n"
+)
+REPORT_LLMS = "# Acme College\n\n> A college.\n\n## Pages\n- [About](/about.html): who we are\n"
+REPORT_SECURITY = "Contact: mailto:security@acme.test\nExpires: 2027-01-01T00:00:00.000Z\n"
 REPORT_INDEX = (
     "<html lang='en'><head><title>Acme College | Home</title>"
     "<meta name='description' content='A college that teaches things.'></head><body>"
@@ -771,6 +776,9 @@ def report_server(tmp_path: Path) -> Iterator[str]:
     (tmp_path / "robots.txt").write_text(REPORT_ROBOTS, encoding="utf-8")
     (tmp_path / "index.html").write_text(REPORT_INDEX, encoding="utf-8")
     (tmp_path / "about.html").write_text(REPORT_ABOUT, encoding="utf-8")
+    (tmp_path / "llms.txt").write_text(REPORT_LLMS, encoding="utf-8")
+    (tmp_path / ".well-known").mkdir()
+    (tmp_path / ".well-known" / "security.txt").write_text(REPORT_SECURITY, encoding="utf-8")
     handler = partial(_QuietHandler, directory=str(tmp_path))
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -823,6 +831,23 @@ class TestSiteReport:
         assert body["suggested_robots_txt"].startswith(REPORT_ROBOTS)
         assert body["suggested_llms_txt"].startswith("# Acme College\n")
         assert "never impersonates" in body["measured"]["statement"]
+
+        # What the site declares to machines, through real HTTP against the local server:
+        # the Content-Signal line, the llms.txt (its one link checked), the security.txt,
+        # and the well-known files that are not there.
+        signals = {s["key"]: s for s in body["signals"]["signals"]}
+        assert [g["key"] for g in body["signals"]["groups"]] == ["ai", "discovery", "agents", "metadata", "trust"]
+        assert signals["content_signal"]["present"] is True
+        assert signals["content_signal"]["detail"].startswith("search=yes, ai-input=yes, ai-train=no (under User-agent: *)")
+        assert signals["content_signal"]["meaning"].startswith("Your robots.txt tells AI systems they may")
+        assert signals["llms_txt"]["present"] is True and "1 of 1 sampled links answer" in signals["llms_txt"]["detail"]
+        assert signals["security_txt"]["present"] is True and "Expires: 2027-01-01" in signals["security_txt"]["detail"]
+        assert signals["agent_card"]["present"] is False and signals["agent_card"]["status"] == 404
+        assert signals["rsl"]["present"] is False and signals["tdm"]["present"] is False
+        assert signals["indexnow"]["present"] is None
+        assert body["signals"]["requests"] >= 10
+        assert body["suggested_security_txt"] is None
+        assert "The file already declares: search=yes, ai-input=yes, ai-train=no" in body["suggested_robots_txt"]
 
     def test_a_root_disallowed_for_this_client_is_a_report_with_a_refusal(
         self, client: TestClient, closed_server: str, monkeypatch: pytest.MonkeyPatch

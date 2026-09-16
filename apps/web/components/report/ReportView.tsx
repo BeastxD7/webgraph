@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import Chip, { type ChipTone } from "@/components/ui/Chip";
 import CopyButton from "@/components/ui/CopyButton";
 import EvidenceRow from "@/components/ui/EvidenceRow";
-import type { BotAccess, Finding, ReportPage, Severity, SiteReport, SubScore } from "@/lib/api";
+import type { BotAccess, Finding, ReportPage, Severity, SiteReport, SiteSignal, SiteSignals, SubScore } from "@/lib/api";
 import { duration, percent, prettyUrl } from "@/lib/format";
 
 const SEVERITY: Record<Severity, { tone: ChipTone; label: string }> = {
@@ -112,6 +112,100 @@ function FindingRow({ finding }: { finding: Finding }) {
   );
 }
 
+type Presence = "yes" | "no" | "unknown";
+
+const PRESENCE: Record<Presence, { tone: ChipTone; label: string }> = {
+  yes: { tone: "measured", label: "Present" },
+  no: { tone: "plain", label: "Absent" },
+  unknown: { tone: "coming", label: "Not measured" },
+};
+
+function presenceOf(signal: SiteSignal): Presence {
+  return signal.present === null ? "unknown" : signal.present ? "yes" : "no";
+}
+
+function SignalRow({ signal }: { signal: SiteSignal }) {
+  const presence = PRESENCE[presenceOf(signal)];
+  return (
+    <tr className="border-b border-rule align-top">
+      <td className="py-2.5 pr-3">
+        <p className="text-small font-semibold text-ink">{signal.label}</p>
+        <a href={signal.spec_url} target="_blank" rel="noreferrer" className="text-caption text-muted underline underline-offset-2">
+          spec
+        </a>
+      </td>
+      <td className="py-2.5 pr-3">
+        <Chip tone={presence.tone}>{presence.label}</Chip>
+      </td>
+      <td className="max-w-[18rem] py-2.5 pr-3">
+        <p className="break-words font-mono text-code text-ink">{signal.detail}</p>
+        {signal.source_url && signal.present && (
+          <a href={signal.source_url} target="_blank" rel="noreferrer" className="mt-0.5 inline-block break-all font-mono text-caption text-accent-ink underline underline-offset-2">
+            {pathOf(signal.source_url) === "/" ? prettyUrl(signal.source_url) : pathOf(signal.source_url)}
+          </a>
+        )}
+      </td>
+      <td className="py-2.5 pr-3">
+        <p className="text-small text-ink">{signal.meaning}</p>
+        <p className="mt-1 text-caption text-muted">Honoured by: {signal.who_honours}</p>
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * What the site declares to machines, five groups in one compact table each: the signal,
+ * whether it is there, what it says in its own terms, and what that means to the owner in
+ * plain words with who honours it. Presence is a chip with a word, never colour alone.
+ */
+function SignalsSection({ signals }: { signals: SiteSignals }) {
+  const measurable = signals.signals.filter((s) => s.present !== null);
+  const present = measurable.filter((s) => s.present).length;
+  return (
+    <Section
+      id="signals"
+      title="What the site declares to machines"
+      lede={`${present} of ${measurable.length} measurable signals are present, read from robots.txt, the root's headers and markup, and the well-known files (${signals.requests} requests, each identified as webgraph and paced). Almost none of this is enforced: a declaration to AI is a preference a crawler chooses to read; a sitemap, a feed, an agent card, JSON-LD are conventions a particular consumer acts on. Each row says which.`}
+    >
+      <div className="flex flex-col gap-8">
+        {signals.groups.map((group) => {
+          const members = signals.signals.filter((s) => s.group === group.key);
+          if (!members.length) return null;
+          return (
+            <div key={group.key}>
+              <h3 className="text-h3 font-semibold text-ink">{group.label}</h3>
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[760px] border-collapse text-small">
+                  <thead>
+                    <tr className="border-b border-rule-strong text-left text-caption text-muted">
+                      <th className="w-[12rem] py-2 pr-3 font-medium">Signal</th>
+                      <th className="w-[7rem] py-2 pr-3 font-medium">Found</th>
+                      <th className="py-2 pr-3 font-medium">What it says</th>
+                      <th className="py-2 pr-3 font-medium">What it means</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((signal) => (
+                      <SignalRow key={signal.key} signal={signal} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {signals.notes.length > 0 && (
+        <ul className="mt-6 flex flex-col gap-1 text-caption text-muted">
+          {signals.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      )}
+    </Section>
+  );
+}
+
 function PageRowCells({ page }: { page: ReportPage }) {
   if (page.error) {
     return (
@@ -147,6 +241,7 @@ function PageRowCells({ page }: { page: ReportPage }) {
       <td className="py-2 pr-3 text-caption text-muted">
         {[
           page.has_schema ? "schema" : null,
+          page.has_open_graph ? "og" : null,
           page.lang ? `lang=${page.lang}` : null,
           page.description ? "description" : null,
           page.in_sitemap === true ? "in sitemap" : page.in_sitemap === false ? "not in sitemap" : null,
@@ -161,8 +256,8 @@ function PageRowCells({ page }: { page: ReportPage }) {
 
 /**
  * The report, top to bottom: the score with its parts as evidence rows, the integrity
- * findings, the stack, the pages, the bots table, the two suggested files, and how it was
- * measured. Every number sits beside what it was measured on (DESIGN.md §1.4).
+ * findings, the stack, the pages, the bots table, what the site declares to machines (five
+ * groups of signals), the suggested files, and how it was measured. Every number sits beside what it was measured on (DESIGN.md §1.4).
  */
 export default function ReportView({ report }: { report: SiteReport }) {
   const generated = new Date(report.generated_at);
@@ -278,7 +373,7 @@ export default function ReportView({ report }: { report: SiteReport }) {
       <Section
         id="pages"
         title="Pages"
-        lede="Words in the plain HTML, words after a real browser ran the page, and the union of the two with the share the plain fetch holds. Hidden is words (w) and links (l) a reader cannot see -- a dropdown menu counts -- and, of those links, the ones parked off the page and the foreign hosts they point at. Declares lists schema, lang, description, sitemap membership and the share of the page's words that are cookie-consent text."
+        lede="Words in the plain HTML, words after a real browser ran the page, and the union of the two with the share the plain fetch holds. Hidden is words (w) and links (l) a reader cannot see -- a dropdown menu counts -- and, of those links, the ones parked off the page and the foreign hosts they point at. Declares lists schema, OpenGraph (og), lang, description, sitemap membership and the share of the page's words that are cookie-consent text."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-small">
@@ -397,14 +492,23 @@ export default function ReportView({ report }: { report: SiteReport }) {
         </Section>
       )}
 
+      {report.signals && <SignalsSection signals={report.signals} />}
+
       <Section
         id="suggested"
         title="Suggested files"
-        lede="The robots.txt keeps the site's existing rules byte for byte; everything added is a comment, offering two variants the owner chooses between. Neither is a recommendation to block."
+        lede="The robots.txt keeps the site's existing rules byte for byte; everything added is a comment -- two variants for the AI bots and, new, the Content-Signal line in its two common forms -- and the owner chooses. Neither is a recommendation to block. The security.txt template appears only when the site has none."
       >
         <div className="grid gap-8 xl:grid-cols-2">
           {report.suggested_robots_txt && <CodeFile name="robots.txt" text={report.suggested_robots_txt} />}
           {report.suggested_llms_txt && <CodeFile name="llms.txt" text={report.suggested_llms_txt} note={report.llms_txt_note} />}
+          {report.suggested_security_txt && (
+            <CodeFile
+              name=".well-known/security.txt"
+              text={report.suggested_security_txt}
+              note="RFC 9116. The site has none; fill the <...> values. Contact and Expires are required."
+            />
+          )}
         </div>
       </Section>
 
