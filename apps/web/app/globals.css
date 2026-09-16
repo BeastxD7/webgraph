@@ -398,7 +398,7 @@
    Everything here is enhancement. Without JavaScript the page is complete:
    `main[data-motion]` is stamped by components/landing/Motion.tsx, and it is
    the only selector that ever hides a [data-reveal] element. The stage's
-   scroll state arrives as --story-heat / --story-p on the same element.
+   scroll state arrives as --story-heat on .story-stage and data-chapter on the section.
    --------------------------------------------------------------------------- */
 
 /* The ground: a gradient field in the ink-green family, a ruled grid, grain. */
@@ -428,14 +428,6 @@
   animation: bd-drift 46s ease-in-out infinite alternate;
 }
 .bd-blob-a {
-  /* behind the stage */
-  top: 6vh;
-  right: -12vw;
-  width: 62vw;
-  height: 62vw;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 22%, transparent), transparent 72%);
-}
-.bd-blob-b {
   /* the top-left corner, mostly off the page */
   top: -18vw;
   left: -22vw;
@@ -445,26 +437,24 @@
   animation-duration: 61s;
   animation-direction: alternate-reverse;
 }
+.bd-blob-b {
+  /* the far right edge, top */
+  top: 30vh;
+  right: -28vw;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 12%, transparent), transparent 72%);
+}
 .bd-blob-c {
-  /* below the fold, behind the stage's later chapters */
-  top: 190vh;
-  right: -6vw;
-  width: 54vw;
-  height: 54vw;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 16%, transparent), transparent 72%);
+  /* the bottom of the page, behind the run prompt */
+  bottom: -20vw;
+  left: 20vw;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 10%, transparent), transparent 72%);
   animation-duration: 53s;
 }
-/* The pain chapter warms the ground behind the stage; the stage sets --story-heat. */
-.bd-heat {
-  position: absolute;
-  top: 40vh;
-  right: -10vw;
-  width: 70vw;
-  height: 120vh;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--bad) 18%, transparent), transparent 70%);
-  opacity: var(--story-heat, 0);
-  transition: opacity 400ms var(--ease);
-}
+.bd-heat { display: none; }
 .bd-grain {
   position: absolute;
   inset: 0;
@@ -483,8 +473,31 @@
   100% { transform: translate3d(3%, -3%, 0) scale(0.96); }
 }
 
+/* The field behind the stage travels with it (it is sticky): a green field, and a warmer
+   one the stage fades in through --story-heat while the pain chapter is on screen. */
+.story-stage { isolation: isolate; }
+.story-stage::before,
+.story-stage::after {
+  content: "";
+  position: absolute;
+  inset: -12% -18%;
+  z-index: -1;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.story-stage::before {
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 24%, transparent), transparent 74%);
+  animation: bd-drift 46s ease-in-out infinite alternate;
+  will-change: transform;
+}
+.story-stage::after {
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--bad) 22%, transparent), transparent 72%);
+  opacity: var(--story-heat, 0);
+  transition: opacity 500ms var(--ease);
+}
+
 /* The stage: once the canvas draws, the server-rendered still steps aside. */
-.story-stage [data-stage] > svg { display: none; }
+.story-stage[data-stage] svg { display: none; }
 .story-stage canvas { display: block; }
 
 /* The chapter label of the panel on stage turns accent. */
@@ -525,6 +538,6 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 .landing a.bg-ink, .landing button.bg-ink { transition-property: color, background-color, opacity, border-color, transform; }
 
 @media (prefers-reduced-motion: reduce) {
-  .bd-blob { animation: none; }
-  .bd-heat { transition: none; }
+  .bd-blob, .story-stage::before { animation: none; }
+  .story-stage::after { transition: none; }
 }

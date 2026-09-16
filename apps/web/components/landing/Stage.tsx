@@ -10,12 +10,10 @@ import { createScene, type Palette, type StageCopy, VH, VW } from "./scene/scene
  * reduced-motion path draws the scene too, as four still frames — a comic strip — rather
  * than animating it.
  *
- * Scroll progress is read from the enclosing `[data-story]` section: 0 when the section's
- * top meets the header, 1 when the stage stops being stuck. The loop runs only while the
- * canvas is on screen and something is moving; the palette is read from the CSS tokens so
- * the scene follows the theme toggle.
+ * The chapter comes from which copy panel of the enclosing `[data-story]` section is level
+ * with the stage. The loop runs only while the canvas is on screen and something is moving;
+ * the palette is read from the CSS tokens so the scene follows the theme toggle.
  */
-const HEADER = 56;
 const REDUCE = "(prefers-reduced-motion: reduce)";
 
 function readPalette(): Palette {
@@ -91,7 +89,7 @@ function Live({ copy }: { copy: StageCopy }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const story = canvas.closest<HTMLElement>("[data-story]");
-    const stage = canvas.parentElement;
+    const stage = canvas.closest<HTMLElement>(".story-stage");
     if (!story || !stage) return;
 
     const scene = createScene(copy);
@@ -104,17 +102,32 @@ function Live({ copy }: { copy: StageCopy }) {
     let frame = 0;
     let lastChapter = -1;
 
+    const panels = Array.from(story.querySelectorAll<HTMLElement>("[data-panel]"));
+
+    // Which panel is on the stage: the one under a reference line — the stage's middle
+    // when the stage stands beside the copy, or a line just below it when it is a band
+    // above the copy (phones). `t` is how far that line has travelled down the panel; the
+    // last panel is centred when the section ends, so it plays out over its upper half.
     const progress = () => {
-      const rect = story.getBoundingClientRect();
-      const range = rect.height - stage.offsetHeight;
-      const p = range > 0 ? (HEADER - rect.top) / range : 0;
-      scene.setProgress(p);
+      const s = stage.getBoundingClientRect();
+      const band = s.width > story.getBoundingClientRect().width * 0.8;
+      const ref = band ? s.bottom + (window.innerHeight - s.bottom) * 0.4 : s.top + s.height / 2;
+      let chapter = 0;
+      let t = 0;
+      panels.forEach((panel, i) => {
+        const r = panel.getBoundingClientRect();
+        if (ref >= r.top) {
+          chapter = i;
+          t = (ref - r.top) / Math.max(1, r.height);
+        }
+      });
+      if (chapter === panels.length - 1 && !band) t *= 2;
+      scene.setChapter(chapter, t);
       if (scene.chapter !== lastChapter) {
         lastChapter = scene.chapter;
         story.dataset.chapter = String(lastChapter);
       }
-      story.style.setProperty("--story-heat", scene.heat.toFixed(3));
-      story.style.setProperty("--story-p", Math.max(0, Math.min(1, p)).toFixed(3));
+      stage.style.setProperty("--story-heat", scene.heat.toFixed(3));
     };
 
     const tick = (now: number) => {
@@ -187,7 +200,7 @@ function Strip({ copy }: { copy: StageCopy }) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const stage = root.parentElement;
+    const stage = root.closest<HTMLElement>(".story-stage");
     if (stage) stage.dataset.stage = "strip";
     const canvases = Array.from(root.querySelectorAll("canvas"));
     const scene = createScene(copy);

@@ -42,11 +42,11 @@ const STEPS: ReadonlyArray<{ title: string; body: string }> = [
 ];
 
 export const STAGE_COPY: StageCopy = {
-  fidelity: `word recall 1.000 on ${FIDELITY.perfect} of ${FIDELITY.sites} sites · nothing below ${FIDELITY.floor}`,
+  fidelity: `recall 1.000 on ${FIDELITY.perfect} of ${FIDELITY.sites} sites · floor ${FIDELITY.floor}`,
   report: [
     ["hidden text", "2,100 words · 9 closed dialogs"],
     ["off-screen links", "~60 · left: −9999px"],
-    ["hidden table of contents", "100 links · display:none"],
+    ["hidden contents list", "100 links · display:none"],
   ],
 };
 
@@ -66,7 +66,7 @@ export default function Story() {
       {/* The stage: sticky under the header. On a phone it is a band at the top the copy
           slides beneath; from lg it is the right seven columns. */}
       <div className="max-lg:sticky max-lg:top-14 max-lg:z-10 max-lg:-mx-(--gutter) max-lg:bg-ground max-lg:px-(--gutter) lg:order-2 lg:col-span-7">
-        <div className="story-stage relative max-lg:h-[38svh] lg:sticky lg:top-14 lg:h-[calc(100dvh-3.5rem)]">
+        <div className="story-stage relative max-lg:h-[38svh] max-lg:overflow-hidden lg:sticky lg:top-14 lg:h-[calc(100dvh-3.5rem)]">
           <div className="absolute inset-0 max-lg:py-2 lg:py-8">
             <div className="relative size-full">
               <StoryStill copy={STAGE_COPY} />

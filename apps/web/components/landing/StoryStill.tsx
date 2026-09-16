@@ -32,12 +32,12 @@ const MARKDOWN = [
 ];
 
 const NODES: ReadonlyArray<readonly [number, number, string]> = [
-  [652, 286, "/"],
-  [600, 246, "/docs"],
-  [716, 240, "/api"],
-  [742, 308, "/pricing"],
-  [690, 344, "/about"],
-  [612, 340, "/blog"],
+  [652, 358, "/"],
+  [600, 318, "/docs"],
+  [716, 312, "/api"],
+  [742, 380, "/pricing"],
+  [690, 416, "/about"],
+  [612, 412, "/blog"],
 ];
 const EDGES: ReadonlyArray<readonly [number, number]> = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 5], [2, 3], [4, 3]];
 
@@ -114,9 +114,9 @@ export default function StoryStill({ copy }: { copy: StageCopy }) {
         </g>
       ))}
 
-      <rect x={520} y={30} width={248} height={22} rx={11} fill="var(--accent-soft)" />
+      <rect x={520} y={30} width={256} height={22} rx={11} fill="var(--accent-soft)" />
       <circle cx={532} cy={41} r={3} fill="var(--accent)" />
-      <text x={540} y={45} fontSize={9.5} fill="var(--accent-ink)">
+      <text x={540} y={45} fontSize={9} fill="var(--accent-ink)">
         {copy.fidelity}
       </text>
 
@@ -129,7 +129,7 @@ export default function StoryStill({ copy }: { copy: StageCopy }) {
           <text x={525} y={97 + i * 20} fontSize={7.5} fontWeight={700} textAnchor="middle" fill="var(--inverse)">
             {i + 1}
           </text>
-          <text x={536} y={98 + i * 20} fill={line.startsWith("#") ? "var(--ink)" : "var(--muted)"}>
+          <text x={536} y={98 + i * 20} fontSize={11} fill={line.startsWith("#") ? "var(--ink)" : "var(--muted)"}>
             {line}
           </text>
         </g>

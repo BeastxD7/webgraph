@@ -211,8 +211,8 @@ const GRAPH_EDGES: ReadonlyArray<readonly [number, number]> = [
 ];
 
 export type Scene = {
-  /** Overall scroll progress through the story, 0..1. */
-  setProgress(p: number): void;
+  /** Which chapter's panel is on the stage, and how far through it (0..1) the reader is. */
+  setChapter(chapter: number, progress: number): void;
   /** Advance the simulation by `dt` seconds of wall clock. */
   step(dt: number): void;
   draw(ctx: CanvasRenderingContext2D, width: number, height: number, palette: Palette): void;
@@ -251,11 +251,9 @@ export function createScene(copy: StageCopy): Scene {
     return false;
   }
 
-  function setProgress(p: number): void {
-    const u = clamp01(p) * 3;
-    const c = Math.min(3, Math.max(0, Math.round(u)));
-    chapter = c;
-    t = clamp01(u - c + 0.5);
+  function setChapter(c: number, progress: number): void {
+    chapter = Math.min(3, Math.max(0, Math.round(c)));
+    t = clamp01(progress);
   }
 
   function spawnAbove(b: Body): void {
@@ -486,7 +484,7 @@ export function createScene(copy: StageCopy): Scene {
         break;
       case "text":
         lines(ctx, 0, 0, b.w, b.h, bar, 9, missing, pal.warn);
-        if (missing) text(ctx, pal, "needed a browser", 0, b.h + 9, 8, pal.warn);
+        if (missing) text(ctx, pal, "needed a browser", b.w, -4, 8, pal.warn, "mono", 500, "right");
         break;
       case "image":
         ctx.fillStyle = pal.sunk;
@@ -638,13 +636,13 @@ export function createScene(copy: StageCopy): Scene {
       for (const b of junk) {
         if (b.alpha <= 0.02) continue;
         ctx.globalAlpha = b.alpha;
-        text(ctx, pal, "> " + b.emitted, x, y, 11, pal.bad);
+        text(ctx, pal, "> " + b.emitted, x, y, 11.5, pal.bad);
         y += 22;
       }
       ctx.globalAlpha = 1;
       const missingOn = kept.some((b) => b.missing && b.alpha > 0.5);
       if (missingOn && t > 0.62) {
-        text(ctx, pal, "> … 41% of the words. The rest needed a browser.", x, y + 6, 10, pal.warn);
+        text(ctx, pal, "> … about half the words.", x, y + 6, 10, pal.warn);
       }
       return;
     }
@@ -656,7 +654,7 @@ export function createScene(copy: StageCopy): Scene {
         if (t < 0.3 || sy < b.ty + 2) continue;
         const c = b.flag === "bad" ? pal.bad : pal.warn;
         const yy = Math.max(70, Math.min(VH - 40, b.ty + 12));
-        b.refusal.forEach((line, i) => text(ctx, pal, line, x, yy + i * 13, 9.5, c));
+        b.refusal.forEach((line, i) => text(ctx, pal, line, x, yy + i * 14, 10, c));
       }
       if (t >= 0.3) {
         text(ctx, pal, "READING ORDER", x, VH - 78, 9, pal.accentInk, "sans", 700);
@@ -681,7 +679,7 @@ export function createScene(copy: StageCopy): Scene {
       ctx.arc(x + 5, y - 4, 5, 0, Math.PI * 2);
       ctx.fill();
       text(ctx, pal, String(i + 1), x + 5, y - 1, 7.5, pal.dark ? pal.ground : pal.inverse, "mono", 700, "center");
-      text(ctx, pal, line.slice(0, n) + (f < 1 ? "▌" : ""), x + 16, y, 10.5, line.startsWith("#") ? pal.ink : pal.muted);
+      text(ctx, pal, line.slice(0, n) + (f < 1 ? "▌" : ""), x + 16, y, 11, line.startsWith("#") ? pal.ink : pal.muted);
       y += 20;
     });
   }
@@ -689,7 +687,7 @@ export function createScene(copy: StageCopy): Scene {
   function drawGraph(ctx: Ctx, pal: Palette, grow: number, phase: number): void {
     if (grow <= 0) return;
     ctx.save();
-    ctx.translate(0, 190);
+    ctx.translate(0, 262);
     const g = ease(grow);
     const [hx, hy] = GRAPH_NODES[0] ?? [0, 0, ""];
     GRAPH_EDGES.forEach(([a, b], i) => {
@@ -771,8 +769,8 @@ export function createScene(copy: StageCopy): Scene {
     const e = ease(f);
     ctx.save();
     ctx.globalAlpha = e;
-    ctx.font = `500 9.5px ${pal.mono}`;
-    const w = ctx.measureText(copy.fidelity).width + 24;
+    ctx.font = `500 9px ${pal.mono}`;
+    const w = Math.min(OUT.w, ctx.measureText(copy.fidelity).width + 26);
     const x = OUT.x;
     const y = 30 + (1 - e) * -8;
     ctx.fillStyle = pal.accentSoft;
@@ -782,7 +780,7 @@ export function createScene(copy: StageCopy): Scene {
     ctx.beginPath();
     ctx.arc(x + 12, y + 11, 3, 0, Math.PI * 2);
     ctx.fill();
-    text(ctx, pal, copy.fidelity, x + 20, y + 15, 9.5, pal.accentInk);
+    text(ctx, pal, copy.fidelity, x + 20, y + 15, 9, pal.accentInk);
     ctx.restore();
   }
 
@@ -874,7 +872,7 @@ export function createScene(copy: StageCopy): Scene {
   }
 
   return {
-    setProgress,
+    setChapter,
     step,
     draw,
     settled,
