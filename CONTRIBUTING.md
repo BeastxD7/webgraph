@@ -131,7 +131,11 @@ the production path against Chromium's own text and diffs two runs; a page that 
 a page to open. `benchmark/fidelity/run.py` does the same for the *whole-page* Markdown on
 a fixed set of old and ugly pages -- word recall against Chromium (nothing lost), extra
 words (nothing added), order inversions, and structure counts -- which is the measure for
-any change to blocks, the union, ordering or rendering. A change to table, code or
+any change to blocks, the union, ordering or rendering; `make bench-random-web` runs the
+same measure over `benchmark/random_web/sample-2026-09.txt`, 300 pages drawn uniformly
+from Tranco's ranks with one Common Crawl capture each, so a fix measured on chosen sites
+is also measured on the web nobody chose (`benchmark/random_web/report.py` gives the
+bands; `REPORT-2026-09.md` beside it is the baseline). A change to table, code or
 Markdown rendering also re-runs WebMainBench before merge, whatever WCXB and Zyte say: they
 score plain text, and a link rendered into every table cell cost WebMainBench's table
 score for six pull requests unnoticed (#68, fixed in #78). These are the tools the

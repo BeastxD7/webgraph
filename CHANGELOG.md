@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #91) — the random-web sample
+- `benchmark/random_web/`: `sample.py` draws domains uniformly over Tranco's top-1M ranks
+  and takes one random 200/HTML Common Crawl capture per domain (seeded), so the pages are
+  nobody's choice; `sample-2026-09.txt` is 300 of them (seed 1, CC-MAIN-2026-34);
+  `report.py` turns a `benchmark/fidelity/run.py --sites` score into outcomes (scored /
+  refused / oracle blocked / oracle failed), recall and extra bands, and the worst pages
+  with their missing and extra words. `make bench-random-web` runs both.
+- `REPORT-2026-09.md`: the baseline on main@b618443 -- 258 scored, recall median 0.986 /
+  mean 0.916, 27 pages under 0.80, `extra > 0.30` on 53 (consent dialogs and spinner
+  pages lead), 16 honest refusals. The tail is the work list; nothing in it is diagnosed
+  by this PR.
+
 ### Added (2026-09-16, PR #97) — WebGraph v1 (behind WEBGRAPH_KG)
 - **The inferred layer over a crawl**, `packages/engine/src/webgraph/kg/`: a language
   model reads every heading-scoped section and states what it says -- entities of twelve
