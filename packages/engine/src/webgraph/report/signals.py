@@ -938,7 +938,8 @@ def collect_signals(
     signals.append(_signal("sitemap", sitemap_found, detail, meaning, source=declared[0] if declared else urljoin(origin, "/sitemap.xml")))
 
     if head.feeds:
-        kinds = ", ".join(dict.fromkeys(k.split("/")[-1].replace("+xml", "").replace("+json", " feed").upper() for k, _ in head.feeds))
+        names = {"application/rss+xml": "RSS", "application/atom+xml": "Atom", "application/feed+json": "JSON Feed", "application/json": "JSON Feed"}
+        kinds = ", ".join(dict.fromkeys(names.get(k, k) for k, _ in head.feeds))
         detail = f"{len(head.feeds)} feed link{'s' if len(head.feeds) != 1 else ''} ({kinds}): " + ", ".join(u for _, u in head.feeds[:2])
         meaning = "The root advertises a feed: readers and aggregators, AI ones included, get what changed without crawling."
     else:
