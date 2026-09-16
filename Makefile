@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint check check-clean bench bench-live bench-fidelity bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
+.PHONY: help install api web dev test lint check check-clean bench bench-live bench-fidelity bench-random-web bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
 
 help:
 	@echo "webgraph — development commands"
@@ -14,6 +14,7 @@ help:
 	@echo "  make bench-content Score main-content extraction against three other tools"
 	@echo "  make bench-live    Score a fixed set of live sites against Chromium's own text (diff two runs)"
 	@echo "  make bench-fidelity  Whole-page Markdown against Chromium on old/ugly pages: recall, extra, order, structure"
+	@echo "  make bench-random-web  The same measure on 300 pages nobody picked (benchmark/random_web/sample-2026-09.txt)"
 	@echo "  make bench-routes  Score route discovery against a real-browser oracle"
 	@echo "  make bench-union   Score union block placement (needs bench-union-fetch once)"
 	@echo "  make bench-reading-order  Score reading order vs a DOM walk"
@@ -74,6 +75,10 @@ bench-live:
 
 bench-fidelity:
 	uv run --package webgraph python benchmark/fidelity/run.py --out fidelity.json
+
+bench-random-web:
+	uv run --package webgraph python benchmark/fidelity/run.py --sites benchmark/random_web/sample-2026-09.txt --out random-web.json
+	uv run --package webgraph python benchmark/random_web/report.py random-web.json
 
 bench-content:
 	cd packages/engine && uv run --group bench python ../../benchmark/content_quality/run.py

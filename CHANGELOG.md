@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-16, PR #91) — the random-web sample
+- `benchmark/random_web/`: `sample.py` draws domains uniformly over Tranco's top-1M ranks
+  and takes one random 200/HTML Common Crawl capture per domain (seeded), so the pages are
+  nobody's choice; `sample-2026-09.txt` is 300 of them (seed 1, CC-MAIN-2026-34);
+  `report.py` turns a `benchmark/fidelity/run.py --sites` score into outcomes (scored /
+  refused / oracle blocked / oracle failed), recall and extra bands, and the worst pages
+  with their missing and extra words. `make bench-random-web` runs both.
+- `REPORT-2026-09.md`: the baseline on main@b618443 -- 258 scored, recall median 0.986 /
+  mean 0.916, 27 pages under 0.80, `extra > 0.30` on 53 (consent dialogs lead), 16
+  honest refusals. The report also names two gaps in `report.py`'s own classification --
+  an oracle that rendered an HTTP error page is scored as a page, and a zero-word
+  non-refusal output has no bucket of its own -- and one page (gokitetours.com) where the
+  engine returned nothing without refusing. The tail is the work list; nothing in it is
+  diagnosed by this PR.
+
 ### Added (2026-09-16, PR #100) — WebGraph page: the graph, and the query path lit in real time (behind WEBGRAPH_KG)
 - `/graph?url=` (`apps/web/app/graph/page.tsx`, client components under
   `components/graph/`): the site, a model panel (presets for Ollama, LM Studio, vLLM,
@@ -190,7 +205,7 @@ All notable changes to this project are documented here. The format follows
   group they sit in. `PageReport.has_open_graph`; `LlmsFile` gains `links_checked` /
   `links_answering` and moves to `report/signals.py` (re-exported).
 
-### Changed (2026-09-16, PR #99)
+### Changed (2026-09-16, PR #102) — the metadata sub-score counts OpenGraph
 - The 10-point *Structured data and page metadata* sub-score's 4 page-field points now
   count OpenGraph beside title, description and `lang` (four fields; a page with the
   older three and no `og:*` earns 3 of 4). Weights unchanged; total stays 100. No new
