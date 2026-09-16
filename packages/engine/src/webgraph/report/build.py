@@ -12,11 +12,14 @@ What it refuses to do
 ---------------------
 It never fetches as another bot. What GPTBot or Googlebot would be served is not measured
 here and is not guessed at; the bots table is what the site's robots.txt *declares* for
-each name, read as that bot would read it. The report's own fetches identify themselves as
-webgraph and obey robots.txt like every other fetch the engine makes: a root the file
+each name, read as that bot would read it. The report's plain fetches identify themselves
+as webgraph, its browser fetch is a real Chromium under its own User-Agent, and both obey
+robots.txt like every other fetch the engine makes: a root the file
 disallows for this client, or a root that is walled, ends the report with the engine's own
-refusal and no score (`SiteReport.refusal`). Every request to the host is spaced by
-`REPORT_REQUEST_INTERVAL_SECONDS`; a report is a courtesy call, not a crawl.
+refusal and no score (`SiteReport.refusal`). The report's own requests -- the sampled
+pages, `/llms.txt`, the link checks -- are spaced by `REPORT_REQUEST_INTERVAL_SECONDS`;
+the root probe (root, robots.txt, sitemaps) is fetched as every crawl starts. A report is
+a courtesy call, not a crawl.
 """
 
 from __future__ import annotations
@@ -65,9 +68,11 @@ from webgraph.resolve import (
 __all__ = ["LlmsFile", "MeasuredHow", "RobotsReport", "SiteReport", "build_site_report", "choose_sample"]
 
 NO_IMPERSONATION: Final[str] = (
-    "The engine never impersonates other bots. Every request identified itself as webgraph "
-    "and obeyed robots.txt; the bots table is what the site's robots.txt declares for each "
-    "name, not what that bot would be served."
+    "The engine never impersonates other bots. The plain fetches identified themselves as "
+    "webgraph with a contact URL; the browser fetch was a real Chromium under its own "
+    "User-Agent; nothing was fetched under another bot's name, and robots.txt was obeyed "
+    "throughout. The bots table is what the site's robots.txt declares for each name, not "
+    "what that bot would be served."
 )
 
 _ROBOTS_TEXT_CHARS: Final[int] = 8_000
@@ -131,6 +136,7 @@ class MeasuredHow:
     engine_version: str
     commit: str
     user_agent: str
+    """The plain fetches' User-Agent. The browser fetch is Chromium under its own."""
     pages_requested: int
     pages_sampled: int
     request_interval_seconds: float

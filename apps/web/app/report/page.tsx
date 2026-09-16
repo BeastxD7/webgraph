@@ -4,11 +4,22 @@ import ReportPrompt from "@/components/report/ReportPrompt";
 import ReportRun from "@/components/report/ReportRun";
 import { normalizeInput } from "@/lib/url";
 
-export const metadata: Metadata = {
-  title: "Site report",
-  description:
-    "What a site shows people, what it shows machines, and how ready it is for AI agents: readable without JavaScript, what robots.txt declares per bot, hidden and injected links, walls, dead links, with a suggested robots.txt and llms.txt.",
-};
+const DESCRIPTION =
+  "What a site shows people, what it shows machines, and how ready it is for AI agents: readable without JavaScript, what robots.txt declares per bot, hidden and injected links, walls, dead links, with a suggested robots.txt and llms.txt.";
+
+/**
+ * A result page is `noindex`, like `/extract`: a crawler that runs JavaScript and indexes
+ * a shared link would start a three-minute report against the site on every visit.
+ */
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}): Promise<Metadata> {
+  const params = await searchParams;
+  const hasUrl = Boolean(params.url);
+  return { title: "Site report", description: DESCRIPTION, ...(hasUrl ? { robots: { index: false } } : {}) };
+}
 
 /**
  * `/report?url=…` runs and shows a report; `/report` alone is the prompt. The address lives

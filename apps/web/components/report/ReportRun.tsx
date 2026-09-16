@@ -62,8 +62,8 @@ export default function ReportRun({ url, pages }: { url: string; pages?: number 
         <p className="measure-prose mt-3 text-small text-muted">
           This takes one to three minutes. The root is fetched twice, once plainly and once in
           a real browser, then up to {pages ?? 5} pages the same way, and each page&apos;s internal
-          links are checked -- every request to the site a second apart, all of them identified
-          as webgraph. Nothing is fetched as another bot.
+          links are checked, a second apart. The plain fetches identify themselves as webgraph;
+          the browser is a real Chromium under its own name. Nothing is fetched as another bot.
         </p>
       </section>
     );

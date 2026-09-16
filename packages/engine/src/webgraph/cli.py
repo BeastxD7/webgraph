@@ -221,7 +221,7 @@ def format_site_report(report: Any) -> list[str]:
             lines.append(f"    {entry.name}{version}{when}")
     else:
         lines.append("    none detected")
-    lines += ["", "  PAGES  (static words / rendered words / union; wall; hidden links; dead links)"]
+    lines += ["", "  PAGES  (static words / rendered words / union; wall; hidden links; dead links; consent)"]
     for page in report.pages:
         if page.error:
             lines.append(f"    {page.requested_url}")
@@ -231,7 +231,8 @@ def format_site_report(report: Any) -> list[str]:
             f"    {page.requested_url}\n      {page.static_words:,} / {page.rendered_words:,} / "
             f"{page.union_words:,} words  ({page.static_coverage:.0%} without JavaScript); "
             f"wall: {page.wall or 'none'}; hidden links: {page.hidden_links} "
-            f"({page.hidden_external_hosts} external hosts); dead links: {page.dead_count}/{page.links_checked}"
+            f"({page.offscreen_links} off-screen, {page.offscreen_external_hosts} foreign hosts); "
+            f"dead links: {page.dead_count}/{page.links_checked}; consent text: {page.consent_share:.0%}"
         )
     robots = report.robots
     lines += ["", f"  ROBOTS.TXT  {'found' if robots.found else 'not found'}"]

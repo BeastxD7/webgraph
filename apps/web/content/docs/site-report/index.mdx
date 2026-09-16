@@ -55,10 +55,13 @@ file. `Googlebot-Image` in the file does not govern Googlebot.
 The verdict is read at the root by the same longest-match rule the crawl's own refusals
 use: **blocked** when `/` is disallowed, **restricted** when some paths are, **allowed**
 otherwise -- with `via` saying whether the bot was named or fell under `*`, the count of
-`Disallow` lines that decide something, any `Crawl-delay`, and the lines verbatim. Every
-one of the report's own requests identifies itself as webgraph and obeys the file like
-every other fetch the engine makes; it is spaced `REPORT_REQUEST_INTERVAL_SECONDS` (1 s)
-apart per host.
+`Disallow` lines that decide something, any `Crawl-delay`, and the lines verbatim. The
+report's plain fetches identify themselves as webgraph with a contact URL; its browser
+fetch is a real Chromium under its own User-Agent, as every render in the engine is; both
+obey the file like every other fetch the engine makes. The report's own requests -- the
+sampled pages, `/llms.txt`, the link checks -- are spaced `REPORT_REQUEST_INTERVAL_SECONDS`
+(1 s) apart per host; the root probe (root, robots.txt, sitemaps) is fetched as every
+crawl starts.
 
 ## The score
 
@@ -137,5 +140,5 @@ curl -s -X POST localhost:8000/api/site/report \
 The JSON carries `score.subscores[]` (key, weight, score, evidence, recommendation,
 source), `findings[]` (severity, kind, title, detail, page), `pages[]`, `robots.bots[]`,
 `stack[]`, `suggested_robots_txt`, `suggested_llms_txt`, and `measured` -- the engine
-version and commit, the User-Agent used, pages sampled, the request interval, the duration,
-and the statement that nothing was fetched as another bot.
+version and commit, the plain fetches' User-Agent, pages sampled, the request interval, the
+duration, and the statement that nothing was fetched as another bot.

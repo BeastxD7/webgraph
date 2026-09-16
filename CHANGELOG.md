@@ -47,7 +47,8 @@ All notable changes to this project are documented here. The format follows
   disallow training crawlers, the owner's choice -- and an `llms.txt` draft per
   llmstxt.org from the sampled titles and descriptions, marked optional.
 - A walled or disallowed root ends the report with the engine's own refusal and no score.
-  Every request identifies itself as webgraph, obeys robots.txt and is spaced
+  The plain fetches identify themselves as webgraph, the browser fetch is a real Chromium
+  under its own User-Agent, both obey robots.txt, and the report's own requests are spaced
   `REPORT_REQUEST_INTERVAL_SECONDS` (1 s) apart per host; the report's footer says so,
   with the engine version and commit, pages sampled and duration.
 - Web: `/report?url=…` and `/report/<domain>`; "Report" in the nav; the `/products` Site

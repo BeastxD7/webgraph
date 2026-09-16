@@ -145,7 +145,13 @@ function PageRowCells({ page }: { page: ReportPage }) {
         {page.dead_count} / {page.links_checked}
       </td>
       <td className="py-2 pr-3 text-caption text-muted">
-        {[page.has_schema ? "schema" : null, page.lang ? `lang=${page.lang}` : null, page.description ? "description" : null, page.in_sitemap === true ? "in sitemap" : page.in_sitemap === false ? "not in sitemap" : null]
+        {[
+          page.has_schema ? "schema" : null,
+          page.lang ? `lang=${page.lang}` : null,
+          page.description ? "description" : null,
+          page.in_sitemap === true ? "in sitemap" : page.in_sitemap === false ? "not in sitemap" : null,
+          page.consent_words > 0 ? `consent ${percent(page.consent_share)}` : null,
+        ]
           .filter(Boolean)
           .join(" · ") || "—"}
       </td>
@@ -272,7 +278,7 @@ export default function ReportView({ report }: { report: SiteReport }) {
       <Section
         id="pages"
         title="Pages"
-        lede="Words in the plain HTML, words after a real browser ran the page, and the union of the two with the share the plain fetch holds. Hidden is words (w) and links (l) a reader cannot see -- a dropdown menu counts -- and, of those links, the ones parked off the page and the foreign hosts they point at."
+        lede="Words in the plain HTML, words after a real browser ran the page, and the union of the two with the share the plain fetch holds. Hidden is words (w) and links (l) a reader cannot see -- a dropdown menu counts -- and, of those links, the ones parked off the page and the foreign hosts they point at. Declares lists schema, lang, description, sitemap membership and the share of the page's words that are cookie-consent text."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-small">
@@ -346,7 +352,11 @@ export default function ReportView({ report }: { report: SiteReport }) {
                     <td className="py-2 pr-3 text-muted">{bot.operator}</td>
                     <td className="py-2 pr-3 text-muted">{bot.purpose}</td>
                     <td className="py-2 pr-3">
-                      <Chip tone={ACCESS[bot.access].tone}>{ACCESS[bot.access].label}</Chip>
+                      {/* A `*` group that disallows /wp-admin/ is the commonest file on the web; the
+                          word stays, the caution colour is kept for a rule that names the bot. */}
+                      <Chip tone={bot.access === "restricted" && bot.via !== "named" ? "plain" : ACCESS[bot.access].tone}>
+                        {ACCESS[bot.access].label}
+                      </Chip>
                     </td>
                     <td className="py-2 pr-3 text-muted">{VIA[bot.via] ?? bot.via}</td>
                     <td className="tabular py-2 pr-3 text-right font-mono text-code">{bot.disallowed}</td>
@@ -416,7 +426,7 @@ function MeasuredFooter({ report }: { report: SiteReport }) {
       </p>
       <p className="measure-prose mt-2">{how.statement}</p>
       <p className="mt-2 break-all">
-        User-Agent: <code className="font-mono">{how.user_agent}</code>
+        Plain-fetch User-Agent: <code className="font-mono">{how.user_agent}</code>; the browser fetch is Chromium under its own.
       </p>
     </footer>
   );
