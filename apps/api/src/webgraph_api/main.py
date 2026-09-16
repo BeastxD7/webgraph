@@ -31,6 +31,8 @@ from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -72,6 +74,8 @@ from webgraph.watch import (
     stream_watch,
 )
 from webgraph.watch.store import default_watch_db
+
+from webgraph_api import kg_routes
 
 # Every value a deployment can set lives in `webgraph.settings.Settings` (defaults in `webgraph.config`), read once here. The
 # reasoning for each cap is beside its field there; these names are kept because the rest of
@@ -457,6 +461,9 @@ class HealthResponse(BaseModel):
     max_pages: int
     """The server-side page cap. 0 means crawls run until the frontier is exhausted."""
 
+    webgraph: bool = False
+    """Whether the knowledge-graph routes (`/api/graph/*`) are served: `WEBGRAPH_KG=1`."""
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -480,9 +487,43 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
+
+
+def _graph_for(url: str) -> Any:
+    builder = _recall_graph(url)
+    return builder.graph if builder is not None else None
+
+
+app.include_router(kg_routes.create_router(_graph_for))
+"""WebGraph (`/api/graph/*`), behind `WEBGRAPH_KG=1`: every route answers 404 with the
+flag's name until it is set."""
+
+_SECRET_FIELDS: Final[frozenset[str]] = frozenset({"api_key", "password"})
+
+
+def _redact(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: ("[redacted]" if k in _SECRET_FIELDS and v else _redact(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact(v) for v in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """A 422 that does not echo secrets.
+
+    FastAPI's default handler returns the offending `input` -- the whole request body for a
+    body-level error -- which for `/api/graph/build` would send the caller's provider key
+    back down the wire and into whatever logs the response. Redacted here for every route,
+    since a key in a body is never the part that failed validation.
+    """
+    # `jsonable_encoder` first: a validator that raised puts the exception object itself in
+    # `ctx`, and a bare `JSONResponse` would turn that 422 into a 500.
+    return JSONResponse(status_code=422, content={"detail": _redact(jsonable_encoder(exc.errors()))})
 
 
 def _measured(resolved: ResolvedPage) -> bool:
@@ -644,6 +685,7 @@ async def health() -> HealthResponse:
         max_concurrent_renders=MAX_CONCURRENT_RENDERS,
         private_hosts_blocked=guard.private_hosts_blocked(),
         max_pages=PAGE_CAP,
+        webgraph=kg_routes.kg_enabled(),
     )
 
 

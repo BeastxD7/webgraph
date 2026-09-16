@@ -1,0 +1,183 @@
+---
+title: WebGraph
+description: A language model reads every extracted section and states what it says, as entities, typed attributes and relations; every row cites the page and block it was read from, verified; questions get answers with a citation per sentence. Behind WEBGRAPH_KG.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The crawler gives you every page of a site as Markdown, in reading order, with provenance.
+WebGraph is the layer above it: a model reads each section and writes down what the
+section *states* -- the organisations, people, courses, events and offers it names, the
+prices, dates and phone numbers attached to them, and the relations between them -- and
+the result is a graph you can ask questions of, export, or push into Neo4j
+(`packages/engine/src/webgraph/kg/`).
+
+Two layers, on purpose. The crawl's own graph (`graph/`) is **observed**: pages, sections,
+links with the anchor text a human wrote, the JSON-LD a page published. It is free,
+deterministic and already answers "what is this site about". The knowledge graph (`kg/`)
+is **inferred**: it costs tokens, and everything in it points back at the observed layer.
+
+<Callout title="Behind a flag" type="warn">
+WebGraph ships off. Set `WEBGRAPH_KG=1` on the API (and in the shell for `webgraph kg`)
+to turn it on; until then `/api/graph/*` answers 404 with the flag's name. It stays behind
+the flag until [the benchmark](#the-benchmark) shows it beating the crawl's own BM25
+context on typed and two-hop questions on at least three real sites -- which, as of this
+release, has not been measured with a real model.
+</Callout>
+
+## The provenance rule
+
+The product rule from extraction carries over unchanged: **never a false output.**
+
+- The model is shown a section as numbered blocks -- `[b0]`, `[b1]`, ... -- and every
+  mention, attribute and relation it returns must carry the block marker and a **verbatim
+  quote** from that block.
+- The quote is looked for in the block's text (after whitespace, Unicode-compatibility,
+  curly-quote and Markdown-link normalisation; nothing fuzzy). Found: the row is stored
+  with the block's XPath and the quote's character span. Not found in the named block: the
+  section's other blocks are tried, because models mis-number more often than they
+  invent. Not found anywhere: the assertion is **rejected and counted**. There is no
+  "unverified" tier in the store.
+- A relation with no verified evidence cannot be constructed (`Relation` raises).
+- An answer sentence must end in `[n]` citations that name real evidence rows. One that
+  cites nothing valid is returned with `unsupported: true` and rendered dimmed -- never
+  silently kept, never silently dropped. "Not stated on this site." is a recognised,
+  scored answer.
+
+Every citation therefore resolves to `url#xpath` plus the quote, and a reader can check it
+against the page without trusting anything the model said.
+
+## What a build does
+
+```bash
+export WEBGRAPH_KG=1
+# a stored crawl (from the web UI, /api/site/stream or `webgraph diff`), or crawl now
+webgraph kg build https://example.edu/ --provider ollama --model qwen3:8b
+webgraph kg ask https://example.edu/ "What does the B.E. Computer Science programme cost?"
+webgraph kg export https://example.edu/ --format cypher --out example.cypher
+```
+
+1. **Order.** Sections are taken by page in-degree, then depth, then position: what the
+   site itself links to most is read first, so a capped build covers the home page, the
+   programme list and the contact page before the fortieth news item. Sections under 120
+   characters (`KG_MIN_SECTION_CHARS`) and all-code sections are skipped.
+2. **Estimate, before any call.** The first event is `estimate`: pages, sections, how many
+   are already in the cache, input tokens at four characters each, output at a quarter of
+   that, and dollars when `price_per_m_in` / `price_per_m_out` are configured.
+3. **Extract.** One call per section (no gleaning by default; no summarisation ever on the
+   build path), four at a time, strict JSON schema where the provider supports it and a
+   `json_object` / plain-prompt fallback where it does not. Each section's result is
+   verified as above and streamed as a `section` event with `accepted`, `rejected` and the
+   reasons.
+4. **Structured data first.** JSON-LD and microdata entities the pages published enter the
+   graph before any model output, located in the page text so they carry block evidence
+   too. On a type conflict the structured type wins (`Fact.outranks`, applied to the graph).
+5. **Merge** -- deterministic, no model: same type and normalised name (NFKC, casefold,
+   whitespace, edge punctuation, possessive); aliases the model declared; an open type such
+   as `Faculty` joining a same-name core type such as `Person`; MinHash/LSH candidates at
+   3-gram Jaccard ≥ 0.9. Two *core* types with one name (`Person` vs `Organization`)
+   stay apart. An entity named on more than 60% of pages is flagged `generic` -- kept,
+   shown, never expanded through.
+6. **Store.** One SQLite file per site under `~/.cache/webgraph/kg/` (`WEBGRAPH_KG_DIR`),
+   with FTS5 indexes over entity names and facts and the model cache in the same file.
+
+### Cost controls
+
+| control | where | what it does |
+|---|---|---|
+| `estimate` event | first event of every build | tokens and dollars before a single call |
+| `max_pages`, `max_sections`, `max_input_tokens` (2M), `max_usd` | `budget` in the request, `--max-*` on the CLI, `KG_MAX_*` in `config.py` | the build stops cleanly at the cap, emits `budget`, and finishes with `truncated: true` |
+| the cache | `llm_cache` in the site's SQLite file | keyed on prompt version, model, section text and known entities; a second build of the same crawl makes no calls, a re-crawl pays only for sections whose text changed |
+| `model` vs `answer_model` | provider config | a small model reads sections (the volume); a stronger one answers questions (one call each) |
+| no gleaning, no build-time summaries | `KG_GLEANINGS = 0` | GraphRAG's and LightRAG's defaults double the bill; measured before they are turned on |
+
+Ballpark, from the design: a 200-page site is ~2,000 sections and ~1.5M input tokens --
+about $0.30 on a $0.15/$0.60-per-million model, $5-10 on a frontier model, free and slow
+on a laptop model. `build_runs` in the store records what a build actually cost.
+
+## Asking a question
+
+`POST /api/graph/query` and `webgraph kg ask` stream the retrieval **as it happens**, so a
+viewer can light the path up:
+
+| event | what it carries |
+|---|---|
+| `seeds` | entities matched by BM25 over names and facts, unioned with the entities mentioned in the crawl's best-matching sections; no model call |
+| `hop` (up to two) | edges walked, mass-normalised per node so a hub cannot collect a little from every seed and outrank the answer; generic entities are never expanded through |
+| `evidence` | the numbered quotes handed to the model: evidence rows of the selected relations, mentions and every typed attribute of the selected entities, and the blocks of the seed sections, with 35% of the slots reserved for rows reached by expansion |
+| `answer_delta`, `answer` | sentences with their citations, `unsupported` flags, the `path` (seeds, hops, evidence, answer nodes) and usage |
+
+Without a model configured the answer is extractive -- the best-matching quotes, cited --
+which is also what the benchmark's `bm25` baseline gets.
+
+## Exports
+
+`GET /api/graph/export?url=&fmt=` and `webgraph kg export --format`:
+
+- **jsonl** -- one object per line, `kind`-typed, evidence before the entities and relations
+  that cite it. Loadable by anything.
+- **cypher** -- `MERGE` statements, no APOC: `(:Entity:Course {id, name, type})`,
+  `(:Evidence {id, xpath, span_start, span_end, quote})`, `(:Section)`, `(:Page)`,
+  `MENTIONED_IN`, `HAS_ATTRIBUTE`, `IN_SECTION`, `ON_PAGE`, and
+  `(:Entity)-[:RELATED {predicate, fact, weight, evidence_ids}]->(:Entity)`;
+  `--typed-edges` adds `-[:PREDICATE]->` as well.
+- **jsonld** -- schema.org-typed entities; every assertion a `prov:Entity` that
+  `prov:wasQuotedFrom` the page, with an `oa:XPathSelector` refined by an
+  `oa:TextPositionSelector` naming the block and the span.
+
+`webgraph kg sync-neo4j` pushes the same shape over bolt -- see [Neo4j](/docs/webgraph/neo4j).
+
+## The benchmark
+
+`benchmark/kg/` measures the claim rather than assuming it. `generate.py` turns a site's
+own JSON-LD into typed questions with the page and block that answer them (`Offer.price`,
+`Event.startDate`, `Person.jobTitle`, `telephone`, `email`, FAQ pairs), skipping any value
+it cannot locate verbatim on a page. `run.py` scores, per mode:
+
+- answer correctness by type -- normalised exact match for numbers and dates, token F1 for
+  spans, set F1 for lists -- and separately for typed and for two-hop questions;
+- **citation precision and recall at page and at block level**;
+- unsupported-sentence rate and abstention correctness on not-on-site questions;
+- graph statistics (entities and relations per page, rejection rate) and cost.
+
+Three modes run in one harness: `bm25` (the crawl's section BM25 with blocks as evidence,
+no knowledge graph), `kg`, and `kg+sections` (the default). The fixture site under
+`benchmark/kg/fixtures/site/` -- six pages of a fictional college with JSON-LD, 23
+questions -- runs on the deterministic `FakeProvider` in CI; a real model is run locally:
+
+```bash
+uv run --package webgraph python benchmark/kg/run.py --pages benchmark/kg/fixtures/site \
+  --root https://kg-fixture.test/ --qa benchmark/kg/fixtures/site/qa.jsonl --provider fake
+```
+
+On the fixture with the fake provider, `bm25` currently *beats* the knowledge graph on
+answer correctness (0.86 vs 0.62): the fake's quotes are six-word windows that often cut
+the value off, whereas the baseline hands the model whole blocks. That is the number the
+flag waits on; a real extractor's quotes are the full clause.
+
+## What v1 does not do
+
+Deliberately, per the design's risk list:
+
+- **No community detection, reports or "global search."** The bulk of GraphRAG's cost and
+  complaints; "what is this site about" is answered free by the observed layer.
+- **No cross-site entity resolution.** Generic names bridge wrongly; links stay the
+  cross-site channel.
+- **No LLM-judged deduplication and no eager summaries.** Merge is deterministic;
+  `Entity.description` is empty until something asks for it.
+- **No temporal contradiction resolution.** `first_seen` / `last_seen` are crawl-observed;
+  the `retired_at` column exists but nothing retires yet -- a rebuild replaces the graph
+  from the current crawl.
+- **No Text2Cypher, no DRIFT-style multi-round search, no vector seeding, no 3D.**
+- **No gleaning by default** (`KG_GLEANINGS = 0`), and `gleanings: 1` is accepted but not
+  yet implemented.
+
+## Configuration
+
+`config.py`, "WebGraph" section, all visible at `GET /api/config`: `KG_MIN_SECTION_CHARS`,
+`KG_CONCURRENCY`, `KG_MAX_PAGES` / `KG_MAX_SECTIONS` / `KG_MAX_INPUT_TOKENS` / `KG_MAX_USD`,
+`KG_GLEANINGS`, `KG_MERGE_JACCARD`, `KG_GENERIC_PAGE_SHARE`, `KG_MAX_HOPS`, `KG_HOP_DECAY`,
+`KG_MAX_ENTITIES`, `KG_MAX_RELATIONS`, `KG_MAX_EVIDENCE`, `KG_GRAPH_EVIDENCE_SHARE`.
+Deployment: `WEBGRAPH_KG` (the flag), `WEBGRAPH_KG_DIR` (where the SQLite files live), and
+the `WEBGRAPH_LLM_*` provider defaults described on the [providers](/docs/webgraph/providers)
+page.

@@ -18,8 +18,8 @@ from urllib.parse import urljoin
 
 from webgraph import config
 from webgraph.crawl.frontier import canonical_key, normalize_url, same_site
-from webgraph.graph.model import Entity, PageNode, Section, SiteGraph, section_id
-from webgraph.types import BlockKind, Document
+from webgraph.graph.model import BlockRef, Entity, PageNode, Section, SiteGraph, section_id
+from webgraph.types import Block, BlockKind, Document
 
 MAX_SECTION_CHARS = config.GRAPH_MAX_SECTION_CHARS
 MIN_SECTION_CHARS = config.GRAPH_MIN_SECTION_CHARS
@@ -52,19 +52,30 @@ def sections_from_document(document: Document, *, page_key: str = "") -> list[Se
     sections: list[Section] = []
     heading = ""
     level = 0
-    buffer: list[str] = []
+    buffer: list[tuple[str, Block]] = []
     # Heading level -> id of the most recent section at that level, for parent links.
     open_at_level: dict[int, str] = {}
 
     def flush() -> None:
         nonlocal buffer
-        body = "\n\n".join(part for part in buffer if part.strip()).strip()
+        parts = [(part, block) for part, block in buffer if part.strip()]
         buffer = []
+        # Each part is already stripped, so joining them is the body and the offset of
+        # part `i` is the length of everything before it plus the two-character joins.
+        # Recorded here rather than recovered afterwards by searching: two blocks with the
+        # same text would otherwise both point at whichever came first.
+        body = "\n\n".join(part for part, _ in parts)
+        refs: list[BlockRef] = []
+        cursor = 0
+        for part, block in parts:
+            refs.append(BlockRef(block.xpath, block.kind.value, cursor, cursor + len(part)))
+            cursor += len(part) + 2
         if not body and not heading:
             return
         if len(body) + len(heading) < MIN_SECTION_CHARS:
             return
 
+        piece_start = 0
         for piece in _split_long(body):
             order = len(sections)
             parent = next(
@@ -79,7 +90,11 @@ def sections_from_document(document: Document, *, page_key: str = "") -> list[Se
                 level=level,
                 text=piece,
                 parent_id=parent,
+                blocks=_rebase(refs, piece_start, piece_start + len(piece)),
             )
+            # Pieces are consecutive substrings of the body separated by the same
+            # two-character join, so the next one starts where this one ended plus two.
+            piece_start += len(piece) + 2
             sections.append(new)
             if level:
                 open_at_level[level] = new.id
@@ -96,10 +111,25 @@ def sections_from_document(document: Document, *, page_key: str = "") -> list[Se
             continue
         rendered = block.rich_text or block.text
         if rendered.strip():
-            buffer.append(rendered.strip())
+            buffer.append((rendered.strip(), block))
 
     flush()
     return sections
+
+
+def _rebase(refs: list[BlockRef], start: int, end: int) -> tuple[BlockRef, ...]:
+    """The block refs that overlap `[start, end)` of the body, re-based to the piece.
+
+    `_split_long` cuts on paragraph boundaries, which may fall inside a block whose text
+    holds several paragraphs; the ref is clipped to the part that landed in this piece.
+    """
+    out: list[BlockRef] = []
+    for ref in refs:
+        lo = max(ref.start, start)
+        hi = min(ref.end, end)
+        if hi > lo:
+            out.append(BlockRef(ref.xpath, ref.kind, lo - start, hi - start))
+    return tuple(out)
 
 
 def _split_long(body: str) -> list[str]:

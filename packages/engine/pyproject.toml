@@ -21,6 +21,9 @@ webgraph = "webgraph.cli:main"
 
 [project.optional-dependencies]
 render = ["playwright>=1.49"]
+# Pushing a knowledge graph into Neo4j (`webgraph kg sync-neo4j`, POST /api/graph/sync/neo4j).
+# Optional on purpose: the graph lives in SQLite and the database is a push target.
+kg-neo4j = ["neo4j>=5.20"]
 
 [dependency-groups]
 dev = [
@@ -82,6 +85,12 @@ strict = true
 warn_unreachable = true
 disallow_untyped_defs = true
 files = ["src"]
+
+[[tool.mypy.overrides]]
+# jsonschema ships no inline types and `types-jsonschema` is not a dev dependency; the
+# `neo4j` driver is an optional extra that is usually not installed.
+module = ["jsonschema", "jsonschema.*", "neo4j", "neo4j.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -46,6 +46,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 __all__ = [
+    "BlockRef",
     "Entity",
     "EntityMention",
     "Link",
@@ -61,6 +62,29 @@ _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'_-]*")
 def section_id(page_key: str, order: int) -> str:
     """Stable identifier for a section, so exports and reruns agree."""
     return f"{page_key}#s{order}"
+
+
+@dataclass(frozen=True, slots=True)
+class BlockRef:
+    """Where a run of `Section.text` came from: the block's XPath and its character span.
+
+    A section joins the rendered text of several blocks and, until this existed, forgot
+    which block each character came from. Anything that wants to cite a *block* -- a fact
+    a model read out of the section, a quote an answer rests on -- needs the way back, and
+    `Block.xpath` is the provenance anchor the whole engine keys on. `start:end` slice
+    `Section.text` to exactly the text this block contributed.
+    """
+
+    xpath: str
+    kind: str
+    """`BlockKind.value` of the source block: paragraph, list-item, table, ..."""
+
+    start: int
+    end: int
+    """Character offsets into `Section.text`, `end` exclusive."""
+
+    def slice(self, text: str) -> str:
+        return text[self.start : self.end]
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,9 +119,23 @@ class Section:
     text: str
     parent_id: str | None = None
 
+    blocks: tuple[BlockRef, ...] = ()
+    """The blocks `text` was joined from, in order, each with its span of `text`.
+
+    Empty on a section read back from a graph stored before this field existed; such a
+    section can still be retrieved and shown, but nothing can cite a block inside it.
+    """
+
     @property
     def chars(self) -> int:
         return len(self.text)
+
+    def block_at(self, offset: int) -> BlockRef | None:
+        """The block whose span contains `offset`, or `None` when blocks are unknown."""
+        for ref in self.blocks:
+            if ref.start <= offset < ref.end:
+                return ref
+        return None
 
     def tokens(self) -> list[str]:
         """Lower-cased word tokens of the heading and body, for lexical scoring."""

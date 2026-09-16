@@ -476,6 +476,213 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     return 1 if (result.any_change and args.fail_on_change) else 0
 
 
+# -- webgraph kg: the knowledge graph (behind WEBGRAPH_KG) ---------------------------------
+
+
+def _kg_guard() -> None:
+    from webgraph.settings import Settings
+
+    if not Settings.from_env().kg_enabled:
+        raise SystemExit("webgraph kg is behind a flag: set WEBGRAPH_KG=1 to use it.")
+
+
+def _kg_provider(args: argparse.Namespace) -> Any:
+    from webgraph.kg.providers import ProviderConfig, make_provider
+
+    overrides = {
+        key: value
+        for key, value in (
+            ("provider", args.provider),
+            ("base_url", args.base_url),
+            ("model", args.model),
+            ("answer_model", getattr(args, "answer_model", None)),
+            ("api_key_env", args.api_key_env),
+        )
+        if value
+    }
+    config = ProviderConfig.from_dict(overrides, base=ProviderConfig.from_env())
+    if not config.model and config.provider != "fake":
+        raise SystemExit("no model configured: pass --model or set WEBGRAPH_LLM_MODEL")
+    return make_provider(config)
+
+
+def _kg_graph(args: argparse.Namespace, *, crawl: bool) -> SiteGraph | None:
+    """The crawled graph for a site: a JSONL file, a directory of pages, the store, or a
+    fresh crawl (build only)."""
+    from webgraph.graph.export import load_jsonl
+    from webgraph.graph.store import GraphStore
+
+    if getattr(args, "graph", None):
+        return load_jsonl(args.graph)
+    if getattr(args, "pages", None):
+        from webgraph.kg.offline import graph_from_directory
+
+        return graph_from_directory(args.pages, args.site)
+    store = GraphStore()
+    stored = store.load(args.site)
+    if stored is not None or not crawl:
+        return stored
+    print(f"no stored crawl of {args.site}; crawling {args.max_pages} pages", file=sys.stderr)
+    graph = _crawl_graph([args.site], max_pages=args.max_pages, concurrency=args.concurrency, complete=False)
+    store.save(graph, args.site)
+    return graph
+
+
+def _cmd_kg_build(args: argparse.Namespace) -> int:
+    _kg_guard()
+    from webgraph.kg.build import BuildConfig, KGBuilder
+    from webgraph.kg.store import KGStore
+
+    graph = _kg_graph(args, crawl=True)
+    if graph is None or not graph.sections:
+        print("no crawled graph to build from", file=sys.stderr)
+        return 1
+    provider = _kg_provider(args)
+    store = KGStore.for_site(args.site, args.kg_dir)
+    config = BuildConfig(
+        max_pages=args.max_pages_kg,
+        max_sections=args.max_sections,
+        max_input_tokens=args.max_input_tokens,
+        max_usd=args.max_usd,
+        concurrency=provider.config.max_concurrency,
+        rebuild=args.rebuild,
+    )
+    try:
+        for event in KGBuilder(graph, provider, store, build_config=config).run():
+            if args.json:
+                print(json.dumps(event, default=str))
+                continue
+            kind = event["type"]
+            if kind == "estimate":
+                usd = f", ~${event['usd']:.4f}" if event.get("usd") is not None else ""
+                print(
+                    f"estimate: {event['sections']} sections on {event['pages']} pages, "
+                    f"{event['cached_sections']} cached, ~{event['input_tokens']:,} input tokens{usd} "
+                    f"with {event['model']}",
+                    file=sys.stderr,
+                )
+            elif kind == "section":
+                mark = "cache" if event.get("cached") else "model"
+                if "error" in event:
+                    print(f"  [{event['done']:>4}/{event['total']}] error: {event['error'][:80]}", file=sys.stderr)
+                else:
+                    print(
+                        f"  [{event['done']:>4}/{event['total']}] {mark:5} +{event['accepted']:<3} -{event['rejected']:<2} {event['heading'][:50]}",
+                        file=sys.stderr,
+                    )
+            elif kind == "budget":
+                print(f"cap reached: {event['reason']} ({event['remaining_sections']} sections left)", file=sys.stderr)
+            elif kind == "done":
+                stats = event["stats"]
+                print(
+                    f"done: {stats['entities']} entities, {stats['relations']} relations, "
+                    f"{stats['accepted']} verified assertions, {stats['rejected']} rejected "
+                    f"({stats['rejection_rate']:.1%}), {stats['input_tokens']:,} in / {stats['output_tokens']:,} out tokens, "
+                    f"{stats['seconds']}s{' (truncated: ' + stats['truncated_reason'] + ')' if stats['truncated'] else ''}",
+                    file=sys.stderr,
+                )
+                print(f"knowledge graph: {store.path}", file=sys.stderr)
+    finally:
+        store.close()
+    return 0
+
+
+def _cmd_kg_ask(args: argparse.Namespace) -> int:
+    _kg_guard()
+    from webgraph.kg.retrieve import KGRetriever
+    from webgraph.kg.store import KGStore
+
+    if not KGStore.exists_for(args.site, args.kg_dir):
+        print(f"no knowledge graph for {args.site}; run `webgraph kg build {args.site}` first", file=sys.stderr)
+        return 1
+    provider = None if args.no_model else _kg_provider(args)
+    graph = _kg_graph(args, crawl=False)
+    store = KGStore.for_site(args.site, args.kg_dir)
+    try:
+        answer: dict[str, Any] | None = None
+        for event in KGRetriever(store, provider, graph=graph).ask(args.question):
+            if args.json:
+                print(json.dumps(event, default=str))
+            elif event["type"] == "seeds":
+                print("seeds: " + ", ".join(e["name"] for e in event["entities"][:6]), file=sys.stderr)
+            elif event["type"] == "hop":
+                print(f"hop {event['hop']}: {len(event['edges'])} edges", file=sys.stderr)
+            elif event["type"] == "evidence":
+                print(f"evidence: {len(event['items'])} quotes", file=sys.stderr)
+            elif event["type"] == "error":
+                print(f"error: {event['message']}", file=sys.stderr)
+            if event["type"] == "answer":
+                answer = event
+        if answer is None:
+            return 1
+        if not args.json:
+            print(answer["text"])
+            print()
+            for citation in answer["citations"]:
+                print(f"  [{citation['n']}] {citation['anchor']}\n      \u201c{citation['quote'][:160]}\u201d")
+            if answer["unsupported"]:
+                print(f"\n  {answer['unsupported']} sentence(s) cite nothing on the site and are flagged.", file=sys.stderr)
+    finally:
+        store.close()
+    return 0
+
+
+def _cmd_kg_export(args: argparse.Namespace) -> int:
+    _kg_guard()
+    from webgraph.kg.export import to_cypher, to_jsonl, to_jsonld
+    from webgraph.kg.store import KGStore
+
+    if not KGStore.exists_for(args.site, args.kg_dir):
+        print(f"no knowledge graph for {args.site}", file=sys.stderr)
+        return 1
+    store = KGStore.for_site(args.site, args.kg_dir)
+    try:
+        if args.format == "jsonld":
+            lines: list[str] = [json.dumps(to_jsonld(store), indent=1)]
+        elif args.format == "cypher":
+            lines = list(to_cypher(store, typed_edges=args.typed_edges))
+        else:
+            lines = list(to_jsonl(store))
+    finally:
+        store.close()
+    if args.out:
+        Path(args.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"wrote {args.out}", file=sys.stderr)
+    else:
+        for line in lines:
+            print(line)
+    return 0
+
+
+def _cmd_kg_sync_neo4j(args: argparse.Namespace) -> int:
+    _kg_guard()
+    import os
+
+    from webgraph.kg.neo4j import Neo4jUnavailableError, sync_to_neo4j
+    from webgraph.kg.store import KGStore
+
+    if not KGStore.exists_for(args.site, args.kg_dir):
+        print(f"no knowledge graph for {args.site}", file=sys.stderr)
+        return 1
+    password = os.environ.get(args.password_env, "")
+    if not password:
+        raise SystemExit(f"set {args.password_env} to the database password (never pass it on the command line)")
+    store = KGStore.for_site(args.site, args.kg_dir)
+    try:
+        for event in sync_to_neo4j(
+            store, uri=args.uri, user=args.user, password=password, database=args.database, typed_edges=args.typed_edges
+        ):
+            if event["type"] == "batch":
+                print(f"  {event['label']:<15} {event['rows']:>6} rows", file=sys.stderr)
+            else:
+                print(f"done: {event['batches']} batches, {event['counts']}", file=sys.stderr)
+    except Neo4jUnavailableError as exc:
+        raise SystemExit(str(exc)) from None
+    finally:
+        store.close()
+    return 0
+
+
 def _since(raw: str | None) -> float | None:
     """`--since` as an epoch timestamp: seconds, an ISO date or datetime, or `3d`/`12h`."""
     if not raw:
@@ -726,6 +933,64 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diff.set_defaults(func=_cmd_diff)
 
+    kg = subparsers.add_parser(
+        "kg", help="WebGraph: build, query and export a site's knowledge graph (WEBGRAPH_KG=1)"
+    )
+    kg_sub = kg.add_subparsers(dest="kg_command", required=True)
+
+    def add_provider_args(sub: argparse.ArgumentParser, *, answer: bool = False) -> None:
+        sub.add_argument("--provider", help="openai-compatible | anthropic | gemini, or a preset: openai, groq, ollama, ...")
+        sub.add_argument("--base-url", help="API base URL (Ollama: http://localhost:11434/v1)")
+        sub.add_argument("--model", help="model name; default WEBGRAPH_LLM_MODEL")
+        if answer:
+            sub.add_argument("--answer-model", help="a stronger model for answers; default the extraction model")
+        sub.add_argument("--api-key-env", help="environment variable holding the key (never the key itself)")
+        sub.add_argument("--kg-dir", help="where knowledge graphs are kept (default WEBGRAPH_KG_DIR or ~/.cache/webgraph/kg)")
+
+    def add_graph_source_args(sub: argparse.ArgumentParser) -> None:
+        sub.add_argument("--graph", help="a JSONL graph written by `webgraph graph`")
+        sub.add_argument("--pages", help="a directory of saved HTML pages, mapped onto the site root")
+
+    kg_build = kg_sub.add_parser("build", help="read every section with the model and write the graph")
+    kg_build.add_argument("site", help="site root URL (crawled before, or crawled now)")
+    add_graph_source_args(kg_build)
+    add_provider_args(kg_build)
+    kg_build.add_argument("--max-pages", type=int, default=40, help="pages to crawl when no crawl is stored")
+    kg_build.add_argument("--concurrency", type=int, default=6, help="crawl concurrency when crawling")
+    kg_build.add_argument("--max-pages-kg", type=int, default=0, help="cap on pages read by the model; 0 = all")
+    kg_build.add_argument("--max-sections", type=int, default=0, help="cap on sections; 0 = all")
+    kg_build.add_argument("--max-input-tokens", type=int, default=2_000_000)
+    kg_build.add_argument("--max-usd", type=float, default=0.0, help="stop at this spend (needs WEBGRAPH_LLM_PRICE_IN/OUT)")
+    kg_build.add_argument("--rebuild", action="store_true", help="ignore the model cache")
+    kg_build.add_argument("--json", action="store_true", help="emit every event as a JSON line")
+    kg_build.set_defaults(func=_cmd_kg_build)
+
+    kg_ask = kg_sub.add_parser("ask", help="answer a question with per-sentence citations")
+    kg_ask.add_argument("site")
+    kg_ask.add_argument("question")
+    add_graph_source_args(kg_ask)
+    add_provider_args(kg_ask, answer=True)
+    kg_ask.add_argument("--no-model", action="store_true", help="extractive answer: the best-matching quotes, cited")
+    kg_ask.add_argument("--json", action="store_true", help="emit every event as a JSON line")
+    kg_ask.set_defaults(func=_cmd_kg_ask)
+
+    kg_export = kg_sub.add_parser("export", help="write the graph as JSONL, Cypher or JSON-LD")
+    kg_export.add_argument("site")
+    kg_export.add_argument("--format", choices=("jsonl", "cypher", "jsonld"), default="jsonl")
+    kg_export.add_argument("--typed-edges", action="store_true", help="cypher: also emit -[:PREDICATE]-> edges")
+    kg_export.add_argument("--out", help="write here instead of stdout")
+    kg_export.add_argument("--kg-dir")
+    kg_export.set_defaults(func=_cmd_kg_export)
+
+    kg_sync = kg_sub.add_parser("sync-neo4j", help="push the graph into Neo4j over bolt (extra: kg-neo4j)")
+    kg_sync.add_argument("site")
+    kg_sync.add_argument("--uri", default="bolt://localhost:7687")
+    kg_sync.add_argument("--user", default="neo4j")
+    kg_sync.add_argument("--password-env", default="NEO4J_PASSWORD", help="variable holding the password")
+    kg_sync.add_argument("--database")
+    kg_sync.add_argument("--typed-edges", action="store_true")
+    kg_sync.add_argument("--kg-dir")
+    kg_sync.set_defaults(func=_cmd_kg_sync_neo4j)
     watch = subparsers.add_parser(
         "watch", help="watch a site for changes: create, run, changes, list"
     )
