@@ -132,6 +132,8 @@ export interface HealthResponse {
   private_hosts_blocked: boolean;
   /** Server-side page ceiling per crawl. 0 means the frontier is crawled to exhaustion. */
   max_pages: number;
+  /** `WEBGRAPH_KG=1` on the API: the `/api/graph/*` routes answer. Absent on older APIs. */
+  webgraph?: boolean;
 }
 
 export class ApiError extends Error {
@@ -142,6 +144,31 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
+}
+
+/**
+ * Any method, any body, the same failure vocabulary as `request` below. Exported for the
+ * WebGraph client (`lib/kg.ts`), whose routes use GET with query strings and DELETE, so a
+ * second copy of the unreachable/detail handling does not grow beside this one.
+ */
+export async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, init);
+  } catch {
+    throw new ApiError(unreachableMessage(), 0);
+  }
+  if (!response.ok) {
+    let detail = `The API answered ${response.status}.`;
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      if (typeof payload.detail === "string") detail = payload.detail;
+    } catch {
+      // Not JSON; the status-based message stands.
+    }
+    throw new ApiError(detail, response.status);
+  }
+  return (await response.json()) as T;
 }
 
 async function requestGet<T>(path: string): Promise<T> {
@@ -753,9 +780,10 @@ export async function streamPage(
  * `fetch` + ReadableStream rather than `EventSource`, because EventSource is GET-only and
  * these requests carry a JSON body. The buffer is carried across chunks because a frame can
  * be split across TCP reads -- and this lives in one function so that a second stream cannot
- * acquire a second, subtly different, version of that bug.
+ * acquire a second, subtly different, version of that bug. Exported for the same reason: the
+ * WebGraph client (`lib/kg.ts`) streams three more routes through it.
  */
-async function streamFrames(
+export async function streamFrames(
   path: string,
   input: unknown,
   onEvent: (event: unknown) => void,
