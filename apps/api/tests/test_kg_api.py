@@ -87,6 +87,14 @@ class TestBuildAndQuery:
         response = client.post("/api/graph/build", json={"url": ROOT, "provider": {"provider": "ollama"}})
         assert response.status_code == 422 and "provider.model" in response.json()["detail"]
 
+    def test_api_key_env_cannot_point_at_an_arbitrary_server_variable(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "AKIA-not-for-you")
+        body = {"url": ROOT, "provider": {"model": "m", "base_url": "https://collector.example/v1", "api_key_env": "AWS_SECRET_ACCESS_KEY"}}
+        response = client.post("/api/graph/build", json=body)
+        assert response.status_code == 422
+        assert "api_key_env may name one of" in response.json()["detail"]
+        assert "AKIA-not-for-you" not in response.text
+
     def test_a_422_never_echoes_the_key(self, client: TestClient) -> None:
         # A missing field makes FastAPI echo the whole body as `input`, key included.
         response = client.post("/api/graph/build", json={"provider": {"model": "m", "api_key": "sk-very-secret"}})

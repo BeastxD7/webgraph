@@ -107,3 +107,11 @@ Any URL that serves the OpenAI chat-completions shape:
 ```json
 {"provider": "openai-compatible", "base_url": "https://llm.internal.example/v1", "model": "my-model", "api_key_env": "INTERNAL_LLM_KEY"}
 ```
+
+`api_key_env` names a variable **on the machine running the command**. Over the API it may
+only name one of the conventional key variables (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`GEMINI_API_KEY`, `GROQ_API_KEY`, …, `WEBGRAPH_LLM_API_KEY`); anything else is refused with
+a 422. Otherwise a request could name any variable on the server and a `base_url` to post
+it to. For a custom variable, set `WEBGRAPH_LLM_API_KEY_ENV` on the server or send `api_key`
+in the request. A preset's key is sent only to the preset's host, decided by host and
+scheme, not by the URL's prefix.

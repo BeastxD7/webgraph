@@ -563,6 +563,27 @@ class TestExport:
 
 
 class TestProviders:
+    def test_a_preset_key_goes_only_to_the_preset_host(self) -> None:
+        # A prefix match sent OPENAI_API_KEY to any host whose URL began with OpenAI's.
+        env = {"OPENAI_API_KEY": "sk-openai", "GROQ_API_KEY": "gsk"}
+        assert ProviderConfig(base_url="https://api.openai.com/v1").resolve_key(env) == "sk-openai"
+        assert ProviderConfig(base_url="https://api.openai.com/v1/").resolve_key(env) == "sk-openai"
+        assert ProviderConfig(base_url="https://api.openai.com.evil.example/v1").resolve_key(env) is None
+        assert ProviderConfig(base_url="https://api.openai.com:8443/v1").resolve_key(env) is None
+        assert ProviderConfig(base_url="http://api.openai.com/v1").resolve_key(env) is None
+        assert ProviderConfig(base_url="https://api.groq.com/openai/v1").resolve_key(env) == "gsk"
+
+    def test_an_untrusted_body_may_not_name_an_arbitrary_variable(self) -> None:
+        # Over the API, `api_key_env` plus a caller-chosen `base_url` would read any variable
+        # off the server and post it as a bearer token. Only the conventional key names pass.
+        body = {"provider": "openai-compatible", "base_url": "https://collector.example/v1", "api_key_env": "AWS_SECRET_ACCESS_KEY"}
+        with pytest.raises(ValueError, match="api_key_env may name one of"):
+            ProviderConfig.from_dict(body, trusted=False)
+        allowed = ProviderConfig.from_dict({**body, "api_key_env": "OPENAI_API_KEY"}, trusted=False)
+        assert allowed.api_key_env == "OPENAI_API_KEY"
+        operator = ProviderConfig.from_dict(body)  # the CLI: the operator's own shell
+        assert operator.api_key_env == "AWS_SECRET_ACCESS_KEY"
+
     def test_env_and_presets(self) -> None:
         cfg = ProviderConfig.from_env({"WEBGRAPH_LLM_PROVIDER": "ollama", "WEBGRAPH_LLM_MODEL": "qwen3:8b"})
         assert (cfg.provider, cfg.base_url, cfg.model) == ("openai-compatible", "http://localhost:11434/v1", "qwen3:8b")

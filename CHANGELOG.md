@@ -72,6 +72,14 @@ All notable changes to this project are documented here. The format follows
   `Settings.kg_enabled`, `Settings.kg_dir`.
 - Not in this PR: the web UI (`/graph` with the sigma graph and the live query path) is
   the next PR; the `/products` WebGraph card stays "coming".
+- Key hygiene over the API: `api_key_env` in a request body may name only the conventional
+  key variables (`kg.providers.KEY_ENVS_A_CALLER_MAY_NAME`; the CLI is unrestricted) -- a
+  free choice plus a caller-chosen `base_url` would have read any variable off the server
+  and posted it as a bearer token; and a preset's key resolves by the `base_url`'s scheme
+  and host, not a string prefix, so `https://api.openai.com.evil.example/v1` gets no key
+  (`TestProviders::test_a_preset_key_goes_only_to_the_preset_host`,
+  `::test_an_untrusted_body_may_not_name_an_arbitrary_variable`,
+  `test_kg_api.py::…::test_api_key_env_cannot_point_at_an_arbitrary_server_variable`).
 
 ### Changed (2026-09-16, PR #93) — landing page, products page, design tokens
 - The landing page is rebuilt from the design spec. The hero photograph, its glass prompt,
