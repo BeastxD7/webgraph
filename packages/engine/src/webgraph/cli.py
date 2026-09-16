@@ -186,8 +186,8 @@ def _cmd_report(args: argparse.Namespace) -> int:
 
 def format_site_report(report: Any) -> list[str]:
     """The report as lines for a terminal: the score and its parts, the integrity
-    findings, the pages, the bots, and how it was measured. The suggested files are
-    printed in full at the end so they can be cut out."""
+    findings, the pages, the bots, the signals by group, and how it was measured. The
+    suggested files are printed in full at the end so they can be cut out."""
     lines: list[str] = []
     rule = "=" * 66
     lines += [rule, f"SITE REPORT  {report.url}", rule]
@@ -252,6 +252,22 @@ def format_site_report(report: Any) -> list[str]:
         + (f"  ({llms.sections} sections, {llms.links} links)" if llms and llms.found else ""),
         f"    {report.llms_txt_note}",
     ]
+    signals = report.signals
+    if signals is not None:
+        lines += [
+            "",
+            f"  SIGNALS  what the site declares to machines ({len(signals.present)} of "
+            f"{sum(1 for s in signals.signals if s.present is not None)} measurable present; "
+            f"{signals.requests} requests)",
+            "    Almost none of this is enforced; each line says who honours it.",
+        ]
+        for group, members in signals.by_group().items():
+            lines.append(f"    {signals_group_label(group)}")
+            for signal in members:
+                mark = {True: "yes", False: "no ", None: "?  "}[signal.present]
+                lines.append(f"      [{mark}] {signal.label:<28} {signal.detail}")
+                lines.append(f"            {signal.meaning}")
+                lines.append(f"            honoured by: {signal.who_honours}  spec: {signal.spec_url}")
     how = report.measured
     lines += [
         "",
@@ -270,7 +286,22 @@ def format_site_report(report: Any) -> list[str]:
         *report.suggested_llms_txt.splitlines(),
         "  " + "-" * 40,
     ]
+    if report.suggested_security_txt:
+        lines += [
+            "",
+            "  SUGGESTED security.txt  (RFC 9116; the site has none)",
+            "  " + "-" * 40,
+            *report.suggested_security_txt.splitlines(),
+            "  " + "-" * 40,
+        ]
     return lines
+
+
+def signals_group_label(group: str) -> str:
+    from webgraph.report.signals import GROUPS
+
+    labels: dict[str, str] = {str(key): label for key, label in GROUPS.items()}
+    return labels.get(group, group)
 
 
 def _cmd_site(args: argparse.Namespace) -> int:

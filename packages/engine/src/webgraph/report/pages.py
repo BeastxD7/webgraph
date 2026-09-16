@@ -171,6 +171,11 @@ class PageReport:
     def has_schema(self) -> bool:
         return any(s in (PayloadSource.JSON_LD.value, PayloadSource.MICRODATA.value) for s in self.structured_data)
 
+    @property
+    def has_open_graph(self) -> bool:
+        """`og:*` / `twitter:*` meta tags on the page (`PayloadSource.OPEN_GRAPH`)."""
+        return PayloadSource.OPEN_GRAPH.value in self.structured_data
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "requested_url": self.requested_url,
@@ -202,6 +207,7 @@ class PageReport:
             "lang": self.lang,
             "structured_data": list(self.structured_data),
             "has_schema": self.has_schema,
+            "has_open_graph": self.has_open_graph,
             "internal_links": self.internal_links,
             "links_checked": self.links_checked,
             "dead_links": [d.as_dict() for d in self.dead_links],

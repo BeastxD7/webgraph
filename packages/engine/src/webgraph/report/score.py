@@ -272,27 +272,36 @@ def _structured(pages: list[PageReport]) -> SubScore:
         return SubScore(key="structured_data", label=label, weight=weight, score=None, evidence="No page read.")
     with_schema = [p for p in read if p.has_schema]
     schema_share = len(with_schema) / len(read)
+    # Four page-fields, not three: OpenGraph joined title, description and lang (PR #99)
+    # because it is what every link unfurler and most assistants read for a page's name
+    # and image, and the report now lists it among the site's signals. The weight is
+    # unchanged; a page with the three older fields and no og:* earns 3/4 of the 4 points.
+    fields = ("title", "description", "lang", "og")
     meta = [
-        (bool(p.title) + bool(p.description) + bool(p.lang)) / 3 for p in read
+        (bool(p.title) + bool(p.description) + bool(p.lang) + bool(p.has_open_graph)) / len(fields) for p in read
     ]
     meta_share = sum(meta) / len(meta)
     score = 6 * schema_share + 4 * meta_share
     missing_meta: list[str] = []
     for p in read:
-        gaps = [name for name, ok in (("title", p.title), ("description", p.description), ("lang", p.lang)) if not ok]
+        gaps = [
+            name
+            for name, ok in (("title", p.title), ("description", p.description), ("lang", p.lang), ("og", p.has_open_graph))
+            if not ok
+        ]
         if gaps:
             missing_meta.append(f"{_path(p)} lacks {', '.join(gaps)}")
     evidence = (
         f"{len(with_schema)} of {len(read)} pages carry JSON-LD or microdata; title, "
-        f"description and lang are present on {_pct(meta_share)} of page-fields."
+        f"description, lang and OpenGraph are present on {_pct(meta_share)} of page-fields."
         + (f" {'; '.join(missing_meta[:4])}." if missing_meta else "")
     )
     recommendation = None
     if schema_share < 1 or meta_share < 1:
         recommendation = (
             "Add JSON-LD (schema.org Organization, Article, Product, Course as fits) and a "
-            "title, meta description and `<html lang>` to every page; agents read these "
-            "before they read the prose."
+            "title, meta description, `<html lang>` and og:title/og:description/og:image to "
+            "every page; agents read these before they read the prose."
         )
     return SubScore(key="structured_data", label=label, weight=weight, score=score, evidence=evidence, recommendation=recommendation)
 

@@ -102,7 +102,10 @@ def parse_groups(robots: str) -> tuple[RobotsGroup, ...]:
         elif key in ("allow", "disallow"):
             rules.append((key, value))
             lines.append(line)
-        elif key == "crawl-delay":
+        elif key in ("crawl-delay", "content-signal", "content-usage"):
+            # Crawl-delay is a directive; Content-Signal (contentsignals.org) and
+            # Content-Usage (IETF aipref) are declarations that belong to the group they
+            # sit in, read by `report.signals`. Kept verbatim like the rest.
             lines.append(line)
     flush()
     return tuple(groups)
