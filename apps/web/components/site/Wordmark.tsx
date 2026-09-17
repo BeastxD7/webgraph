@@ -1,18 +1,23 @@
 import Link from "next/link";
 
 /**
- * Brand mark: the limb over the reading lines -- the web seen whole, the page read in order,
- * nothing hidden. The same glyph as `public/logo/mark.svg` and the favicon, drawn inline so it
- * takes the accent tile and the inverse ink of whichever theme is on (design/logo/DECISION in
- * the theme PR). Geometric, 2.4-unit strokes on a 24-unit grid, so it holds at 16px.
+ * Brand mark: the constellation w -- five nodes and four edges, a knowledge graph that spells
+ * the initial; a constellation, so it belongs with the space of the hero. The site becomes a
+ * graph, and the graph travels. The same glyph as `public/logo/mark.svg` and the favicon,
+ * drawn inline so it takes the accent tile and the inverse ink of whichever theme is on.
+ * Geometric, on a 24-unit grid: the outer nodes are the hubs, the inner ones smaller, so it
+ * still reads as a w at 16px.
  */
 export function Mark() {
   return (
     <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-[6px] bg-accent text-inverse">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-        <path d="M5 10.5 Q12 3.8 19 10.5" />
-        <path d="M6.5 14.8 H17.5" />
-        <path d="M6.5 19.2 H13.5" />
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L19.5 7.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="4.5" cy="7.5" r="2.5" />
+        <circle cx="19.5" cy="7.5" r="2.5" />
+        <circle cx="8.5" cy="17" r="2.1" />
+        <circle cx="15.5" cy="17" r="2.1" />
+        <circle cx="12" cy="10.5" r="1.8" />
       </svg>
     </span>
   );

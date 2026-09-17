@@ -24,7 +24,7 @@ removed with the landing redesign, together with the footer credit it required.
 
 | file | what | source |
 |---|---|---|
-| `logo/mark.svg`, `favicon.svg`, `app/icon.svg` | The mark: the limb over the reading lines, white on the accent tile; 24-unit grid, 2.4-unit strokes | drawn in-house (design/logo/explorations.svg in the theme-study PR) |
+| `logo/mark.svg`, `favicon.svg`, `app/icon.svg` | The mark: the constellation w -- five nodes, four edges -- white on the accent tile; 24-unit grid | drawn in-house (`docs/design/logo-explorations-2.svg`, `logo-refinement-2.svg`) |
 | `logo/mark-mono.svg` | The glyph alone on `currentColor`, for one-colour uses | in-house |
 | `logo/lockup.svg` | Mark + "webgraph"; the wordmark is Manrope 700 as `<text>`, so a machine without Manrope falls back to the system sans -- the site itself sets it in `<Wordmark>` | in-house |
 | `logo/icon-32.png`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The mark rasterised (headless Chromium) | in-house |
