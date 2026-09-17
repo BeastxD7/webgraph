@@ -6,8 +6,13 @@
  * the API grows, generate from `/openapi.json` instead of letting these drift.
  */
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+/**
+ * Where the API is. `NEXT_PUBLIC_API_BASE=/` means "this origin": the requests go to
+ * `/api/...` on the web server itself, which proxies them (`next.config.ts` rewrites) to
+ * the API -- one host, one tunnel, no CORS. Anything else is an absolute origin.
+ */
+const configuredBase = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+export const API_BASE = configuredBase === "/" ? "" : configuredBase.replace(/\/+$/, "");
 
 /**
  * Why the API cannot be reached, in the caller's terms.
@@ -44,7 +49,7 @@ function unreachableMessage(): string {
     );
   }
 
-  return `Cannot reach the API at ${API_BASE}. Is it running? Try: make api`;
+  return `Cannot reach the API at ${API_BASE || "this origin's /api"}. Is it running? Try: make api`;
 }
 
 export type ReadingOrderMethod =

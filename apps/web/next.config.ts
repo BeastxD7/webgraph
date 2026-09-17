@@ -1,10 +1,20 @@
 import type { NextConfig } from "next";
 import { createMDX } from "fumadocs-mdx/next";
 
+// `WEBGRAPH_API_PROXY=http://127.0.0.1:8000` makes this server forward `/api/*` to the
+// API, so a build with `NEXT_PUBLIC_API_BASE=/` is one origin: one tunnel or one domain
+// serves both, and CORS never enters. `afterFiles`, so the app's own `/api/search` (docs
+// search) keeps winning. Read at build *and* start; set it for both.
+const apiProxy = process.env.WEBGRAPH_API_PROXY?.replace(/\/+$/, "");
+
 const config: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
   typescript: { ignoreBuildErrors: false },
+  async rewrites() {
+    if (!apiProxy) return [];
+    return { afterFiles: [{ source: "/api/:path*", destination: `${apiProxy}/api/:path*` }] };
+  },
 };
 
 // Fumadocs MDX compiles `content/docs` into the collection declared in `lib/source.ts`
