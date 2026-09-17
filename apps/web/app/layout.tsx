@@ -40,6 +40,11 @@ export const metadata: Metadata = {
     "sees it, with a note of how each page was obtained — and a refusal, named, for every " +
     "page it could not read.",
   applicationName: "webgraph",
+  // Absolute URLs for og:image and friends. Without a base Next falls back to
+  // http://localhost:3000, and a link preview (Discord, Slack, X) then asks the reader's own
+  // machine for the picture and shows nothing. Set NEXT_PUBLIC_SITE_URL at build time to the
+  // public origin the site is served from; the default is the dev server.
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") || "http://localhost:3000"),
   keywords: [
     "web scraping",
     "content extraction",
@@ -50,10 +55,12 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    title: "webgraph",
+    siteName: "webgraph",
+    title: "webgraph — the honest web reader",
     description:
       "Every public page of a website as Markdown, in reading order, with provenance and named refusals.",
   },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {

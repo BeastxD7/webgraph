@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #116) — link previews get a real image URL
+- `metadataBase` is set from `NEXT_PUBLIC_SITE_URL` (build time; default the dev server), so
+  `og:image` / `twitter:image` are absolute URLs on the public origin. Without it Next wrote
+  `http://localhost:3000/opengraph-image.png`, and Discord's embed asked the reader's own
+  machine for the picture and showed none (the owner's report). `openGraph.siteName`,
+  the full title and `twitter.card=summary_large_image` are set; the social image is a
+  156 KB JPEG instead of a 726 KB PNG. Docs: `/docs/deployment/configuration`.
+
 ### Changed (2026-09-17, PR #114) — the mark, round three: the star in the open corner, in a soft-3D style
 - The owner's two references folded in. Placement: the w's top-right corner is opened -- the
   terminal node removed, the last ribbon stopping short -- and the brightest star, a
