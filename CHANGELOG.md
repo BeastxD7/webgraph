@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #TBD) — theme: "Atmosphere" site-wide, and the mark
+### Changed (2026-09-17, PR #112) — theme: "Atmosphere" site-wide, and the mark
 - The palette follows the hero. The study (contact sheets of eight views × two themes for
   the green control and three candidates -- Atmosphere, Sunrise, Ink -- the hand-off seams,
   contrast tables and the decision are in the PR) found the green botanical against the

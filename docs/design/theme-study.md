@@ -1,6 +1,6 @@
 # Theme study — is green the right palette under the Earth hero?
 
-(The contact sheets and per-view shots this refers to were produced in the theme-study session and attached to PR #TBD; the tokens that came out of it are in `apps/web/app/globals.css` §1.)
+(The contact sheets and per-view shots this refers to were produced in the theme-study session and attached to PR #112; the tokens that came out of it are in `apps/web/app/globals.css` §1.)
 
 Date 2026-09-17. Branch `theme-study`. Evidence: `control.png`, `atmosphere.png`, `sunrise.png`,
 `ink.png` (one contact sheet per candidate: the same eight views, light and dark, with the
