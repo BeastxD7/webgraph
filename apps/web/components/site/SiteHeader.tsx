@@ -28,11 +28,14 @@ export default function SiteHeader() {
   const pathname = usePathname();
   const landing = pathname === "/";
   const scrolled = useSyncExternalStore(subscribeScroll, landing ? isPastHero : isScrolled, () => false);
-  const floating = landing && !scrolled;
   // The sheet is open *for a path*: a navigation changes the path and so closes it, with no
   // effect needed to do the closing.
   const [openAt, setOpenAt] = useState<string | null>(null);
   const open = openAt === pathname;
+  // Over the hero the bar floats (transparent, its row dropped inside the frame) -- until the
+  // page scrolls past the frame or the phone sheet opens, which needs the solid bar and the
+  // row back at the top so the sheet hangs from it.
+  const floating = landing && !scrolled && !open;
   const setOpen = (next: boolean) => setOpenAt(next ? pathname : null);
   const sheetId = useId();
 
