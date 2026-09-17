@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added (2026-09-17, PR #NNN) — technology marks beside detected names
+### Added (2026-09-17, PR #115) — technology marks beside detected names
 - Wherever the UI names a technology the engine detected, its mark now sits beside the name:
   the Site Report's Stack section (`ReportView`), the crawl's "Technology detected" panel
   and the pipeline's "Technologies identified" row (`TechnologyPanel`, `LivePipeline`), and a
