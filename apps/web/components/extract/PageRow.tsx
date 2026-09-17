@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { PageEvent } from "@/lib/api";
 import { compact } from "@/lib/format";
 import CopyButton from "@/components/ui/CopyButton";
+import MathBadge from "@/components/ui/MathBadge";
 import { containsMath, renderMarkdown } from "@/lib/markdown";
 import Citation from "@/components/ui/Citation";
 
@@ -150,18 +151,7 @@ export default function PageRow({
                   {page.page_type}
                 </span>
               )}
-              {containsMath(shown) && (
-                <span
-                  title={
-                    preview
-                      ? "Formulas are LaTeX ($...$ / $$...$$), typeset here with KaTeX."
-                      : "Formulas are written as LaTeX ($...$ / $$...$$), not HTML -- that's the raw source a math-aware renderer typesets. Switch to Preview to see it rendered here."
-                  }
-                  className="rounded-full bg-sunk px-2.5 py-1 text-[11px] font-semibold text-ink-soft"
-                >
-                  Σ LaTeX math
-                </span>
-              )}
+              {containsMath(shown) && <MathBadge preview={preview} />}
               {/* Copies exactly what is on screen: switching the toggle changes what you get,
                   which is the only behaviour that is not surprising. */}
               <CopyButton text={shown} label={clean && hasCleanView ? "Copy content" : "Copy page"} />
