@@ -1,0 +1,35 @@
+# For `docker build -f apps/web/Dockerfile .`: BuildKit prefers a dockerignore file named
+# after the Dockerfile it sits beside over the root `.dockerignore`, which is written for
+# the *other* Dockerfile and excludes apps/web entirely -- the opposite of what this build
+# needs. Everything the web build doesn't touch, so the build context stays small and a
+# change under packages/engine or apps/api never invalidates its layer cache.
+
+.git
+.github
+.venv
+**/.venv
+packages/engine
+apps/api
+benchmark
+tools
+.logs
+Dockerfile
+docker-compose.yml
+
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+**/.mypy_cache
+.ruff_cache
+**/.ruff_cache
+
+apps/web/node_modules
+apps/web/.next
+apps/web/Dockerfile.dockerignore
+
+.env
+.env.*
+.DS_Store

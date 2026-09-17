@@ -1,0 +1,65 @@
+# Both containers, one command, for a plain VM: no Cloud Run, no Vercel, just Docker.
+# See content/docs/deployment/vm.mdx for a walkthrough (Oracle Cloud's free tier as the
+# concrete example) and content/docs/deployment/docker.mdx for what each image does and why.
+#
+#   docker compose up --build -d
+#   curl -s localhost:3000            # the web app
+#   curl -s localhost:3000/api/health # the API, reached *through* the web app's own proxy
+#
+# One origin, deliberately: `web` is built with WEBGRAPH_API_PROXY pointing at `api`'s
+# internal compose address, so the browser only ever talks to `web`'s own port. `api` is not
+# published to the host at all -- nothing outside this compose network can reach it directly,
+# and the two containers never need CORS between them, because from the browser's point of
+# view there is only one origin. Set your public domain or IP as WEB_ORIGIN below only if you
+# want the API reachable directly too (skip the proxy, accept CORS); most deployments won't.
+#
+# WEBGRAPH_API_PROXY is a *build* argument, not a runtime one -- Next.js resolves rewrites()
+# once, into .next/routes-manifest.json, at build time, and never re-reads it at start (see
+# apps/web/Dockerfile for how this was found and confirmed). That is also why `api`'s address
+# below is the literal compose service name `api`, not a variable resolved at container
+# start: `web`'s image is specific to this compose file's own network layout the moment it is
+# built, and rebuilds (`--build`) whenever that layout changes.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # No cross-origin caller reaches this service directly (see above); this only matters
+      # if WEBGRAPH_API_PROXY is removed and `api` is published on its own port instead.
+      WEBGRAPH_ALLOWED_ORIGINS: ${WEBGRAPH_ALLOWED_ORIGINS:-http://localhost:3000}
+      # The image's own defaults (WEBGRAPH_MAX_PAGES=50, WEBGRAPH_MAX_BROWSERS=4, ...) are
+      # sized for a 2 vCPU / 4 GiB host, same as Cloud Run's. Override here for a smaller VM,
+      # e.g. Oracle Cloud's free-tier Ampere shape -- see deployment/vm.mdx.
+    volumes:
+      # Site graphs survive a container restart instead of being lost with it. A named
+      # volume, not a bind mount: this data has no reason to exist outside Docker's own
+      # storage, and a named volume works identically on every host.
+      - graph-cache:/tmp/webgraph-graphs
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: /
+        # `api`, the compose service name above: Docker's own embedded DNS resolves it to
+        # whichever container is running that service, so this never needs to be an IP.
+        WEBGRAPH_API_PROXY: http://api:8080
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  graph-cache:

@@ -1,4 +1,4 @@
-.PHONY: help install api web dev test lint check check-clean bench bench-live bench-fidelity bench-random-web bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run deploy-api deploy-web
+.PHONY: help install api web dev test lint check check-clean bench bench-live bench-fidelity bench-random-web bench-content bench-union bench-union-fetch bench-reading-order check-responsive clean docker-build docker-run docker-build-web compose-up compose-down deploy-api deploy-web
 
 help:
 	@echo "webgraph — development commands"
@@ -21,6 +21,9 @@ help:
 	@echo ""
 	@echo "  make docker-build  Build the API container"
 	@echo "  make docker-run    Run it on :8080"
+	@echo "  make docker-build-web  Build the web container"
+	@echo "  make compose-up    Build and run both containers on one VM (see docs/deployment/vm.mdx)"
+	@echo "  make compose-down  Stop them"
 	@echo "  make deploy-api    Deploy the API to Cloud Run (see docs/DEPLOY.md)"
 	@echo "  make deploy-web    Deploy the frontend to Vercel"
 	@echo ""
@@ -136,6 +139,21 @@ deploy-api:
 deploy-web:
 	@# NEXT_PUBLIC_API_BASE is inlined at build time; set it in Vercel before this runs.
 	cd apps/web && pnpm dlx vercel --prod
+
+# Both containers, one VM: see docs/deployment/vm.mdx. WEBGRAPH_API_PROXY is a *build*
+# argument (next.config.ts's rewrites() are resolved once at `next build`, never re-read
+# at start), which is why it is passed here and not as compose `environment:`.
+docker-build-web:
+	docker build -f apps/web/Dockerfile \
+	  --build-arg NEXT_PUBLIC_API_BASE=/ \
+	  --build-arg WEBGRAPH_API_PROXY=http://api:8080 \
+	  -t webgraph-web .
+
+compose-up:
+	docker compose up --build -d
+
+compose-down:
+	docker compose down
 
 clean:
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +

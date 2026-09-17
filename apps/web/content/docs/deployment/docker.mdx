@@ -6,6 +6,11 @@ description: Build and run the API image, then deploy it to Cloud Run and the fr
 import { Callout } from 'fumadocs-ui/components/callout';
 import { Steps, Step } from 'fumadocs-ui/components/steps';
 
+This page covers the API image on its own, deployed to Cloud Run with the frontend on
+Vercel. Running both containers together on a plain VM instead — a free-tier instance, a
+home server, anything with a public IP — is [its own page](/docs/deployment/vm), using
+`docker-compose.yml` at the repository root.
+
 ## The image
 
 The `Dockerfile` at the repository root builds the API with a browser in it. Two decisions
