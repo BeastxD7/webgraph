@@ -154,6 +154,45 @@ def _convert(element: HtmlElement, budget: list[int]) -> str:
         opener = element.get("open", "(")
         closer = element.get("close", ")")
         return rf"\left{opener} {' , '.join(parts)} \right{closer}"
+    if name == "menclose":
+        body = "".join(parts)
+        if not body:
+            return ""
+        notation = (element.get("notation") or "box").strip().lower()
+        if "radical" in notation:
+            return rf"\sqrt{_arg(body)}"
+        if "box" in notation or "circle" in notation:
+            return rf"\boxed{_arg(body)}"
+        # longdiv, the diagonal/vertical/horizontal strikes, actuarial, phasorangle,
+        # madruwb: no plain-LaTeX equivalent without extra packages. The enclosure is not
+        # claimed -- there is no `\notembox` in this output -- but the content under it is
+        # not lost either.
+        return body
+    if name == "mmultiscripts" and children:
+        # General pre- and post-scripts: nuclear notation (mass number and atomic number
+        # both preceding the element, `<mprescripts/>` marks the boundary) and multi-index
+        # tensors. `<none/>` is MathML's placeholder for a script that is absent; it has no
+        # text and no children, so it already converts to "" through the generic fallback
+        # below and needs no special case here.
+        rest = children[1:]
+        rest_parts = parts[1:]
+        split = next((i for i, c in enumerate(rest) if _local(c) == "mprescripts"), None)
+        pre_parts = rest_parts[split + 1 :] if split is not None else []
+        post_parts = rest_parts[:split] if split is not None else rest_parts
+
+        def _pairs(values: list[str]) -> list[tuple[str, str]]:
+            return [(values[i], values[i + 1]) for i in range(0, len(values) - 1, 2)]
+
+        prefix = ""
+        for sub, sup in _pairs(pre_parts):
+            piece = (f"_{_script(sub)}" if sub else "") + (f"^{_script(sup)}" if sup else "")
+            if piece:
+                prefix += "{}" + piece
+        suffix = "".join(
+            (f"_{_script(sub)}" if sub else "") + (f"^{_script(sup)}" if sup else "")
+            for sub, sup in _pairs(post_parts)
+        )
+        return f"{prefix}{parts[0]}{suffix}"
     # mrow, mstyle, semantics, math, mpadded, mphantom and anything unmet: pass through.
     if name in {"annotation", "annotation-xml"}:
         return ""
@@ -182,6 +221,54 @@ def render_math(element: HtmlElement) -> str:
         return ""
     display = (element.get("display") or "").lower() == "block"
     return f"$${latex}$$" if display else f"${latex}$"
+
+
+_ASSISTIVE_WRAPPERS: Final[frozenset[str]] = frozenset({"mjx-assistive-mml"})
+"""MathJax v3's own tag for its hidden, screen-reader-only copy of a formula: the *same*
+formula rendered twice, once as CHTML/SVG for sighted users (marked `aria-hidden="true"`,
+the opposite of what it looks like) and once as this real `<math>` tree, clipped to a 1px
+box for assistive technology. It is walked up to `_OUTER_DUPLICATE_TAGS` below rather than
+detected by computed style, because `replace_math_with_latex` runs on parsed markup before
+any browser has rendered it -- there is no style to compute yet."""
+
+_OUTER_DUPLICATE_TAGS: Final[frozenset[str]] = frozenset({"mjx-container"})
+"""The element that holds *both* halves of a MathJax v3 equation. Replacing only the
+hidden `<math>` with its LaTeX -- the naive fix -- would leave the CHTML/SVG half sitting
+right next to it: every formula twice, the second copy a wall of `<mjx-c>` glyph spans a
+reader never sees as anything but the properly typeset equation. Replacing this ancestor
+instead removes both at once."""
+
+_MAX_ANCESTOR_WALK: Final[int] = 8
+"""How far up from a `<math>` element to look for an assistive wrapper or its container.
+Untrusted markup: a bound, not a belief that six levels is architecturally significant."""
+
+
+def _duplicate_visual_container(element: HtmlElement) -> HtmlElement | None:
+    """The ancestor to replace instead of `element`, when converting it would otherwise
+    leave a visual duplicate of the same formula sitting beside the result.
+
+    Two vendors, the same shape: MathJax v3's `<mjx-assistive-mml>` and KaTeX's
+    `class="katex-mathml"` each hold a real, hidden `<math>` next to a visible sibling that
+    renders the identical formula in HTML/SVG for sighted users. Reading the hidden copy is
+    right -- it is the more faithful source, the same reason the TeX `<annotation>` cascade
+    in `latex_from_math` is read before falling back to walking presentation markup -- but
+    only if the visible half goes with it; otherwise the page gains a second, uglier
+    rendering of a formula it already had.
+    """
+    node = element
+    assistive = False
+    for _ in range(_MAX_ANCESTOR_WALK):
+        node = node.getparent()
+        if node is None:
+            return None
+        name = _local(node)
+        classes = (node.get("class") or '').split()
+        if name in _ASSISTIVE_WRAPPERS or "katex-mathml" in classes:
+            assistive = True
+            continue
+        if assistive and (name in _OUTER_DUPLICATE_TAGS or "katex" in classes):
+            return node
+    return None
 
 
 def math_elements(root: HtmlElement) -> list[HtmlElement]:

@@ -78,6 +78,46 @@ _MIN_IMAGE_DIMENSION: Final[int] = 32
 _INLINE_EMPHASIS: Final[frozenset[str]] = frozenset({"strong", "b"})
 _INLINE_ITALIC: Final[frozenset[str]] = frozenset({"em", "i"})
 
+_SUPERSCRIPT_MAP: Final[dict[str, str]] = {
+    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+    "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    "+": "⁺", "-": "⁻", "−": "⁻", "=": "⁼",
+    "(": "⁽", ")": "⁾", "n": "ⁿ", " ": " ",
+}
+_SUBSCRIPT_MAP: Final[dict[str, str]] = {
+    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
+    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
+    "+": "₊", "-": "₋", "−": "₋", "=": "₌",
+    "(": "₍", ")": "₎",
+    "a": "ₐ", "e": "ₑ", "h": "ₕ", "k": "ₖ", "l": "ₗ",
+    "m": "ₘ", "n": "ₙ", "o": "ₒ", "p": "ₚ", "s": "ₛ",
+    "t": "ₜ", "x": "ₓ", " ": " ",
+}
+"""Exact `<sup>`/`<sub>` -> Unicode maps, restricted to what the "Superscripts and
+Subscripts" block (U+2070-U+209F) and the 2010 Latin Subscript Small Letters actually
+define. A chemical formula (`H<sub>2</sub>O`), an exponent (`x<sup>2</sup>`, `x<sup>n</sup>`)
+or an ion's charge (`Fe<sup>3+</sup>`) survives as plain, portable text that reads correctly
+in a terminal, a table cell or a search index -- not only where HTML is rendered. Nothing
+outside this table is guessed: a letter with no true Unicode superscript (`k`, `x`, `i`, ...
+the "Modifier Letters" and "Phonetic Extensions" superscripts are for IPA, not general
+typography, and are missing from most fonts) falls back to a raw `<sup>`/`<sub>` tag
+instead, in `_inline_child` below."""
+
+
+def _scripted(inner: str, table: dict[str, str]) -> str | None:
+    """`inner` in Unicode super/subscript form, or None if a character has no exact one.
+
+    Case is never folded: a Unicode subscript exists for lowercase `a` but not for `A`, and
+    guessing that a reader means the same thing is exactly what this function must not do.
+    """
+    out: list[str] = []
+    for ch in inner:
+        mapped = table.get(ch)
+        if mapped is None:
+            return None
+        out.append(mapped)
+    return "".join(out)
+
 _BLOCK_BY_DEFAULT: Final[frozenset[str]] = frozenset({
     "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
     "ul", "ol", "li", "dl", "dt", "dd", "h1", "h2", "h3", "h4", "h5", "h6",
@@ -172,6 +212,18 @@ def _inline_child(child: HtmlElement, base: str, *, orphan_only: bool) -> str:
         parts.append(f"{lead}*{inner}*{trail}")
     elif tag == "code" and inner:
         parts.append(f"{lead}`{inner}`{trail}")
+    elif tag in ("sup", "sub") and inner:
+        table = _SUPERSCRIPT_MAP if tag == "sup" else _SUBSCRIPT_MAP
+        scripted = _scripted(inner, table)
+        if scripted is not None:
+            parts.append(f"{lead}{scripted}{trail}")
+        else:
+            # No exact Unicode form for every character (a letter outside the small set
+            # above, or nested markup). The tag is kept, verbatim, as raw inline HTML --
+            # valid Markdown, and the one way to carry an arbitrary formula without
+            # inventing what it means. `<` and `>` are never escaped by the renderer
+            # (`render_markdown._ESCAPE`), so it reaches the output exactly as written here.
+            parts.append(f"{lead}<{tag}>{inner}</{tag}>{trail}")
     elif tag == "br":
         parts.append(" ")
     else:
