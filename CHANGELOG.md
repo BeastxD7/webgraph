@@ -47,6 +47,26 @@ All notable changes to this project are documented here. The format follows
   that trade. `tools/check_responsive.py --theme both` on this build: every route this
   touches is green; the six failures are `/settings` phone text at 12.5 px, present on
   `main` and not touched here.
+### Changed (2026-09-17, PR #114) — the mark, round three: the star in the open corner, in a soft-3D style
+- The owner's two references folded in. Placement: the w's top-right corner is opened -- the
+  terminal node removed, the last ribbon stopping short -- and the brightest star, a
+  four-point sparkle, sits detached in the gap, its right edge flush with the w's right
+  extent (`docs/design/logo-refinement-4.png` compares this with the node kept and the star
+  floating above, each at two star sizes). Style: the "World Makers" treatment in our hue --
+  the four edges as thick rounded ribbons on a gradient of the hero's atmosphere, each
+  tucking under a spherical node with a soft dark halo at the join, the nodes lit from the
+  star's side, the star brighter than everything with a soft glow; vector only (linear and
+  radial gradients, two Gaussian blurs, no rasters, 2.3 KB). Light grounds take the deeper
+  end (`#2b5a91 → #6aa6e6`), dark grounds the pastel end (`#9cc4f2 → #dcefff`), on
+  `--brand-*` tokens so the inline header mark follows the theme. `docs/design/logo-style-3d.png`
+  shows the style on the w and on two orbit-ring alternates (both fail at 32 px: the ring
+  collides with the nodes) and the header at 28 px styled against flat. Under ~24 px the flat
+  form takes over: the favicon is the flat w and star on the accent tile; 180/512 icons carry
+  the styled mark on a navy tile; the OG image the styled mark over the sunrise. A second
+  pass after the owner's look (`docs/design/logo-style-3d-b.png`, before/after): the nodes
+  matte -- no specular, a ≤ 12 % lift toward the star -- the ribbons 13 % thinner, the tuck
+  halo softer, the star's glow tighter, and the light gradient one step deeper
+  (`#234b7c → #5b95d6`) so the mark has weight on paper.
 
 ### Changed (2026-09-17, PR #113) — the mark, round two: the constellation w
 - The #112 mark (an arc over lines) read as a signal glyph and said nothing of the graph.
