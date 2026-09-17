@@ -33,14 +33,14 @@ const mono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "webgraph — the honest web reader",
-    template: "%s · webgraph",
+    default: "WebGraph — the honest web reader",
+    template: "%s · WebGraph",
   },
   description:
     "Point it at a website. Every public page comes back as Markdown in the order a reader " +
     "sees it, with a note of how each page was obtained — and a refusal, named, for every " +
     "page it could not read.",
-  applicationName: "webgraph",
+  applicationName: "WebGraph",
   // Absolute URLs for og:image and friends. Without a base Next falls back to
   // http://localhost:3000, and a link preview (Discord, Slack, X) then asks the reader's own
   // machine for the picture and shows nothing. Set NEXT_PUBLIC_SITE_URL at build time to the
@@ -56,8 +56,8 @@ export const metadata: Metadata = {
   ],
   openGraph: {
     type: "website",
-    siteName: "webgraph",
-    title: "webgraph — the honest web reader",
+    siteName: "WebGraph",
+    title: "WebGraph — the honest web reader",
     description:
       "Every public page of a website as Markdown, in reading order, with provenance and named refusals.",
   },

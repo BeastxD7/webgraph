@@ -42,7 +42,7 @@ export default function DocsRootLayout({ children }: Readonly<{ children: ReactN
           title: (
             <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight text-ink">
               <Mark />
-              webgraph
+              WebGraph
             </span>
           ),
           url: "/",

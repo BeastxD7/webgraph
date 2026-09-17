@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #128) -- the brand displays as "WebGraph"
+- Asked directly to capitalize the site's own brand name, having earlier confirmed the
+  lowercase "webgraph" style was a deliberate, consistent choice (site title/metadata,
+  header wordmark, docs) distinct from the already-capitalized "WebGraph" naming the
+  specific graph feature at `/graph`. Overridden on request.
+- Changed: `app/layout.tsx`'s title/OG metadata, the header `Wordmark`, the docs sidebar's
+  wordmark, `useTabTitle`'s tab-title suffix, the OG image's alt text, and the opening
+  sentence of the three main "what is this" doc pages (`docs/index.mdx`,
+  `getting-started/index.mdx`, `how-it-reads-a-page/index.mdx`).
+- Deliberately did **not** touch the much larger set of lowercase `webgraph` mentions
+  across the docs corpus, code comments and benchmark data: CLI commands (`webgraph site`,
+  `webgraph diff`), Python module paths (`webgraph/config.py`, `webgraph.resolve`),
+  storage/env keys (`webgraph.options.v1`, `WEBGRAPH_KG`), and -- the ones that would be
+  an actual accuracy bug to capitalize -- literal quotes of the real, lowercase
+  `ROBOTS_AGENT_TOKEN` this client sends in its own User-Agent and robots.txt group name.
+  Distinguishing "this sentence names the product" from "this sentence quotes a real
+  lowercase value" correctly, one at a time, across ~40 files was a much larger and more
+  error-prone task than the brand-display surfaces actually asked for.
+- Flagged, not resolved here: the site's own general brand and the specific "WebGraph"
+  graph feature (`/graph`, its own nav entry and docs section) are now the same word.
+  Real products do share a name with their flagship feature, but it's worth knowing this
+  PR created that overlap rather than discovering it as a surprise.
+- Verified visually: header wordmark, docs sidebar wordmark, tab title and the docs
+  landing page's own heading all confirmed rendering "WebGraph" together in a live build.
+  `tsc --noEmit`, `eslint`, `next build` all clean.
+
 ### Changed (2026-09-17, PR #126) -- tech-stack marks show each brand's own colour
 - Asked directly: monochrome, tinted like the surrounding text, was a deliberate choice
   (`TechIcon.tsx`'s own docstring: "so a stack of eight technologies reads as one list and
