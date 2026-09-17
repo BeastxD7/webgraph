@@ -54,7 +54,13 @@ export default function SiteHeader() {
       data-floating={floating || undefined}
       className={`sticky top-0 z-30 border-b transition-colors duration-(--dur-base) ease-(--ease) ${bar}`}
     >
-      <div className="page-col relative flex h-14 items-center gap-4">
+      {/* Over the hero the bar is transparent and its row drops inside the frame -- a
+          transform, so the header's box never changes height when the page scrolls. */}
+      <div
+        className={`page-col relative flex h-14 items-center gap-4 transition-transform duration-(--dur-base) ease-(--ease) ${
+          floating ? "translate-y-[calc(var(--frame-margin)+0.625rem)]" : ""
+        }`}
+      >
         <Wordmark className="shrink-0" />
 
         {/* The floating pill sits in the flow between the wordmark and the controls, centred

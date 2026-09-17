@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #108) — the header sits inside the hero frame
+- On the landing page the floating header row drops by `--frame-margin + 0.625rem`
+  (a transform, so the sticky header's box never changes height) instead of straddling the
+  frame's top edge; the hero copy starts `clamp(5.5rem, 13svh, 9rem)` down to keep its
+  distance. The owner noticed the pill cutting the frame's corner.
+
 ### Changed (2026-09-17, PR #107) — every route responsive
 - The owner's brief: the website on every device. Every route now lays out at 320, 390 and
   430 px (phones), 768 and 1024 (tablet portrait and landscape), 1280, 1440 and 1920, and a
