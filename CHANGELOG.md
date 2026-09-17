@@ -36,6 +36,26 @@ All notable changes to this project are documented here. The format follows
   generic glyph carries none. `tsc --noEmit`, `eslint`, `next build`, and the existing
   8-test `tech-icons` suite all clean.
 
+### Added (2026-09-17, PR #127) -- the light-theme hero's clouds drift on their own
+- The day scene has always textured its globe with a real cloud layer (`clouds-2k.jpg`,
+  bound as `uClouds`), but it turned rigidly with the ground beneath it -- a `uRot` that
+  itself barely moves outside an interaction (hovering an example site, typing an address),
+  so the deck read as painted onto the planet rather than weather moving over it.
+- `field/shaders.ts`: the cloud texture (and its shadow-offset sample, kept relative to the
+  now-drifted deck rather than the terrain under it) is read at its own longitude, `uRot`
+  plus a slow, independent `uTime`-driven term -- real weather has no fixed longitude to
+  share with a rotating planet. The rate is deliberately gentle: perceptible over the time
+  someone actually looks at the hero, not a visibly spinning texture.
+- Verified visually rather than assumed: the WebGL scene pauses itself when the tab isn't
+  the OS-focused window (`document.visibilityState`), which an automated browser reports as
+  backgrounded even while dispatching real input -- confirmed directly
+  (`document.visibilityState === "hidden"` while `hasFocus()` was still `true`), so a
+  temporary, uncommitted bypass of that one check was the only way to get a real animated
+  screenshot out of this tool chain; reverted before committing, and the two before/after
+  crops it produced (10+ seconds apart, cloud detail visibly shifted, base terrain
+  unchanged) are what confirmed the drift works rather than just compiles. No shader
+  compile errors in the browser console; `tsc --noEmit`, `eslint`, `next build` clean.
+
 ### Added (2026-09-17, PR #125) -- both containers, one VM: a frontend Dockerfile and a `docker-compose.yml`
 - Asked directly for a Docker path to a plain VM (Oracle Cloud's free tier named as the
   motivating example) rather than Cloud Run + Vercel, for both the API and the frontend.

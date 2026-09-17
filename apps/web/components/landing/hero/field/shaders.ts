@@ -162,7 +162,13 @@ void main() {
     // By day the water reads as water: a little bluer and deeper than the map's grey-blue.
     dayT = mix(dayT, dayT * vec3(0.7, 1.0, 1.4) + vec3(0.0, 0.03, 0.08), oceanT * uTheme * 0.8);
     vec3 nightT = srgb(texture(uNight, uv).rgb);
-    float cloud = texture(uClouds, uv).r * (1.0 - 0.15 * uTheme);
+    // Clouds drift a little faster than the ground turns -- real weather, unlike a
+    // rotating planet, has no fixed longitude -- at their own slow, independent rate so the
+    // deck visibly moves even while uRot sits still between one selected country and the
+    // next. Its own uv, not a shift of the ground's: the shadow offset below stays relative
+    // to the drifted deck, not the terrain under it.
+    vec2 uvClouds = vec2(fract((lon + uTime * 0.012) / 6.2831853 + 0.5), uv.y);
+    float cloud = texture(uClouds, uvClouds).r * (1.0 - 0.15 * uTheme);
     float ocean = oceanT;
     float ndl = dot(n, uSunL);
     float day = smoothstep(-0.05, 0.22, ndl);
@@ -171,7 +177,7 @@ void main() {
     vec3 tang = normalize(uSunL - n * ndl);
     vec3 nl2 = vec3(tang.x, tang.y * ct - tang.z * st, tang.y * st + tang.z * ct);
     vec2 duv = vec2(nl2.x, -nl2.y) * 0.004;
-    float shadow = 1.0 - 0.55 * texture(uClouds, uv + duv).r * day;
+    float shadow = 1.0 - 0.55 * texture(uClouds, uvClouds + duv).r * day;
     vec3 sun = vec3(1.0, 0.96, 0.9);
     vec3 ground = dayT * max(ndl, 0.0) * sun * (1.3 + 0.9 * uTheme) * shadow;
     // The glint on the water.
