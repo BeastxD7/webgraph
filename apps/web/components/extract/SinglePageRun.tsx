@@ -16,7 +16,7 @@ import {
   api,
 } from "@/lib/api";
 import { compact, percent } from "@/lib/format";
-import { renderMarkdown } from "@/lib/markdown";
+import { containsMath, renderMarkdown } from "@/lib/markdown";
 import type { RunMeta } from "@/lib/runlog";
 import CopyButton from "@/components/ui/CopyButton";
 import TechIcon from "@/components/ui/TechIcon";
@@ -448,6 +448,19 @@ export default function SinglePageRun({ url }: { url: string }) {
                   className="tabular rounded-full bg-leaf-50 px-2 py-0.5 text-[11.5px] font-semibold text-leaf-700"
                 >
                   −{Math.round(removed * 100)}% chrome
+                </span>
+              )}
+
+              {containsMath(shown) && (
+                <span
+                  title={
+                    preview
+                      ? "Formulas are LaTeX ($...$ / $$...$$), typeset here with KaTeX."
+                      : "Formulas are written as LaTeX ($...$ / $$...$$), not HTML -- that's the raw source a math-aware renderer typesets. Switch to Preview to see it rendered here."
+                  }
+                  className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] font-semibold text-ink-soft"
+                >
+                  Σ LaTeX math
                 </span>
               )}
 

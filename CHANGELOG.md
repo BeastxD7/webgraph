@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-17, PR #120) -- the web app's own Markdown preview now typesets `$...$` math
+- The engine has extracted correct LaTeX for `$...$`/`$$...$$` math since #118/#119, but the
+  web app's own preview (`lib/markdown.tsx`) had no math renderer at all -- it is a
+  hand-written, `dangerouslySetInnerHTML`-free React renderer, so `$\pi r^2$` passed through
+  as the literal six characters. Reported live: a website's own MathJax rendering looked
+  right, but our preview showed raw LaTeX source "left, right and all". Two independent
+  external Markdown previewers were checked as a control -- markdownlivepreview.com (no math
+  support, same raw-text failure) and StackEdit.io (KaTeX-based, rendered correctly) -- which
+  confirmed the extraction was already correct and the gap was specific to our own preview.
+- `lib/markdown.tsx`: `inline()` now recognises `$$...$$` and `$...$` (an unescaped opener,
+  `\$` stays literal, matching this file's existing backslash-escape convention) and typesets
+  them with KaTeX, `trust: false` -- the default -- so commands that could reach outside the
+  page (`\includegraphics`, `\href`, `\url`) are refused and rendered as inert text rather
+  than acted on. Invalid LaTeX renders as KaTeX's own error span rather than throwing.
+- KaTeX's `renderToString` returns an HTML *string*, which would otherwise be the one place
+  this file breaks its own "no `dangerouslySetInnerHTML`, ever" rule. Instead that string is
+  walked with the same DOMParser-plus-allowlist approach already used for tables -- the
+  allowlist here is just `<span>`, `<svg>` and `<path>`, the only elements KaTeX's default
+  (non-`trust`) HTML output emits -- so no HTML string reaches the DOM unchecked, for math
+  any more than for tables.
+- A small "Σ LaTeX math" indicator now appears next to the Markdown/Preview toggle
+  (`SinglePageRun.tsx`, `PageRow.tsx`) whenever a page's Markdown contains math, explaining
+  in the raw "Markdown" view that the `$...$` seen there is LaTeX source, not garbled text,
+  and pointing at the "Preview" toggle where it now renders typeset.
+- Verified against a throwaway esbuild+jsdom harness (not part of the repo) exercising the
+  real KaTeX/DOMParser path end to end: inline and display math typeset correctly, an
+  escaped `\$5` stays literal, `\href{javascript:...}` is refused rather than becoming a real
+  anchor, malformed LaTeX renders KaTeX's error span instead of throwing, and the actual
+  formula extracted from tutorial.math.lamar.edu (the page this was reported against)
+  renders as KaTeX rather than visible raw LaTeX. `tsc --noEmit`, `eslint`, and `next build`
+  all clean; this project's own `node --test` runner cannot execute `.tsx`/JSX today, so
+  this is not (yet) a committed automated test -- flagged as a gap, not silently skipped.
+
 ### Fixed (2026-09-17, PR #119) -- a formula no longer appears once as raw source and once converted
 - A page that ships mathematics as literal LaTeX -- almost every MathJax- or KaTeX-rendered
   page does, since that source is what the library scans the DOM for -- writes it directly

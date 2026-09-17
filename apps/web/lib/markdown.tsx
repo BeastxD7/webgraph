@@ -1,3 +1,4 @@
+import katex from "katex";
 import type { ReactNode } from "react";
 
 /**
@@ -17,12 +18,102 @@ import type { ReactNode } from "react";
  * tables down to these same tags, but this does not trust that -- a renderer that assumes its
  * input was cleaned is a renderer that breaks the day something else writes to it.
  *
+ * Math (`$...$`, `$$...$$`) gets the same treatment. KaTeX's `renderToString` produces an HTML
+ * *string*, but that string is walked with the same DOMParser-plus-allowlist approach as
+ * tables rather than handed to `dangerouslySetInnerHTML` -- the allowlist here is `<span>`,
+ * `<svg>` and `<path>`, the only elements KaTeX's default (non-`trust`) HTML output emits, so
+ * the "no HTML string reaches the DOM unchecked" property holds for math the same way it does
+ * for tables.
+ *
  * It covers what this engine emits and not the whole of Markdown. Anything unrecognised is
  * shown as its own text, which is the honest failure: you see the source rather than nothing.
  */
 
 const TABLE_TAGS = new Set(["TABLE", "THEAD", "TBODY", "TFOOT", "TR", "TD", "TH", "CAPTION", "SUB", "SUP", "A"]);
 const KEPT_ATTRS = new Set(["colspan", "rowspan"]);
+const KATEX_TAGS = new Set(["SPAN", "SVG", "PATH"]);
+const KATEX_SVG_ATTRS = ["width", "height", "viewBox", "preserveAspectRatio"];
+
+/** KaTeX writes layout as inline `style="prop: value; ..."` text; React wants an object. */
+function parseStyle(css: string): Record<string, string> {
+  const style: Record<string, string> = {};
+  for (const decl of css.split(";")) {
+    const sep = decl.indexOf(":");
+    if (sep === -1) continue;
+    const prop = decl.slice(0, sep).trim().replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    const value = decl.slice(sep + 1).trim();
+    if (prop && value) style[prop] = value;
+  }
+  return style;
+}
+
+/** Walk KaTeX's own HTML output, keeping only the small, fixed set of elements it emits. */
+function katexNode(node: ChildNode, key: string): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = node as Element;
+  if (!KATEX_TAGS.has(el.tagName)) return null;
+  const children = Array.from(el.childNodes).map((child, i) => katexNode(child, `${key}-${i}`));
+  const props: Record<string, unknown> = {};
+  const className = el.getAttribute("class");
+  if (className) props.className = className;
+  const style = el.getAttribute("style");
+  if (style) props.style = parseStyle(style);
+  if (el.tagName === "SVG") {
+    for (const name of KATEX_SVG_ATTRS) {
+      const value = el.getAttribute(name);
+      if (value) props[name] = value;
+    }
+    return (
+      <svg key={key} {...props}>
+        {children}
+      </svg>
+    );
+  }
+  if (el.tagName === "PATH") {
+    const d = el.getAttribute("d");
+    if (d) props.d = d;
+    return <path key={key} {...props} />;
+  }
+  return (
+    <span key={key} {...props}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Typeset a LaTeX span with KaTeX, `trust: false` (the default) so commands that could reach
+ * outside the page -- `\includegraphics`, `\href`, `\url` -- are refused rather than rendered.
+ * Invalid LaTeX still renders, as KaTeX's own inline error span, rather than throwing: an
+ * extraction that guessed the delimiters wrong should not blank out the rest of the line.
+ */
+function mathSpan(source: string, displayMode: boolean, key: string): ReactNode {
+  const literal = (displayMode ? "$$" : "$") + source + (displayMode ? "$$" : "$");
+  if (typeof window === "undefined") return <span key={key}>{literal}</span>;
+  let html: string;
+  try {
+    html = katex.renderToString(source, { displayMode, throwOnError: false, output: "html", strict: "ignore" });
+  } catch {
+    return <span key={key}>{literal}</span>;
+  }
+  const root = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html").body.firstChild;
+  if (!root) return <span key={key}>{literal}</span>;
+  return (
+    <span key={key} role="math" aria-label={source}>
+      {katexNode(root, key)}
+    </span>
+  );
+}
+
+/**
+ * Whether this Markdown contains `$...$`/`$$...$$` LaTeX math -- for a UI hint, not for
+ * rendering, so it is a cheap presence check rather than the real parse: it does not need to
+ * agree on edge cases (an escaped `\$`) with what `renderMarkdown` actually typesets.
+ */
+export function containsMath(source: string): boolean {
+  return /(?<!\\)\$[^$\n]+(?<!\\)\$/.test(source);
+}
 
 /** A link target is only followed if it is one a browser should follow. */
 function safeHref(raw: string): string | null {
@@ -46,8 +137,14 @@ function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
   // One pass, longest-first so `**bold**` is not eaten by the italic rule. Images come
   // before links because `![alt](src)` is a link with a bang in front, and matching the
   // link first rendered every picture as "!" followed by a link named after its alt text.
+  // Display math (`$$...$$`) is listed before inline math (`$...$`) for the same reason --
+  // the single-`$` pattern requires a non-`$` character right after the opener, so it can
+  // never accidentally consume half of a `$$` pair, but trying it first would still leave
+  // the engine matching from the *second* `$` onward and running past the closing `$$`. A
+  // preceding backslash (`\$5`) means "literal dollar sign", not math -- same convention as
+  // every other Markdown escape here.
   const pattern =
-    /(`[^`]+`)|(!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\*\*(.+?)\*\*)|(\*([^*\s][^*]*?)\*)/g;
+    /(`[^`]+`)|(!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\))|(\*\*(.+?)\*\*)|(\*([^*\s][^*]*?)\*)|((?<!\\)\$\$([^$]+?)\$\$)|((?<!\\)\$([^$\n]+?)(?<!\\)\$)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let index = 0;
@@ -109,6 +206,10 @@ function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
       out.push(<strong key={key}>{nested(match[9] ?? "", key)}</strong>);
     } else if (match[10]) {
       out.push(<em key={key}>{nested(match[11] ?? "", key)}</em>);
+    } else if (match[12]) {
+      out.push(mathSpan(match[13] ?? "", true, key));
+    } else if (match[14]) {
+      out.push(mathSpan(match[15] ?? "", false, key));
     }
     last = pattern.lastIndex;
   }
