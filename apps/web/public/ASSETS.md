@@ -30,7 +30,7 @@ removed with the landing redesign, together with the footer credit it required.
 | `logo/mark-tile.svg`, `favicon.svg`, `app/icon.svg`, `icon-32.png` | The favicon: the flat w and star, white on the accent tile (the styled mark turns to mush under 24 px) | in-house |
 | `logo/mark-tile-styled.svg`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The app-icon form: the styled mark on a deep navy tile | in-house |
 | `logo/lockup.svg` | Mark + "webgraph"; the wordmark is Manrope 700 as `<text>`, so a machine without Manrope falls back to the system sans -- the site itself sets it in `<Wordmark>` | in-house |
-| `logo/og.png`, `app/opengraph-image.png` | 1200×630: the mark and wordmark over `earth/still-1440-dark.jpg` | in-house; the Earth as above |
+| `logo/og.png`, `app/opengraph-image.jpg` (JPEG q86, 156 KB — link previews fetch it on every share) | 1200×630: the mark and wordmark over `earth/still-1440-dark.jpg` | in-house; the Earth as above |
 
 
 ## Technology marks (Simple Icons, CC0-1.0)

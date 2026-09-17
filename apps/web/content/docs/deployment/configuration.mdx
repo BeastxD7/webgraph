@@ -84,3 +84,10 @@ needed when browsers call it directly.
 NEXT_PUBLIC_API_BASE=/ WEBGRAPH_API_PROXY=http://127.0.0.1:8000 pnpm web:build
 WEBGRAPH_API_PROXY=http://127.0.0.1:8000 pnpm --filter @webgraph/web start
 ```
+
+## The public origin
+
+Set `NEXT_PUBLIC_SITE_URL` (build time) to the origin the site is served from, e.g.
+`https://webgraph.example`. It becomes `metadataBase`: the absolute URL in `og:image` and
+`twitter:image` that link previews (Discord, Slack, X, iMessage) fetch. Unset, it is
+`http://localhost:3000` and previews show no picture.

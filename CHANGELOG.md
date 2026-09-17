@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #116) — link previews get a real image URL
+- `metadataBase` is set from `NEXT_PUBLIC_SITE_URL` (build time; default the dev server), so
+  `og:image` / `twitter:image` are absolute URLs on the public origin. Without it Next wrote
+  `http://localhost:3000/opengraph-image.png`, and Discord's embed asked the reader's own
+  machine for the picture and showed none (the owner's report). `openGraph.siteName`,
+  the full title and `twitter.card=summary_large_image` are set; the social image is a
+  156 KB JPEG instead of a 726 KB PNG. Docs: `/docs/deployment/configuration`.
+
 ### Added (2026-09-17, PR #115) — technology marks beside detected names
 - Wherever the UI names a technology the engine detected, its mark now sits beside the name:
   the Site Report's Stack section (`ReportView`), the crawl's "Technology detected" panel
