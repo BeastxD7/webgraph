@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #109) — the phone sheet hangs from a solid header
+- Opening the phone menu on `/` un-floats the header (solid bar, row back at the top) so the
+  sheet hangs from it instead of overlapping the dropped row from #108. The owner's "menu,
+  nav and theme button don't work on the phone" was the *dev* server: on a throttled phone
+  the unminified landing never finished hydrating (measured: never in 60 s on `next dev`,
+  interactive after 1.3 s on `next start`), so taps did nothing. Phone and shared links are
+  served from a production build from now on.
+
 ### Changed (2026-09-17, PR #108) — the header sits inside the hero frame
 - On the landing page the floating header row drops by `--frame-margin + 0.625rem`
   (a transform, so the sticky header's box never changes height) instead of straddling the
