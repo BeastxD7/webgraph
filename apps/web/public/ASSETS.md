@@ -24,10 +24,10 @@ removed with the landing redesign, together with the footer credit it required.
 
 | file | what | source |
 |---|---|---|
-| `logo/mark.svg` | The mark: the constellation w -- five nodes, four edges, its brightest star a four-point star at the top right -- white on the accent tile; 24-unit grid | drawn in-house (`docs/design/logo-explorations-2.svg`, `logo-refinement-2.svg`, `logo-refinement-3.svg`) |
-| `favicon.svg`, `app/icon.svg` | The mark's 16 px form: the star drawn as a larger dot, because its arms merge at that size; otherwise identical | in-house |
-| `logo/mark-mono.svg` | The glyph alone on `currentColor`, for one-colour uses | in-house |
+| `logo/mark.svg`, `logo/mark-dark.svg` | The mark: the constellation w -- four ribbons tucking under four spheres, the top-right corner open and the brightest star, a four-point sparkle, aglow in the gap -- in the hero's atmosphere, for light and dark grounds; SVG gradients and two Gaussian blurs, no rasters (2.3 KB) | drawn in-house (`docs/design/logo-explorations-2.svg`, `logo-refinement-2/3.svg`, `logo-refinement-4.png`, `logo-style-3d.png`) |
+| `logo/mark-flat.svg`, `mark-flat-dark.svg` | The flat gradient form, for sizes under ~48 px | in-house |
+| `logo/mark-mono.svg` | One colour on `currentColor`: the small-size and one-colour form | in-house |
+| `logo/mark-tile.svg`, `favicon.svg`, `app/icon.svg`, `icon-32.png` | The favicon: the flat w and star, white on the accent tile (the styled mark turns to mush under 24 px) | in-house |
+| `logo/mark-tile-styled.svg`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The app-icon form: the styled mark on a deep navy tile | in-house |
 | `logo/lockup.svg` | Mark + "webgraph"; the wordmark is Manrope 700 as `<text>`, so a machine without Manrope falls back to the system sans -- the site itself sets it in `<Wordmark>` | in-house |
-| `logo/icon-32.png`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The mark rasterised (headless Chromium) | in-house |
 | `logo/og.png`, `app/opengraph-image.png` | 1200×630: the mark and wordmark over `earth/still-1440-dark.jpg` | in-house; the Earth as above |
-

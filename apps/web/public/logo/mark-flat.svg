@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <title>webgraph</title>
+  <!-- The flat gradient form, for sizes under ~48 px. -->
+  <defs><linearGradient id="fg" gradientUnits="userSpaceOnUse" x1="2" y1="22" x2="22" y2="2"><stop offset="0" stop-color="#2b5a91"/><stop offset="1" stop-color="#6aa6e6"/></linearGradient></defs><path d="M3.00 8.50 L7.50 20.00 L11.50 12.00 L15.50 20.00 L18.11 13.33" fill="none" stroke="url(#fg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3" cy="8.5" r="2.6" fill="url(#fg)"/><circle cx="7.5" cy="20.0" r="2.2" fill="url(#fg)"/><circle cx="11.5" cy="12.0" r="1.9" fill="url(#fg)"/><circle cx="15.5" cy="20.0" r="2.2" fill="url(#fg)"/><path d="M17.40 1.10 Q17.40 6.30 22.60 6.30 Q17.40 6.30 17.40 11.50 Q17.40 6.30 12.20 6.30 Q17.40 6.30 17.40 1.10 Z" fill="#8fc3ff"/>
+</svg>

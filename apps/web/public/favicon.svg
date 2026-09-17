@@ -1,9 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <title>webgraph</title>
-  <!-- The 16 px form of the mark: the brightest star drawn as a larger dot, since its arms merge at that size. -->
+  <!-- The favicon: the flat w and star, white on the accent tile (the styled mark turns to mush under 24 px). -->
   <rect width="24" height="24" rx="5.5" fill="#3568a3"/>
-  <g fill="#ffffff">
-    <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L19.5 7.5" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/><circle cx="12" cy="10.5" r="1.8"/><circle cx="19.5" cy="7.5" r="3"/>
-  </g>
+  <g transform="translate(1.6 1.6) scale(0.866)"><path d="M3.00 8.50 L7.50 20.00 L11.50 12.00 L15.50 20.00 L18.11 13.33" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3" cy="8.5" r="2.6" fill="#ffffff"/><circle cx="7.5" cy="20.0" r="2.2" fill="#ffffff"/><circle cx="11.5" cy="12.0" r="1.9" fill="#ffffff"/><circle cx="15.5" cy="20.0" r="2.2" fill="#ffffff"/><path d="M17.40 1.10 Q17.40 6.30 22.60 6.30 Q17.40 6.30 17.40 11.50 Q17.40 6.30 12.20 6.30 Q17.40 6.30 17.40 1.10 Z" fill="#ffffff"/></g>
 </svg>
