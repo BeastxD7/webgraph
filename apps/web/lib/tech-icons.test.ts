@@ -75,6 +75,14 @@ test("an unknown name gets the generic glyph, and the map says so", () => {
   assert.equal(techIcon("HSTS").generic, true);
 });
 
+test("every real mark carries its brand's own colour; the generic glyph carries none", () => {
+  for (const name of ["Next.js", "React", "WordPress", "nginx", "Cloudflare"]) {
+    const mark = techIcon(name);
+    assert.match(mark.hex ?? "", /^#[0-9a-fA-F]{6}$/, name);
+  }
+  assert.equal(techIcon("Some Framework Nobody Wrote").hex, null);
+});
+
 test("no two names share a mark unless one is declared an alias of the other", () => {
   const bySlug = new Map<string, string[]>();
   for (const { name, slug } of MAPPED_TECH) {
