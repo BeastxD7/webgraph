@@ -3,6 +3,7 @@
   "pages": [
     "configuration",
     "docker",
+    "vm",
     "operations"
   ]
 }

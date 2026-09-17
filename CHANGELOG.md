@@ -6,6 +6,53 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-17, PR #125) -- both containers, one VM: a frontend Dockerfile and a `docker-compose.yml`
+- Asked directly for a Docker path to a plain VM (Oracle Cloud's free tier named as the
+  motivating example) rather than Cloud Run + Vercel, for both the API and the frontend.
+  The API side already existed in full (root `Dockerfile`, `deployment/docker.mdx`); the
+  frontend had no container story at all.
+- `apps/web/Dockerfile`: tried `output: "standalone"` first, for the same "install once,
+  copy only the minimum" shape as the root Dockerfile -- but under this project's pnpm
+  workspace, Next.js's file tracer silently dropped two of its own runtime dependencies
+  (`@swc/helpers`, then `@next/env`, found one after the other by running the traced
+  server and reading which `Cannot find module` came back each time), even with
+  `outputFileTracingRoot` pointed at the workspace root. A tracer that must be hand-patched
+  dependency by dependency as they turn up missing at container start is not something to
+  ship, so the image instead does a full `pnpm install --prod`, using the exact dependency
+  resolution `pnpm build` already proves correct -- a larger image, deliberately, for one
+  that starts correctly the first time.
+- Confirmed directly, and now documented in the Dockerfile itself: `WEBGRAPH_API_PROXY`
+  looks like a runtime setting but has to be a build `ARG` like `NEXT_PUBLIC_API_BASE` --
+  Next.js resolves `rewrites()` once into `.next/routes-manifest.json` at `next build` and
+  never re-reads it at `next start`. Verified with a real reverse-proxy round trip (a stub
+  HTTP server standing in for the API): built without the arg, `/api/*` fell through to
+  Next's own 404 page regardless of what was set at `docker run`; rebuilt with it set, the
+  same route proxied correctly, and the app's own `/api/search` (docs search) still won
+  where it should.
+- `docker-compose.yml` (repository root): both containers with one command, `web` built
+  with `WEBGRAPH_API_PROXY` pointing at `api`'s address on Docker's own network so the
+  browser only ever talks to `web`'s port -- `api` is not published to the host at all,
+  and the two never need CORS between them. A named volume persists `WEBGRAPH_GRAPH_DIR`
+  across restarts. `apps/web/Dockerfile.dockerignore` -- not the root `.dockerignore`,
+  written for the *other* Dockerfile and excludes `apps/web` entirely -- keeps the frontend
+  build context small; both images build from the repository root, since the pnpm
+  workspace's lockfile lives there.
+- `content/docs/deployment/vm.mdx`: a walkthrough for a generic VM, Oracle Cloud's Always
+  Free Ampere shape as the concrete no-credit-card example (with its one real gotcha noted:
+  free capacity sometimes runs out in a given Availability Domain). Cross-linked from the
+  existing `docker.mdx`. New Makefile targets `docker-build-web`, `compose-up`, `compose-down`.
+- Verified without a real `docker build` -- the host had under 1.2 GB free disk for most of
+  this work, and a Node base image plus a fresh `node_modules` was not a safe thing to
+  attempt there. Instead: a `pnpm install --prod` into an isolated directory (using pnpm's
+  own content-addressable store, so it cost megabytes rather than the ~500 MB `du` reports
+  for `node_modules`) plus an APFS copy-on-write clone (`cp -c`) of the real `.next` build
+  output, assembled into the exact layout the final Docker stage produces, then run for
+  real with `next start` -- which is how the two packaging bugs above were actually caught
+  and fixed, not guessed at. `docker compose config` resolved the compose file's final,
+  merged configuration cleanly (this needs no running daemon). A real `docker build`/`docker
+  compose up` end-to-end run is flagged as not yet done, explicitly, rather than silently
+  skipped -- worth doing once there's headroom to try it safely.
+
 ### Fixed (2026-09-17, PR #124) -- the docs sidebar's own theme toggle no longer disagrees with the rest of the site
 - Reported live: "theming is not working in docs sidebar." Reproduced by switching theme
   from the docs shell's own light/dark control and reading `<html>`'s attributes directly:

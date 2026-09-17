@@ -1,0 +1,128 @@
+---
+title: A plain VM
+description: docker-compose.yml runs both containers with one command, for any VM that speaks Docker — Oracle Cloud's Always Free tier as the concrete, no-credit-card example.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+
+Cloud Run and Vercel ([Docker and deploy](/docs/deployment/docker)) are the path with the
+least to configure. This page is for a VM instead — a free-tier instance, a home server, any
+box with a public IP — using `docker-compose.yml` at the repository root to run the API and
+the web app together as one unit.
+
+## Why one compose file instead of two `docker run`s
+
+`web` is built with `WEBGRAPH_API_PROXY` pointing at `api`'s address on Docker's own internal
+network, so the browser only ever talks to `web`'s port — the same "one origin" mode
+[Configuration](/docs/deployment/configuration#one-origin-for-web-and-api) describes for a
+single host. `api` is never published to the outside at all: nothing but `web` can reach it,
+and the two never need CORS between them, because from a visitor's browser there is only one
+origin to begin with.
+
+<Callout type="warn" title="This is a build-time wire, not a runtime one">
+`WEBGRAPH_API_PROXY` looks like it should be read at container start — it is an environment
+variable name, after all — but Next.js resolves `rewrites()` once, into
+`.next/routes-manifest.json`, at `next build`, and never re-reads it afterward. `docker-compose.yml`
+passes it as a build argument for exactly this reason. Changing where `web` proxies to means
+rebuilding the `web` image, not just restarting the container.
+</Callout>
+
+## Oracle Cloud's Always Free tier
+
+The concrete example, because it needs no credit card charge and no time limit — unlike most
+"free tier" cloud offers, it does not expire after a trial period. One catch worth knowing
+before signing up: the free Ampere A1 capacity (4 OCPU / 24 GB, arm64) is popular enough that
+some regions run out; if instance creation refuses with "Out of capacity", try a different
+Availability Domain in the same region, or a different region entirely. The older E2.1.Micro
+free shapes (1 OCPU / 1 GB, amd64) are smaller than this stack comfortably runs in.
+
+<Steps>
+<Step>
+Create the instance: **Compute → Instances → Create Instance**. Pick an Ampere (arm64) shape
+under "Always Free eligible", Ubuntu as the image, and add your SSH key. Open the firewall
+for the web app in the instance's attached **Security List** (or NSG): add an ingress rule
+for TCP port 3000 from `0.0.0.0/0` (or your own IP range, if the deployment is not meant to
+be public yet).
+</Step>
+<Step>
+SSH in and install Docker. Oracle's Ubuntu image does not ship it:
+
+```bash
+ssh ubuntu@YOUR_INSTANCE_IP
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# log out and back in for the group change to apply
+```
+</Step>
+<Step>
+Clone the repository and bring both containers up:
+
+```bash
+git clone https://github.com/BeastxD7/webgraph.git
+cd webgraph
+docker compose up --build -d
+```
+
+The first build downloads Chromium for the API image (a few minutes, same as the Cloud Run
+path) and a `node:24-slim` base plus dependencies for the web image. After that, only the
+layers touched by a code change rebuild.
+</Step>
+<Step>
+Check it:
+
+```bash
+curl -s localhost:3000                 # the web app itself
+curl -s localhost:3000/api/health      # the API, reached through web's own proxy --
+                                        # "render_available" and a non-zero "max_pages"
+```
+
+From another machine: `http://YOUR_INSTANCE_IP:3000`.
+</Step>
+</Steps>
+
+## Sizing for a smaller box
+
+The API image's own defaults (`WEBGRAPH_MAX_PAGES=50`, `WEBGRAPH_MAX_BROWSERS=4`, ...) are
+sized for 2 vCPU / 4 GiB, matching Cloud Run's configuration in
+[Docker and deploy](/docs/deployment/docker#deploy-the-api-to-cloud-run). The Ampere free
+shape has room to spare at its full 4 OCPU / 24 GB allocation; a smaller VM (the 1 GB E2.1.Micro
+shapes, or a budget instance elsewhere) needs these turned down in `docker-compose.yml`'s
+`api.environment` block — start with `WEBGRAPH_MAX_BROWSERS=1` and `WEBGRAPH_MAX_CONCURRENT_CRAWLS=1`
+on 1–2 GB of memory. See [Operations](/docs/deployment/operations#browsers-and-memory) for
+the actual memory math (~150 MB per live browser, plus the Python process, plus every page
+held for a crawl's duration).
+
+## A domain and TLS
+
+Nothing here terminates HTTPS — `docker-compose.yml` serves plain HTTP on port 3000, which
+is enough to reach an IP address directly but not enough for a domain a browser will trust.
+Point a domain's DNS at the instance and put a reverse proxy in front that already knows how
+to fetch and renew a certificate (Caddy's automatic HTTPS is the least configuration; nginx
+with `certbot` is the more common one) forwarding to `127.0.0.1:3000`. Either runs *outside*
+this compose file, as its own process or container on the same host — it is a general
+"put TLS in front of a port" step with nothing specific to this project, so it is not
+duplicated here.
+
+## Updating
+
+```bash
+cd webgraph
+git pull
+docker compose up --build -d   # rebuilds only what changed, restarts both containers
+```
+
+<Callout type="info" title="The graph cache survives this">
+`docker-compose.yml` gives `WEBGRAPH_GRAPH_DIR` a named volume (`graph-cache`), so
+`docker compose up --build` — which recreates the containers — does not discard finished
+site graphs the way a bare `docker run` restart would. `docker compose down -v` removes it
+deliberately, if that is ever what you want.
+</Callout>
+
+## Before sharing the link
+
+The same checks as the Cloud Run path, unchanged — [Docker and
+deploy](/docs/deployment/docker#deploy-the-api-to-cloud-run), "Check the guard before sharing
+the link" — still apply here: the private-host guard, the page cap, and that CORS refuses an
+unlisted origin. Since `api` is never published on this VM at all, the CORS check specifically
+has nothing to test from outside the host; the meaningful ones are the guard and the cap.
