@@ -86,6 +86,16 @@
   --selection:     #d6e3f5;
   --focus:         #3568a3;
 
+  /* The mark's gradient: the hero's atmosphere, bottom-left to top-right, the star at the
+     bright end and a step brighter than the strokes (components/site/Wordmark.tsx). */
+  --brand-a:       #234b7c;
+  --brand-b:       #5b95d6;
+  --brand-hi:      #6ea4de;
+  --brand-shade:   #12305a;
+  --brand-star:    #7fb8f5;
+  --brand-core:    #e6f2ff;
+  --brand-glow:    #5b95d6;
+
   /* Type. Exact Google Fonts families and the weights to load:
        Instrument Serif  400 normal + 400 italic   (it ships nothing else)
        Manrope           400, 500, 600, 700         (700 replaces every
@@ -163,6 +173,14 @@
     --selection:     rgb(147 187 234 / 0.28);
     --focus:         #93bbea;
 
+    --brand-a:       #9cc4f2;
+    --brand-b:       #dcefff;
+    --brand-hi:      #eaf5ff;
+    --brand-shade:   #3f6ea6;
+    --brand-star:    #ffffff;
+    --brand-core:    #ffffff;
+    --brand-glow:    #dcefff;
+
     --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
   }
 }
@@ -196,6 +214,14 @@
 
   --selection:     rgb(147 187 234 / 0.28);
   --focus:         #93bbea;
+
+  --brand-a:       #9cc4f2;
+  --brand-b:       #dcefff;
+  --brand-hi:      #eaf5ff;
+  --brand-shade:   #3f6ea6;
+  --brand-star:    #ffffff;
+  --brand-core:    #ffffff;
+  --brand-glow:    #dcefff;
 
   --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
 }
