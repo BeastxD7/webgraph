@@ -13,7 +13,7 @@ export function useTabTitle(state: "running" | "done" | "failed" | "stopped", ho
   useEffect(() => {
     const previous = document.title;
     const word = { running: "Extracting", done: "Extracted", failed: "Failed", stopped: "Stopped" }[state];
-    document.title = `${word} · ${host} · webgraph`;
+    document.title = `${word} · ${host} · WebGraph`;
     return () => {
       document.title = previous;
     };

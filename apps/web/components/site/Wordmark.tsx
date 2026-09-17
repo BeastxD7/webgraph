@@ -52,7 +52,7 @@ export default function Wordmark({ className = "" }: { className?: string }) {
       className={`wordmark-text inline-flex items-center gap-2.5 text-[15px] font-bold tracking-tight text-ink ${className}`}
     >
       <Mark />
-      webgraph
+      WebGraph
     </Link>
   );
 }
