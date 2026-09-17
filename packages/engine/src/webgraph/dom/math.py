@@ -291,7 +291,7 @@ def mathjax_source_latex(container: HtmlElement) -> str | None:
         if _local(child) == "mjx-math":
             latex = child.get("data-latex")
             if latex:
-                return latex
+                return str(latex)
             break
     return None
 
