@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #TBD) — the mark, round two: the constellation w
+### Changed (2026-09-17, PR #113) — the mark, round two: the constellation w
 - The #112 mark (an arc over lines) read as a signal glyph and said nothing of the graph.
   The owner's vision -- the site becomes a knowledge graph, and the graph travels -- drove a
   second round: eight directions on one sheet (`docs/design/logo-explorations-2.svg`), each
