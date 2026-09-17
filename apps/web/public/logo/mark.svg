@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <title>webgraph</title>
+  <rect width="24" height="24" rx="5.5" fill="#3568a3"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round">
+    <path d="M5 10.5 Q12 3.8 19 10.5"/>
+    <path d="M6.5 14.8 H17.5"/>
+    <path d="M6.5 19.2 H13.5"/>
+  </g>
+</svg>

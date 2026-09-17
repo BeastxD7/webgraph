@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #112) — theme: "Atmosphere" site-wide, and the mark
+- The palette follows the hero. The study (contact sheets of eight views × two themes for
+  the green control and three candidates -- Atmosphere, Sunrise, Ink -- the hand-off seams,
+  contrast tables and the decision are in the PR) found the green botanical against the
+  astronomical hero and doing two jobs, accent and "measured". The winner, Atmosphere:
+  the accent is the limb's blue sampled from the frame (`#3568a3` / `#2b5a91`; dark `#7ea9dc`
+  / `#93bbea`), the light ground a cool paper from the day sky (`#f4f6f9`), the dark ground
+  the hero's own space lifted a step (`#080c14`), ink a navy-black; green stays as `good` and
+  is no longer the accent, the flare's amber is `warn`, oxide red is `bad`. Every value in
+  `globals.css` §1/§1b, the docs bridge (`docs.css`'s dark block now reads the tokens
+  instead of its own greens; success and diff-add are `good`), the light hero's `--scene-*`
+  ink, `themeColor`, and a faint graticule (96 px majors, 24 px minors) where the grid was;
+  the hero frame keeps a 1 px hairline so its edge holds on the near-space ground. Contrast:
+  ink 16.7 / 16.2, muted 7.2 / 8.7, faint 4.4 / 5.5, accent-ink 6.5 / 9.8, flags ≥ 5.6 on the
+  ground and ≥ 5.2 on their tints (light / dark). No layout changes.
+- The mark: the limb over the reading lines -- the web seen whole, the page read in order,
+  nothing hidden -- from six directions explored as one SVG sheet and judged at 16 px.
+  White on an accent tile (`public/logo/mark.svg`, `favicon.svg`, `app/icon.svg`), a
+  one-colour glyph (`mark-mono.svg`), the lockup with the Manrope wordmark, 32/180/512 PNGs,
+  `app/apple-icon.png`, and a 1200×630 `app/opengraph-image.png` of the mark and wordmark
+  over the hero's own space. `<Wordmark>` draws the same glyph inline on the accent tile.
 ### Added (2026-09-17, PR #111) — one origin for web and API
 - `NEXT_PUBLIC_API_BASE=/` means "this origin": the web app calls `/api/...` on itself,
   and `WEBGRAPH_API_PROXY=http://127.0.0.1:8000` (build and start) makes `next` forward

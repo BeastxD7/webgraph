@@ -27,8 +27,11 @@
 
 /* ---------------------------------------------------------------------------
    1. Raw values -- light
-   Five named colours: bone (ground), white (surface), ink (a green-black),
-   leaf (the accent), and two flags. Everything else is a tint of ink.
+   The palette is the hero's ("Atmosphere", design/theme-study/DECISION.md):
+   cool paper (ground) from the day frame's sky, white (surface), ink (a
+   navy-black), the limb's blue as the accent, and three flags -- green means
+   measured, ochre (the flare's amber) means caution, oxide red means refused.
+   Everything else is a tint of ink.
    --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
@@ -36,51 +39,52 @@
   /* Grounds. ground is the page; surface is anything that sits on it (a
      table, a code block, the nav on scroll); sunk is one step below ground
      (an input well, a quiet chip). */
-  --ground:        #f6f7f4;
+  --ground:        #f4f6f9;
   --surface:       #ffffff;
-  --sunk:          #eceee8;
+  --sunk:          #e9edf3;
 
   /* Text. ink for body and headings (16.6:1 on ground, AAA). muted for
      secondary prose (7.2:1, AAA). faint only for text >= 18.66px or bold
      >= 14px (4.2:1, AA large) and for non-text marks; never for body. */
-  --ink:           #0f1a14;
-  --muted:         #46574d;
-  --faint:         #6b7a70;
+  --ink:           #0f1624;
+  --muted:         #46526a;
+  --faint:         #66738a;
   --inverse:       #ffffff;
 
   /* Rules. Hairlines, table borders, dividers. Alpha so they read the same
      over ground, surface and sunk. */
-  --rule:          rgb(15 26 20 / 0.12);
-  --rule-strong:   rgb(15 26 20 / 0.24);
+  --rule:          rgb(15 22 36 / 0.12);
+  --rule-strong:   rgb(15 22 36 / 0.24);
 
-  /* Accent: leaf. Green means "measured": it is the colour of a verified
-     value, an available product, a passing check, links and focus. It is not
-     a decorative colour and is never a large fill. accent is the fill/mark
-     (4.6:1 with white on it -- AA, so white text on it is allowed only at
-     >= 14px 600); accent-ink is the text colour (6.5:1 on white, 6.1 on
-     ground); accent-soft is the tint behind a chip (accent-ink on it 5.6:1). */
-  --accent:        #3f8527;
-  --accent-ink:    #326a20;
-  --accent-soft:   #e4f1dc;
+  /* Accent: the limb's blue, sampled from the hero (#5b78a2..#86a4c6 on the
+     dark frame) and deepened for text. It is the colour of links, focus, the
+     primary control and an available product; it is not a decorative colour
+     and is never a large fill. accent is the fill/mark (5.7:1 with white on
+     it); accent-ink is the text colour (7.1:1 on white, 6.5 on ground);
+     accent-soft is the tint behind a chip. Measured is green (`good`), not
+     the accent, so a verified value and a link never share a colour. */
+  --accent:        #3568a3;
+  --accent-ink:    #2b5a91;
+  --accent-soft:   #e2eaf6;
 
-  /* Flags. good reuses the accent on purpose: the product has one meaning
-     of good, "measured". warn is an ochre (5.9:1 on white), bad an oxide red
-     (7.1:1). Each has a soft tint for a chip/callout ground; the flag colour
-     on its own tint reads 5.6 / 5.0 / 5.8:1 (AA). */
-  --good:          #326a20;
-  --good-soft:     #e4f1dc;
-  --warn:          #8a5a0b;
-  --warn-soft:     #f6ecd6;
-  --bad:           #9e3328;
-  --bad-soft:      #f7e3e0;
+  /* Flags. good is green -- the product has one meaning of good, "measured"
+     (5.7:1 on ground). warn is an ochre from the flare's amber (5.6:1), bad
+     an oxide red (6.1:1). Each has a soft tint for a chip/callout ground;
+     the flag colour on its own tint reads 5.2 / 5.2 / 5.4:1 (AA). */
+  --good:          #2a6f36;
+  --good-soft:     #e2f1e3;
+  --warn:          #8c560a;
+  --warn-soft:     #f8ecd8;
+  --bad:           #a8322b;
+  --bad-soft:      #f9e3e0;
 
 
   --frame-margin:  0.5rem;        /* the page margin around the hero frame; 0.75rem from 640px */
   --frame-radius:  1.5rem;        /* 2.25rem from 640px */
 
   /* Selection + focus */
-  --selection:     #dcebd2;
-  --focus:         #3f8527;
+  --selection:     #d6e3f5;
+  --focus:         #3568a3;
 
   /* Type. Exact Google Fonts families and the weights to load:
        Instrument Serif  400 normal + 400 italic   (it ships nothing else)
@@ -111,7 +115,7 @@
   /* Shadow. One, and only for things that float over content (menus,
      popovers). Cards and panels use a rule, never a shadow. Named outside
      Tailwind's --shadow-* namespace; @theme maps it. */
-  --float-shadow: 0 1px 2px rgb(15 26 20 / 0.06), 0 8px 24px rgb(15 26 20 / 0.10);
+  --float-shadow: 0 1px 2px rgb(15 22 36 / 0.06), 0 8px 24px rgb(15 22 36 / 0.10);
 
   /* Motion. Two durations, one curve. Nothing loops except the run's
      breathing dot, which reduced-motion turns into a static ring. */
@@ -122,40 +126,42 @@
 
 /* ---------------------------------------------------------------------------
    1b. Raw values -- dark
-   Same hues, inverted roles. ink stays a green-tinted near-white so the
-   two themes read as one product. Accent lightens two steps so it holds
-   contrast as text (10.1:1 on ground); as a fill it takes ink text, not white.
+   Same hues, inverted roles; the ground is the hero's own space, lifted a
+   step (#080c14 against the frame's #05070c). ink stays a blue-tinted
+   near-white so the two themes read as one product. Accent lightens two
+   steps so it holds contrast as text (9.8:1 on ground); as a fill it takes
+   ink text, not white.
    --------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --ground:        #0e1310;
-    --surface:       #151b17;
-    --sunk:          #1b2320;
+    --ground:        #080c14;
+    --surface:       #0f1520;
+    --sunk:          #151c2a;
 
-    --ink:           #e7ebe6;   /* 15.6:1 on ground */
-    --muted:         #a3aea7;   /* 8.2:1 */
-    --faint:         #7c877f;   /* 5.0:1 */
-    --inverse:       #0e1310;
+    --ink:           #e6eaf1;   /* 16.2:1 on ground */
+    --muted:         #a4adbe;   /* 8.7:1 */
+    --faint:         #7f899b;   /* 5.5:1 */
+    --inverse:       #080c14;
 
-    --rule:          rgb(231 235 230 / 0.10);
-    --rule-strong:   rgb(231 235 230 / 0.22);
+    --rule:          rgb(230 234 241 / 0.10);
+    --rule-strong:   rgb(230 234 241 / 0.22);
 
-    --accent:        #7fc063;   /* fill; ink text on it 8.6:1 */
-    --accent-ink:    #8fcf74;   /* text; 10.1:1 on ground */
-    --accent-soft:   rgb(143 207 116 / 0.14);
+    --accent:        #7ea9dc;   /* fill; ink text on it 8.0:1 */
+    --accent-ink:    #93bbea;   /* text; 9.8:1 on ground */
+    --accent-soft:   rgb(147 187 234 / 0.14);
 
-    --good:          #8fcf74;
-    --good-soft:     rgb(143 207 116 / 0.14);
-    --warn:          #e0b04a;   /* 9.4:1 */
-    --warn-soft:     rgb(224 176 74 / 0.14);
-    --bad:           #f08b7e;   /* 7.8:1 */
-    --bad-soft:      rgb(240 139 126 / 0.14);
+    --good:          #84c96a;
+    --good-soft:     rgb(132 201 106 / 0.14);
+    --warn:          #e6b453;   /* 10.3:1 */
+    --warn-soft:     rgb(230 180 83 / 0.14);
+    --bad:           #f28c80;   /* 8.2:1 */
+    --bad-soft:      rgb(242 140 128 / 0.14);
 
 
-    --selection:     rgb(143 207 116 / 0.28);
-    --focus:         #8fcf74;
+    --selection:     rgb(147 187 234 / 0.28);
+    --focus:         #93bbea;
 
     --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
   }
@@ -164,32 +170,32 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --ground:        #0e1310;
-  --surface:       #151b17;
-  --sunk:          #1b2320;
+  --ground:        #080c14;
+  --surface:       #0f1520;
+  --sunk:          #151c2a;
 
-  --ink:           #e7ebe6;
-  --muted:         #a3aea7;
-  --faint:         #7c877f;
-  --inverse:       #0e1310;
+  --ink:           #e6eaf1;
+  --muted:         #a4adbe;
+  --faint:         #7f899b;
+  --inverse:       #080c14;
 
-  --rule:          rgb(231 235 230 / 0.10);
-  --rule-strong:   rgb(231 235 230 / 0.22);
+  --rule:          rgb(230 234 241 / 0.10);
+  --rule-strong:   rgb(230 234 241 / 0.22);
 
-  --accent:        #7fc063;
-  --accent-ink:    #8fcf74;
-  --accent-soft:   rgb(143 207 116 / 0.14);
+  --accent:        #7ea9dc;
+  --accent-ink:    #93bbea;
+  --accent-soft:   rgb(147 187 234 / 0.14);
 
-  --good:          #8fcf74;
-  --good-soft:     rgb(143 207 116 / 0.14);
-  --warn:          #e0b04a;
-  --warn-soft:     rgb(224 176 74 / 0.14);
-  --bad:           #f08b7e;
-  --bad-soft:      rgb(240 139 126 / 0.14);
+  --good:          #84c96a;
+  --good-soft:     rgb(132 201 106 / 0.14);
+  --warn:          #e6b453;
+  --warn-soft:     rgb(230 180 83 / 0.14);
+  --bad:           #f28c80;
+  --bad-soft:      rgb(242 140 128 / 0.14);
 
 
-  --selection:     rgb(143 207 116 / 0.28);
-  --focus:         #8fcf74;
+  --selection:     rgb(147 187 234 / 0.28);
+  --focus:         #93bbea;
 
   --float-shadow:  0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.5);
 }
@@ -422,14 +428,18 @@
   contain: strict;
 }
 .bd-grid {
+  /* A faint graticule: minor lines every 24px, a firmer one every 96px. */
   position: absolute;
   inset: 0;
+  --minor: color-mix(in oklab, var(--rule) 40%, transparent);
   background-image:
     linear-gradient(var(--rule) 1px, transparent 1px),
-    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(90deg, var(--rule) 1px, transparent 1px),
+    linear-gradient(var(--minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--minor) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
   background-position: center top;
-  opacity: 0.4;
+  opacity: 0.45;
   mask-image: linear-gradient(to bottom, black 0, black 45%, rgb(0 0 0 / 0.3) 70%, transparent 100%);
 }
 .bd-blob {
@@ -530,18 +540,18 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
    --------------------------------------------------------------------------- */
 :root {
   --scene-bg: #a9b5c4;
-  --scene-ink: #0f1a14;
-  --scene-title: #0f1a14;
-  --scene-muted: #1f2b31;
-  --scene-faint: #46545c;
+  --scene-ink: #0f1624;
+  --scene-title: #0f1624;
+  --scene-muted: #1e2a3a;
+  --scene-faint: #46546a;
   --scene-glass: rgb(255 255 255 / 0.74);
   --scene-glass-2: rgb(255 255 255 / 0.55);
-  --scene-line: rgb(15 26 20 / 0.12);
-  --scene-line-2: rgb(15 26 20 / 0.24);
-  --scene-shadow: rgb(15 26 20 / 0.22);
+  --scene-line: rgb(15 22 36 / 0.12);
+  --scene-line-2: rgb(15 22 36 / 0.24);
+  --scene-shadow: rgb(15 22 36 / 0.22);
   --scene-glow: rgb(255 255 255 / 0.55);
-  --scene-on-glass: #0f1a14;
-  --scene-check-bg: #0f1a14;
+  --scene-on-glass: #0f1624;
+  --scene-check-bg: #0f1624;
   --scene-check-ink: #fff;
   --scene-still: url("/earth/still-1440-light.jpg");
 }
@@ -560,7 +570,7 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
     --scene-glow: rgb(0 0 0 / 0.5);
     --scene-on-glass: #f2f4f1;
     --scene-check-bg: rgb(255 255 255 / 0.92);
-    --scene-check-ink: #0f1a14;
+    --scene-check-ink: #0f1624;
     --scene-still: url("/earth/still-1440-dark.jpg");
   }
 }
@@ -578,7 +588,7 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   --scene-glow: rgb(0 0 0 / 0.5);
   --scene-on-glass: #f2f4f1;
   --scene-check-bg: rgb(255 255 255 / 0.92);
-  --scene-check-ink: #0f1a14;
+  --scene-check-ink: #0f1624;
   --scene-still: url("/earth/still-1440-dark.jpg");
 }
 
@@ -596,6 +606,8 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
   isolation: isolate;
   background: var(--scene-bg);
   color: var(--scene-ink);
+  /* a hairline, so the frame keeps its edge where the page's ground is nearly space too */
+  box-shadow: 0 0 0 1px var(--rule);
   transition: background-color 600ms var(--ease), color 600ms var(--ease);
 }
 .hero-still {
