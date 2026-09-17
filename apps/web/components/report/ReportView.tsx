@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import Chip, { type ChipTone } from "@/components/ui/Chip";
 import CopyButton from "@/components/ui/CopyButton";
 import EvidenceRow from "@/components/ui/EvidenceRow";
+import TechIcon, { TrademarkNote } from "@/components/ui/TechIcon";
 import type { BotAccess, Finding, ReportPage, Severity, SiteReport, SiteSignal, SiteSignals, SubScore } from "@/lib/api";
 import { duration, percent, prettyUrl } from "@/lib/format";
 
@@ -350,21 +351,27 @@ export default function ReportView({ report }: { report: SiteReport }) {
 
       <Section id="stack" title="Stack" lede="What the root page's markup, headers and runtime say it is built with. A version is dated when its branch is in the report's release table; otherwise the version alone.">
         {report.stack.length ? (
-          <ul className="flex flex-wrap gap-2">
-            {report.stack.map((entry) => (
-              <li key={`${entry.name}-${entry.version ?? ""}`} className="rounded-md border border-rule bg-surface px-3 py-1.5 text-small text-ink">
-                {entry.name}
-                {entry.version && <span className="font-mono text-code"> {entry.version}</span>}
-                {entry.released && (
-                  <span className={`text-caption ${entry.age_years !== null && entry.age_years >= 3 ? "text-warn" : "text-muted"}`}>
-                    {" "}
-                    · released {entry.released}
-                    {entry.age_years !== null && `, ${entry.age_years} years ago`}
+          <>
+            <ul className="flex flex-wrap gap-2">
+              {report.stack.map((entry) => (
+                <li key={`${entry.name}-${entry.version ?? ""}`} className="inline-flex items-start gap-2 rounded-md border border-rule bg-surface px-3 py-1.5 text-small text-ink">
+                  <TechIcon name={entry.name} className="mt-[3.5px] text-muted" />
+                  <span>
+                    {entry.name}
+                    {entry.version && <span className="font-mono text-code"> {entry.version}</span>}
+                    {entry.released && (
+                      <span className={`text-caption ${entry.age_years !== null && entry.age_years >= 3 ? "text-warn" : "text-muted"}`}>
+                        {" "}
+                        · released {entry.released}
+                        {entry.age_years !== null && `, ${entry.age_years} years ago`}
+                      </span>
+                    )}
                   </span>
-                )}
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+            <TrademarkNote className="mt-3" />
+          </>
         ) : (
           <p className="text-small text-muted">None detected.</p>
         )}

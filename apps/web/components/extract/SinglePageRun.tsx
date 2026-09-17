@@ -19,9 +19,10 @@ import { compact, percent } from "@/lib/format";
 import { renderMarkdown } from "@/lib/markdown";
 import type { RunMeta } from "@/lib/runlog";
 import CopyButton from "@/components/ui/CopyButton";
+import TechIcon from "@/components/ui/TechIcon";
 
 function Meta({ page }: { page: TextResponse["page"] }) {
-  const flags: ReadonlyArray<{ label: string; tone: "ok" | "warn" | "plain" }> = [
+  const flags: ReadonlyArray<{ label: string; tone: "ok" | "warn" | "plain"; tech?: boolean }> = [
     {
       label: page.reading_order_measured
         ? `reading order measured (${page.reading_order})`
@@ -32,7 +33,7 @@ function Meta({ page }: { page: TextResponse["page"] }) {
       ? [{ label: "CSS reorders this page", tone: "warn" as const }]
       : []),
     { label: `${page.blocks} blocks`, tone: "plain" as const },
-    ...page.frameworks.map((framework) => ({ label: framework, tone: "plain" as const })),
+    ...page.frameworks.map((framework) => ({ label: framework, tone: "plain" as const, tech: true })),
     ...page.payloads.map((payload) => ({ label: `payload: ${payload}`, tone: "plain" as const })),
   ];
 
@@ -47,8 +48,9 @@ function Meta({ page }: { page: TextResponse["page"] }) {
       {flags.map((flag) => (
         <span
           key={flag.label}
-          className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${toneClass[flag.tone]}`}
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold ${toneClass[flag.tone]}`}
         >
+          {flag.tech && <TechIcon name={flag.label} size={13} className="" />}
           {flag.label}
         </span>
       ))}
