@@ -619,7 +619,7 @@ main[data-motion] .score-bar { transition: transform 900ms var(--ease); transiti
 }
 .hero-layout > * { pointer-events: auto; }
 .hero-copy {
-  padding-top: clamp(4.5rem, 11svh, 8rem);
+  padding-top: clamp(5.5rem, 13svh, 9rem); /* below the header row, which drops inside the frame */
   padding-inline: max(1rem, calc(var(--gutter) - var(--frame-margin)));
   text-align: center;
   color: var(--scene-ink);
