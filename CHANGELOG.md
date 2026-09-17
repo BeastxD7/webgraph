@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #124) -- the docs sidebar's own theme toggle no longer disagrees with the rest of the site
+- Reported live: "theming is not working in docs sidebar." Reproduced by switching theme
+  from the docs shell's own light/dark control and reading `<html>`'s attributes directly:
+  the docs shell's `class` (`.../.dark`) and `localStorage` both updated correctly, but
+  `data-theme` -- the attribute `lib/theme.ts` and every one of the site's own dark-mode
+  styles actually key off -- stayed on its old value. Fumadocs' `RootProvider` wraps
+  `next-themes`, and `next-themes` defaults to writing a `class`, which nothing else in
+  this app reads; the docs shell had never told it to use `data-theme` instead.
+- `app/docs/layout.tsx`: `RootProvider`'s `theme` now sets `attribute: "data-theme"` and
+  `storageKey: "theme"` explicitly, so the docs shell's provider and the rest of the site's
+  own toggle (`lib/theme.ts`) read and write one shared preference through one shared
+  attribute, in both directions, instead of two mechanisms that could silently disagree.
+- `app/docs/docs.css`: the dark palette's own gate moved from `.dark:has(#nd-docs-layout)`
+  to `[data-theme="dark"]:has(#nd-docs-layout)`, matching the new attribute. Checked that
+  nothing else depended on the old `.dark` class: fumadocs' shipped component CSS themes
+  entirely through `--color-fd-*` custom properties (no `dark:` Tailwind utility classes in
+  its compiled output), and grep found no `dark:` utility used anywhere in this project's
+  own docs-scoped source (`components/docs`, `content/docs`, `app/docs`) -- so retargeting
+  the one selector that does key off it is the complete fix, not a partial one.
+- Verified against a production build (`next build && next start`, not `next dev`, to rule
+  out the dev-mode CSS reordering PR #122 already fixed as a confound): cleared storage,
+  confirmed system-default dark rendered correctly on `/docs`; switched to light from the
+  docs sidebar's own control and confirmed `data-theme` updated immediately (previously
+  stuck); navigated to `/` and confirmed the main site picked up light too; switched back to
+  dark from the *site's own* header toggle on `/` and confirmed `/docs` opened dark as well
+  -- both directions verified, not just the one originally reported. `tsc --noEmit`,
+  `eslint`, `next build` all clean.
+
 ### Fixed (2026-09-17, PR #123) -- a `>` starting a line no longer reads as a blockquote it never was
 - Asked directly: does the engine handle `>`/`&gt;` correctly? Traced through `dom/blocks.py`
   (lxml decodes both a raw `&gt;` entity and a literal `>` to the same character while
