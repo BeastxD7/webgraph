@@ -97,6 +97,68 @@ class TestUnionKeepsEverything:
         assert only_static == 1
 
 
+class TestMathSourceUnion:
+    r"""A page rendered with MathJax v3 writes its formulas twice on the way into a union:
+    the static fetch sees the author's own literal \(...\)/\[...\] source, sitting there as
+    plain paragraph text since no browser has run yet; the render sees the same formula
+    converted to $...$. Different delimiters, and -- before `mathjax_source_latex` -- often
+    different LaTeX too (a walk of the hidden assistive copy reconstructs the formula, not
+    quite the way the author wrote it), so `_key()` saw two different blocks and the union
+    kept both. Found live on tutorial.math.lamar.edu: every formula on the page, twice, the
+    second copy's surrounding sentence duplicated with it.
+    """
+
+    def test_the_same_formula_is_not_duplicated_across_static_and_render(self) -> None:
+        static = doc(
+            r"<p>In the first section we saw \(x = a\) all required us to compute.</p>"
+        )
+        rendered = doc(
+            '<p>In the first section we saw '
+            '<mjx-container><mjx-math aria-hidden="true" data-latex="x = a">'
+            "<mjx-mi>GARBLED</mjx-mi></mjx-math>"
+            "<mjx-assistive-mml><math><mi>x</mi><mo>=</mo><mi>a</mi></math></mjx-assistive-mml>"
+            "</mjx-container>"
+            " all required us to compute.</p>"
+        )
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert merged.text == "In the first section we saw $x = a$ all required us to compute."
+        assert only_static == 0
+        assert only_rendered == 0
+
+    def test_a_display_equation_is_not_duplicated_either(self) -> None:
+        formula = r"\mathop {\lim }\limits_{x \to a} \frac{{f\left( x \right)}}{{x - a}}"
+        static = doc(f"<p>\\[{formula}\\]</p>")
+        rendered = doc(
+            "<p><mjx-container>"
+            f'<mjx-math aria-hidden="true" data-latex="{formula}">'
+            "<mjx-mi>GARBLED</mjx-mi></mjx-math>"
+            "<mjx-assistive-mml>"
+            '<math display="block"><mfrac><mi>f</mi><mi>x</mi></mfrac></math>'
+            "</mjx-assistive-mml></mjx-container></p>"
+        )
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert "GARBLED" not in merged.text
+        assert only_static == 0
+        assert only_rendered == 0
+
+    def test_katex_is_unaffected_since_it_has_no_data_latex_attribute(self) -> None:
+        """KaTeX's own `<annotation>` cascade already reads the author's TeX; this class
+        exists for MathJax v3's `data-latex`, and must not change KaTeX's path."""
+        static = doc(r"<p>the sum \(x + 1\) is small.</p>")
+        rendered = doc(
+            '<p>the sum <span class="katex"><span class="katex-mathml"><math><semantics>'
+            "<mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>"
+            '<annotation encoding="application/x-tex">x + 1</annotation>'
+            "</semantics></math></span>"
+            '<span class="katex-html" aria-hidden="true">GARBLED</span></span> is small.</p>'
+        )
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert "GARBLED" not in merged.text
+        assert merged.text == "the sum $x + 1$ is small."
+        assert only_static == 0
+        assert only_rendered == 0
+
+
 class TestUnionOrdering:
     def test_rendered_order_leads(self) -> None:
         """The rendered document's order is measured; the static document's is assumed."""

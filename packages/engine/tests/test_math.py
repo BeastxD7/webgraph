@@ -8,8 +8,13 @@ result and not the result.
 
 from __future__ import annotations
 
-from webgraph.dom.blocks import SKIP_TAGS, parse_html, replace_math_with_latex
-from webgraph.dom.math import latex_from_math, render_math
+from webgraph.dom.blocks import (
+    SKIP_TAGS,
+    normalize_math_delimiters,
+    parse_html,
+    replace_math_with_latex,
+)
+from webgraph.dom.math import latex_from_math, mathjax_source_latex, render_math
 from webgraph.pipeline import build_document
 
 BASE = "https://example.test/paper"
@@ -260,3 +265,87 @@ class TestFallbackImages:
         )
         out = to_markdown(build_document(f"<html><body>{html}</body></html>", "https://x.test/"))
         assert "math/render/svg/z" in out
+
+
+class TestMathSourceDelimiters:
+    r"""A page's own \(...\)/\[...\] -- the plain-text convention MathJax and KaTeX both
+    scan the DOM for -- read as prose full of odd backslash punctuation until this runs.
+    Found live on tutorial.math.lamar.edu: a "Read a page" run showed every formula in the
+    article twice, the raw \(...\) source once and the engine's own $...$ conversion once,
+    because the two disagreed on delimiter and the union step had no way to know they were
+    the same formula.
+    """
+
+    def test_inline_delimiters_become_dollars(self) -> None:
+        assert text_of(r"<p>at \(x = a\) all required us</p>") == "at $x = a$ all required us"
+
+    def test_display_delimiters_become_double_dollars(self) -> None:
+        out = text_of(r"<p>\[\mathop {\lim }\limits_{x \to a}\]</p>")
+        assert out == r"$$\mathop {\lim }\limits_{x \to a}$$"
+
+    def test_a_formula_spanning_the_whole_paragraph_is_still_found(self) -> None:
+        out = text_of(r"<p>\(f(x) = 2x\)</p>")
+        assert out == "$f(x) = 2x$"
+
+    def test_two_formulas_in_one_sentence_both_convert(self) -> None:
+        out = text_of(r"<p>Compare \(a\) with \(b\).</p>")
+        assert out == "Compare $a$ with $b$."
+
+    def test_code_content_is_left_alone(self) -> None:
+        r"""A shell escape or a regex example -- \(a|b\) -- is not a formula. `<pre>`/`<code>`
+        keep their own SKIP_TAGS treatment untouched by this."""
+        out = text_of(r"<pre><code>echo \(hello\)</code></pre>")
+        assert r"\(hello\)" in out
+        assert "$hello$" not in out
+
+    def test_no_delimiters_means_no_change(self) -> None:
+        assert text_of("<p>Plain prose about (parentheses).</p>") == "Plain prose about (parentheses)."
+
+    def test_a_direct_call_reports_how_many(self) -> None:
+        tree = parse_html(
+            r"<html><body><p>\(a\)</p><p>\(b\)</p></body></html>"
+        )
+        # parse_html already ran the rewrite once; re-running finds nothing left to do.
+        assert normalize_math_delimiters(tree) == 0
+        assert tree.xpath("//p")[0].text == "$a$"
+        assert tree.xpath("//p")[1].text == "$b$"
+
+
+class TestMathJaxSourceLatex:
+    r"""MathJax v3's own `data-latex` attribute, read directly rather than reconstructed
+    from the hidden assistive MathML -- see `_duplicate_visual_container` and
+    `TestVisualDuplicates` above for why a hidden copy exists at all."""
+
+    def container_of(self, inner: str):  # type: ignore[no-untyped-def]
+        from lxml import html as lxml_html
+
+        tree = lxml_html.document_fromstring(f"<html><body>{inner}</body></html>")
+        return tree.xpath("//*[local-name()='mjx-container']")[0]
+
+    def test_reads_the_sibling_mjx_maths_data_latex(self) -> None:
+        container = self.container_of(
+            '<mjx-container><mjx-math data-latex="x = a" aria-hidden="true">'
+            "<mjx-mi>x</mjx-mi></mjx-math>"
+            "<mjx-assistive-mml><math><mi>x</mi></math></mjx-assistive-mml>"
+            "</mjx-container>"
+        )
+        assert mathjax_source_latex(container) == "x = a"
+
+    def test_none_when_there_is_no_data_latex(self) -> None:
+        """KaTeX's `.katex` wrapper has no `mjx-math` sibling at all; the caller falls back
+        to `latex_from_math` reading its `<annotation>` instead."""
+        from lxml import html as lxml_html
+
+        tree = lxml_html.document_fromstring(
+            '<html><body><span class="katex"><span class="katex-mathml"><math></math></span>'
+            '<span class="katex-html"></span></span></body></html>'
+        )
+        container = tree.xpath("//*[@class='katex']")[0]
+        assert mathjax_source_latex(container) is None
+
+    def test_none_when_the_attribute_is_empty(self) -> None:
+        container = self.container_of(
+            '<mjx-container><mjx-math data-latex=""><mjx-mi>x</mjx-mi></mjx-math>'
+            "<mjx-assistive-mml><math><mi>x</mi></math></mjx-assistive-mml></mjx-container>"
+        )
+        assert mathjax_source_latex(container) is None
