@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #119) -- a formula no longer appears once as raw source and once converted
+- A page that ships mathematics as literal LaTeX -- almost every MathJax- or KaTeX-rendered
+  page does, since that source is what the library scans the DOM for -- writes it directly
+  into its static HTML as plain text: `\(x = a\)`, `\[\frac{a}{b}\]`. A static fetch, or a
+  render whose JavaScript never ran, saw exactly that: not math, a paragraph with odd
+  backslash punctuation. Once a browser *did* run and #118 converted the rendered side to
+  `$x = a$`, the two disagreed on delimiter -- and, since the rendered side was a
+  reconstruction from a hidden MathML tree rather than the real source, sometimes on the
+  LaTeX itself too -- so the union's block matching (identity by normalised text) saw two
+  different blocks and kept both. Found live on tutorial.math.lamar.edu, reported by the
+  owner while validating #118: every formula in the article appearing twice, the raw
+  `\(...\)`/`\[...\]` source once and the engine's own `$...$` once.
+- `dom/blocks.py`: `normalize_math_delimiters` rewrites a page's own `\(...\)`/`\[...\]`
+  as `$...$`/`$$...$$` in plain text (skipping `<code>`, `<pre>`, `SKIP_TAGS`, so an
+  example of the syntax itself is not mistaken for math), independent of whether a render
+  happens at all.
+- `dom/math.py`: `mathjax_source_latex` reads MathJax v3's own `data-latex` attribute --
+  the exact, unreconstructed source the author wrote, sitting right there on the visible
+  `<mjx-math>` sibling of the hidden assistive copy -- in preference to walking that
+  hidden copy's MathML. Confirmed live: `data-latex="x = a"`, character for character the
+  page's own source. This is both more faithful on its own (the reconstruction produced
+  working but uglier LaTeX -- `\underset{h\to0}{lim}` for what the author wrote as
+  `\mathop {\lim} \limits_{h \to 0}`) and, paired with the delimiter normalisation above,
+  what lets the union recognise the static paragraph and the rendered one as the same
+  formula instead of keeping both. KaTeX has no `data-latex` and is unaffected -- its
+  `<annotation>` cascade already read the author's TeX.
+
 ### Fixed (2026-09-17, PR #118) -- formulas keep their structure, and MathJax/KaTeX stop doubling every equation
 - **Plain `<sup>`/`<sub>` are no longer stripped to bare text.** `H<sub>2</sub>O` and
   `cm<sup>2</sup>` -- the overwhelming majority of chemistry and mathematics notation on

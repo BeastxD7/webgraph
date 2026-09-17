@@ -145,6 +145,11 @@ def parse_html(html: str, *, max_bytes: int = MAX_DOCUMENT_BYTES) -> HtmlElement
     # And every `<math>` becomes its LaTeX source before anything can drop it. Order matters
     # for the same reason: an equation removed here is not recoverable downstream.
     replace_math_with_latex(root)
+    # A page's own \(...\) / \[...\] -- MathJax's and KaTeX's plain-text math source --
+    # becomes $...$ / $$...$$ so it reads the same way whether or not a browser ran, and so
+    # a union merge can recognise it against the identical source read off the rendered
+    # page's own markup (`dom.math.mathjax_source_latex`) instead of keeping both.
+    normalize_math_delimiters(root)
     return root
 
 
@@ -158,6 +163,60 @@ def _carry_tail(parent: HtmlElement, element: HtmlElement) -> None:
         previous.tail = (previous.tail or "") + tail
     else:
         parent.text = (parent.text or "") + tail
+
+
+_MATH_SOURCE_SKIP_TAGS: Final[frozenset[str]] = frozenset({"code", "pre", *SKIP_TAGS})
+_SKIP_DELIMITER_XPATH: Final[str] = ".//text()[not({})]".format(
+    " or ".join(f"ancestor::{tag}" for tag in sorted(_MATH_SOURCE_SKIP_TAGS))
+)
+_INLINE_MATH_SOURCE: Final[re.Pattern[str]] = re.compile(r"\\\((.*?)\\\)", re.DOTALL)
+_DISPLAY_MATH_SOURCE: Final[re.Pattern[str]] = re.compile(r"\\\[(.*?)\\\]", re.DOTALL)
+
+
+def normalize_math_delimiters(root: HtmlElement) -> int:
+    r"""Rewrite MathJax's own plain-text math delimiters, \(...\) and \[...\], as
+    $...$ and $$...$$. Returns how many.
+
+    A page that ships mathematics as literal LaTeX source -- almost every page that uses
+    MathJax or KaTeX does, since that source is what the library scans the DOM for and
+    replaces at runtime -- writes \(x = a\) or \[\frac{{a}}{{b}}\] directly into its static
+    HTML as plain text. A static fetch, or a render whose JavaScript failed, sees exactly
+    that: not math, just a paragraph with odd backslash punctuation in it.
+
+    Converting it here does two things. On its own it turns that punctuation into the same
+    $-delimited form every other path in this engine produces, readable and consistent
+    whether or not a browser ever ran. Paired with `mathjax_source_latex` reading the
+    identical source off the *rendered* page's `data-latex`, it is what lets a union merge
+    recognise the static paragraph and the rendered one as the same formula -- found live
+    on tutorial.math.lamar.edu, where they disagreed on delimiter and so both survived the
+    merge: the definition of the derivative once as \(...\) raw source and once as the
+    engine's own $...$, side by side.
+
+    Scoped to text that is not inside `<code>`, `<pre>` or `SKIP_TAGS`: a page discussing
+    the literal syntax -- "write \\(a+b\\) for inline math" -- is rare, and a source-code
+    example using an escaped parenthesis is not math at all. Matched within a single text
+    node, not across the inline markup a formula may contain (an `<em>` inside \(...\));
+    the near-universal case keeps a delimited formula as one contiguous run of text, and
+    stitching the rarer split case back together is not attempted.
+    """
+    replaced = 0
+    for text_node in root.xpath(_SKIP_DELIMITER_XPATH):
+        raw = str(text_node)
+        if "\\(" not in raw and "\\[" not in raw:
+            continue
+        updated, n1 = _INLINE_MATH_SOURCE.subn(r"$\1$", raw)
+        updated, n2 = _DISPLAY_MATH_SOURCE.subn(r"$$\1$$", updated)
+        if not (n1 or n2):
+            continue
+        parent = text_node.getparent()
+        if parent is None:
+            continue
+        if text_node.is_text:
+            parent.text = updated
+        elif text_node.is_tail:
+            parent.tail = updated
+        replaced += n1 + n2
+    return replaced
 
 
 def replace_math_with_latex(root: HtmlElement) -> int:
@@ -174,20 +233,17 @@ def replace_math_with_latex(root: HtmlElement) -> int:
     standing alone between two paragraphs vanished, because tail text in that position belongs
     to no block. A `<math>` nothing could be recovered from is dropped, exactly as before.
     """
-    from webgraph.dom.math import _duplicate_visual_container, math_elements, render_math
+    from webgraph.dom.math import (
+        _duplicate_visual_container,
+        latex_from_math,
+        math_elements,
+        mathjax_source_latex,
+    )
 
     replaced = 0
     for element in math_elements(root):
         parent = element.getparent()
         if parent is None:
-            continue
-        latex = render_math(element)
-        if not latex:
-            # Dropping the element must not drop the rest of the sentence with it. lxml keeps
-            # the text that *follows* an element on that element, so removing `<math></math>`
-            # from "Plain <math></math> sentence." silently deleted " sentence." too.
-            _carry_tail(parent, element)
-            parent.remove(element)
             continue
         # MathJax v3 and KaTeX each keep a real, hidden `<math>` next to a visible sibling
         # that renders the same formula in HTML/SVG for sighted users. Reading the hidden
@@ -199,11 +255,28 @@ def replace_math_with_latex(root: HtmlElement) -> int:
         # no children, and a container found by `_duplicate_visual_container` is a real
         # match even if -- on some malformed page -- it turns out to be empty.
         found = _duplicate_visual_container(element)
+        # MathJax v3 specifically keeps the author's own, unreconstructed source as
+        # `data-latex` right there in that container. Reading it beats walking the hidden
+        # copy's MathML -- which works, but produces uglier LaTeX than the author wrote
+        # (`\underset{h\to0}{lim}` for `\mathop {\lim} \limits_{h \to 0}`) -- and, because
+        # the page's own static HTML carries that identical source between its own
+        # `\(...\)` delimiters (`normalize_math_delimiters` turns those into `$...$` too),
+        # it is what lets a union merge recognise the two as one formula instead of keeping
+        # both: found live on tutorial.math.lamar.edu, every equation appearing twice.
+        raw_latex = (found is not None and mathjax_source_latex(found)) or latex_from_math(element)
+        if not raw_latex:
+            # Dropping the element must not drop the rest of the sentence with it. lxml keeps
+            # the text that *follows* an element on that element, so removing `<math></math>`
+            # from "Plain <math></math> sentence." silently deleted " sentence." too.
+            _carry_tail(parent, element)
+            parent.remove(element)
+            continue
+        display = (element.get("display") or "").lower() == "block"
+        latex = f"$${raw_latex}$$" if display else f"${raw_latex}$"
         target = element if found is None else found
         target_parent = target.getparent()
         if target_parent is None:
             target, target_parent = element, parent
-        display = (element.get("display") or "").lower() == "block"
         holder = target_parent.makeelement("p" if display else "span", {})
         holder.text = latex
         holder.tail = target.tail

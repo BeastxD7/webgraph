@@ -32,7 +32,7 @@ from typing import Final
 
 from lxml.html import HtmlElement
 
-__all__ = ["MATHML_NAMESPACE", "latex_from_math", "math_elements", "render_math"]
+__all__ = ["MATHML_NAMESPACE", "latex_from_math", "math_elements", "mathjax_source_latex", "render_math"]
 
 MATHML_NAMESPACE: Final[str] = "http://www.w3.org/1998/Math/MathML"
 
@@ -268,6 +268,31 @@ def _duplicate_visual_container(element: HtmlElement) -> HtmlElement | None:
             continue
         if assistive and (name in _OUTER_DUPLICATE_TAGS or "katex" in classes):
             return node
+    return None
+
+
+def mathjax_source_latex(container: HtmlElement) -> str | None:
+    r"""The author's own TeX, read directly off MathJax v3's markup, when the container
+    `_duplicate_visual_container` found is one of its own.
+
+    MathJax v3 keeps the exact source it parsed as `data-latex` on the visible `<mjx-math>`
+    sibling of `<mjx-assistive-mml>` -- not a reconstruction from the hidden MathML tree,
+    the original characters the author wrote (confirmed live on tutorial.math.lamar.edu:
+    `data-latex="x = a"` for exactly that formula, spacing and all). Reading it is both
+    more faithful than walking the MathML -- the same reason an `<annotation>` is read
+    before presentation markup -- and, because the page's own static HTML already carries
+    that identical source between its own `\(...\)` delimiters, it is what lets the static
+    and rendered halves of a union agree on one piece of text for the same formula instead
+    of disagreeing and keeping both (`normalize_math_delimiters` puts the static side into
+    the same `$...$` form). A container with no such sibling -- KaTeX, or a MathJax build
+    without `data-latex` -- returns None and the caller falls back to converting `element`.
+    """
+    for child in container:
+        if _local(child) == "mjx-math":
+            latex = child.get("data-latex")
+            if latex:
+                return latex
+            break
     return None
 
 
