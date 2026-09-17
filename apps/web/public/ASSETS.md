@@ -19,3 +19,14 @@ of the original (macOS `sips`, JPEG), kept small so the hero's textures total ~1
 
 The previous hero photograph (*The Palouse from Steptoe Butte*, Caleb Riston, CC BY 4.0) was
 removed with the landing redesign, together with the footer credit it required.
+
+## Brand
+
+| file | what | source |
+|---|---|---|
+| `logo/mark.svg`, `favicon.svg`, `app/icon.svg` | The mark: the limb over the reading lines, white on the accent tile; 24-unit grid, 2.4-unit strokes | drawn in-house (design/logo/explorations.svg in the theme-study PR) |
+| `logo/mark-mono.svg` | The glyph alone on `currentColor`, for one-colour uses | in-house |
+| `logo/lockup.svg` | Mark + "webgraph"; the wordmark is Manrope 700 as `<text>`, so a machine without Manrope falls back to the system sans -- the site itself sets it in `<Wordmark>` | in-house |
+| `logo/icon-32.png`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The mark rasterised (headless Chromium) | in-house |
+| `logo/og.png`, `app/opengraph-image.png` | 1200×630: the mark and wordmark over `earth/still-1440-dark.jpg` | in-house; the Earth as above |
+
