@@ -750,6 +750,48 @@ class TestDollarEscaping:
         assert out.count(r"\$") == 2
 
 
+class TestLeadingGreaterThan:
+    """A `>` opening a line must not be readable as a blockquote it never was.
+
+    Reported live: a paragraph beginning with a literal `>` (source text, or an `&gt;`
+    entity -- lxml decodes both to the same character) rendered as a bare `>` at the start
+    of a Markdown line, which every downstream reader, including the web app's own preview,
+    takes as a blockquote marker.
+    """
+
+    def test_a_leading_angle_bracket_is_escaped(self) -> None:
+        out = md("<p>&gt; 90% pass on the first try</p>")
+        assert out.startswith(r"\> 90%")
+
+    def test_a_literal_leading_bracket_is_escaped_the_same_way(self) -> None:
+        out = md("<p>> 90% pass on the first try</p>")
+        assert out.startswith(r"\> 90%")
+
+    def test_a_mid_line_angle_bracket_is_left_alone(self) -> None:
+        """Unambiguous in Markdown: only a line-opening `>` is the blockquote marker."""
+        out = md("<p>a &gt; b, always</p>")
+        assert "a > b, always" in out
+        assert r"\>" not in out
+
+    def test_a_real_blockquote_is_unaffected(self) -> None:
+        """The engine's own `> ` prefix for an actual quoted block is not double-escaped."""
+        out = md("<blockquote><p>as measured</p></blockquote>")
+        assert out.strip() == "> as measured"
+
+    def test_it_applies_inside_a_list_item(self) -> None:
+        out = md("<ul><li>&gt; 5 remaining</li></ul>")
+        assert r"- \> 5 remaining" in out
+
+    def test_it_applies_inside_a_heading(self) -> None:
+        out = md("<h2>&gt; average</h2>")
+        assert out.strip() == r"## \> average"
+
+    def test_it_applies_to_the_rich_inline_form_too(self) -> None:
+        out = md('<p>&gt; see <a href="/b">details</a></p>')
+        assert out.startswith(r"\> see")
+        assert "[details](" in out
+
+
 class TestComplexTablesKeepTheirMarkup:
     """Pipe syntax cannot express a merged cell, so a table that merges keeps its own markup.
 

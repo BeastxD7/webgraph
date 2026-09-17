@@ -58,6 +58,27 @@ A backslash, a caret, an underscore or a brace inside the span is LaTeX and noth
 Prices do not contain them."""
 
 
+_LEADING_GT: Final[re.Pattern[str]] = re.compile(r"^(\s*)>", re.MULTILINE)
+"""A `>` as the very first character of a line: Markdown's blockquote marker."""
+
+
+def _escape_leading_gt(text: str) -> str:
+    """Escape a `>` that opens a line, so page text is never mistaken for a quote.
+
+    Escaped **always**, not under `escape_text`, for the same reason as the currency dollar
+    above: this is not cosmetic. A block this function sees is never itself a blockquote --
+    that case is handled separately, by `_render_block` prefixing every line with its own
+    literal `> ` once `block.quoted` says so -- so a `>` opening a line here can only be
+    content: a literal `>` in the source, or an `&gt;` entity decoded during parsing (lxml
+    decodes both to the same character; see `dom/blocks.py`). Left alone, a paragraph reading
+    "> 90% pass" is indistinguishable, to any Markdown reader downstream, from an actual
+    quote -- including our own web app's preview, which reads a leading `>` exactly that way.
+
+    Only the line-opening `>` is touched. A `>` anywhere else in a line is unambiguous in
+    Markdown and escaping it would just add visible backslashes with nothing to prevent."""
+    return _LEADING_GT.sub(r"\1\\>", text)
+
+
 def _escape_currency(text: str) -> str:
     """Escape dollars that begin an amount of money, leaving mathematics intact.
 
@@ -104,7 +125,7 @@ class MarkdownOptions:
 
 def _text(value: str, options: MarkdownOptions) -> str:
     escaped = _ESCAPE.sub(r"\\\1", value) if options.escape_text else value
-    return _escape_currency(escaped)
+    return _escape_leading_gt(_escape_currency(escaped))
 
 
 def _body(block: Block, options: MarkdownOptions) -> str:
@@ -114,9 +135,10 @@ def _body(block: Block, options: MarkdownOptions) -> str:
     and escaping would turn `[label](url)` into literal brackets.
     """
     if block.rich_text and options.include_links:
-        # Still escape `$`: the rich form carries deliberate *link* syntax, never deliberate
-        # math delimiters, so a dollar in it is currency and has to say so.
-        return _escape_currency(block.rich_text)
+        # Still escape `$` and a line-opening `>`: the rich form carries deliberate *inline*
+        # syntax (links, emphasis, sup/sub) but never a deliberate blockquote, so either one
+        # here is content, not markup.
+        return _escape_leading_gt(_escape_currency(block.rich_text))
     return _text(block.text, options)
 
 

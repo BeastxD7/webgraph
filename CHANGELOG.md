@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #123) -- a `>` starting a line no longer reads as a blockquote it never was
+- Asked directly: does the engine handle `>`/`&gt;` correctly? Traced through `dom/blocks.py`
+  (lxml decodes both a raw `&gt;` entity and a literal `>` to the same character while
+  parsing -- no divergence there) and `render_markdown.py` (the general escape pass,
+  `_ESCAPE`, is gated behind `escape_text`, which defaults off and is never turned on
+  anywhere in the real pipeline). A page's own paragraph text that happens to start with a
+  literal `>` -- "&gt; 90% pass on the first try" is common phrasing -- was written straight
+  into the output Markdown with no escaping at all. A leading `>` is Markdown's blockquote
+  marker unconditionally, so any downstream reader, this repo's own web preview included,
+  cannot tell that paragraph apart from an actual quote.
+- `render_markdown.py`: `_escape_leading_gt` backslash-escapes a `>` only when it opens a
+  line (`^(\s*)>`, multiline), leaving every other `>` alone -- unambiguous in Markdown, so
+  escaping it would only add a visible backslash with nothing to prevent. Applied
+  unconditionally in `_text`/`_body` (both the plain and the rich-inline paths), the same way
+  the currency-dollar escape already is, and not gated behind `escape_text`: this is not a
+  style choice, it prevents a structural misread. A genuine blockquote is unaffected --
+  `_render_block` adds its own literal `> ` prefix from `block.quoted` *after* this runs, on
+  a block whose own content never starts with the marker, so the two never collide.
+- 7 new tests (`TestLeadingGreaterThan`): a leading `&gt;`/literal `>` escaped in a paragraph,
+  a heading, a list item and the rich-inline form; a mid-line `>` left untouched; a real
+  `<blockquote>` still renders as a plain `> `, not doubled. Full engine suite (1516) and API
+  suite (95), ruff and mypy all green. No corpus re-score: unlike the currency-dollar escape,
+  there is no false-positive/true-positive trade-off to tune here -- a `>` opening a line
+  outside an actual quote is never legitimate Markdown, so there is nothing to measure a
+  trade-off against.
+
 ### Fixed (2026-09-17, PR #122) -- the header's pill loses its curve after a long dev session
 - Reported live: the "Light"/"Run a site" grouped pill in the floating landing header rendered
   with a squared-off corner where "Run a site" sat, instead of one smooth pill boundary --
