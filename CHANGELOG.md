@@ -6,6 +6,47 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added (2026-09-17, PR #115) — technology marks beside detected names
+- Wherever the UI names a technology the engine detected, its mark now sits beside the name:
+  the Site Report's Stack section (`ReportView`), the crawl's "Technology detected" panel
+  and the pipeline's "Technologies identified" row (`TechnologyPanel`, `LivePipeline`), and a
+  page run's framework chips (`SinglePageRun`). The rules: one style for every mark -- Simple
+  Icons (CC0, 24-unit grid, one colour) tinted with our tokens (`text-muted` beside ink text),
+  never the official multicolour logos; icon + name always, the icon decorative
+  (`aria-hidden`) and never alone; a technology with no mark in the set gets one neutral
+  glyph, a cube outline in the site's 1.5 px stroke, never a neighbouring brand (Framer's for
+  Framer Motion, Astro's for Starlight, LottieFiles' for Lottie were each declined); only
+  where *we* name a technology, never inside extracted page content; and a one-line note
+  under each list -- "Marks are trademarks of their owners, shown to identify the detected
+  technology." -- repeated in `public/ASSETS.md`. The landing names vendors only in prose
+  ("Vendor named: Cloudflare, AWS WAF, …" in `RefusesDrops`) and is another agent's, so it
+  is untouched.
+- `lib/tech-icons.ts` maps 154 names -- every name the engine can emit from
+  `profile/technology.py` (rules, implications, runtime categories), `fetch/js/collect.js`
+  (runtime probes) and `profile/fingerprint.py` (the lowercase framework hints) plus the
+  usual variants (Next / Next.js, Wordpress, HTML / HTML5, Vanilla JavaScript, GA4,
+  Tailwind, jQuery UI, the Cloudflare and Vercel products) -- to 102 Simple Icons marks
+  and 52 explicit generics; lookup is case- and space-insensitive. `tech-icons.test.ts`
+  (7 tests, `node --test`) reads those engine sources and fails on any name that is neither
+  a mark nor an explicit generic, and on two canonical names sharing a mark unless one is
+  a declared alias. `components/ui/TechIcon.tsx` renders the path inline (`TechIcon`,
+  `TechName`, `TrademarkNote`).
+- Bundle: only the mapped icons are imported (the built chunk carries exactly 102 `hex:`
+  fields, not the set's 3,460), but Simple Icons paths are heavy -- 114 KB of path data for
+  the 102, OpenSSL alone 6.4 KB -- so `lib/tech-icons` is a dynamic import behind
+  `TechIcon`: its own chunk, 137.8 KB raw / 57.2 KB gzipped, fetched once on the first page
+  that can show a stack and never on first load. Measured on the production build
+  (`next build`, Turbopack): initial client JS for `/extract` 129,174 → 130,794 B
+  (+1.6 KB), `/report/[domain]` 59,854 → 61,331 B (+1.5 KB), the landing unchanged
+  (46,083 B); total client JS 1,701,640 → 1,844,081 B, of which 137,753 B is the deferred
+  icon chunk. Every place a mark renders is downstream of a fetch or a stream, so the
+  chunk is there before the names are; until it is, the name renders alone with the mark's
+  space held. The heaviest paths are OpenSSL 6.4 KB, Preact 5.1, GSAP 4.6, Docusaurus 4.4,
+  TanStack Query 4.1; a core set of the 40 names in the brief would be 41 KB raw / 17 KB
+  gzipped with every other name on the cube -- one edit to `ICONS` if the owner prefers
+  that trade. `tools/check_responsive.py --theme both` on this build: every route this
+  touches is green; the six failures are `/settings` phone text at 12.5 px, present on
+  `main` and not touched here.
 ### Changed (2026-09-17, PR #114) — the mark, round three: the star in the open corner, in a soft-3D style
 - The owner's two references folded in. Placement: the w's top-right corner is opened -- the
   terminal node removed, the last ribbon stopping short -- and the brightest star, a

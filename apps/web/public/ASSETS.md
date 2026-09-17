@@ -31,3 +31,16 @@ removed with the landing redesign, together with the footer credit it required.
 | `logo/mark-tile-styled.svg`, `icon-180.png`, `icon-512.png`, `app/apple-icon.png` | The app-icon form: the styled mark on a deep navy tile | in-house |
 | `logo/lockup.svg` | Mark + "webgraph"; the wordmark is Manrope 700 as `<text>`, so a machine without Manrope falls back to the system sans -- the site itself sets it in `<Wordmark>` | in-house |
 | `logo/og.png`, `app/opengraph-image.png` | 1200×630: the mark and wordmark over `earth/still-1440-dark.jpg` | in-house; the Earth as above |
+
+
+## Technology marks (Simple Icons, CC0-1.0)
+
+The mark beside a detected technology's name -- in the Site Report's Stack section, the crawl's
+"Technology detected" panel and its pipeline row, and a page run's framework chips -- is a
+Simple Icons path (`simple-icons` 16.31.0 on npm, CC0-1.0, <https://simpleicons.org>), drawn
+inline at 14 px in one colour from our own tokens. Nothing is copied into this directory: the
+102 marks we use are named imports in `lib/tech-icons.ts` and ship as one deferred chunk.
+Simple Icons' own `DISCLAIMER.md` applies: the set is CC0, the marks are not. Marks are
+trademarks of their owners, shown to identify the detected technology, and a technology
+whose mark is not in the set (or whose owner withdrew it -- Amazon, Microsoft, Adobe,
+LinkedIn) gets a neutral cube outline drawn in-house, never a neighbouring brand's mark.
