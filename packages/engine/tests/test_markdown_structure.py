@@ -237,6 +237,89 @@ class TestPreservedTableMarkup:
         assert "<td colspan=\"3\">New section<br>on Stack Overflow.</td>" in out
 
 
+class TestScriptedFormulas:
+    """Chemical formulas, exponents and ions written with plain `<sup>`/`<sub>`, the way
+    almost every page writes them (MathML is for the minority that ship an equation editor).
+    A single Markdown character set carries these portably -- cm² reads correctly in a
+    terminal, a search index or a table cell, not only where HTML renders -- and a formula
+    with no exact Unicode form is kept as the literal tag rather than losing its meaning.
+    """
+
+    def test_a_unit_squared_survives_in_prose(self) -> None:
+        out = md(f"<p>{PROSE}The area is 25 cm<sup>2</sup>, measured twice.</p>")
+        assert "25 cm²" in out
+        assert "<sup>" not in out
+
+    def test_a_chemical_formula_survives_in_prose(self) -> None:
+        out = md(f"<p>{PROSE}The formula for water is H<sub>2</sub>O, always.</p>")
+        assert "H₂O" in out
+        assert "<sub>" not in out
+
+    def test_a_polyatomic_ion_combines_a_subscript_and_a_superscript(self) -> None:
+        out = md(f"<p>{PROSE}The sulfate ion is SO<sub>4</sub><sup>2-</sup> in solution.</p>")
+        assert "SO₄²⁻" in out
+
+    def test_a_real_minus_sign_maps_the_same_as_a_hyphen(self) -> None:
+        """A page can write the ion's charge with U+2212 MINUS SIGN instead of a hyphen;
+        both must produce the same superscript glyph."""
+        out = md(f"<p>{PROSE}Chloride is Cl<sup>−</sup> here.</p>")
+        assert "Cl⁻" in out
+
+    def test_an_exponent_with_no_unicode_form_keeps_its_tag(self) -> None:
+        """`n` has a true Unicode superscript; `k` does not. Guessing that `x^k` means
+        anything in particular is exactly what this must not do -- the tag is kept, intact,
+        as valid inline HTML inside the Markdown, rather than silently dropped to `xk`."""
+        out = md(f"<p>{PROSE}The general term is x<sup>k</sup> for arbitrary k.</p>")
+        assert "<sup>k</sup>" in out
+        assert "xk" not in out
+
+    def test_an_isotope_mass_number_survives_before_the_element(self) -> None:
+        out = md(f"<p>{PROSE}The isotope <sup>235</sup>U undergoes fission readily.</p>")
+        assert "²³⁵U" in out
+
+    def test_a_balanced_reaction_equation_survives_whole(self) -> None:
+        """Every part of a real equation at once: two formulas, an arrow, a coefficient --
+        the shape a page actually uses, not one isolated tag."""
+        out = md(f"<p>{PROSE}The equation is 2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O overall.</p>")
+        assert "2H₂ + O₂ → 2H₂O" in out
+
+    def test_a_formula_in_an_ordinary_table_cell_survives(self) -> None:
+        out = md("<table><tr><th>Compound</th><th>Formula</th></tr>"
+                  "<tr><td>Water</td><td>H<sub>2</sub>O</td></tr>"
+                  "<tr><td>Carbon dioxide</td><td>CO<sub>2</sub></td></tr></table>")
+        assert "H₂O" in out
+        assert "CO₂" in out
+
+    def test_a_polyatomic_formula_with_three_separate_subscripts_survives(self) -> None:
+        """Aluminium sulfate, Al₂(SO₄)₃: three independent subscripts in one run of text,
+        none of them nested in the others -- the ordinary case for an inorganic formula."""
+        out = md(f"<p>{PROSE}Aluminium sulfate is Al<sub>2</sub>(SO<sub>4</sub>)<sub>3</sub>, a salt.</p>")
+        assert "Al₂(SO₄)₃" in out
+
+    def test_a_footnote_superscript_keeps_its_link(self) -> None:
+        """A citation mark is often a link inside a `<sup>`; the link must survive even
+        though `1` alone has a Unicode superscript and the link does not."""
+        out = md(f'<p>{PROSE}This claim needs a source<sup><a href="#fn1">1</a></sup>.</p>')
+        assert "<sup>[1](https://example.com/page#fn1)</sup>" in out
+
+    def test_a_script_nested_inside_another_script_does_not_crash(self) -> None:
+        """Doubly-scripted markup (a subscript inside a superscript) is rare and not worth
+        a bespoke rule, but it must degrade to something legible, never an exception or
+        silently dropped text."""
+        out = md(f"<p>{PROSE}The term is x<sup>2<sub>n</sub></sup> in the expansion.</p>")
+        assert "2" in out and "n" in out
+
+    def test_a_formula_in_a_preserved_complex_table_keeps_the_raw_tag(self) -> None:
+        """A table complex enough to keep its own markup (a merged cell, here) preserves
+        `<sup>`/`<sub>` literally -- `preserved_table_html`'s own allowlist -- rather than
+        going through the Unicode conversion `_cell_rich` uses for a plain pipe table."""
+        table = parse_html(
+            "<html><body><table><tr><th colspan='2'>Compound</th></tr>"
+            "<tr><td>Water</td><td>H<sub>2</sub>O</td></tr></table></body></html>"
+        ).xpath("//table")[0]
+        assert "<sub>2</sub>" in preserved_table_html(table, BASE)
+
+
 class TestInlineSvg:
     DIAGRAM = (
         "<div class='imgcontainer'><svg viewBox='0 0 10 10'>"

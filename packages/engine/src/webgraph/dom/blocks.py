@@ -174,7 +174,7 @@ def replace_math_with_latex(root: HtmlElement) -> int:
     standing alone between two paragraphs vanished, because tail text in that position belongs
     to no block. A `<math>` nothing could be recovered from is dropped, exactly as before.
     """
-    from webgraph.dom.math import math_elements, render_math
+    from webgraph.dom.math import _duplicate_visual_container, math_elements, render_math
 
     replaced = 0
     for element in math_elements(root):
@@ -189,11 +189,25 @@ def replace_math_with_latex(root: HtmlElement) -> int:
             _carry_tail(parent, element)
             parent.remove(element)
             continue
+        # MathJax v3 and KaTeX each keep a real, hidden `<math>` next to a visible sibling
+        # that renders the same formula in HTML/SVG for sighted users. Reading the hidden
+        # one is right -- it is the faithful source -- but replacing only it would leave
+        # that sibling behind: the formula twice, the second copy a wall of glyph spans.
+        # When `element` sits in one of those wrappers, the ancestor holding both halves is
+        # replaced instead, so the visible duplicate goes with it.
+        # `or`, not `is None`, would be wrong here: lxml elements are falsy when they have
+        # no children, and a container found by `_duplicate_visual_container` is a real
+        # match even if -- on some malformed page -- it turns out to be empty.
+        found = _duplicate_visual_container(element)
+        target = element if found is None else found
+        target_parent = target.getparent()
+        if target_parent is None:
+            target, target_parent = element, parent
         display = (element.get("display") or "").lower() == "block"
-        holder = parent.makeelement("p" if display else "span", {})
+        holder = target_parent.makeelement("p" if display else "span", {})
         holder.text = latex
-        holder.tail = element.tail
-        parent.replace(element, holder)
+        holder.tail = target.tail
+        target_parent.replace(target, holder)
         replaced += 1
         _drop_fallback_images(holder)
     return replaced

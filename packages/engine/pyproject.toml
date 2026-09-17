@@ -78,6 +78,10 @@ ignore = ["E501"]
 # subject, not a typo: the whole file exists to map them to their LaTeX spellings.
 "src/webgraph/dom/math.py" = ["RUF001"]
 "tests/test_math.py" = ["RUF001"]
+# Same reason: a subscript/superscript minus key alongside the ASCII hyphen a `-` key -- a
+# page's own `<sup>` can use either character, and both must map to the same glyph.
+"src/webgraph/dom/rich.py" = ["RUF001"]
+"tests/test_markdown_structure.py" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -91,6 +91,23 @@ links at all. Plain against plain, the two were 8,945 vs 9,138 characters — 98
 agreement. Compare like with like.
 </Callout>
 
+## Scripts
+
+A `<sup>`/`<sub>` becomes the exact Unicode superscript or subscript character where one
+exists — `cm<sup>2</sup>` is `cm²`, `H<sub>2</sub>O` is `H₂O`, an isotope's mass number
+before its symbol (`<sup>235</sup>U`) is `²³⁵U`. That set is small and exact (digits, `+
+- = ( )`, and the handful of letters — `n`, and the lowercase Latin block added to
+Unicode in 2010 — that have a true subscript or superscript glyph): a chemical formula or
+an exponent then reads correctly as plain text, in a terminal or a search index, not only
+where the Markdown is rendered as HTML.
+
+A character with no exact form — most letters, an exponent like `x<sup>k</sup>` — keeps
+its `<sup>`/`<sub>` tag, verbatim, as inline HTML rather than losing the distinction by
+falling back to plain text. This is the same choice a preserved table's own markup already
+makes for a cell's formula (see **Tables** above); ordinary prose now makes it too. A
+`<math>` element carrying MathML is a separate, earlier path — converted to LaTeX between
+`$...$` — and unaffected by this rule.
+
 ## Dollars
 
 Every Markdown dialect a model reads delimits mathematics with `$…$`, so an unescaped

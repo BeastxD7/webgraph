@@ -6,6 +6,40 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #118) -- formulas keep their structure, and MathJax/KaTeX stop doubling every equation
+- **Plain `<sup>`/`<sub>` are no longer stripped to bare text.** `H<sub>2</sub>O` and
+  `cm<sup>2</sup>` -- the overwhelming majority of chemistry and mathematics notation on
+  the web, which uses neither MathML nor an equation editor -- were rendered as "H2O" and
+  "cm2", the formatting silently lost. `dom/rich.py` now maps a script's content to the
+  exact Unicode superscript/subscript character where the "Superscripts and Subscripts"
+  block (U+2070-U+209F) or the 2010 Latin Subscript Small Letters define one (digits,
+  `+ - = ( )`, `n`, and that letter set): the formula survives as plain, portable text --
+  `H₂O`, `cm²`, an ion's charge (`Fe³⁺`), an isotope's mass number before its
+  symbol (`²³⁵U`) -- correct in a terminal or a search index, not only where the
+  Markdown is rendered as HTML. A character with no exact form (most letters, `x<sup>k</sup>`)
+  keeps its tag verbatim as inline HTML rather than losing the distinction, the same choice
+  a preserved table's own markup already made for a cell's formula. Case is never folded --
+  a Unicode subscript exists for `a`, not `A`, and guessing they mean the same thing is
+  exactly what this must not do. Docs: `/docs/how-it-reads-a-page/markdown#scripts`.
+- **`<math>` gains two MathML constructs it previously dropped to plain concatenation:**
+  `mmultiscripts`/`mprescripts` (nuclear notation -- an isotope's mass and atomic number
+  both preceding the element, `{}_{92}^{235}U` -- and multi-index tensors) and `menclose`
+  (`\sqrt{}`/`\boxed{}` where the notation has a plain-LaTeX equivalent; the content is kept
+  even where it does not, without claiming an enclosure -- `longdiv` -- that was not drawn).
+- **MathJax v3 and KaTeX each keep a real, hidden `<math>` beside a visible HTML/SVG
+  rendering of the identical formula**, for screen readers. Converting only the hidden copy
+  -- the obvious fix, and previously what happened -- left the visible half standing next
+  to it: every formula on a MathJax- or KaTeX-rendered page appeared twice. Found live on
+  tutorial.math.lamar.edu (17 Sep 2026): the definition of the derivative read once as the
+  page's own (already-imperfect) Unicode rendering and a second time as a phantom
+  `\underset{h\to0}{lim}...` reconstructed from the hidden copy, malformed in ways neither
+  the author nor MathJax's own output ever produced (`f^'` for `f'`; a fraction with no
+  bar). `dom/math.py` now walks up from a converting `<math>` to find the ancestor that
+  holds *both* halves (MathJax's `<mjx-container>`, KaTeX's `.katex` span) and replaces
+  that instead, so the visible duplicate goes with it. The hidden copy is still the
+  preferred source when it is one -- KaTeX's carries the author's own TeX in an
+  `<annotation>`, the most faithful source there is -- only the extra rendering is removed.
+
 ### Fixed (2026-09-17, PR #117) — an empty page after a render is described as what it is
 - `resolve.py`: when the browser ran and the document still has no readable text, the
   refusal now says so -- "a browser rendered the page and it still has no readable text

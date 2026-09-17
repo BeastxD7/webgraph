@@ -78,6 +78,104 @@ class TestConversion:
         assert render_math(math_of("")) == ""
 
 
+class TestComplexStructures:
+    """Real chemistry and physics notation, not just single operators: isotopes (a
+    superscript mass number and a subscript atomic number, both preceding the element),
+    matrices, enclosed expressions, and scripts nested inside other scripts."""
+
+    def test_an_isotope_prescripts_both_the_mass_and_atomic_number(self) -> None:
+        r"""Uranium-235, `{}_{92}^{235}U`: `<mprescripts/>` marks the boundary between the
+        post-scripts (none here) and the pre-scripts (atomic number, mass number)."""
+        markup = "<mmultiscripts><mi>U</mi><mprescripts/><mn>92</mn><mn>235</mn></mmultiscripts>"
+        assert latex_from_math(math_of(markup)) == r"{}_{92}^{235}U"
+
+    def test_an_isotope_with_only_the_mass_number_omits_the_missing_prescript(self) -> None:
+        r"""Carbon-14 written without its atomic number: `<none/>` is MathML's placeholder
+        for an absent script and must not become a stray empty `_{}`."""
+        markup = "<mmultiscripts><mi>C</mi><mprescripts/><none/><mn>14</mn></mmultiscripts>"
+        assert latex_from_math(math_of(markup)) == r"{}^{14}C"
+
+    def test_a_tensor_index_is_a_plain_postscript_pair(self) -> None:
+        markup = "<mmultiscripts><mi>T</mi><mi>i</mi><mi>j</mi></mmultiscripts>"
+        assert latex_from_math(math_of(markup)) == "T_i^j"
+
+    def test_a_scripted_exponent_nests_correctly(self) -> None:
+        r"""`x^(2/3)`: an `<mfrac>` as the exponent of an `<msup>`. The recursive design
+        converts the fraction first and the outer script wraps whatever it receives, so
+        nesting needs no case of its own -- this proves it for the case most likely to
+        break, a multi-character script that must be braced."""
+        markup = "<msup><mi>x</mi><mfrac><mn>2</mn><mn>3</mn></mfrac></msup>"
+        assert latex_from_math(math_of(markup)) == r"x^{\frac{2}{3}}"
+
+    def test_a_two_by_two_matrix_from_mtable(self) -> None:
+        markup = (
+            "<mtable><mtr><mtd><mn>1</mn></mtd><mtd><mn>2</mn></mtd></mtr>"
+            "<mtr><mtd><mn>3</mn></mtd><mtd><mn>4</mn></mtd></mtr></mtable>"
+        )
+        assert latex_from_math(math_of(markup)) == r"\begin{array}{c} 1 & 2 \\ 3 & 4 \end{array}"
+
+    def test_menclose_radical_becomes_a_square_root(self) -> None:
+        assert latex_from_math(math_of('<menclose notation="radical"><mi>x</mi></menclose>')) == r"\sqrt{x}"
+
+    def test_menclose_box_becomes_boxed(self) -> None:
+        markup = '<menclose notation="box"><mi>x</mi><mo>+</mo><mi>y</mi></menclose>'
+        assert latex_from_math(math_of(markup)) == r"\boxed{x+y}"
+
+    def test_menclose_with_no_plain_latex_equivalent_keeps_the_content(self) -> None:
+        """`longdiv` has no plain-LaTeX equivalent without extra packages. The enclosure is
+        not claimed -- nothing here says a box was drawn -- but the number under it is not
+        silently deleted either."""
+        assert latex_from_math(math_of('<menclose notation="longdiv"><mn>123</mn></menclose>')) == "123"
+
+
+class TestVisualDuplicates:
+    r"""MathJax v3 and KaTeX each keep a real `<math>` for screen readers *beside* a visible
+    HTML/SVG rendering of the identical formula. Found live on tutorial.math.lamar.edu
+    (17 Sep 2026): the rendered page's own text carried the derivative's limit definition
+    twice -- once as the (already imperfect) visual rendering, once as a phantom
+    `\underset{h\to0}{lim}...` reconstructed from the hidden copy, malformed in ways neither
+    the page's author nor MathJax's own visual output ever produced (`f^'` for `f'`, a
+    fraction with no bar). Replacing only the hidden `<math>` -- the naive fix -- leaves the
+    visible half standing right next to it; these tests pin that both halves go together.
+    """
+
+    def test_mathjax_v3s_assistive_copy_replaces_its_whole_container(self) -> None:
+        markup = (
+            '<mjx-container class="MathJax" jax="CHTML">'
+            '<mjx-math aria-hidden="true"><mjx-mi>GARBLED</mjx-mi></mjx-math>'
+            '<mjx-assistive-mml><math><msup><mi>x</mi><mn>2</mn></msup></math></mjx-assistive-mml>'
+            "</mjx-container>"
+        )
+        assert text_of(f"<p>See {markup} here.</p>") == "See $x^2$ here."
+
+    def test_katexs_mathml_copy_replaces_its_whole_container(self) -> None:
+        """KaTeX's hidden copy is read via the ordinary TeX-annotation cascade -- it is the
+        *right* thing to prefer, being the author's real source -- so this also proves the
+        cascade and the duplicate-container removal work together, not just in isolation."""
+        markup = (
+            '<span class="katex"><span class="katex-mathml"><math><semantics>'
+            '<mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>'
+            '<annotation encoding="application/x-tex">x + 1</annotation>'
+            '</semantics></math></span>'
+            '<span class="katex-html" aria-hidden="true">GARBLED</span></span>'
+        )
+        assert text_of(f"<p>Consider {markup} and so on.</p>") == "Consider $x + 1$ and so on."
+
+    def test_an_ordinary_math_element_is_unaffected(self) -> None:
+        """No assistive wrapper, no ancestor walk needed -- the common case is untouched."""
+        assert text_of("<p>Take <math><mi>x</mi></math> to be real.</p>") == "Take $x$ to be real."
+
+    def test_a_lookalike_class_name_does_not_trigger_the_walk(self) -> None:
+        """`katex-mathml` is matched as a whole class token, not a substring: a page's own,
+        unrelated `my-katex-mathml-widget` class must not make an ordinary `<math>` lose a
+        sibling it was never duplicating."""
+        markup = (
+            '<span class="my-katex-mathml-widget"><math><mi>x</mi></math></span> '
+            '<span>KEEP ME</span>'
+        )
+        assert text_of(f"<p>{markup}</p>") == "$x$ KEEP ME"
+
+
 class TestDelimiters:
     def test_inline_maths_uses_single_dollars(self) -> None:
         assert render_math(math_of("<mi>x</mi>")) == "$x$"
