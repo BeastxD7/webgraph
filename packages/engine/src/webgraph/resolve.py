@@ -121,14 +121,28 @@ class PageShellError(ValueError):
     (`__NEXT_DATA__`, JSON-LD) that is complete in the shell, and a browser adds nothing.
     """
 
-    def __init__(self, document: Document, *, status: int | None = None) -> None:
+    def __init__(self, document: Document, *, status: int | None = None, rendered: bool = False) -> None:
         said = f"HTTP {status}, " if status else ""
-        super().__init__(
-            f"could not resolve {document.url}: the page is a JavaScript shell with no "
-            f"readable text until a browser runs it ({said}{len(document.html):,} bytes of "
-            "markup); rendering was not used for this request"
-        )
+        if rendered:
+            # The browser ran and the page still has no words. That is not a shell waiting
+            # for JavaScript -- it is what the site chose to show an automated browser:
+            # usually a bot check with no text, sometimes a page that never draws without a
+            # signed-in session. Saying "rendering was not used" here was untrue (amazon.in,
+            # 17 Sep 2026).
+            super().__init__(
+                f"could not resolve {document.url}: a browser rendered the page and it still "
+                f"has no readable text ({said}{len(document.html):,} bytes of markup); the "
+                "site is serving an empty page to automated browsers -- most often a silent "
+                "bot check -- and nothing of it can be read honestly"
+            )
+        else:
+            super().__init__(
+                f"could not resolve {document.url}: the page is a JavaScript shell with no "
+                f"readable text until a browser runs it ({said}{len(document.html):,} bytes of "
+                "markup); rendering was not used for this request"
+            )
         self.document = document
+        self.rendered = rendered
 
 
 class PageBlockedError(ValueError):
@@ -801,7 +815,11 @@ def _is_a_page(document: Document) -> bool:
 
 
 def _refuse_block_page(
-    document: Document, *, status: int | None = None, requested_url: str | None = None
+    document: Document,
+    *,
+    status: int | None = None,
+    requested_url: str | None = None,
+    rendered: bool = False,
 ) -> None:
     """Raise rather than return a wall -- or nothing -- as if it were the page.
 
@@ -825,8 +843,8 @@ def _refuse_block_page(
     vendor = challenge_vendor(document.html)
     if vendor is not None:
         raise PageBlockedError(document.url, vendor, challenge=vendor)
-    if document.profile.requires_render:
-        raise PageShellError(document, status=status)
+    if document.profile.requires_render or rendered:
+        raise PageShellError(document, status=status, rendered=rendered)
     said = f"HTTP {status}, " if status else ""
     raise ValueError(
         f"could not resolve {document.url}: the response produced no readable text "
@@ -1096,7 +1114,7 @@ def _resolve_fetched(
     )
 
     if static_doc is None or strategy is Strategy.RENDERED_ONLY:
-        _refuse_block_page(rendered_doc, requested_url=url)
+        _refuse_block_page(rendered_doc, requested_url=url, rendered=True)
         chars = len(rendered_doc.text)
         words = _words(rendered_doc.text)
         return ResolvedPage(
@@ -1169,7 +1187,7 @@ def _resolve_fetched(
     merged, only_static, only_rendered = union_documents(
         static_doc, rendered_doc, hidden=hidden_matter(rendered.html)
     )
-    _refuse_block_page(merged, requested_url=url)
+    _refuse_block_page(merged, requested_url=url, rendered=True)
 
     return ResolvedPage(
         url=merged.url,

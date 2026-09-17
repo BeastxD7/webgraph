@@ -38,7 +38,7 @@ RENDERED = (
 @pytest.fixture(autouse=True)
 def browser(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """A fake static fetch and a fake render, each counting how often it ran."""
-    state: dict[str, Any] = {"static_html": STATIC, "renders": 0}
+    state: dict[str, Any] = {"static_html": STATIC, "rendered_html": RENDERED, "renders": 0}
 
     def fake_fetch(url: str, **_: Any) -> FetchResult:
         return FetchResult(
@@ -53,7 +53,7 @@ def browser(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     def fake_render(url: str, **_: Any) -> RenderResult:
         state["renders"] += 1
-        return RenderResult(url=url, html=RENDERED, rects={}, ok=True)
+        return RenderResult(url=url, html=state["rendered_html"], rects={}, ok=True)
 
     monkeypatch.setattr(resolve_module, "fetch_static", fake_fetch)
     monkeypatch.setattr(resolve_module, "render_page", fake_render)
@@ -109,6 +109,38 @@ class TestStaticOnly:
             resolve_page(URL, strategy=Strategy.STATIC_ONLY)
         assert caught.value.document.url == URL
         assert caught.value.document.profile.requires_render
+
+
+class TestEmptyAfterRender:
+    def test_a_page_empty_after_the_browser_ran_says_so(self, browser: dict[str, Any]) -> None:
+        """amazon.in, 17 Sep 2026: the static response was an 11.6 KB shell and the browser's
+        document had no words either -- a silent bot check. The refusal used to claim
+        "rendering was not used for this request", which was untrue: the browser ran. The
+        message now says what happened, and the error records that a render was tried."""
+        import pytest
+
+        from webgraph.resolve import PageShellError
+
+        browser["static_html"] = SHELL
+        browser["rendered_html"] = SHELL
+        with pytest.raises(PageShellError) as caught:
+            resolve_page(URL, strategy=Strategy.UNION)
+        assert browser["renders"] == 1
+        assert caught.value.rendered is True
+        message = str(caught.value)
+        assert "a browser rendered the page and it still has no readable text" in message
+        assert "rendering was not used" not in message
+
+    def test_the_static_only_wording_is_unchanged(self, browser: dict[str, Any]) -> None:
+        import pytest
+
+        from webgraph.resolve import PageShellError
+
+        browser["static_html"] = SHELL
+        with pytest.raises(PageShellError) as caught:
+            resolve_page(URL, strategy=Strategy.STATIC_ONLY)
+        assert caught.value.rendered is False
+        assert "rendering was not used" in str(caught.value)
 
 
 class TestRenderedOnly:
