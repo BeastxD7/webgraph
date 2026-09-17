@@ -59,8 +59,11 @@
 }
 
 /* Dark: the same tokens as the rest of the site (globals.css §1b), so the docs follow
-   whatever palette the site has. Gated on the docs layout: see the header comment. */
-.dark:has(#nd-docs-layout) {
+   whatever palette the site has. `[data-theme="dark"]`, not `.dark` -- the docs shell's
+   `RootProvider` is configured (app/docs/layout.tsx) to write the same attribute the rest
+   of the site's own theme toggle uses, so the two never disagree. Gated on the docs
+   layout: see the header comment. */
+[data-theme="dark"]:has(#nd-docs-layout) {
   color-scheme: dark;
 
   --color-fd-background: var(--ground);

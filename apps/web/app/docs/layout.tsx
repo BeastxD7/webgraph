@@ -17,11 +17,24 @@ const REPO = "https://github.com/BeastxD7/webgraph";
 export default function DocsRootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <RootProvider
-      // The dark palette in docs.css is gated on the docs layout being present, so a
-      // `.dark` class left on <html> after navigating away cannot restyle the site.
-      // `enableColorScheme` would write an inline `color-scheme` to <html> the same way;
-      // docs.css sets it inside the same gate instead.
-      theme={{ enableColorScheme: false }}
+      // `attribute`/`storageKey` match `lib/theme.ts` exactly (same `data-theme` attribute,
+      // same localStorage key) so this provider and the rest of the site's own toggle read
+      // and write one shared preference instead of two that can disagree. Left at
+      // next-themes' default (`class`), a change made from the docs sidebar's own
+      // light/dark control updated fumadocs' styling but never touched `data-theme` --
+      // reported live as "themeing is not working in docs sidebar", reproduced by toggling
+      // it and finding `data-theme` stuck on its old value while `class` and localStorage
+      // had both moved on.
+      //
+      // The dark palette in docs.css is still gated on the docs layout being present
+      // (`[data-theme="dark"]:has(#nd-docs-layout)`), because the stylesheet that carries
+      // it is never unloaded on a client-side navigation away from /docs -- not to stop a
+      // leftover attribute from restyling the rest of the site (the rest of the site is
+      // *supposed* to follow `data-theme`; that is the point of sharing it), but to keep
+      // docs-only `--color-fd-*` variable overrides from staying live outside the subtree
+      // that reads them. `enableColorScheme` would write an inline `color-scheme` to
+      // <html> the same way; docs.css sets it inside the same gate instead.
+      theme={{ enableColorScheme: false, attribute: "data-theme", storageKey: "theme" }}
     >
       <DocsLayout
         tree={source.getPageTree()}
