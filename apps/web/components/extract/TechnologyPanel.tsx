@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 
+import TechIcon, { TrademarkNote } from "@/components/ui/TechIcon";
 import type { AnalysisEvent, Technology } from "@/lib/api";
 import { percent } from "@/lib/format";
 
@@ -36,8 +37,9 @@ export default function TechnologyPanel({ analysis }: { analysis: AnalysisEvent 
                   <span
                     key={technology.name}
                     title={`${technology.evidence} · confidence ${percent(technology.confidence)}`}
-                    className="inline-flex items-baseline gap-1 rounded-full border border-line bg-haze px-2.5 py-1 text-[12.5px] font-semibold"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-line bg-haze px-2.5 py-1 text-[12.5px] font-semibold"
                   >
+                    <TechIcon name={technology.name} size={13} />
                     {technology.name}
                     {technology.version && (
                       <em className="tabular font-mono text-[11px] not-italic text-ink-faint">
@@ -51,6 +53,7 @@ export default function TechnologyPanel({ analysis }: { analysis: AnalysisEvent 
           ))}
         </div>
       )}
+      {categories.length > 0 && <TrademarkNote className="mt-3" />}
 
       <div className="mt-5 flex flex-wrap gap-1.5 border-t border-line pt-4 text-[12px] font-semibold">
         <span className="rounded-full bg-sunk px-2.5 py-1">

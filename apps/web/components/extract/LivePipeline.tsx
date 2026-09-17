@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { AnalysisEvent, PageEvent } from "@/lib/api";
 import type { Phase, PhaseTiming } from "@/hooks/useSiteStream";
 import PageTypes from "./PageTypes";
+import { TechName } from "@/components/ui/TechIcon";
 import Timeline, { type TimelineStep } from "@/components/ui/Timeline";
 
 /**
@@ -68,7 +69,7 @@ function seconds(timing: PhaseTiming | undefined, now: number): string {
   return `${((end - timing.startedAt) / 1000).toFixed(1)}s`;
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-line-soft py-1 last:border-b-0">
       <dt className="shrink-0 text-caption text-ink-faint">{label}</dt>
@@ -173,9 +174,15 @@ export default function LivePipeline({
               <Row
                 label="Technologies identified"
                 value={
-                  analysis.technologies.length
-                    ? analysis.technologies.slice(0, 4).map((t) => t.name).join(", ")
-                    : "none detected"
+                  analysis.technologies.length ? (
+                    <span className="inline-flex flex-wrap justify-end gap-x-2.5 gap-y-0.5">
+                      {analysis.technologies.slice(0, 4).map((t) => (
+                        <TechName key={t.name} name={t.name} iconClassName="" />
+                      ))}
+                    </span>
+                  ) : (
+                    "none detected"
+                  )
                 }
               />
               <Row
