@@ -19,6 +19,7 @@ import { compact, percent } from "@/lib/format";
 import { containsMath, renderMarkdown } from "@/lib/markdown";
 import type { RunMeta } from "@/lib/runlog";
 import CopyButton from "@/components/ui/CopyButton";
+import MathBadge from "@/components/ui/MathBadge";
 import TechIcon from "@/components/ui/TechIcon";
 
 function Meta({ page }: { page: TextResponse["page"] }) {
@@ -451,18 +452,7 @@ export default function SinglePageRun({ url }: { url: string }) {
                 </span>
               )}
 
-              {containsMath(shown) && (
-                <span
-                  title={
-                    preview
-                      ? "Formulas are LaTeX ($...$ / $$...$$), typeset here with KaTeX."
-                      : "Formulas are written as LaTeX ($...$ / $$...$$), not HTML -- that's the raw source a math-aware renderer typesets. Switch to Preview to see it rendered here."
-                  }
-                  className="rounded-full bg-sunk px-2 py-0.5 text-[11.5px] font-semibold text-ink-soft"
-                >
-                  Σ LaTeX math
-                </span>
-              )}
+              {containsMath(shown) && <MathBadge preview={preview} />}
 
               <div className="ml-auto flex flex-wrap items-center gap-2">
                 {/* Copies exactly what is on screen: switching a toggle changes what you

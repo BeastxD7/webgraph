@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #121) -- `\label`/`\eqref` no longer show up as visible garbage in the preview
+- Reported live, right after #120 shipped: a numbered `\begin{equation}...\label{eq:eq2}\end{equation}`
+  rendered its `\label{...}` as KaTeX's own red "unknown command" text followed by its argument
+  parsed as stray math variables ("eq : eq2"), and an `\eqref{eq:eq2}` elsewhere in the prose
+  rendered the same way. Both are correct, faithful LaTeX -- MathJax's numbering/cross-reference
+  system understands them; bare KaTeX has no notion of either, since it renders one formula in
+  isolation with no page-wide label registry.
+- `lib/markdown.tsx`: `resolveEquationLabels` scans a page's full Markdown once for `\label{X}`
+  in document order and numbers them 1, 2, 3... (the same numbers the page's own MathJax
+  assigned, since our extraction faithfully preserves order); `resolveLabelsAndRefs` then strips
+  `\label{...}` before a formula reaches KaTeX (the number it defines is already carried as
+  separate extracted text right next to the formula -- MathJax writes it as its own DOM node --
+  so also drawing it via a KaTeX `\tag` would draw it a second time, exactly the "shown once raw,
+  once rendered" failure #119 fixed for MathJax's own duplicate) and rewrites `\eqref{X}`/`\ref{X}`
+  to the resolved number as plain upright text (`\text{(N)}`), falling back to the raw label
+  (`(eq:eq2)`) for a dangling reference to something outside the extracted page rather than
+  guessing a number.
+- A small "ⓘ" next to the "Σ LaTeX math" badge (`components/ui/MathBadge.tsx`, now shared by
+  `SinglePageRun.tsx` and `PageRow.tsx` rather than duplicated inline) names KaTeX as the
+  renderer on hover, since the site's own math renderer (often MathJax) and ours can differ in
+  what LaTeX they support.
+- Verified with the same esbuild+jsdom harness as #120, rebuilt against the real Lamar page
+  content (both labelled equations plus the `\eqref` referencing the first one, plus a synthetic
+  dangling reference): no visible `\label`/`\eqref` text or stray math-mode garbage, the two
+  references resolve to "(1)" and "(2)" in document order, the dangling one falls back to its
+  raw label, and no `katex-error` spans appear. `tsc --noEmit`, `eslint`, `next build` all clean.
+
 ### Added (2026-09-17, PR #120) -- the web app's own Markdown preview now typesets `$...$` math
 - The engine has extracted correct LaTeX for `$...$`/`$$...$$` math since #118/#119, but the
   web app's own preview (`lib/markdown.tsx`) had no math renderer at all -- it is a

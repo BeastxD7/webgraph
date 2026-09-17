@@ -83,13 +83,53 @@ function katexNode(node: ChildNode, key: string): ReactNode {
 }
 
 /**
+ * A page's own MathJax numbers `\begin{equation}...\label{eq:x}...\end{equation}` and writes
+ * that number into the DOM as its own text, separate from the formula -- our extraction
+ * already carries it faithfully as ordinary text next to the `$$...$$`. `data-latex` is the
+ * *source*, though, so it still contains the raw `\label{eq:x}` macro itself, and any
+ * `\eqref{eq:x}` elsewhere on the page that points at it. KaTeX has no notion of either one
+ * (no cross-document state to resolve a label to a number), so both must be handled before the
+ * LaTeX reaches KaTeX -- this resolves them the same way LaTeX does, by counting `\label`s in
+ * the order they appear in the document.
+ */
+const LABEL_RE = /\\label\{([^}]*)\}/g;
+const LABEL_OR_REF_RE = /\\label\{[^}]*\}|\\(?:eqref|ref)\{([^}]*)\}/g;
+
+function resolveEquationLabels(source: string): Map<string, number> {
+  const labels = new Map<string, number>();
+  for (const match of source.matchAll(LABEL_RE)) {
+    const name = match[1];
+    if (name && !labels.has(name)) labels.set(name, labels.size + 1);
+  }
+  return labels;
+}
+
+/**
+ * `\label{...}` carries no visual content of its own -- the number it defines is already
+ * present as separate extracted text (see above), so it is dropped rather than shown, and
+ * never reproduced as a KaTeX `\tag`: doing that too would draw the same number twice, the
+ * exact "shown once raw, once rendered" failure #119 fixed for MathJax's own duplicate. An
+ * `\eqref`/`\ref` becomes the resolved number as plain upright text; a dangling reference (the
+ * page cites an equation outside what was extracted) falls back to showing its raw label
+ * rather than a number that would be a guess.
+ */
+function resolveLabelsAndRefs(source: string, labels: Map<string, number>): string {
+  return source.replace(LABEL_OR_REF_RE, (whole, name?: string) => {
+    if (name === undefined) return "";
+    const n = labels.get(name);
+    return n ? `\\text{(${n})}` : `\\text{(${name})}`;
+  });
+}
+
+/**
  * Typeset a LaTeX span with KaTeX, `trust: false` (the default) so commands that could reach
  * outside the page -- `\includegraphics`, `\href`, `\url` -- are refused rather than rendered.
  * Invalid LaTeX still renders, as KaTeX's own inline error span, rather than throwing: an
  * extraction that guessed the delimiters wrong should not blank out the rest of the line.
  */
-function mathSpan(source: string, displayMode: boolean, key: string): ReactNode {
-  const literal = (displayMode ? "$$" : "$") + source + (displayMode ? "$$" : "$");
+function mathSpan(rawSource: string, displayMode: boolean, key: string, labels: Map<string, number>): ReactNode {
+  const source = resolveLabelsAndRefs(rawSource, labels);
+  const literal = (displayMode ? "$$" : "$") + rawSource + (displayMode ? "$$" : "$");
   if (typeof window === "undefined") return <span key={key}>{literal}</span>;
   let html: string;
   try {
@@ -100,7 +140,7 @@ function mathSpan(source: string, displayMode: boolean, key: string): ReactNode 
   const root = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html").body.firstChild;
   if (!root) return <span key={key}>{literal}</span>;
   return (
-    <span key={key} role="math" aria-label={source}>
+    <span key={key} role="math" aria-label={rawSource}>
       {katexNode(root, key)}
     </span>
   );
@@ -132,7 +172,7 @@ function unescape(text: string): string {
   return text.replace(/\\([\\`*_{}[\]()#+\-.!$|>~])/g, "$1");
 }
 
-function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
+function inline(text: string, keyPrefix: string, labels: Map<string, number>, depth = 0): ReactNode[] {
   const out: ReactNode[] = [];
   // One pass, longest-first so `**bold**` is not eaten by the italic rule. Images come
   // before links because `![alt](src)` is a link with a bang in front, and matching the
@@ -153,7 +193,7 @@ function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
   // real nests more than a few levels and an unbounded recursion on adversarial input is
   // a way to hang the page.
   const nested = (inner: string, key: string): ReactNode[] =>
-    depth < 4 ? inline(inner, key, depth + 1) : [unescape(inner)];
+    depth < 4 ? inline(inner, key, labels, depth + 1) : [unescape(inner)];
 
   while ((match = pattern.exec(text)) !== null) {
     if (match.index > last) out.push(unescape(text.slice(last, match.index)));
@@ -207,9 +247,9 @@ function inline(text: string, keyPrefix: string, depth = 0): ReactNode[] {
     } else if (match[10]) {
       out.push(<em key={key}>{nested(match[11] ?? "", key)}</em>);
     } else if (match[12]) {
-      out.push(mathSpan(match[13] ?? "", true, key));
+      out.push(mathSpan(match[13] ?? "", true, key, labels));
     } else if (match[14]) {
-      out.push(mathSpan(match[15] ?? "", false, key));
+      out.push(mathSpan(match[15] ?? "", false, key, labels));
     }
     last = pattern.lastIndex;
   }
@@ -264,6 +304,7 @@ function htmlTable(source: string, key: string): ReactNode {
 export function renderMarkdown(source: string): ReactNode[] {
   const out: ReactNode[] = [];
   const lines = source.split("\n");
+  const labels = resolveEquationLabels(source);
   let i = 0;
   let key = 0;
 
@@ -305,7 +346,7 @@ export function renderMarkdown(source: string): ReactNode[] {
       const size = ["text-[1.35rem]", "text-[1.15rem]", "text-[1.02rem]", "text-[0.95rem]", "text-[0.9rem]", "text-[0.88rem]"][level - 1];
       out.push(
         <Tag key={`h${key++}`} className={`mt-4 mb-1.5 font-display leading-tight ${size}`}>
-          {inline(heading[2] ?? "", `h${key}`)}
+          {inline(heading[2] ?? "", `h${key}`, labels)}
         </Tag>,
       );
       i += 1;
@@ -327,7 +368,7 @@ export function renderMarkdown(source: string): ReactNode[] {
               <tr>
                 {header?.map((cell, c) => (
                   <th key={c} className="border border-line bg-sunk px-2 py-1 text-left font-semibold">
-                    {inline(cell, `th${c}`)}
+                    {inline(cell, `th${c}`, labels)}
                   </th>
                 ))}
               </tr>
@@ -337,7 +378,7 @@ export function renderMarkdown(source: string): ReactNode[] {
                 <tr key={r}>
                   {row.map((cell, c) => (
                     <td key={c} className="border border-line px-2 py-1 align-top">
-                      {inline(cell, `td${r}-${c}`)}
+                      {inline(cell, `td${r}-${c}`, labels)}
                     </td>
                   ))}
                 </tr>
@@ -378,7 +419,7 @@ export function renderMarkdown(source: string): ReactNode[] {
         >
           {items.map((item, n) => (
             <li key={n} className="my-0.5">
-              {inline(item, `li${n}`)}
+              {inline(item, `li${n}`, labels)}
             </li>
           ))}
         </Tag>,
@@ -391,7 +432,7 @@ export function renderMarkdown(source: string): ReactNode[] {
       while (i < lines.length && (lines[i] ?? "").startsWith(">")) i += 1;
       out.push(
         <blockquote key={`q${key++}`} className="my-3 border-l-2 border-leaf-300 pl-3 text-ink-soft">
-          {inline(lines.slice(start, i).map((row) => row.replace(/^>\s?/, "")).join(" "), `q${key}`)}
+          {inline(lines.slice(start, i).map((row) => row.replace(/^>\s?/, "")).join(" "), `q${key}`, labels)}
         </blockquote>,
       );
       continue;
@@ -399,7 +440,7 @@ export function renderMarkdown(source: string): ReactNode[] {
 
     out.push(
       <p key={`t${key++}`} className="my-2 leading-relaxed">
-        {inline(line, `p${key}`)}
+        {inline(line, `p${key}`, labels)}
       </p>,
     );
     i += 1;
