@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #117) — an empty page after a render is described as what it is
+- `resolve.py`: when the browser ran and the document still has no readable text, the
+  refusal now says so -- "a browser rendered the page and it still has no readable text
+  (N bytes of markup); the site is serving an empty page to automated browsers -- most
+  often a silent bot check" -- instead of the shell message's "rendering was not used for
+  this request", which was untrue on that path (amazon.in through the share link: an
+  11.6 KB static shell and an empty rendered document). `PageShellError.rendered` records
+  which case it was. The static-only wording is unchanged
+  (`TestEmptyAfterRender`, 2 tests).
+
 ### Fixed (2026-09-17, PR #116) — link previews get a real image URL
 - `metadataBase` is set from `NEXT_PUBLIC_SITE_URL` (build time; default the dev server), so
   `og:image` / `twitter:image` are absolute URLs on the public origin. Without it Next wrote
