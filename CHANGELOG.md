@@ -21,7 +21,11 @@ All notable changes to this project are documented here. The format follows
   shows the style on the w and on two orbit-ring alternates (both fail at 32 px: the ring
   collides with the nodes) and the header at 28 px styled against flat. Under ~24 px the flat
   form takes over: the favicon is the flat w and star on the accent tile; 180/512 icons carry
-  the styled mark on a navy tile; the OG image the styled mark over the sunrise.
+  the styled mark on a navy tile; the OG image the styled mark over the sunrise. A second
+  pass after the owner's look (`docs/design/logo-style-3d-b.png`, before/after): the nodes
+  matte -- no specular, a ≤ 12 % lift toward the star -- the ribbons 13 % thinner, the tuck
+  halo softer, the star's glow tighter, and the light gradient one step deeper
+  (`#234b7c → #5b95d6`) so the mark has weight on paper.
 
 ### Changed (2026-09-17, PR #113) — the mark, round two: the constellation w
 - The #112 mark (an arc over lines) read as a signal glyph and said nothing of the graph.

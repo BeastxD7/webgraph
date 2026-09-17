@@ -88,13 +88,13 @@
 
   /* The mark's gradient: the hero's atmosphere, bottom-left to top-right, the star at the
      bright end and a step brighter than the strokes (components/site/Wordmark.tsx). */
-  --brand-a:       #2b5a91;
-  --brand-b:       #6aa6e6;
-  --brand-hi:      #d6e8fb;
-  --brand-shade:   #173a66;
-  --brand-star:    #8fc3ff;
-  --brand-core:    #eef7ff;
-  --brand-glow:    #6aa6e6;
+  --brand-a:       #234b7c;
+  --brand-b:       #5b95d6;
+  --brand-hi:      #6ea4de;
+  --brand-shade:   #12305a;
+  --brand-star:    #7fb8f5;
+  --brand-core:    #e6f2ff;
+  --brand-glow:    #5b95d6;
 
   /* Type. Exact Google Fonts families and the weights to load:
        Instrument Serif  400 normal + 400 italic   (it ships nothing else)
@@ -175,7 +175,7 @@
 
     --brand-a:       #9cc4f2;
     --brand-b:       #dcefff;
-    --brand-hi:      #ffffff;
+    --brand-hi:      #eaf5ff;
     --brand-shade:   #3f6ea6;
     --brand-star:    #ffffff;
     --brand-core:    #ffffff;
@@ -217,7 +217,7 @@
 
   --brand-a:       #9cc4f2;
   --brand-b:       #dcefff;
-  --brand-hi:      #ffffff;
+  --brand-hi:      #eaf5ff;
   --brand-shade:   #3f6ea6;
   --brand-star:    #ffffff;
   --brand-core:    #ffffff;
