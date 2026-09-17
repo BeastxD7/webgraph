@@ -398,6 +398,19 @@
 @utility measure-prose { max-width: var(--measure-prose); }
 @utility measure-lede { max-width: var(--measure-lede); }
 
+/* A guaranteed pill, for shapes that must never lose their curve: not `@utility`, and not the
+   `--radius-pill` theme key's auto-generated `rounded-pill`, because both land in Tailwind's
+   layered `utilities` bucket, whose *internal* ordering this project has twice seen drift
+   during a long dev session -- `rounded-md`'s rule reappearing after `rounded-pill`'s and
+   winning the tie, squaring off a corner that should stay round (seen on the header's
+   Light/Run-a-site pill; a clean production build did not reproduce it, so this is a dev/HMR
+   ordering quirk, not a one-off). Plain, unlayered CSS always beats anything in a `@layer`
+   block regardless of source or generation order (CSS Cascade Layers spec), so this is immune
+   to that class of drift by construction rather than by hoping the generator behaves. */
+.pill-shape {
+  border-radius: var(--radius-pill);
+}
+
 @theme {
   /* The nav folds to a Menu button below this (DESIGN.md §4d). Eight items, the wordmark,
      the theme control and the button need ~1,060px as a bar and ~1,140px as the landing's

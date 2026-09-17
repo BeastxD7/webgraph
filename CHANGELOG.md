@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #122) -- the header's pill loses its curve after a long dev session
+- Reported live: the "Light"/"Run a site" grouped pill in the floating landing header rendered
+  with a squared-off corner where "Run a site" sat, instead of one smooth pill boundary --
+  worst and most obvious in dark mode, and reproducible after navigating to `/docs` and back.
+- Root cause: `rounded-pill` and `rounded-md` are both generated from this project's own
+  `--radius-*` theme keys (`app/globals.css`), landing in the same Tailwind `utilities` layer.
+  A clean production build ordered them correctly (`rounded-pill` after `rounded-md`, so it
+  wins the tie), but the dev server's incremental Tailwind/Turbopack compilation had, after
+  enough edits and route visits in one long session, re-emitted `.rounded-md{...}` a second
+  time *after* `.rounded-pill{...}` -- so `rounded-md`'s 6px radius won the cascade tie on the
+  button that carried both classes, and Turbopack loading `/docs`'s own stylesheet triggered a
+  fresh round of this reordering, explaining why it broke specifically after that navigation.
+- `app/globals.css`: added `.pill-shape { border-radius: var(--radius-pill); }` as plain,
+  unlayered CSS (not `@utility`, not a `--radius-*` theme key) -- per the CSS Cascade Layers
+  spec, unlayered rules always beat anything in a `@layer` block regardless of source or
+  generation order, so this is immune to the dev-mode reordering by construction rather than
+  by hoping the generator behaves consistently. All nine `rounded-pill` call sites (`Chip.tsx`,
+  `SitePrompt.tsx`, `BuildPanel.tsx`, `SiteHeader.tsx`) now use `pill-shape` instead.
+- `app/docs/layout.tsx`: the docs sidebar's wordmark used `font-extrabold` with no explicit
+  text colour, one step heavier than the landing header's `Wordmark` component
+  (`font-bold text-ink`) -- reported as "the docs sidebar logo looks off" from the landing
+  page's. Matched to `font-bold text-ink`.
+- Verified visually: an isolated `next dev` instance on a spare port (the owner's own :3000
+  left untouched), dark theme, before/after zoomed screenshots of the pill showing a clean
+  curve with no squared corner, confirmed stable across a `/` → `/docs` → `/` round trip: and
+  the docs sidebar wordmark's weight matching the landing header's side by side. `tsc --noEmit`,
+  `eslint`, `next build` all clean.
+
 ### Fixed (2026-09-17, PR #121) -- `\label`/`\eqref` no longer show up as visible garbage in the preview
 - Reported live, right after #120 shipped: a numbered `\begin{equation}...\label{eq:eq2}\end{equation}`
   rendered its `\label{...}` as KaTeX's own red "unknown command" text followed by its argument

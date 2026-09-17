@@ -49,7 +49,7 @@ export default function SiteHeader() {
   const bar =
     scrolled || open ? "bg-surface border-rule" : floating ? "border-transparent" : "bg-ground border-transparent";
   const pill = floating
-    ? "rounded-pill border border-rule bg-surface/92 shadow-float"
+    ? "pill-shape border border-rule bg-surface/92 shadow-float"
     : "";
 
   return (
@@ -83,10 +83,10 @@ export default function SiteHeader() {
         </div>
 
         <div className={`ml-auto flex items-center gap-1 nav:gap-1.5 ${floating ? `min-h-10 px-1 ${pill}` : ""}`}>
-          <ThemeToggle className={floating ? "rounded-pill" : ""} />
+          <ThemeToggle className={floating ? "pill-shape" : ""} />
           {/* Wrapped: the button's own `inline-flex` would otherwise fight `hidden`. */}
           <div className="max-nav:hidden nav:block">
-            <Button href="/#start" className={floating ? "h-8 rounded-pill" : ""}>
+            <Button href="/#start" className={floating ? "h-8 pill-shape" : ""}>
               Run a site
             </Button>
           </div>
@@ -146,7 +146,7 @@ function isPastHero(): boolean {
 
 function NavLink({ item, active, floating }: { item: NavItem; active: boolean; floating: boolean }) {
   const classes = floating
-    ? `inline-flex h-8 items-center whitespace-nowrap rounded-pill px-3 text-small font-medium transition-colors duration-(--dur-fast) ${
+    ? `inline-flex h-8 items-center whitespace-nowrap pill-shape px-3 text-small font-medium transition-colors duration-(--dur-fast) ${
         active ? "bg-ink text-inverse" : "text-muted hover:bg-sunk hover:text-ink"
       }`
     : `whitespace-nowrap text-small font-medium transition-colors duration-(--dur-fast) hover:text-ink ${
