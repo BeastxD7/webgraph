@@ -27,6 +27,13 @@ All notable changes to this project are documented here. The format follows
   one-colour glyph (`mark-mono.svg`), the lockup with the Manrope wordmark, 32/180/512 PNGs,
   `app/apple-icon.png`, and a 1200×630 `app/opengraph-image.png` of the mark and wordmark
   over the hero's own space. `<Wordmark>` draws the same glyph inline on the accent tile.
+### Added (2026-09-17, PR #111) — one origin for web and API
+- `NEXT_PUBLIC_API_BASE=/` means "this origin": the web app calls `/api/...` on itself,
+  and `WEBGRAPH_API_PROXY=http://127.0.0.1:8000` (build and start) makes `next` forward
+  `/api/*` to the API (`afterFiles` rewrite, so the app's own `/api/search` still wins).
+  One host serves both -- one tunnel, one domain, no CORS. SSE streams through unbuffered
+  (measured: events at 0 s, 2 s on a two-page crawl). The default (an absolute API origin)
+  is unchanged. Docs: `/docs/deployment/configuration`.
 
 ### Fixed (2026-09-17, PR #110) — the prompt submits without JavaScript
 - The hero/closing prompt is a real GET form (`action="/extract"`, the field named `url`,
