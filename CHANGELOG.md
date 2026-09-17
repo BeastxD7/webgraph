@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed (2026-09-17, PR #110) — the prompt submits without JavaScript
+- The hero/closing prompt is a real GET form (`action="/extract"`, the field named `url`,
+  hidden `mode` and `complete`): before React attaches -- a slow phone, a script that
+  failed to load -- pressing Enter or the arrow now opens `/extract?url=…` instead of
+  reloading `/?` with nothing. With JavaScript the handler still routes as before
+  (`/report` for the report mode, the camera push first in the scene).
+
 ### Fixed (2026-09-17, PR #109) — the phone sheet hangs from a solid header
 - Opening the phone menu on `/` un-floats the header (solid bar, row back at the top) so the
   sheet hangs from it instead of overlapping the dropped row from #108. The owner's "menu,

@@ -95,13 +95,19 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
           <RunCard host={shownHost ?? EXAMPLES[0]!} mode={mode} />
         </div>
       )}
+      {/* A plain GET form underneath: before React attaches (a slow phone, a failed script)
+          the browser itself submits to /extract with the address, instead of reloading `/?`. */}
       <form
         id={id}
+        action="/extract"
+        method="get"
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
+        <input type="hidden" name="mode" value={mode === "page" ? "page" : "site"} />
+        <input type="hidden" name="complete" value="true" />
         <label htmlFor={inputId} className="sr-only">
           Website or page address
         </label>
@@ -114,6 +120,7 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
             <input
               id={inputId}
               type="text"
+              name="url"
               inputMode="url"
               autoComplete="url"
               spellCheck={false}
