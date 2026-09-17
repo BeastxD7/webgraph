@@ -27,7 +27,7 @@ export default function Chip({
 }) {
   return (
     <span
-      className={`inline-flex h-[22px] items-center gap-1.5 rounded-pill px-2 text-caption font-semibold ${TONE[tone]} ${className}`}
+      className={`inline-flex h-[22px] items-center gap-1.5 pill-shape px-2 text-caption font-semibold ${TONE[tone]} ${className}`}
     >
       {tone === "available" && <span aria-hidden className="size-2 rounded-full bg-accent" />}
       {tone === "coming" && (

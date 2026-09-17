@@ -153,7 +153,7 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
             </button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-2 pb-3 pt-1.5">
-            <div role="radiogroup" aria-label="What to do with it" className="inline-flex rounded-pill bg-sunk p-0.5">
+            <div role="radiogroup" aria-label="What to do with it" className="inline-flex pill-shape bg-sunk p-0.5">
               {MODES.map((option) => {
                 const selected = mode === option.id;
                 return (
@@ -164,7 +164,7 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
                     aria-checked={selected}
                     title={option.hint}
                     onClick={() => setMode(option.id)}
-                    className={`inline-flex h-8 items-center whitespace-nowrap rounded-pill px-3 text-caption font-semibold transition-colors duration-(--dur-fast) ${
+                    className={`inline-flex h-8 items-center whitespace-nowrap pill-shape px-3 text-caption font-semibold transition-colors duration-(--dur-fast) ${
                       selected ? "bg-surface text-ink shadow-[0_1px_2px_rgb(15_26_20/0.12)]" : "text-muted hover:text-ink"
                     }`}
                   >
@@ -192,7 +192,7 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
                     onPointerLeave={() => setPreview(value.trim() ? normalizeHost(value) : null)}
                     onFocus={() => setPreview(host)}
                     onBlur={() => setPreview(value.trim() ? normalizeHost(value) : null)}
-                    className="inline-flex h-8 items-center rounded-pill border border-rule px-2.5 font-mono text-caption text-muted transition-colors duration-(--dur-fast) hover:border-rule-strong hover:bg-sunk hover:text-ink"
+                    className="inline-flex h-8 items-center pill-shape border border-rule px-2.5 font-mono text-caption text-muted transition-colors duration-(--dur-fast) hover:border-rule-strong hover:bg-sunk hover:text-ink"
                   >
                     {host}
                   </button>

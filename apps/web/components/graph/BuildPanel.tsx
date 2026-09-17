@@ -192,7 +192,7 @@ export default function BuildPanel({
               {progress.done}/{progress.total} sections · {pct}%
             </span>
           </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-pill bg-sunk" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="mt-2 h-1.5 overflow-hidden pill-shape bg-sunk" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full bg-accent transition-[width] duration-(--dur-base) ease-(--ease)" style={{ width: `${pct}%` }} />
           </div>
           <dl className="tabular mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-small sm:grid-cols-5">

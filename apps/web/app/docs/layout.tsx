@@ -27,7 +27,7 @@ export default function DocsRootLayout({ children }: Readonly<{ children: ReactN
         tree={source.getPageTree()}
         nav={{
           title: (
-            <span className="flex items-center gap-2.5 text-[15px] font-extrabold tracking-tight">
+            <span className="flex items-center gap-2.5 text-[15px] font-bold tracking-tight text-ink">
               <Mark />
               webgraph
             </span>
