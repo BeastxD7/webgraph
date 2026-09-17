@@ -6,6 +6,7 @@ import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
 import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 
+import "katex/dist/katex.min.css";
 import "./globals.css";
 
 const display = Instrument_Serif({

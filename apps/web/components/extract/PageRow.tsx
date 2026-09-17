@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import type { PageEvent } from "@/lib/api";
 import { compact } from "@/lib/format";
 import CopyButton from "@/components/ui/CopyButton";
-import { renderMarkdown } from "@/lib/markdown";
+import { containsMath, renderMarkdown } from "@/lib/markdown";
 import Citation from "@/components/ui/Citation";
 
 function Highlight({ text, query }: { text: string; query: string }) {
@@ -148,6 +148,18 @@ export default function PageRow({
                   title={`Classifier confidence ${Math.round(page.page_type_confidence * 100)}%`}
                 >
                   {page.page_type}
+                </span>
+              )}
+              {containsMath(shown) && (
+                <span
+                  title={
+                    preview
+                      ? "Formulas are LaTeX ($...$ / $$...$$), typeset here with KaTeX."
+                      : "Formulas are written as LaTeX ($...$ / $$...$$), not HTML -- that's the raw source a math-aware renderer typesets. Switch to Preview to see it rendered here."
+                  }
+                  className="rounded-full bg-sunk px-2.5 py-1 text-[11px] font-semibold text-ink-soft"
+                >
+                  Σ LaTeX math
                 </span>
               )}
               {/* Copies exactly what is on screen: switching the toggle changes what you get,
