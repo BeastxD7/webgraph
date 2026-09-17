@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed (2026-09-17, PR #TBD) — the mark, round three: the star in the open corner, in a soft-3D style
+### Changed (2026-09-17, PR #114) — the mark, round three: the star in the open corner, in a soft-3D style
 - The owner's two references folded in. Placement: the w's top-right corner is opened -- the
   terminal node removed, the last ribbon stopping short -- and the brightest star, a
   four-point sparkle, sits detached in the gap, its right edge flush with the w's right
