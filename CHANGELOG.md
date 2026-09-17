@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #126) -- tech-stack marks show each brand's own colour
+- Asked directly: monochrome, tinted like the surrounding text, was a deliberate choice
+  (`TechIcon.tsx`'s own docstring: "so a stack of eight technologies reads as one list and
+  not eight logos shouting"). Overridden on request -- eight technologies should show as
+  eight recognisable logos, with their own names beside them.
+- `lib/tech-icons.ts`: `TechMark` carries Simple Icons' own `hex` now (`null` for the
+  generic glyph, which has no brand colour). `TechIcon.tsx` fills a real mark with it
+  instead of `currentColor`.
+- Checked rather than assumed that this wouldn't quietly break in dark mode: 15 of the
+  102 mapped marks (Next.js, Vercel, Three.js, shadcn/ui, Mapbox, ... -- computed
+  programmatically by luminance, not eyeballed) are pure or near-black, a deliberate choice
+  by those brands themselves, who invert to white against a dark background everywhere they
+  show it, their own docs included. Left as literal black here they would have vanished
+  into this site's own dark theme. `lib/theme.ts` gained `resolvedTheme()` -- light or dark
+  as actually rendered right now, resolving "system" the same way the boot script already
+  does for the `data-theme` attribute -- and `TechIcon` substitutes a light near-white for
+  any mark this dark specifically when the page is in its dark theme, unchanged in light
+  mode and unchanged for every mark with real colour to show.
+- Verified visually, not just by inspecting hex values: a small standalone harness
+  (esbuild-bundled, not part of the repo) rendered a dozen real marks -- including several
+  of the near-black ones -- through the actual `TechIcon` component, toggled through the
+  site's real theme mechanism (`localStorage` + a dispatched `storage` event, the same path
+  a real toggle click takes) to confirm both directions: real brand colours unchanged and
+  legible in both themes, and the near-black marks switching to the light substitute only
+  in dark mode, side by side with the unaffected coloured ones so the two behaviours are
+  visibly distinguishable from each other, not just individually correct.
+- 1 new test (`tech-icons.test.ts`): every real mark carries a valid `#rrggbb` hex; the
+  generic glyph carries none. `tsc --noEmit`, `eslint`, `next build`, and the existing
+  8-test `tech-icons` suite all clean.
+
 ### Added (2026-09-17, PR #125) -- both containers, one VM: a frontend Dockerfile and a `docker-compose.yml`
 - Asked directly for a Docker path to a plain VM (Oracle Cloud's free tier named as the
   motivating example) rather than Cloud Run + Vercel, for both the API and the frontend.

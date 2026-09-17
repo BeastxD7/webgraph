@@ -376,9 +376,11 @@ export interface TechMark {
   title: string;
   /** True when this is the neutral glyph, drawn as an outline rather than a fill. */
   generic: boolean;
+  /** Simple Icons' own brand colour, `#`-prefixed. `null` for the generic glyph, which has none. */
+  hex: string | null;
 }
 
-const GENERIC: TechMark = { path: GENERIC_PATH, title: "Technology", generic: true };
+const GENERIC: TechMark = { path: GENERIC_PATH, title: "Technology", generic: true, hex: null };
 
 function normalise(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -411,7 +413,7 @@ export function techIcon(name: string): TechMark {
   const entry = techEntry(name);
   const icon = entry ? ICONS[entry.key] : null;
   if (!icon) return GENERIC;
-  return { path: icon.path, title: icon.title, generic: false };
+  return { path: icon.path, title: icon.title, generic: false, hex: `#${icon.hex}` };
 }
 
 /** Every canonical name in the map, with its Simple Icons slug or `null` (generic). */

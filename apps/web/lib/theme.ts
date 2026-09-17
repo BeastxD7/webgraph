@@ -83,3 +83,16 @@ export function setTheme(theme: Theme): void {
 }
 
 export const serverTheme = (): Theme => "system";
+
+/**
+ * What the page actually looks like right now: "system" resolved against the OS preference,
+ * the way `applyTheme`/the boot script already do for the `data-theme` attribute itself.
+ * For anything that needs to know light-vs-dark as rendered, not the stored preference --
+ * a third-party brand mark whose canonical colour is black picks white instead in dark mode,
+ * for one.
+ */
+export function resolvedTheme(): "light" | "dark" {
+  const attr = document.documentElement.dataset.theme;
+  if (attr === "dark" || attr === "light") return attr;
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
