@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (2026-09-17, PR #113) — the mark, round two: the constellation w
+- The #112 mark (an arc over lines) read as a signal glyph and said nothing of the graph.
+  The owner's vision -- the site becomes a knowledge graph, and the graph travels -- drove a
+  second round: eight directions on one sheet (`docs/design/logo-explorations-2.svg`), each
+  tested against the share icon, the Wi-Fi glyph, the hex mesh, the atom and the Neo4j /
+  GraphQL marks, then five refinements of the pick judged on true 16 px rasters at 8×
+  (`logo-refinement-2.svg`). The mark is the constellation w: five nodes and four edges, a
+  knowledge graph that spells the initial, hubs at the ends and smaller nodes within so it
+  still reads at 16 px; a constellation, so it belongs with the hero's space. Its brightest
+  star, at the top right, is a four-point star -- the owner's ask for the AI and agents who
+  will consume the graph; the edge ends at its centre, so it is still a node of the w
+  (`logo-refinement-3.svg` compares the node-as-star, a companion sparkle and this). At
+  16 px the star's arms merge, so the favicon (`favicon.svg`, `app/icon.svg`) carries a
+  larger dot there instead; every other size has the star. Same asset set as before,
+  replaced in place: `public/logo/{mark,mark-mono,lockup}.svg`, `favicon.svg`,
+  `icon-32/180/512.png`, `app/icon.svg`, `app/apple-icon.png`, `app/opengraph-image.png`
+  over the sunrise, and the inline glyph in `<Wordmark>`.
+
 ### Changed (2026-09-17, PR #112) — theme: "Atmosphere" site-wide, and the mark
 - The palette follows the hero. The study (contact sheets of eight views × two themes for
   the green control and three candidates -- Atmosphere, Sunrise, Ink -- the hand-off seams,

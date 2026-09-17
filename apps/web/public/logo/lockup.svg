@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 32" width="176" height="32">
   <title>webgraph</title>
   <rect width="32" height="32" rx="7.3" fill="#3568a3"/>
-  <g fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round">
-    <path d="M6.7 14 Q16 5.1 25.3 14"/>
-    <path d="M8.7 19.7 H23.3"/>
-    <path d="M8.7 25.6 H18"/>
+  <g fill="#ffffff" transform="scale(1.3333)">
+    <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L18.8 7.9" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/><circle cx="12" cy="10.5" r="1.8"/>
+    <path d="M18.80 4.30 L19.95 6.75 L22.40 7.90 L19.95 9.05 L18.80 11.50 L17.65 9.05 L15.20 7.90 L17.65 6.75 Z"/>
   </g>
   <!-- The wordmark is Manrope 700 (the site's sans); machines without it fall back to the system sans. -->
   <text x="42" y="22.5" font-family="Manrope, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="-0.4" fill="currentColor">webgraph</text>
