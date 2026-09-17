@@ -2,9 +2,8 @@
   <title>webgraph</title>
   <rect width="24" height="24" rx="5.5" fill="#3568a3"/>
   <g fill="#ffffff">
-    <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L19.5 7.5" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="19.5" cy="7.5" r="2.5"/>
-    <circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/>
-    <circle cx="12" cy="10.5" r="1.8"/>
+    <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L18.8 7.9" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/><circle cx="12" cy="10.5" r="1.8"/>
+    <path d="M18.80 4.30 L19.95 6.75 L22.40 7.90 L19.95 9.05 L18.80 11.50 L17.65 9.05 L15.20 7.90 L17.65 6.75 Z"/>
   </g>
 </svg>

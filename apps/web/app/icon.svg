@@ -1,10 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <title>webgraph</title>
+  <!-- The 16 px form of the mark: the brightest star drawn as a larger dot, since its arms merge at that size. -->
   <rect width="24" height="24" rx="5.5" fill="#3568a3"/>
   <g fill="#ffffff">
     <path d="M4.5 7.5 L8.5 17 L12 10.5 L15.5 17 L19.5 7.5" fill="none" stroke="#ffffff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="19.5" cy="7.5" r="2.5"/>
-    <circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/>
-    <circle cx="12" cy="10.5" r="1.8"/>
+    <circle cx="4.5" cy="7.5" r="2.5"/><circle cx="8.5" cy="17" r="2.1"/><circle cx="15.5" cy="17" r="2.1"/><circle cx="12" cy="10.5" r="1.8"/><circle cx="19.5" cy="7.5" r="3"/>
   </g>
 </svg>
