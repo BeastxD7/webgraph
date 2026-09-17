@@ -71,3 +71,16 @@ Returns three things, so the settings page and the file never disagree:
 `GET /api/health` is the shorter check: `render_available`, `max_concurrent_renders`,
 `private_hosts_blocked` and `max_pages`. The last two are there because a deployment with
 the guard off and no cap "looks perfectly healthy".
+
+## One origin for web and API
+
+Set `NEXT_PUBLIC_API_BASE=/` when building the web app and `WEBGRAPH_API_PROXY=http://127.0.0.1:8000`
+for both the build and `next start`. The page then calls `/api/...` on its own origin and the
+web server forwards those requests to the API. One host serves everything, so a single tunnel
+or domain is enough and CORS never applies; the API's `WEBGRAPH_ALLOWED_ORIGINS` is only
+needed when browsers call it directly.
+
+```bash
+NEXT_PUBLIC_API_BASE=/ WEBGRAPH_API_PROXY=http://127.0.0.1:8000 pnpm web:build
+WEBGRAPH_API_PROXY=http://127.0.0.1:8000 pnpm --filter @webgraph/web start
+```
