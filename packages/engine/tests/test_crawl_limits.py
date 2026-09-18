@@ -161,9 +161,7 @@ class TestStoppedBy:
         assert stage["unlimited"] is True
         assert stage["max_pages"] == 0
 
-    def test_the_time_limit_names_itself(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_the_time_limit_names_itself(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The clock is advanced by the fake resolver, so each fetched page costs 100 s."""
         clock = {"now": 0.0}
         monkeypatch.setattr(site_module, "_monotonic", lambda: clock["now"])
@@ -253,7 +251,9 @@ class TestFilesAreCountedNotFetched:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         many = "".join(f'<a href="/files/{i}.pdf">f{i}</a>' for i in range(12))
-        monkeypatch.setitem(PAGES, ROOT, page_html("root", LINKS).replace("</main>", f"{many}</main>"))
+        monkeypatch.setitem(
+            PAGES, ROOT, page_html("root", LINKS).replace("</main>", f"{many}</main>")
+        )
         monkeypatch.setattr(site_module, "SKIPPED_URLS_REPORTED", 5)
         done = done_of(crawl(max_pages=1))
         assert done["skipped_total"] == 13
@@ -279,7 +279,11 @@ class TestFilesAreCountedNotFetched:
         assert accepted == [f"{ROOT}page"]
         assert len(frontier) == 1
         assert frontier.skipped == {"image": 1, "other_file": 1, "pdf": 1}
-        assert set(frontier.skipped_urls) == {f"{ROOT}x.pdf", f"{ROOT}img/a.png", f"{ROOT}deck.pptx"}
+        assert set(frontier.skipped_urls) == {
+            f"{ROOT}x.pdf",
+            f"{ROOT}img/a.png",
+            f"{ROOT}deck.pptx",
+        }
         citation = frontier.citation(f"{ROOT}x.pdf")
         assert citation is not None
         assert citation.found_on == ROOT
@@ -337,7 +341,9 @@ class TestRetention:
         [org] = [e for e in done["entities"] if e["type"] == "Organization"]
         assert org["pages"] == 4
 
-    def test_the_content_view_still_uses_cross_page_chrome(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_content_view_still_uses_cross_page_chrome(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Chrome is detected from a sample of full pages; the sample is released once it is
         known, and the pages after it are still reduced against it."""
         from webgraph.boilerplate import MIN_PAGES
@@ -349,7 +355,8 @@ class TestRetention:
             PAGES,
             ROOT,
             page_html("root", LINKS).replace(
-                "</main>", "".join(f'<a href="/p{i}">p{i}</a>' for i in range(MIN_PAGES + 2)) + "</main>"
+                "</main>",
+                "".join(f'<a href="/p{i}">p{i}</a>' for i in range(MIN_PAGES + 2)) + "</main>",
             ),
         )
         asked: list[str] = []
@@ -405,29 +412,43 @@ class TestHostThrottle:
         assert throttle.wait(ROOT) == 0.0
 
     def test_two_real_workers_are_spaced_by_the_interval(self) -> None:
+        """Real threads, real sleeps -- but the thing measured is the *slot* each wait was
+        granted (recorded as the sleep begins, `now + delay`), not the moment the thread
+        woke and got the lock. The moment of waking is at the scheduler's mercy: on a
+        loaded machine a thread granted slot t can be descheduled after its sleep and stamp
+        later than the thread granted t + interval, and a test that measured stamps failed
+        for that reason every time the suite ran beside a build."""
         interval = 0.05
-        throttle = HostThrottle(interval)
-        stamps: list[float] = []
+        slots: list[float] = []
         lock = threading.Lock()
+
+        def sleeping(delay: float) -> None:
+            with lock:
+                slots.append(time.monotonic() + delay)
+            time.sleep(delay)
+
+        throttle = HostThrottle(interval, sleep=sleeping)
 
         def worker() -> None:
             for i in range(3):
                 throttle.wait(f"{ROOT}{i}")
-                with lock:
-                    stamps.append(time.monotonic())
 
         threads = [threading.Thread(target=worker) for _ in range(2)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
-        gaps = [b - a for a, b in zip(sorted(stamps), sorted(stamps)[1:], strict=False)]
-        assert len(gaps) == 5
+        # Six waits on one host: the first is granted `now` and never sleeps; the other
+        # five each sleep to a slot exactly one interval after the previous one.
+        assert len(slots) == 5
+        gaps = [b - a for a, b in zip(sorted(slots), sorted(slots)[1:], strict=False)]
         assert min(gaps) >= interval * 0.9, gaps
 
 
 class TestTheCrawlIsPolitePerHost:
-    def test_two_workers_never_fetch_closer_than_the_interval(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_two_workers_never_fetch_closer_than_the_interval(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         interval = 0.05
         stamps: list[float] = []
         lock = threading.Lock()
@@ -445,15 +466,37 @@ class TestTheCrawlIsPolitePerHost:
                 stamps.append(time.monotonic())
             return resolved_for(url)
 
+        # The slots the crawl's own throttle grants, recorded as each sleep begins -- the
+        # invariant that holds on a loaded machine (see `TestHostThrottle`); the fetch
+        # stamps below are kept as a looser check that fetches did wait at all.
+        slots: list[float] = []
+        real_throttle = site_module.HostThrottle
+
+        class Recording(real_throttle):  # type: ignore[valid-type,misc]
+            def __init__(self, interval_seconds: float, **kw: Any) -> None:
+                def sleeping(delay: float) -> None:
+                    with lock:
+                        slots.append(time.monotonic() + delay)
+                    time.sleep(delay)
+
+                super().__init__(interval_seconds, sleep=sleeping, **kw)
+
+        monkeypatch.setattr(site_module, "HostThrottle", Recording)
         monkeypatch.setattr(site_module, "probe_site", fake_probe)
         monkeypatch.setattr(site_module, "resolve_page", fake_resolve)
         done = done_of(crawl(max_pages=0, concurrency=2, host_interval_seconds=interval))
         assert done["pages_total"] == 4
         assert len(stamps) == 3
+        slot_gaps = [b - a for a, b in zip(sorted(slots), sorted(slots)[1:], strict=False)]
+        assert all(gap >= interval * 0.9 for gap in slot_gaps), slot_gaps
+        # Every fetch after the first happened at least half an interval after the one
+        # before: the throttle was in the path, whatever the scheduler did with the wake.
         gaps = [b - a for a, b in zip(sorted(stamps), sorted(stamps)[1:], strict=False)]
-        assert min(gaps) >= interval * 0.9, gaps
+        assert min(gaps) >= interval * 0.5, gaps
 
-    def test_the_sites_crawl_delay_is_honoured_when_larger(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_sites_crawl_delay_is_honoured_when_larger(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         seen: dict[str, float] = {}
 
         class Spy(HostThrottle):
