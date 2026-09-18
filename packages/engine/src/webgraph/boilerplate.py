@@ -101,12 +101,29 @@ every other type gains. `header` stays: a page's `<header>` carries its own titl
 byline, and `_restore_title` depends on finding them.
 """
 
-def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
+def strip_landmarks(blocks: Sequence[Block], *, title_block: Block | None = None) -> list[Block]:
     """Drop blocks inside `<nav>`, `<footer>` and `<aside>`, and inside named panels.
 
     Unlike cross-page detection this needs a single page, so it applies from the first result
     of a crawl rather than the sixth.
+
+    `title_block` is the block carrying the page's own title (`content._title_block`). An
+    `<aside>` that holds it is not complementary, whatever the markup calls it: it is the
+    page's subject. allbirds.com puts a product's whole buy box -- the `<h1>`, the price,
+    the colour, the sizes -- in an `<aside>`, and stripping it left "final sale*" and "Add
+    to Cart" as the product. The blocks under that one `<aside>` element are kept; every
+    other aside on the page is stripped as before.
     """
+    kept_aside = _aside_of(title_block) if title_block is not None else None
+    if kept_aside is not None:
+        # The page's subject, so the later steps read it as main: the boundary step gives
+        # spec lines (`$16`, `Color: Onyx`) their credit only inside main.
+        blocks = [
+            block.model_copy(update={"region": "main", "in_main": True})
+            if block.xpath.startswith(kept_aside)
+            else block
+            for block in blocks
+        ]
     kept = [
         block
         for block in blocks
@@ -123,6 +140,19 @@ def strip_landmarks(blocks: Sequence[Block]) -> list[Block]:
     if sum(len(b.text) for b in kept) < MIN_LANDMARK_CHARS:
         return list(blocks)
     return kept
+
+
+_ASIDE_STEP: Final[re.Pattern[str]] = re.compile(r"^(.*/aside(?:\[\d+\])?)(?:/|$)")
+
+
+def _aside_of(block: Block) -> str | None:
+    """The XPath of the innermost `<aside>` the block sits in, with a trailing slash so a
+    prefix test matches its descendants and not a sibling `aside[10]`; None when the block
+    is in no aside."""
+    if block.region != "aside":
+        return None
+    match = _ASIDE_STEP.match(block.xpath)
+    return match.group(1) + "/" if match else None
 
 
 STRIPPED_REGIONS: Final[frozenset[str]] = frozenset({"nav", "footer", "aside"})
