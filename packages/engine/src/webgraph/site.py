@@ -47,6 +47,7 @@ from webgraph.crawl.frontier import (
     normalize_url,
     reconcile_scheme,
     same_site,
+    scope_patterns,
     url_kind,
 )
 from webgraph.crawl.politeness import HostThrottle
@@ -133,6 +134,11 @@ class SiteConfig:
     default -- a deep site is still a finite one, and the page budget is the real bound."""
 
     strict_domain: bool = config.CRAWL_STRICT_DOMAIN
+    within_path: bool = config.CRAWL_WITHIN_PATH
+    """Stay under the start address's path. See `config.CRAWL_WITHIN_PATH`."""
+    include_paths: str = config.CRAWL_INCLUDE_PATHS
+    exclude_paths: str = config.CRAWL_EXCLUDE_PATHS
+    """Comma-separated regular expressions over the path. See `config.CRAWL_INCLUDE_PATHS`."""
     """Stay on the root's host, or also follow its subdomains.
 
     Strict means `www.example.com` and `example.com` only -- they are the same site by
@@ -1052,6 +1058,10 @@ def stream_site(
         root=normalized_root,
         max_depth=config.max_depth,
         allow_subdomains=not config.strict_domain,
+        include_patterns=scope_patterns(
+            config.include_paths, within=normalized_root if config.within_path else None
+        ),
+        exclude_patterns=scope_patterns(config.exclude_paths),
     )
     frontier = Frontier(scope=scope, max_queue=config.max_queue, fetch_files=config.fetch_files)
     frontier.mark_seen(normalized_root)

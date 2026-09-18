@@ -52,7 +52,7 @@ indistinguishable from a backend that is down.
 
 Per-run knobs are not environment variables. `/api/site/stream` accepts `max_pages`,
 `concurrency`, `complete`, and three option objects — `crawl` (`max_depth`, `strict_domain`,
-`delay_seconds`, `verify_inventory`, `follow_links`, `discovery_limit`, `sitemap_limit`,
+`within_path`, `include_paths`, `exclude_paths`, `delay_seconds`, `verify_inventory`, `follow_links`, `discovery_limit`, `sitemap_limit`,
 `respect_robots`, `remove_chrome`, `main_content`), `fetch` and `renderOptions` — each
 applied on top of `config.py`'s defaults and then clamped by the host's caps. The `run`
 header frame of every stream reports the values *actually applied*.

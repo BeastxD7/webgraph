@@ -16,6 +16,7 @@ from webgraph.crawl.frontier import (
     canonical_key,
     normalize_url,
     same_site,
+    scope_patterns,
 )
 
 
@@ -368,8 +369,8 @@ class TestRefusals:
     def test_patterns_and_the_cap(self) -> None:
         scope = CrawlScope(
             root="https://example.com/",
-            include_patterns=(re.compile(r"/docs/"),),
-            exclude_patterns=(re.compile(r"/docs/private"),),
+            include_patterns=(re.compile(r"^/docs/"),),
+            exclude_patterns=(re.compile(r"^/docs/private"),),
         )
         frontier = Frontier(scope=scope, max_queue=1)
         base = "https://example.com/"
@@ -393,3 +394,33 @@ class TestRefusals:
             is None
         )
         assert scope.refusal("https://www.example.com/a", 1) is None
+
+
+class TestScopePatterns:
+    """Path patterns, and staying under the start address's path, as `CrawlScope` rules."""
+
+    def test_within_the_start_path(self) -> None:
+        include = scope_patterns("", within="https://example.com/docs/guide")
+        scope = CrawlScope(root="https://example.com/", include_patterns=include)
+        assert scope.refusal("https://example.com/docs/api", 1) is None
+        assert scope.refusal("https://example.com/docs/", 1) is None
+        assert scope.refusal("https://example.com/blog/x", 1) == "not-included"
+        # The root's directory is every path: no restriction is added for it.
+        assert scope_patterns("", within="https://example.com/") == ()
+
+    def test_include_and_exclude_over_the_path(self) -> None:
+        scope = CrawlScope(
+            root="https://example.com/",
+            include_patterns=scope_patterns("^/docs/, ^/blog/"),
+            exclude_patterns=scope_patterns("/private"),
+        )
+        assert scope.refusal("https://example.com/docs/a", 1) is None
+        assert scope.refusal("https://example.com/blog/b", 1) is None
+        assert scope.refusal("https://example.com/about", 1) == "not-included"
+        assert scope.refusal("https://example.com/docs/private/c", 1) == "excluded"
+        # Patterns are over the path, never the host: "docs" in the host does not match.
+        assert scope.refusal("https://docs.example.com/x", 1) == "off-site"
+
+    def test_a_broken_pattern_is_the_callers_error(self) -> None:
+        with pytest.raises(ValueError, match="not a valid path pattern"):
+            scope_patterns("^/docs/(")

@@ -57,6 +57,9 @@ Accepted by `/api/site/stream` only, as `crawl`. `max_pages`, `concurrency` and 
 |---|---|---|---|
 | `max_depth` | integer 0–50 | `12` (`CRAWL_MAX_DEPTH`) | Links away from the root the crawl goes. `0` is the root alone; `1` adds everything it links to or its sitemap lists. Breadth-first, so a page budget is spent near the root |
 | `strict_domain` | boolean | `true` (`CRAWL_STRICT_DOMAIN`) | Stay on the root's host (`www.example.com` and `example.com` are one host). `false` also follows subdomains, never other sites |
+| `within_path` | boolean | `false` (`CRAWL_WITHIN_PATH`) | Stay under the start address's path: a crawl of `example.com/docs/guide` follows `/docs/...` and turns `/blog/...` away as `not-included`. Off, because a site is the unit this engine reads |
+| `include_paths` | string | `""` (`CRAWL_INCLUDE_PATHS`) | Comma-separated regular expressions searched in the address's path (never the host). When set, only matching addresses are crawled; the rest are counted as `not-included` in the run's `refused`. A pattern that does not compile is a `422` |
+| `exclude_paths` | string | `""` (`CRAWL_EXCLUDE_PATHS`) | Comma-separated regular expressions searched in the path; a match is turned away as `excluded`, whatever else says |
 | `delay_seconds` | number 0–10 | `0.3` (`CRAWL_DELAY_SECONDS`) | Pause between fetches per worker. Raised to the site's `Crawl-delay` when that is larger |
 | `verify_inventory` | boolean | `true` (`CRAWL_VERIFY_INVENTORY`) | Check each sitemap URL with a cheap request before spending a page on it, so a stale sitemap cannot burn the budget on 404s — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
 | `follow_links` | boolean | `true` (`CRAWL_FOLLOW_LINKS`) | Discover pages by following links as well as reading the sitemap — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
@@ -73,6 +76,18 @@ Accepted by `/api/site/stream` only, as `crawl`. `max_pages`, `concurrency` and 
   "crawl": { "max_depth": 3, "strict_domain": false, "delay_seconds": 1.0, "main_content": false }
 }
 ```
+
+A crawl of one section, with the rest of the site counted but not fetched:
+
+```json
+{
+  "url": "https://www.gov.uk/",
+  "max_pages": 200,
+  "crawl": { "include_paths": "^/government/", "exclude_paths": "/publications/" }
+}
+```
+
+The `done` event then says what was turned away and why -- on gov.uk, tens of thousands of addresses as `excluded` and `not-included`, with the first two hundred named -- so the scope is a fact about the run, not an unspoken filter.
 
 <Callout type="warn">
 `strict_domain: false` turns a bounded crawl into a potentially unbounded one: `blog.`, `shop.` and `status.` subdomains are usually separate applications. Pair it with `max_pages`.

@@ -14,6 +14,9 @@ const SOURCE: Record<"crawl" | "fetch" | "renderOptions", Record<string, string>
   crawl: {
     max_depth: "CRAWL_MAX_DEPTH",
     strict_domain: "CRAWL_STRICT_DOMAIN",
+    within_path: "CRAWL_WITHIN_PATH",
+    include_paths: "CRAWL_INCLUDE_PATHS",
+    exclude_paths: "CRAWL_EXCLUDE_PATHS",
     delay_seconds: "CRAWL_DELAY_SECONDS",
     verify_inventory: "CRAWL_VERIFY_INVENTORY",
     follow_links: "CRAWL_FOLLOW_LINKS",
@@ -91,6 +94,19 @@ function Control({
           <option key={option} value={option}>{option}</option>
         ))}
       </select>
+    );
+  } else if (typeof fallback === "string") {
+    // A text setting: path patterns, comma-separated. Empty means "no override", so the
+    // default (usually nothing) applies again.
+    input = (
+      <input
+        id={id}
+        type="text"
+        value={overridden ? String(current) : ""}
+        placeholder={fallback ? String(fallback) : field.includes("paths") ? "e.g. ^/docs/, ^/blog/" : ""}
+        onChange={(event) => onChange(event.target.value === "" ? undefined : event.target.value)}
+        className="w-full max-w-md rounded-lg border border-line bg-haze px-2.5 py-1.5 font-mono text-[12.5px]"
+      />
     );
   } else {
     input = (

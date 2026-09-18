@@ -35,9 +35,10 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from webgraph import config as engine_config
 from webgraph.content import select_content
+from webgraph.crawl.frontier import scope_patterns
 from webgraph.extract.page_facts import facts_for_page
 from webgraph.extract.schema import extract_facts, merge_facts
 from webgraph.fetch import guard
@@ -224,6 +225,33 @@ class CrawlOptions(BaseModel):
 
     max_depth: int | None = Field(default=None, ge=0, le=50)
     strict_domain: bool | None = None
+    within_path: bool | None = Field(
+        default=None,
+        description="Stay under the start address's path: a crawl of example.com/docs/ "
+        "follows /docs/... and turns /blog/... away as not-included.",
+    )
+    include_paths: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Comma-separated regular expressions over the path; when set, only "
+        "matching addresses are crawled. Every address turned away is counted with its "
+        "reason in the run's `refused`.",
+    )
+    exclude_paths: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Comma-separated regular expressions over the path; matching addresses "
+        "are turned away as `excluded`.",
+    )
+
+    @field_validator("include_paths", "exclude_paths")
+    @classmethod
+    def _patterns_compile(cls, value: str | None) -> str | None:
+        # A pattern that does not compile is answered as a 422 here, not as a crawl that
+        # fails on its first frame.
+        if value is not None:
+            scope_patterns(value)
+        return value
     delay_seconds: float | None = Field(default=None, ge=0, le=10)
     verify_inventory: bool | None = None
     follow_links: bool | None = None

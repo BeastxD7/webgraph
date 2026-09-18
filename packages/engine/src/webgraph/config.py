@@ -357,6 +357,21 @@ CRAWL_MAX_DEPTH = 12
 # False: also follow subdomains (blog.example.com, shop.example.com). Never other sites.
 CRAWL_STRICT_DOMAIN = True
 
+# True: stay under the start address's path -- a crawl of example.com/docs/ follows
+# /docs/... and turns /blog/... away as `not-included`. False: the whole site, whatever
+# address it started from. Off, because a site is the unit this engine reads.
+CRAWL_WITHIN_PATH = False
+
+# Paths to follow, as regular expressions searched in the address's path (never the host),
+# comma-separated -- "^/docs/, ^/blog/". Empty means no restriction. When set, only
+# matching addresses are crawled; the rest are counted as `not-included` in the run's
+# `refused`, with the first of them named.
+CRAWL_INCLUDE_PATHS = ""
+
+# Paths to turn away, the same shape -- "/publications/, \?page=". A match is refused as
+# `excluded`, whatever else says, and counted in the run's `refused`.
+CRAWL_EXCLUDE_PATHS = ""
+
 # Check each sitemap URL with a cheap request before spending a page on it.
 CRAWL_VERIFY_INVENTORY = True
 

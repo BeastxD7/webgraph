@@ -28,32 +28,114 @@ __all__ = [
     "url_kind",
 ]
 
-TRACKING_PARAMS: Final[frozenset[str]] = frozenset({
-    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
-    "gclid", "fbclid", "msclkid", "mc_cid", "mc_eid", "igshid", "ref", "ref_src",
-    "_ga", "_gl", "yclid", "dclid", "twclid", "s_kwcid", "hsa_acc", "hsa_cam",
-})
+TRACKING_PARAMS: Final[frozenset[str]] = frozenset(
+    {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "utm_id",
+        "gclid",
+        "fbclid",
+        "msclkid",
+        "mc_cid",
+        "mc_eid",
+        "igshid",
+        "ref",
+        "ref_src",
+        "_ga",
+        "_gl",
+        "yclid",
+        "dclid",
+        "twclid",
+        "s_kwcid",
+        "hsa_acc",
+        "hsa_cam",
+    }
+)
 """Stripped during normalisation. These change per visitor and never change the page."""
 
-NON_PAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".ico", ".bmp", ".tiff",
-    ".css", ".js", ".mjs", ".map", ".json", ".xml", ".rss", ".atom",
-    ".zip", ".gz", ".tar", ".rar", ".7z", ".dmg", ".exe", ".pkg", ".deb", ".rpm",
-    ".mp3", ".mp4", ".avi", ".mov", ".wmv", ".webm", ".ogg", ".wav", ".m4a",
-    ".woff", ".woff2", ".ttf", ".otf", ".eot",
-    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
-})
+NON_PAGE_SUFFIXES: Final[frozenset[str]] = frozenset(
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".avif",
+        ".svg",
+        ".ico",
+        ".bmp",
+        ".tiff",
+        ".css",
+        ".js",
+        ".mjs",
+        ".map",
+        ".json",
+        ".xml",
+        ".rss",
+        ".atom",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".rar",
+        ".7z",
+        ".dmg",
+        ".exe",
+        ".pkg",
+        ".deb",
+        ".rpm",
+        ".mp3",
+        ".mp4",
+        ".avi",
+        ".mov",
+        ".wmv",
+        ".webm",
+        ".ogg",
+        ".wav",
+        ".m4a",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".otf",
+        ".eot",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+    }
+)
 """Refused by `normalize_url`: never a page. PDFs are deliberately absent -- they are
 documents worth extracting, and belong to a document pipeline rather than being discarded
 here -- but until that pipeline exists the frontier counts them without queuing them
 (`FILE_KINDS`, `Frontier.fetch_files`)."""
 
-IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset({
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".svg", ".ico", ".bmp", ".tiff",
-})
+IMAGE_SUFFIXES: Final[frozenset[str]] = frozenset(
+    {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".avif",
+        ".svg",
+        ".ico",
+        ".bmp",
+        ".tiff",
+    }
+)
 
 KINDS: Final[tuple[str, ...]] = (
-    "page", "pdf", "image", "other_file", "archive", "category", "tag",
+    "page",
+    "pdf",
+    "image",
+    "other_file",
+    "archive",
+    "category",
+    "tag",
 )
 """What a discovered address looks like, from its URL alone. Every key is reported on
 every event, zeros included, so a consumer gets a closed shape rather than a sparse one."""
@@ -269,6 +351,34 @@ def canonical_key(url: str) -> str:
     return urlunsplit((parts.scheme, host, path, parts.query, ""))
 
 
+def scope_patterns(spec: str, *, within: str | None = None) -> tuple[re.Pattern[str], ...]:
+    """Compile a comma-separated list of path regular expressions, plus -- when `within` is
+    an address -- one that keeps the crawl under that address's path.
+
+    Each pattern is searched in the *path* of a discovered address (`CrawlScope` matches
+    its patterns against the path, never the host, so `docs` in a pattern cannot pull in
+    `docs.example.com`). A pattern that does not compile is a caller's error and is raised
+    as one, not swallowed into a crawl that silently follows everything.
+    """
+    patterns: list[re.Pattern[str]] = []
+    if within is not None:
+        path = urlsplit(within).path
+        base = path if path.endswith("/") else path.rsplit("/", 1)[0] + "/"
+        # The start address's directory: `/docs/guide` stays under `/docs/`; `/docs/` under
+        # `/docs/`. The root's `/` is every path, so no pattern is added for it.
+        if base != "/":
+            patterns.append(re.compile("^" + re.escape(base)))
+    for raw in spec.split(","):
+        pattern = raw.strip()
+        if not pattern:
+            continue
+        try:
+            patterns.append(re.compile(pattern))
+        except re.error as exc:
+            raise ValueError(f"not a valid path pattern: {pattern!r} ({exc})") from exc
+    return tuple(patterns)
+
+
 @dataclass(frozen=True, slots=True)
 class CrawlScope:
     """Rules deciding which discovered URLs are followed."""
@@ -276,7 +386,8 @@ class CrawlScope:
     root: str
     allow_subdomains: bool = False
     include_patterns: tuple[re.Pattern[str], ...] = ()
-    """When non-empty, a URL must match at least one to be crawled."""
+    """When non-empty, a URL must match at least one to be crawled. `scope_patterns` builds
+    these from path expressions."""
 
     exclude_patterns: tuple[re.Pattern[str], ...] = ()
     max_depth: int = 3
@@ -292,9 +403,14 @@ class CrawlScope:
             return "past-depth"
         if not same_site(url, self.root, allow_subdomains=self.allow_subdomains):
             return "off-site"
-        if any(pattern.search(url) for pattern in self.exclude_patterns):
+        # Patterns are over the path (with its query), never the host.
+        parts = urlsplit(url)
+        path = parts.path + (f"?{parts.query}" if parts.query else "")
+        if any(pattern.search(path) for pattern in self.exclude_patterns):
             return "excluded"
-        if self.include_patterns and not any(pattern.search(url) for pattern in self.include_patterns):
+        if self.include_patterns and not any(
+            pattern.search(path) for pattern in self.include_patterns
+        ):
             return "not-included"
         return None
 
@@ -323,7 +439,6 @@ class Discovery:
             "anchor": self.anchor,
             "depth": self.depth,
         }
-
 
 
 REFUSALS: Final[tuple[str, ...]] = (
