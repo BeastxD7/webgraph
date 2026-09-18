@@ -249,6 +249,11 @@ class PageExtraction:
     error: str | None = None
     text_chars: int = 0
     strategy: Strategy | None = None
+    static_chars: int = 0
+    rendered_chars: int = 0
+    """What each fetch gave, in characters of readable text -- the same two numbers the
+    analysis reports for the root, kept per page so a `union` whose browser render came
+    back empty (a WebGL page in a headless browser) says so rather than claiming both."""
 
     markdown: str = ""
     """Structure-preserving output: headings, images, tables, code, in reading order."""
@@ -626,6 +631,8 @@ def _page_from_resolved(
         facts=facts,
         text_chars=len(document.text),
         strategy=resolved.strategy,
+        static_chars=resolved.static_chars,
+        rendered_chars=resolved.rendered_chars,
         markdown=markdown,
         images=images,
         tables=tables,
@@ -1422,6 +1429,10 @@ def stream_site(
                         "in_script": list(page.script_links),
                     },
                     "strategy": page.strategy.value if page.strategy else None,
+                    # Per page, what each fetch gave: a `union` with `rendered_chars: 0`
+                    # is the plain fetch's page alone, the browser having produced nothing.
+                    "static_chars": page.static_chars,
+                    "rendered_chars": page.rendered_chars,
                     "queued": len(frontier),
                     "discovered": frontier.seen_count,
                     "depth_counts": frontier.depth_counts(),

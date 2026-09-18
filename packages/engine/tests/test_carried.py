@@ -166,6 +166,8 @@ def test_the_page_event_reports_what_the_page_carries(faked: list[str]) -> None:
 
     projects = pages[f"{ROOT}projects"]
     assert projects["canvas"] == {"canvases": 1, "words": 7, "script_bytes": len(BUNDLE)}
+    # What each fetch gave rides on every page event (static-only here, so no render).
+    assert projects["static_chars"] > 0 and projects["rendered_chars"] == 0
     assert [link["url"] for link in projects["links_out"]["in_script"]] == [
         "https://github.com/someone/jarvis.git",
         "https://jarvis.example.net/",
