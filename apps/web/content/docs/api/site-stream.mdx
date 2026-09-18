@@ -103,7 +103,7 @@ One per page, whether it succeeded or not.
 | `page_type`, `page_type_confidence`, `page_type_reasons`, `page_type_runner_up` | The router's verdict with its reasons |
 | `canvas` | Set when the page draws its content in a `<canvas>` rather than writing it: `canvases`, `words` (readable, under 40), `script_bytes` (how much of its own script was read for what the canvas shows). `null` for every other page |
 | `links_out` | Every address the page points at beyond this site, recorded and never queued. `external`: real links on the page, each `url` and `anchor`, capped at 60. `in_script`: addresses the page's own scripts store as named values (`github`, `live`, `url`), each `url` and `key` -- read only for a canvas page, found in code rather than on the page, capped at 60 |
-| `strategy` | How this page was fetched |
+| `strategy`, `static_chars`, `rendered_chars` | How this page was fetched, and what each fetch gave in characters of readable text. A `union` with `rendered_chars` 0 is the plain fetch's page alone: the browser produced an empty page (a WebGL scene in a headless browser does) |
 | `queued`, `discovered`, `depth_counts`, `discovered_kinds`, `extracted`, `failed`, `newly_queued`, `new_urls`, `pages_per_minute`, `totals` | Running counters; `totals` has `chars`, `markdown`, `images`, `tables` |
 | `graph` | `pages`, `sections`, `entities`, `links`, `mentions` in the graph so far |
 

@@ -964,6 +964,10 @@ export interface PageEvent {
     in_script: Array<{ url: string; key: string }>;
   };
   strategy: string | null;
+  /** What each fetch gave, in characters of readable text. A `union` with `rendered_chars`
+   *  0 is the plain fetch's page alone: the browser produced an empty page. */
+  static_chars?: number;
+  rendered_chars?: number;
   depth: number;
   queued: number;
   discovered: number;

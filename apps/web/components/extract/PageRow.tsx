@@ -87,6 +87,14 @@ export default function PageRow({
               <span>{compact(page.markdown.length)} chars</span>
               {page.images.length > 0 && <span>{page.images.length} img</span>}
               {page.tables > 0 && <span>{page.tables} tbl</span>}
+              {page.strategy === "union" && page.rendered_chars === 0 && (page.static_chars ?? 0) > 0 && (
+                <span
+                  title={`The browser rendered an empty page; the plain fetch's ${page.static_chars} characters are what was read`}
+                  className="rounded-full bg-sunk px-2 py-0.5 font-semibold text-ink-faint"
+                >
+                  render was empty
+                </span>
+              )}
               {page.canvas && (
                 <span
                   title={`${page.canvas.words} readable words; ${page.canvas.canvases} canvas; ${compact(page.canvas.script_bytes)} bytes of script read`}
