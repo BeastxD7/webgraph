@@ -67,9 +67,19 @@ class TestImages:
         out = md('<img data-src="/real.png" alt="Real">')
         assert "https://example.com/real.png" in out
 
-    def test_srcset_fallback(self) -> None:
+    def test_srcset_gives_the_largest(self) -> None:
+        """`src` is the smallest of the set, the fallback for browsers that never read it;
+        the page's image is the largest. Widths, densities, and a bare candidate as 1x."""
         out = md('<img srcset="/small.png 480w, /big.png 1024w" alt="S">')
-        assert "https://example.com/small.png" in out
+        assert "https://example.com/big.png" in out and "small.png" not in out
+        out = md('<img src="/one.png" srcset="/one.png, /two.png 2x, /three.png 3x" alt="D">')
+        assert "https://example.com/three.png" in out
+        out = md('<img src="/fallback.png" srcset="/w800.png 800w, /w400.png 400w" alt="W">')
+        assert "https://example.com/w800.png" in out and "fallback.png" not in out
+
+    def test_a_lazy_srcset_is_read_too(self) -> None:
+        out = md('<img data-srcset="/l1.png 1x, /l2.png 2x" alt="L">')
+        assert "https://example.com/l2.png" in out
 
     def test_tracking_pixels_skipped(self) -> None:
         out = md('<img src="/pixel.gif" width="1" height="1" alt="">')
@@ -101,7 +111,10 @@ class TestTables:
             "<table><tr><th>Title</th><th>Where</th></tr>"
             '<tr><td><a href="/x/1">Free Guinea Pig Lawn Trimming</a></td><td><b>SF</b> bay | area</td></tr></table>'
         )
-        assert "| [Free Guinea Pig Lawn Trimming](https://example.com/x/1) | **SF** bay \\| area |" in out
+        assert (
+            "| [Free Guinea Pig Lawn Trimming](https://example.com/x/1) | **SF** bay \\| area |"
+            in out
+        )
         document = build_document(self.HTML, "https://example.com/")
         assert document.blocks[0].rich_rows == ()
         # With links off the plain cells render: WebMainBench scores that way, and #68
@@ -236,9 +249,7 @@ class TestInlineLinks:
         """Dedup, hashing and reading order key on `text`; Markdown syntax must not leak in."""
         from webgraph.pipeline import build_document
 
-        doc = build_document(
-            '<html><body><p>See <a href="/d">docs</a></p></body></html>', BASE
-        )
+        doc = build_document('<html><body><p>See <a href="/d">docs</a></p></body></html>', BASE)
         assert doc.blocks[0].text == "See docs"
         assert "](" not in doc.text
 
@@ -268,7 +279,9 @@ class TestPermalinkAnchors:
     def test_an_old_mediawiki_editsection_is_a_control(self) -> None:
         """cppreference.com: `<span class="editsection noprint">[edit]</span>` beside every
         heading and table row, 56 on the `std::vector` page."""
-        out = md('<h3>Member functions<span class="editsection noprint plainlinks">[<a href="/w/x">edit</a>]</span></h3><p>Body text here.</p>')
+        out = md(
+            '<h3>Member functions<span class="editsection noprint plainlinks">[<a href="/w/x">edit</a>]</span></h3><p>Body text here.</p>'
+        )
         assert "### Member functions" in out and "edit" not in out
 
     def test_a_glyph_only_fragment_anchor_is_a_permalink_whatever_its_class(self) -> None:
@@ -350,8 +363,10 @@ class TestLayoutTables:
         from webgraph.dom.blocks import parse_html
         from webgraph.dom.rich import is_layout_table
 
-        root = parse_html("<html><body><table><tr><td><table><tr><td>x</td></tr>"
-                          "</table></td></tr></table></body></html>")
+        root = parse_html(
+            "<html><body><table><tr><td><table><tr><td>x</td></tr>"
+            "</table></td></tr></table></body></html>"
+        )
         assert is_layout_table(root.xpath("//table")[0])
 
     def test_a_table_with_headers_is_data_even_when_its_cells_are_busy(self) -> None:
@@ -432,8 +447,9 @@ class TestLayoutTables:
         from webgraph.dom.blocks import parse_html
         from webgraph.dom.rich import is_layout_table
 
-        root = parse_html("<html><body><table><tr><td>Home</td><td>About</td>"
-                          "</tr></table></body></html>")
+        root = parse_html(
+            "<html><body><table><tr><td>Home</td><td>About</td></tr></table></body></html>"
+        )
         assert is_layout_table(root.xpath("//table")[0])
 
     def test_a_single_column_is_not_a_table_either(self) -> None:
@@ -465,8 +481,10 @@ class TestLayoutTables:
         from webgraph.dom.blocks import parse_html
         from webgraph.dom.rich import is_layout_table
 
-        root = parse_html("<html><body><table><tr><td>Leeds</td><td>793000</td></tr>"
-                          "<tr><td>Sheffield</td><td>556000</td></tr></table></body></html>")
+        root = parse_html(
+            "<html><body><table><tr><td>Leeds</td><td>793000</td></tr>"
+            "<tr><td>Sheffield</td><td>556000</td></tr></table></body></html>"
+        )
         assert not is_layout_table(root.xpath("//table")[0])
 
     def test_a_header_still_overrides_the_shape_test(self) -> None:
@@ -475,8 +493,9 @@ class TestLayoutTables:
         from webgraph.dom.blocks import parse_html
         from webgraph.dom.rich import is_layout_table
 
-        root = parse_html("<html><body><table><tr><th>Plan</th></tr>"
-                          "<tr><td>Pro</td></tr></table></body></html>")
+        root = parse_html(
+            "<html><body><table><tr><th>Plan</th></tr><tr><td>Pro</td></tr></table></body></html>"
+        )
         assert not is_layout_table(root.xpath("//table")[0])
 
     def test_a_page_laid_out_in_tables_is_extracted_as_content(self) -> None:
@@ -536,10 +555,7 @@ class TestTableSpans:
         assert all(isinstance(cell, str) for row in table.rows for cell in row)
 
     def test_a_rowspan_reaching_past_the_last_row_is_kept(self) -> None:
-        html = (
-            "<table><tr><td rowspan='3'>held</td><td>a</td></tr>"
-            "<tr><td>b</td></tr></table>"
-        )
+        html = "<table><tr><td rowspan='3'>held</td><td>a</td></tr><tr><td>b</td></tr></table>"
         table = next(b for b in blocks(html) if b.kind is BlockKind.TABLE)
         assert sum(row.count("held") for row in table.rows) == 3
 
@@ -547,8 +563,10 @@ class TestTableSpans:
         """Untrusted input: `colspan="99999999"` is otherwise a memory-exhaustion primitive."""
         from webgraph.dom.rich import _MAX_SPAN
 
-        html = ('<table><tr><td colspan="99999999">x</td><td>y</td></tr>'
-                "<tr><td>a</td><td>b</td></tr></table>")
+        html = (
+            '<table><tr><td colspan="99999999">x</td><td>y</td></tr>'
+            "<tr><td>a</td><td>b</td></tr></table>"
+        )
         table = next(b for b in blocks(html) if b.kind is BlockKind.TABLE)
         # The cap bounds each span, so the row is that plus its remaining real cells --
         # bounded, which is the property that matters, rather than exactly the cap.
@@ -622,10 +640,7 @@ class TestMediaPlaceholders:
         assert media[0].href == "https://www.youtube.com/embed/abc"
 
     def test_a_video_source_is_resolved(self) -> None:
-        html = (
-            '<video title="Tour">'
-            '<source src="/media/tour.mp4" type="video/mp4"></video>'
-        )
+        html = '<video title="Tour"><source src="/media/tour.mp4" type="video/mp4"></video>'
         media = next(b for b in blocks(html) if b.kind is BlockKind.MEDIA)
         assert media.href == "https://example.com/media/tour.mp4"
 
@@ -660,11 +675,7 @@ class TestMediaPlaceholders:
         assert "not transcribed" in rendered
 
     def test_surrounding_prose_is_untouched(self) -> None:
-        html = (
-            "<p>Before the video.</p>"
-            '<video src="/v.mp4"></video>'
-            "<p>After the video.</p>"
-        )
+        html = '<p>Before the video.</p><video src="/v.mp4"></video><p>After the video.</p>'
         texts = [b.text for b in blocks(html)]
         assert "Before the video." in texts
         assert "After the video." in texts
@@ -714,8 +725,10 @@ class TestDollarEscaping:
         assert r"$\alpha$" in out
 
     def test_it_applies_inside_a_table(self) -> None:
-        out = md("<table><tr><th>Item</th><th>Price</th></tr>"
-                 "<tr><td>Widget</td><td>$5.00</td></tr></table>")
+        out = md(
+            "<table><tr><th>Item</th><th>Price</th></tr>"
+            "<tr><td>Widget</td><td>$5.00</td></tr></table>"
+        )
         assert r"\$5.00" in out
 
     def test_it_applies_inside_a_link(self) -> None:
@@ -804,35 +817,43 @@ class TestComplexTablesKeepTheirMarkup:
 
     def test_a_plain_grid_still_renders_as_pipes(self) -> None:
         """The common case, and the one a reader actually wants to look at."""
-        out = md("<table><tr><th>City</th><th>Pop</th></tr>"
-                 "<tr><td>Leeds</td><td>793000</td></tr></table>")
+        out = md(
+            "<table><tr><th>City</th><th>Pop</th></tr>"
+            "<tr><td>Leeds</td><td>793000</td></tr></table>"
+        )
         assert "| City | Pop |" in out
         assert "| --- | --- |" in out
         assert "<table" not in out
 
     def test_a_colspan_keeps_the_markup(self) -> None:
-        out = md("<table><tr><td>Region</td><td colspan=\"2\">2025</td></tr>"
-                 "<tr><td>EU</td><td>10</td><td>20</td></tr></table>")
+        out = md(
+            '<table><tr><td>Region</td><td colspan="2">2025</td></tr>'
+            "<tr><td>EU</td><td>10</td><td>20</td></tr></table>"
+        )
         assert "<table" in out
         assert 'colspan="2"' in out
 
     def test_a_rowspan_keeps_the_markup(self) -> None:
-        out = md("<table><tr><td rowspan=\"2\">Region</td><td>Q1</td></tr>"
-                 "<tr><td>Q2</td></tr></table>")
+        out = md(
+            '<table><tr><td rowspan="2">Region</td><td>Q1</td></tr><tr><td>Q2</td></tr></table>'
+        )
         assert 'rowspan="2"' in out
 
     def test_a_nested_table_keeps_the_markup(self) -> None:
         """Whichever of the two it is, a pipe grid cannot hold a table inside a cell."""
-        out = md("<table><tr><th>a</th></tr><tr><td><table><tr><td>x</td></tr>"
-                 "</table></td></tr></table>")
+        out = md(
+            "<table><tr><th>a</th></tr><tr><td><table><tr><td>x</td></tr></table></td></tr></table>"
+        )
         assert out.count("<table") >= 1
 
     def test_only_structure_survives(self) -> None:
         """Real tables carry styles, widths, tracking ids and translation bookkeeping. None
         of it is content, and all of it would otherwise land in the output verbatim."""
-        out = md('<table style="width:0px" width="0" data-anno-uid="anno-7" class="tbl">'
-                 '<tr><td colspan="2" style="color:red" id="c1">x</td></tr>'
-                 '<tr><td>a</td><td>b</td></tr></table>')
+        out = md(
+            '<table style="width:0px" width="0" data-anno-uid="anno-7" class="tbl">'
+            '<tr><td colspan="2" style="color:red" id="c1">x</td></tr>'
+            "<tr><td>a</td><td>b</td></tr></table>"
+        )
         assert 'colspan="2"' in out
         for noise in ("style=", "data-anno-uid", "width=", "class=", "id="):
             assert noise not in out, noise
@@ -840,8 +861,10 @@ class TestComplexTablesKeepTheirMarkup:
     def test_a_percentage_colspan_is_not_a_span(self) -> None:
         """`colspan="50%"` appears on real pages. It is not a span and must not force the
         markup path for a table pipes can express perfectly well."""
-        out = md('<table><tr><th>a</th><th>b</th></tr>'
-                 '<tr><td colspan="50%">x</td><td>y</td></tr></table>')
+        out = md(
+            "<table><tr><th>a</th><th>b</th></tr>"
+            '<tr><td colspan="50%">x</td><td>y</td></tr></table>'
+        )
         assert "<table" not in out
         assert "| a | b |" in out
 
@@ -852,8 +875,9 @@ class TestComplexTablesKeepTheirMarkup:
     def test_the_rows_are_still_available_to_everything_else(self) -> None:
         """`table_html` is a rendering concern. The grid still feeds the content hash,
         deduplication, reading order and the search index, so it must survive alongside."""
-        found = blocks('<table><tr><td rowspan="2">Region</td><td>Q1</td></tr>'
-                       "<tr><td>Q2</td></tr></table>")
+        found = blocks(
+            '<table><tr><td rowspan="2">Region</td><td>Q1</td></tr><tr><td>Q2</td></tr></table>'
+        )
         table = next(b for b in found if b.kind is BlockKind.TABLE)
         assert table.table_html is not None
         assert table.rows
@@ -870,7 +894,7 @@ class TestLinksInsideAPreservedTable:
     """
 
     HN = (
-        '<table><tbody>'
+        "<table><tbody>"
         '<tr><td>1.</td><td><a href="/vote?id=1">up</a></td>'
         '<td><a href="https://example.org/post">A story</a> '
         '(<a href="/from?site=example.org">example.org</a>)</td></tr>'
@@ -892,20 +916,27 @@ class TestLinksInsideAPreservedTable:
         """A preserved table travels without the page it came from, so `/user?id=alice`
         in it points nowhere."""
         out = md(self.HN)
-        assert f'href="{BASE.rsplit("/", 1)[0]}/user?id=alice"' in out or "example.com/user?id=alice" in out
+        assert (
+            f'href="{BASE.rsplit("/", 1)[0]}/user?id=alice"' in out
+            or "example.com/user?id=alice" in out
+        )
 
     def test_noise_attributes_still_go(self) -> None:
-        out = md('<table><tr><td colspan="2" class="x" style="color:red">'
-                 '<a href="/a" class="storylink" onclick="x()">t</a></td></tr>'
-                 "<tr><td>a</td><td>b</td></tr></table>")
+        out = md(
+            '<table><tr><td colspan="2" class="x" style="color:red">'
+            '<a href="/a" class="storylink" onclick="x()">t</a></td></tr>'
+            "<tr><td>a</td><td>b</td></tr></table>"
+        )
         assert 'colspan="2"' in out
         assert "href=" in out
         for noise in ("class=", "style=", "onclick="):
             assert noise not in out, noise
 
     def test_an_anchor_with_no_destination_is_not_a_link(self) -> None:
-        out = md('<table><tr><td colspan="2"><a name="top">x</a></td></tr>'
-                 "<tr><td>a</td><td>b</td></tr></table>")
+        out = md(
+            '<table><tr><td colspan="2"><a name="top">x</a></td></tr>'
+            "<tr><td>a</td><td>b</td></tr></table>"
+        )
         assert "<a" not in out
         assert "x" in out
 
@@ -925,7 +956,7 @@ class TestBlockBoundaries:
         The separating space lived at the end of the span, and normalising each child on its
         own deleted it before the parent ever saw it.
         """
-        out = md('<h4><div>Example 1 of 5<span>: </span></div>Connecting to a chat server</h4>')
+        out = md("<h4><div>Example 1 of 5<span>: </span></div>Connecting to a chat server</h4>")
         assert "Example 1 of 5: Connecting to a chat server" in out
         assert "5:Connecting" not in out
 
@@ -1010,14 +1041,14 @@ class TestHiddenTwins:
 
     def test_hidden_element_with_its_own_words_stays(self) -> None:
         html = (
-            '<main><p>Summary</p>'
+            "<main><p>Summary</p>"
             '<div data-wg-hidden="1"><p>Collapsed body only the disclosure shows.</p></div></main>'
         )
         blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
         assert [b.text for b in blocks] == ["Summary", "Collapsed body only the disclosure shows."]
 
     def test_unmarked_static_fetch_is_untouched(self) -> None:
-        html = '<main><p><span>NEW</span> <span>NEW</span></p></main>'
+        html = "<main><p><span>NEW</span> <span>NEW</span></p></main>"
         blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
         assert [b.text for b in blocks] == ["NEW NEW"]
 
@@ -1027,7 +1058,7 @@ class TestHiddenTwins:
         with different line breaks. No hidden span has a single visible twin; together they
         do. Opacity 0 counts as shown: a scroll animation starts its text there."""
         html = (
-            '<main><h1><span>'
+            "<main><h1><span>"
             '<span data-wg-hidden="display">The product</span><span data-wg-hidden="display"> </span>'
             '<span data-wg-hidden="display">development</span><span data-wg-hidden="display"> </span>'
             '<span data-wg-hidden="display">system for teams</span><span data-wg-hidden="display"> and agents</span>'
@@ -1036,17 +1067,23 @@ class TestHiddenTwins:
             "</span></h1><p>Purpose-built for planning.</p></main>"
         )
         blocks = extract_rich_blocks(parse_html(html), "https://example.com/")
-        assert [b.text for b in blocks] == ["The product development system for teams and agents", "Purpose-built for planning."]
+        assert [b.text for b in blocks] == [
+            "The product development system for teams and agents",
+            "Purpose-built for planning.",
+        ]
 
     def test_a_clipped_copy_is_screen_reader_only_whatever_its_class(self) -> None:
         """The renderer marks a 1px, overflow-hidden box `clipped`; the CSS-module class
         (`Fzcv4W_visuallyHidden`) is one the name rule cannot know."""
         html = (
-            '<main><h1><span>The product development system</span>'
+            "<main><h1><span>The product development system</span>"
             '<span class="Fzcv4W_visuallyHidden" data-wg-hidden="clipped">The product development system</span></h1>'
-            '<p>Body.</p></main>'
+            "<p>Body.</p></main>"
         )
-        assert [b.text for b in extract_rich_blocks(parse_html(html), "https://x.test/")] == ["The product development system", "Body."]
+        assert [b.text for b in extract_rich_blocks(parse_html(html), "https://x.test/")] == [
+            "The product development system",
+            "Body.",
+        ]
         kept = extract_rich_blocks(parse_html(html), "https://x.test/", include_hidden_text=True)
         assert kept[0].text.startswith("The product development system")
 
@@ -1135,7 +1172,10 @@ class TestScreenReaderOnly:
     def test_a_screen_reader_only_headline_is_kept(self) -> None:
         html = '<main><h1 class="sr-only">The complete guide to shelving units</h1><p>Body text of the guide.</p></main>'
         blocks = extract_rich_blocks(parse_html(html), "https://shop.test/")
-        assert [b.text for b in blocks] == ["The complete guide to shelving units", "Body text of the guide."]
+        assert [b.text for b in blocks] == [
+            "The complete guide to shelving units",
+            "Body text of the guide.",
+        ]
 
     def test_include_hidden_text_keeps_the_labels_and_the_edit_controls(self) -> None:
         """A caller that wants every string in the DOM asks for it; the default stays. The
@@ -1148,14 +1188,27 @@ class TestScreenReaderOnly:
         )
         kept = extract_rich_blocks(parse_html(html), "https://shop.test/", include_hidden_text=True)
         texts = [b.text for b in kept if b.kind is not BlockKind.IMAGE]
-        assert texts == ["Option: BILLY, Bookcase, white $59.99", "Delivery [edit]", "Skip to main content Real sentence here."]
+        assert texts == [
+            "Option: BILLY, Bookcase, white $59.99",
+            "Delivery [edit]",
+            "Skip to main content Real sentence here.",
+        ]
         default = extract_rich_blocks(parse_html(html), "https://shop.test/")
-        assert [b.text for b in default if b.kind is not BlockKind.IMAGE] == ["$59.99", "Delivery", "Real sentence here."]
+        assert [b.text for b in default if b.kind is not BlockKind.IMAGE] == [
+            "$59.99",
+            "Delivery",
+            "Real sentence here.",
+        ]
 
     def test_the_flag_reaches_build_document(self) -> None:
-        html = '<main><p><span class="sr-only">Opens in a new window</span> Read the guide.</p></main>'
+        html = (
+            '<main><p><span class="sr-only">Opens in a new window</span> Read the guide.</p></main>'
+        )
         assert build_document(html, "https://x.test/").text == "Read the guide."
-        assert build_document(html, "https://x.test/", include_hidden_text=True).text == "Opens in a new window Read the guide."
+        assert (
+            build_document(html, "https://x.test/", include_hidden_text=True).text
+            == "Opens in a new window Read the guide."
+        )
 
 
 class TestClosedDialogs:
@@ -1170,7 +1223,7 @@ class TestClosedDialogs:
             '<div role="dialog" aria-hidden="true"><p>Terms and conditions of this website apply to every visitor.</p></div>'
             '<div role="alertdialog" hidden><p>Your session is about to expire.</p></div>'
             "<dialog><p>A dialog element that is not open.</p></dialog>"
-            '<dialog open><p>A dialog element that is open, and on the page.</p></dialog>'
+            "<dialog open><p>A dialog element that is open, and on the page.</p></dialog>"
             '<div role="dialog"><p>A dialog the renderer found showing: a cookie prompt.</p></div>'
             "</main>"
         )
@@ -1233,6 +1286,7 @@ class TestUnreachableHidden:
         html = '<main><p>Visible.</p><div style="display:none"><p>Hidden by a style the static parser does not read.</p></div></main>'
         texts = [b.text for b in extract_rich_blocks(parse_html(html), "https://gov.test/")]
         assert texts == ["Visible.", "Hidden by a style the static parser does not read."]
+
 
 class TestPreCssPages:
     """textfiles.com, erikdemaine.org/foldcut: pages written before CSS, where text sits
@@ -1319,7 +1373,9 @@ class TestPreCssPages:
             ("paragraph", 1, True, "and a paragraph after it"),
         ]
         markdown = to_markdown(document, options=MarkdownOptions())
-        assert "1. Search the Web first.\n\n   Then the archives.\n\n1. Read the manual." in markdown
+        assert (
+            "1. Search the Web first.\n\n   Then the archives.\n\n1. Read the manual." in markdown
+        )
         assert "  - Nested item." in markdown
         assert "1. Label\n\n   and a paragraph after it" in markdown
 
@@ -1335,7 +1391,13 @@ class TestPreCssPages:
         )
         document = build_document(html, "http://old.test/")
         kinds = [(b.kind.value, b.quoted) for b in document.blocks]
-        assert kinds == [("paragraph", 0), ("table", 1), ("quote", 0), ("paragraph", 1), ("list-item", 1)]
+        assert kinds == [
+            ("paragraph", 0),
+            ("table", 1),
+            ("quote", 0),
+            ("paragraph", 1),
+            ("list-item", 1),
+        ]
         markdown = to_markdown(document, options=MarkdownOptions())
         assert "> | Heading A | Heading B |\n> | --- | --- |\n> | Cell 1A | Cell 1B |" in markdown
         assert "> A short quoted line only." in markdown
@@ -1361,6 +1423,7 @@ class TestPreCssPages:
         assert "*Seen here*" in markdown
         assert "- first\n  line two" in markdown
 
+
 class TestDocumentText:
     def test_alt_text_and_placeholders_are_not_text(self) -> None:
         html = (
@@ -1378,12 +1441,15 @@ class TestCodeHeaders:
 
     def test_language_and_copy_strip_is_dropped(self) -> None:
         html = (
-            '<main><p>The callback is invoked four times:</p>'
+            "<main><p>The callback is invoked four times:</p>"
             '<div class="code-example"><div class="example-header"><span>js</span><button>Copy</button></div>'
             "<pre><code>const array = [1, 2, 3, 4];</code></pre></div></main>"
         )
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
-        assert [b.text for b in blocks] == ["The callback is invoked four times:", "const array = [1, 2, 3, 4];"]
+        assert [b.text for b in blocks] == [
+            "The callback is invoked four times:",
+            "const array = [1, 2, 3, 4];",
+        ]
 
     def test_a_sentence_before_code_is_kept(self) -> None:
         html = "<main><p>Here we reduce the same array with an initial value of ten passed in:</p><pre>x</pre></main>"
@@ -1419,7 +1485,7 @@ class TestCodeHeaders:
         """No button, but the label is the block's own language: a strip, not a sentence."""
         html = (
             '<main><div class="header"><span>js</span></div><pre class="language-js">x</pre>'
-            "<div>Copy</div><pre>y</pre><div>Python</div><pre><code class=\"language-python\">z</code></pre></main>"
+            '<div>Copy</div><pre>y</pre><div>Python</div><pre><code class="language-python">z</code></pre></main>'
         )
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
         assert [b.text for b in blocks] == ["x", "y", "z"]
@@ -1436,7 +1502,7 @@ class TestCodeHeaders:
         assert [b.text for b in blocks] == ["apt install foo"]
 
     def test_a_word_that_is_not_a_label_stays_even_in_a_div(self) -> None:
-        html = '<main><div>Output</div><pre>x</pre><div>Example:</div><pre>y</pre></main>'
+        html = "<main><div>Output</div><pre>x</pre><div>Example:</div><pre>y</pre></main>"
         blocks = extract_rich_blocks(parse_html(html), "https://docs.test/")
         assert [b.text for b in blocks] == ["Output", "x", "Example:", "y"]
 
@@ -1551,20 +1617,29 @@ class TestCodeEditors:
             '<a href="#content">Skip to main content</a><main id="content">'
             f"<p>Try it</p>{self.CM6}<h4>Output</h4>"
             '<pre class="brush: html interactive-example" data-wg-hidden="display">'
-            f'<code>{full.replace("<", "&lt;")}</code></pre>'
+            f"<code>{full.replace('<', '&lt;')}</code></pre>"
             "<p>After</p></main>"
         )
         found = blocks(html)
-        assert [b.text for b in found] == ["Skip to main content", "Try it", full, "Output", "After"]
+        assert [b.text for b in found] == [
+            "Skip to main content",
+            "Try it",
+            full,
+            "Output",
+            "After",
+        ]
         assert found[2].kind is BlockKind.CODE and found[2].language == "html"
 
     def test_a_visible_listing_beside_an_editor_is_its_own_block(self) -> None:
         """A listing the reader sees under a playground is on the page in its own right:
         only a hidden twin is the editor's document (a page's deliberate repeats stay)."""
         full = "<table>\n  <caption>Course 2021</caption>\n</table>\n<p>more</p>"
-        html = f'{self.CM6}<pre><code>{full.replace("<", "&lt;")}</code></pre>'
+        html = f"{self.CM6}<pre><code>{full.replace('<', '&lt;')}</code></pre>"
         found = blocks(html)
-        assert [b.text for b in found] == ["<table>\n  <caption>Course 2021</caption>\n</table>", full]
+        assert [b.text for b in found] == [
+            "<table>\n  <caption>Course 2021</caption>\n</table>",
+            full,
+        ]
 
     def test_an_editor_showing_something_of_its_own_keeps_it(self) -> None:
         html = f"{self.CM6}<pre><code>&lt;div&gt;unrelated&lt;/div&gt;</code></pre>"
@@ -1595,7 +1670,10 @@ class TestOffscreen:
             '<main><div data-wg-hidden="offscreen"><a href="https://x.test/">situs slot</a></div>'
             "<h1>About VTU</h1><p>VTU is one of the largest technological universities.</p></main>"
         )
-        assert [b.text for b in found] == ["About VTU", "VTU is one of the largest technological universities."]
+        assert [b.text for b in found] == [
+            "About VTU",
+            "VTU is one of the largest technological universities.",
+        ]
 
     def test_an_inline_style_that_pushes_text_off_the_page_is_dropped_statically(self) -> None:
         html = (
@@ -1629,7 +1707,9 @@ class TestOffscreen:
             '<main><span style="position:absolute; left:-9999px">Skip to content</span>'
             "<p>Body text of the page.</p></main>"
         )
-        document = build_document(f"<html><body>{html}</body></html>", BASE, include_hidden_text=True)
+        document = build_document(
+            f"<html><body>{html}</body></html>", BASE, include_hidden_text=True
+        )
         assert "Skip to content" in document.text
 
     def test_offscreen_matter_stays_hidden_through_the_union(self) -> None:

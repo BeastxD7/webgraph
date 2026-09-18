@@ -39,25 +39,48 @@ __all__ = ["extract_rich_blocks", "styled_off_the_page"]
 
 _HEADINGS: Final[frozenset[str]] = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
-_TEXT_CONTAINERS: Final[frozenset[str]] = frozenset({
-    "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
-    "li", "dt", "dd", "caption", "figcaption", "summary", "details",
-    "address", "label", "button", "legend",
-    # `td` and `th` are here for the *layout* table only. A data table's cells are consumed
-    # whole by `_table_block`, so they never reach this path. A layout table's cells do, and
-    # without these two a cell holding bare text -- `<td>About us</td>` -- produced no block
-    # and its text was lost outright. Found by a test written for the shape rule that sends
-    # more tables down the layout path than used to go there.
-    "td", "th",
-    # The page itself, and the block wrappers of pre-CSS HTML. textfiles.com closes with
-    # `<CENTER><FONT>TEXTFILES.COM has been online for nearly 25 years…</FONT></CENTER>`
-    # straight under `<body>`; with neither element a container the sentence, and the
-    # donation line under it, were lost outright. `body` here means bare text between a
-    # page's blocks is read as the orphan run it is; a `<div>` wrapper always was.
-    "body", "center", "form", "fieldset",
-    # A `<blockquote>` that holds structure; the leaf case is caught before this branch.
-    "blockquote",
-})
+_TEXT_CONTAINERS: Final[frozenset[str]] = frozenset(
+    {
+        "p",
+        "div",
+        "section",
+        "article",
+        "main",
+        "aside",
+        "header",
+        "footer",
+        "nav",
+        "li",
+        "dt",
+        "dd",
+        "caption",
+        "figcaption",
+        "summary",
+        "details",
+        "address",
+        "label",
+        "button",
+        "legend",
+        # `td` and `th` are here for the *layout* table only. A data table's cells are consumed
+        # whole by `_table_block`, so they never reach this path. A layout table's cells do, and
+        # without these two a cell holding bare text -- `<td>About us</td>` -- produced no block
+        # and its text was lost outright. Found by a test written for the shape rule that sends
+        # more tables down the layout path than used to go there.
+        "td",
+        "th",
+        # The page itself, and the block wrappers of pre-CSS HTML. textfiles.com closes with
+        # `<CENTER><FONT>TEXTFILES.COM has been online for nearly 25 years…</FONT></CENTER>`
+        # straight under `<body>`; with neither element a container the sentence, and the
+        # donation line under it, were lost outright. `body` here means bare text between a
+        # page's blocks is read as the orphan run it is; a `<div>` wrapper always was.
+        "body",
+        "center",
+        "form",
+        "fieldset",
+        # A `<blockquote>` that holds structure; the leaf case is caught before this branch.
+        "blockquote",
+    }
+)
 
 _ATOMIC: Final[frozenset[str]] = frozenset({"table", "pre", "blockquote", "img", "figure", "svg"})
 """Handled whole. Descending into them would shatter the structure being preserved.
@@ -79,19 +102,55 @@ _INLINE_EMPHASIS: Final[frozenset[str]] = frozenset({"strong", "b"})
 _INLINE_ITALIC: Final[frozenset[str]] = frozenset({"em", "i"})
 
 _SUPERSCRIPT_MAP: Final[dict[str, str]] = {
-    "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
-    "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
-    "+": "⁺", "-": "⁻", "−": "⁻", "=": "⁼",
-    "(": "⁽", ")": "⁾", "n": "ⁿ", " ": " ",
+    "0": "⁰",
+    "1": "¹",
+    "2": "²",
+    "3": "³",
+    "4": "⁴",
+    "5": "⁵",
+    "6": "⁶",
+    "7": "⁷",
+    "8": "⁸",
+    "9": "⁹",
+    "+": "⁺",
+    "-": "⁻",
+    "−": "⁻",
+    "=": "⁼",
+    "(": "⁽",
+    ")": "⁾",
+    "n": "ⁿ",
+    " ": " ",
 }
 _SUBSCRIPT_MAP: Final[dict[str, str]] = {
-    "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄",
-    "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉",
-    "+": "₊", "-": "₋", "−": "₋", "=": "₌",
-    "(": "₍", ")": "₎",
-    "a": "ₐ", "e": "ₑ", "h": "ₕ", "k": "ₖ", "l": "ₗ",
-    "m": "ₘ", "n": "ₙ", "o": "ₒ", "p": "ₚ", "s": "ₛ",
-    "t": "ₜ", "x": "ₓ", " ": " ",
+    "0": "₀",
+    "1": "₁",
+    "2": "₂",
+    "3": "₃",
+    "4": "₄",
+    "5": "₅",
+    "6": "₆",
+    "7": "₇",
+    "8": "₈",
+    "9": "₉",
+    "+": "₊",
+    "-": "₋",
+    "−": "₋",
+    "=": "₌",
+    "(": "₍",
+    ")": "₎",
+    "a": "ₐ",
+    "e": "ₑ",
+    "h": "ₕ",
+    "k": "ₖ",
+    "l": "ₗ",
+    "m": "ₘ",
+    "n": "ₙ",
+    "o": "ₒ",
+    "p": "ₚ",
+    "s": "ₛ",
+    "t": "ₜ",
+    "x": "ₓ",
+    " ": " ",
 }
 """Exact `<sup>`/`<sub>` -> Unicode maps, restricted to what the "Superscripts and
 Subscripts" block (U+2070-U+209F) and the 2010 Latin Subscript Small Letters actually
@@ -118,13 +177,52 @@ def _scripted(inner: str, table: dict[str, str]) -> str | None:
         out.append(mapped)
     return "".join(out)
 
-_BLOCK_BY_DEFAULT: Final[frozenset[str]] = frozenset({
-    "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
-    "ul", "ol", "li", "dl", "dt", "dd", "h1", "h2", "h3", "h4", "h5", "h6",
-    "table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption",
-    "blockquote", "pre", "figure", "figcaption", "form", "fieldset", "legend",
-    "address", "hr", "br", "details", "summary",
-})
+
+_BLOCK_BY_DEFAULT: Final[frozenset[str]] = frozenset(
+    {
+        "p",
+        "div",
+        "section",
+        "article",
+        "main",
+        "aside",
+        "header",
+        "footer",
+        "nav",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "td",
+        "th",
+        "caption",
+        "blockquote",
+        "pre",
+        "figure",
+        "figcaption",
+        "form",
+        "fieldset",
+        "legend",
+        "address",
+        "hr",
+        "br",
+        "details",
+        "summary",
+    }
+)
 """Elements a browser lays out as their own box unless a stylesheet says otherwise.
 
 `flowed_text` reads the renderer's mark for this, which is exact -- and absent on a static
@@ -264,7 +362,6 @@ def flowed_text(element: HtmlElement) -> str:
     return "".join(parts)
 
 
-
 def _absolute(url: str | None, base: str) -> str | None:
     if not url or not url.strip():
         return None
@@ -274,22 +371,50 @@ def _absolute(url: str | None, base: str) -> str | None:
     return urljoin(base, candidate)
 
 
+def _largest_candidate(srcset: str | None) -> str | None:
+    """The address of `srcset`'s largest candidate: the widest by its `w` descriptor, else
+    the densest by `x`; a candidate with no descriptor is `1x`. None for an empty set.
+
+    A `srcset` lists one image at several sizes and `src` is its smallest, the fallback
+    for browsers that never read the set. The largest is the image the page has; the
+    markdown and the image list should carry that one, not the thumbnail.
+    """
+    if not srcset:
+        return None
+    best: tuple[float, str] | None = None
+    for raw in srcset.split(","):
+        parts = raw.strip().split()
+        if not parts:
+            continue
+        url, descriptor = parts[0], (parts[1] if len(parts) > 1 else "1x")
+        try:
+            size = float(descriptor[:-1]) if descriptor[-1] in "wx" else 1.0
+        except ValueError:
+            size = 1.0
+        # A width is measured in pixels, a density in multiples; a set mixes neither, so
+        # comparing within one set is sound either way.
+        if best is None or size > best[0]:
+            best = (size, url)
+    return best[1] if best else None
+
+
 def _image_block(element: HtmlElement, base: str, index: int, tree: object) -> Block | None:
     """Build an image block, skipping spacers and tracking pixels.
 
-    Prefers `srcset`'s first candidate when `src` is a placeholder, which is how lazy-loading
-    markup usually hides the real image from a naive reader.
+    Prefers `srcset`'s largest candidate over `src` (the fallback is the smallest), and a
+    lazy-loading attribute over a missing `src`, which is how such markup hides the real
+    image from a naive reader.
     """
-    src = _absolute(element.get("src"), base)
+    src = _absolute(_largest_candidate(element.get("srcset")), base)
+    if not src:
+        src = _absolute(element.get("src"), base)
     if not src:
         for attribute in ("data-src", "data-lazy-src", "data-original"):
             src = _absolute(element.get(attribute), base)
             if src:
                 break
     if not src:
-        srcset = element.get("srcset") or ""
-        first = srcset.split(",")[0].strip().split(" ")[0] if srcset else ""
-        src = _absolute(first, base)
+        src = _absolute(_largest_candidate(element.get("data-srcset")), base)
     if not src:
         return None
 
@@ -365,9 +490,7 @@ _MIN_EMBED_DIMENSION: Final[int] = 32
 """Iframes smaller than this are tracking and analytics beacons, not media."""
 
 
-def _media_block(
-    element: HtmlElement, base: str, index: int, tree: object
-) -> Block | None:
+def _media_block(element: HtmlElement, base: str, index: int, tree: object) -> Block | None:
     """Describe an embed that is present on the page but not transcribed.
 
     The text is written to be read by whatever comes next -- a person skimming the Markdown,
@@ -408,9 +531,7 @@ def _media_block(
         or normalize_text(element.get("alt"))
     )
 
-    tracks = [
-        _absolute(track.get("src"), base) for track in element.xpath(".//track[@src]")
-    ]
+    tracks = [_absolute(track.get("src"), base) for track in element.xpath(".//track[@src]")]
     captions = [t for t in tracks if t]
 
     described = f'{label} "{title}"' if title else label
@@ -467,7 +588,10 @@ def _svg_is_diagram(element: HtmlElement) -> bool:
     diagram is two labels (`sql-stmt`, `;`), a logo is one.
     """
     labels = _svg_labels(element)
-    return len(labels) >= SVG_MIN_TEXT_NODES or sum(len(label.split()) for label in labels) >= SVG_MIN_WORDS
+    return (
+        len(labels) >= SVG_MIN_TEXT_NODES
+        or sum(len(label.split()) for label in labels) >= SVG_MIN_WORDS
+    )
 
 
 def _drop_svg_icons(root: HtmlElement) -> None:
@@ -520,6 +644,7 @@ CMS wraps a value -- `<td><p>12.4</p></td>` is what every WYSIWYG editor emits -
 them as layout evidence threw away real data tables. Measured on WebMainBench: a 17-row,
 111-cell table of numbers was classified as layout and flattened to paragraphs because each
 cell wrapped its number in a `<p>`. Zero tables were extracted from that page."""
+
 
 def _is_page_like(cell: HtmlElement) -> bool:
     """Whether this cell is holding a page rather than a value."""
@@ -590,10 +715,7 @@ def _is_degenerate(element: HtmlElement) -> bool:
 
     total = sum(widths)
     filled = sum(
-        1
-        for row in rows
-        for cell in row.xpath("./td|./th")
-        if normalize_text(cell.text_content())
+        1 for row in rows for cell in row.xpath("./td|./th") if normalize_text(cell.text_content())
     )
     return bool(total) and filled < total * MIN_FILLED_SHARE
 
@@ -785,7 +907,21 @@ def _collapse_header(grid: list[list[str]], depth: int) -> list[tuple[str, ...]]
 
 
 _TABLE_TAGS: Final[frozenset[str]] = frozenset(
-    {"table", "tr", "td", "th", "thead", "tbody", "tfoot", "caption", "sub", "sup", "a", "br", "img"}
+    {
+        "table",
+        "tr",
+        "td",
+        "th",
+        "thead",
+        "tbody",
+        "tfoot",
+        "caption",
+        "sub",
+        "sup",
+        "a",
+        "br",
+        "img",
+    }
 )
 """Tags kept when preserving a table's own markup.
 
@@ -920,7 +1056,11 @@ def _table_block(
 
     # The same grid with each cell's links and emphasis, for the Markdown; kept only
     # when it differs, so a plain grid carries nothing twice.
-    rich_grid = [row for row in _expanded_rows(element, lambda c: _cell_rich(c, base_url)) if any(cell for cell in row)]
+    rich_grid = [
+        row
+        for row in _expanded_rows(element, lambda c: _cell_rich(c, base_url))
+        if any(cell for cell in row)
+    ]
     rich_rows = _collapse_header(rich_grid, _header_depth(element)) if rich_grid else []
     if len(rich_rows) != len(rows) or rich_rows == rows:
         rich_rows = []
@@ -967,13 +1107,15 @@ def _code_language(element: HtmlElement) -> str | None:
         for index, value in enumerate(classes):
             for prefix in ("language-", "lang-", "highlight-"):
                 if value.startswith(prefix) and len(value) > len(prefix):
-                    return _a_language(value[len(prefix):])
+                    return _a_language(value[len(prefix) :])
             if value == "brush:" and index + 1 < len(classes):
                 return _a_language(str(classes[index + 1]).rstrip(";"))
     return None
 
 
-_NOT_A_LANGUAGE: Final[frozenset[str]] = frozenset({"undefined", "none", "null", "text", "plaintext", "plain", "nohighlight", ""})
+_NOT_A_LANGUAGE: Final[frozenset[str]] = frozenset(
+    {"undefined", "none", "null", "text", "plaintext", "plain", "nohighlight", ""}
+)
 
 
 def _a_language(declared: str) -> str | None:
@@ -994,8 +1136,15 @@ def _first_with_class(element: HtmlElement, name: str) -> HtmlElement | None:
     return None
 
 
-_EDITOR_CLASSES: Final[frozenset[str]] = frozenset({"cm-editor", "CodeMirror", "monaco-editor", "ace_editor"})
-_EDITOR_LANGUAGE_ATTRIBUTES: Final[tuple[str, ...]] = ("data-language", "data-lang", "data-mode-id", "language")
+_EDITOR_CLASSES: Final[frozenset[str]] = frozenset(
+    {"cm-editor", "CodeMirror", "monaco-editor", "ace_editor"}
+)
+_EDITOR_LANGUAGE_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "data-language",
+    "data-lang",
+    "data-mode-id",
+    "language",
+)
 _EDITOR_ANCESTOR_DEPTH: Final[int] = 4
 _STYLE_TOP: Final[re.Pattern[str]] = re.compile(r"(?:^|;)\s*top\s*:\s*(-?[\d.]+)px")
 
@@ -1025,13 +1174,21 @@ def _editor_lines(element: HtmlElement) -> tuple[list[HtmlElement], str | None] 
         content = _first_with_class(element, "cm-content")
         if content is None:
             return [], None
-        lines = [n for n in content.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "cm-line")]
+        lines = [
+            n
+            for n in content.iterdescendants()
+            if isinstance(n.tag, str) and _has_class(n, "cm-line")
+        ]
         return lines, (content.get("data-language") or "").strip().lower() or None
     if _has_class(element, "CodeMirror"):
         code = _first_with_class(element, "CodeMirror-code")
         if code is None:
             return [], None
-        return [n for n in code.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "CodeMirror-line")], None
+        return [
+            n
+            for n in code.iterdescendants()
+            if isinstance(n.tag, str) and _has_class(n, "CodeMirror-line")
+        ], None
     if _has_class(element, "monaco-editor"):
         view = _first_with_class(element, "view-lines")
         if view is None:
@@ -1047,7 +1204,11 @@ def _editor_lines(element: HtmlElement) -> tuple[list[HtmlElement], str | None] 
         layer = _first_with_class(element, "ace_text-layer")
         if layer is None:
             return [], None
-        return [n for n in layer.iterdescendants() if isinstance(n.tag, str) and _has_class(n, "ace_line")], None
+        return [
+            n
+            for n in layer.iterdescendants()
+            if isinstance(n.tag, str) and _has_class(n, "ace_line")
+        ], None
     return None
 
 
@@ -1066,7 +1227,9 @@ def _editor_block(element: HtmlElement, index: int, tree: object) -> Block | Non
     if found is None:
         return None
     lines, language = found
-    text = "\n".join(line.text_content().replace("\xa0", " ").rstrip() for line in lines).strip("\n")
+    text = "\n".join(line.text_content().replace("\xa0", " ").rstrip() for line in lines).strip(
+        "\n"
+    )
     if not text.strip():
         return None
     if language is None:
@@ -1099,7 +1262,9 @@ def _code_key(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.strip("\n").splitlines())
 
 
-def _complete_editor_windows(blocks: list[Block], editors: set[str], hidden_code: set[str]) -> list[Block]:
+def _complete_editor_windows(
+    blocks: list[Block], editors: set[str], hidden_code: set[str]
+) -> list[Block]:
     """Give an editor block the whole document it shows a window onto, once.
 
     CodeMirror 6 and Monaco draw only the lines in view: MDN's `<table>` demo editor holds
@@ -1259,7 +1424,9 @@ def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
             # pre-CSS page, of a forum post, of an email pasted into a `<div>` -- and each
             # becomes a block of its own, as it would have with `<p>` tags.
             for n, (piece, piece_rich) in enumerate(_paragraphs(text, rich)):
-                runs.append(_OrphanRun(piece, piece_rich, before, anchor if n == 0 else None, len(runs)))
+                runs.append(
+                    _OrphanRun(piece, piece_rich, before, anchor if n == 0 else None, len(runs))
+                )
 
     def walk(parent: HtmlElement) -> None:
         nonlocal text_parts, rich_parts, anchor
@@ -1465,10 +1632,18 @@ _UNSHOWN_KINDS: Final[frozenset[str]] = frozenset({"display", "visibility", "off
 box parked off the page (an off-canvas menu at `left: -100%` is opened by a hamburger; a
 spam div at `left: -2e13px` by nothing, and is dropped)."""
 _OPENER_ATTRIBUTES: Final[tuple[str, ...]] = (
-    "aria-controls", "aria-owns", "data-target", "data-bs-target", "data-toggle-target",
-    "data-tab", "data-panel", "for",
+    "aria-controls",
+    "aria-owns",
+    "data-target",
+    "data-bs-target",
+    "data-toggle-target",
+    "data-tab",
+    "data-panel",
+    "for",
 )
-_REACHABLE_ROLES: Final[frozenset[str]] = frozenset({"tabpanel", "region", "menu", "listbox", "tree"})
+_REACHABLE_ROLES: Final[frozenset[str]] = frozenset(
+    {"tabpanel", "region", "menu", "listbox", "tree"}
+)
 _REGION_TAGS: Final[frozenset[str]] = frozenset({"html", "body", "main", "article"})
 _REGION_ROLES: Final[frozenset[str]] = frozenset({"main", "document"})
 
@@ -1511,14 +1686,19 @@ def _drop_unreachable_hidden(root: HtmlElement) -> None:
             if (node.get("role") or "").strip().lower() in _REACHABLE_ROLES:
                 return True
         for ancestor in container.iterancestors():
-            if ancestor.tag == "details" or (ancestor.get("role") or "").strip().lower() in _REACHABLE_ROLES:
+            if (
+                ancestor.tag == "details"
+                or (ancestor.get("role") or "").strip().lower() in _REACHABLE_ROLES
+            ):
                 return True
             # A reference to the page's main region does not open a tray inside it: MDN's
             # skip link `href="#content"` names `<main id="content">`, an ancestor of
             # everything, and made every hidden copy under it "reachable".
-            if ancestor.get("id") in referenced and ancestor.tag not in _REGION_TAGS and (
-                ancestor.get("role") or ""
-            ).strip().lower() not in _REGION_ROLES:
+            if (
+                ancestor.get("id") in referenced
+                and ancestor.tag not in _REGION_TAGS
+                and (ancestor.get("role") or "").strip().lower() not in _REGION_ROLES
+            ):
                 return True
         return False
 
@@ -1722,15 +1902,89 @@ _CODE_HEADER_CONTROLS: Final[frozenset[str]] = frozenset(
 )
 _LANGUAGE_LABELS: Final[frozenset[str]] = frozenset(
     {
-        "js", "javascript", "ts", "typescript", "jsx", "tsx", "html", "css", "scss", "less",
-        "json", "yaml", "yml", "toml", "xml", "svg", "md", "markdown", "sh", "shell", "bash",
-        "zsh", "console", "terminal", "powershell", "ps1", "bat", "cmd", "python", "py",
-        "ruby", "rb", "php", "perl", "pl", "go", "golang", "rust", "rs", "c", "cpp", "c++",
-        "h", "hpp", "cs", "c#", "csharp", "java", "kotlin", "kt", "swift", "objc",
-        "objective-c", "scala", "clojure", "haskell", "hs", "elixir", "erlang", "lua", "r",
-        "julia", "matlab", "sql", "graphql", "dockerfile", "docker", "makefile", "cmake",
-        "nginx", "apache", "ini", "diff", "patch", "http", "curl", "wasm", "asm", "dart",
-        "vue", "svelte", "astro", "mdx",
+        "js",
+        "javascript",
+        "ts",
+        "typescript",
+        "jsx",
+        "tsx",
+        "html",
+        "css",
+        "scss",
+        "less",
+        "json",
+        "yaml",
+        "yml",
+        "toml",
+        "xml",
+        "svg",
+        "md",
+        "markdown",
+        "sh",
+        "shell",
+        "bash",
+        "zsh",
+        "console",
+        "terminal",
+        "powershell",
+        "ps1",
+        "bat",
+        "cmd",
+        "python",
+        "py",
+        "ruby",
+        "rb",
+        "php",
+        "perl",
+        "pl",
+        "go",
+        "golang",
+        "rust",
+        "rs",
+        "c",
+        "cpp",
+        "c++",
+        "h",
+        "hpp",
+        "cs",
+        "c#",
+        "csharp",
+        "java",
+        "kotlin",
+        "kt",
+        "swift",
+        "objc",
+        "objective-c",
+        "scala",
+        "clojure",
+        "haskell",
+        "hs",
+        "elixir",
+        "erlang",
+        "lua",
+        "r",
+        "julia",
+        "matlab",
+        "sql",
+        "graphql",
+        "dockerfile",
+        "docker",
+        "makefile",
+        "cmake",
+        "nginx",
+        "apache",
+        "ini",
+        "diff",
+        "patch",
+        "http",
+        "curl",
+        "wasm",
+        "asm",
+        "dart",
+        "vue",
+        "svelte",
+        "astro",
+        "mdx",
     }
 )
 
@@ -1772,7 +2026,9 @@ def _is_code_header(element: HtmlElement, text: str) -> bool:
     language = (_code_language(following) or "").lower()
     tokens = [token.strip(":").lower() for token in text.split()]
     return all(
-        token in _LANGUAGE_LABELS or token in _CODE_HEADER_CONTROLS or (language and token == language)
+        token in _LANGUAGE_LABELS
+        or token in _CODE_HEADER_CONTROLS
+        or (language and token == language)
         for token in tokens
     )
 
@@ -2109,7 +2365,11 @@ def extract_rich_blocks(
 
 
 _LANDMARK_TAGS: Final[dict[str, str]] = {
-    "main": "main", "nav": "nav", "header": "header", "footer": "footer", "aside": "aside",
+    "main": "main",
+    "nav": "nav",
+    "header": "header",
+    "footer": "footer",
+    "aside": "aside",
 }
 _LANDMARK_ROLES: Final[dict[str, str]] = {
     "main": "main",
@@ -2138,11 +2398,29 @@ def _landmark_of_element(element: HtmlElement) -> str | None:
     return _LANDMARK_TAGS.get(tag)
 
 
-_CALLOUT_WORDS: Final[frozenset[str]] = frozenset({
-    "note", "notes", "tip", "tips", "caution", "danger", "warning", "info", "important",
-    "hint", "admonition", "callout", "alert", "success", "example", "aside--note",
-    "aside--tip", "aside--caution", "aside--danger",
-})
+_CALLOUT_WORDS: Final[frozenset[str]] = frozenset(
+    {
+        "note",
+        "notes",
+        "tip",
+        "tips",
+        "caution",
+        "danger",
+        "warning",
+        "info",
+        "important",
+        "hint",
+        "admonition",
+        "callout",
+        "alert",
+        "success",
+        "example",
+        "aside--note",
+        "aside--tip",
+        "aside--caution",
+        "aside--danger",
+    }
+)
 _CALLOUT_LABEL: Final[re.Pattern[str]] = re.compile(
     r"^(?:note|tip|caution|danger|warning|info|important|hint|example|see also)\b", re.I
 )
@@ -2156,47 +2434,150 @@ def _is_callout(aside: HtmlElement) -> bool:
     return bool(_CALLOUT_WORDS & set(_TOKEN_SPLIT.split(names)))
 
 
-_FILTER_TOKENS: Final[frozenset[str]] = frozenset({
-    "filter", "filters", "facet", "facets", "faceted", "refine", "refinement", "refinements",
-    "filterbar", "filternav", "filtersidebar",
-})
+_FILTER_TOKENS: Final[frozenset[str]] = frozenset(
+    {
+        "filter",
+        "filters",
+        "facet",
+        "facets",
+        "faceted",
+        "refine",
+        "refinement",
+        "refinements",
+        "filterbar",
+        "filternav",
+        "filtersidebar",
+    }
+)
 _TOKEN_SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_\-:/.]+")
-_RAIL_COMPOUNDS: Final[frozenset[str]] = frozenset({
-    # Two-part names that are unambiguous as a whole.
-    "breaking-news", "news-ticker", "most-read", "most-popular", "most-viewed", "popular-posts",
-    "related-posts", "related-articles", "related-stories", "related-news", "related-content",
-    "recent-posts", "latest-news", "latest-posts", "trending-now", "trending-posts",
-    "share-bar", "social-share", "share-buttons", "sharing-buttons", "newsletter-signup",
-    "newsletter-form", "ad-slot", "ad-container", "ad-wrapper", "ad-unit", "read-next",
-    "you-may-like", "also-read", "more-stories", "promo-box", "sticky-ad", "top-stories",
-})
-_RAIL_TOKENS: Final[frozenset[str]] = frozenset({
-    # Single tokens that name a rail and nothing else.
-    "ticker", "newsticker", "marquee", "outbrain", "taboola", "sharedaddy", "yarpp",
-    "jp-relatedposts", "crp_related", "breadcrumb", "breadcrumbs", "skyscraper", "adsbygoogle",
-    "mgid", "revcontent", "zergnet", "sharethis", "addthis",
-    # The landmarks a page built before HTML5 names instead of marking: `<div id="footer">`,
-    # `<div class="nav">`. jpost.com (2019) still puts its 400-word footer in
-    # `div.footer-wrap`, and with no <footer> to strip it outscored a one-paragraph story.
-    "footer", "site-footer", "page-footer", "global-footer", "main-footer", "footer-wrap",
-    "footer-wrapper", "footer-container", "footer-inner", "colophon",
-    "nav", "navbar", "main-nav", "mainnav", "site-nav", "primary-nav", "top-nav", "topnav",
-    "navigation", "main-navigation", "site-navigation", "primary-navigation", "main-menu",
-    "mainmenu", "mega-menu", "megamenu",
-})
+_RAIL_COMPOUNDS: Final[frozenset[str]] = frozenset(
+    {
+        # Two-part names that are unambiguous as a whole.
+        "breaking-news",
+        "news-ticker",
+        "most-read",
+        "most-popular",
+        "most-viewed",
+        "popular-posts",
+        "related-posts",
+        "related-articles",
+        "related-stories",
+        "related-news",
+        "related-content",
+        "recent-posts",
+        "latest-news",
+        "latest-posts",
+        "trending-now",
+        "trending-posts",
+        "share-bar",
+        "social-share",
+        "share-buttons",
+        "sharing-buttons",
+        "newsletter-signup",
+        "newsletter-form",
+        "ad-slot",
+        "ad-container",
+        "ad-wrapper",
+        "ad-unit",
+        "read-next",
+        "you-may-like",
+        "also-read",
+        "more-stories",
+        "promo-box",
+        "sticky-ad",
+        "top-stories",
+    }
+)
+_RAIL_TOKENS: Final[frozenset[str]] = frozenset(
+    {
+        # Single tokens that name a rail and nothing else.
+        "ticker",
+        "newsticker",
+        "marquee",
+        "outbrain",
+        "taboola",
+        "sharedaddy",
+        "yarpp",
+        "jp-relatedposts",
+        "crp_related",
+        "breadcrumb",
+        "breadcrumbs",
+        "skyscraper",
+        "adsbygoogle",
+        "mgid",
+        "revcontent",
+        "zergnet",
+        "sharethis",
+        "addthis",
+        # The landmarks a page built before HTML5 names instead of marking: `<div id="footer">`,
+        # `<div class="nav">`. jpost.com (2019) still puts its 400-word footer in
+        # `div.footer-wrap`, and with no <footer> to strip it outscored a one-paragraph story.
+        "footer",
+        "site-footer",
+        "page-footer",
+        "global-footer",
+        "main-footer",
+        "footer-wrap",
+        "footer-wrapper",
+        "footer-container",
+        "footer-inner",
+        "colophon",
+        "nav",
+        "navbar",
+        "main-nav",
+        "mainnav",
+        "site-nav",
+        "primary-nav",
+        "top-nav",
+        "topnav",
+        "navigation",
+        "main-navigation",
+        "site-navigation",
+        "primary-navigation",
+        "main-menu",
+        "mainmenu",
+        "mega-menu",
+        "megamenu",
+    }
+)
 _RAIL_ATTR_SPLIT: Final[re.Pattern[str]] = re.compile(r"\s+")
-_POST_FURNITURE: Final[frozenset[str]] = frozenset({
-    # Forum software's per-post furniture: the signature under a post and the user card
-    # beside it. phpBB, XenForo, Invision, MyBB and Discourse each name them; the post body
-    # itself is never named this way.
-    "signature", "post-signature", "message-signature", "signature-view", "signature-content",
-    "signature-content-wrapper", "signature-collapsed", "postsignature",
-    "message-user", "message-userdetails", "message-userextras", "message-userbanner",
-    "user-info", "userinfo", "messagecard__user-info", "postprofile",
-    "post-profile", "author-info", "authorinfo", "memberinfo", "member-info", "extrauserinfo",
-    "messageuserinfo", "ipsentry__profile-row", "user-title", "usertitle", "reputation-score",
-    "post-count", "postcount", "messagecard__post-count",
-})
+_POST_FURNITURE: Final[frozenset[str]] = frozenset(
+    {
+        # Forum software's per-post furniture: the signature under a post and the user card
+        # beside it. phpBB, XenForo, Invision, MyBB and Discourse each name them; the post body
+        # itself is never named this way.
+        "signature",
+        "post-signature",
+        "message-signature",
+        "signature-view",
+        "signature-content",
+        "signature-content-wrapper",
+        "signature-collapsed",
+        "postsignature",
+        "message-user",
+        "message-userdetails",
+        "message-userextras",
+        "message-userbanner",
+        "user-info",
+        "userinfo",
+        "messagecard__user-info",
+        "postprofile",
+        "post-profile",
+        "author-info",
+        "authorinfo",
+        "memberinfo",
+        "member-info",
+        "extrauserinfo",
+        "messageuserinfo",
+        "ipsentry__profile-row",
+        "user-title",
+        "usertitle",
+        "reputation-score",
+        "post-count",
+        "postcount",
+        "messagecard__post-count",
+    }
+)
 
 
 def _names_post_furniture(element: HtmlElement) -> bool:
@@ -2214,7 +2595,10 @@ def _holds_the_article(element: HtmlElement) -> bool:
     and says what it is in its microdata."""
     if next(element.iter("h1"), None) is not None:
         return True
-    return any("articlebody" in (e.get("itemprop") or "").lower() for e in element.iter("div", "section", "article", "p"))
+    return any(
+        "articlebody" in (e.get("itemprop") or "").lower()
+        for e in element.iter("div", "section", "article", "p")
+    )
 
 
 def _names_rail(element: HtmlElement) -> bool:
@@ -2231,7 +2615,9 @@ def _names_rail(element: HtmlElement) -> bool:
             return True
         # `sidebar-most-read`, `widget_related-posts`: a compound inside a longer token.
         for compound in _RAIL_COMPOUNDS:
-            if compound in token and (token == compound or not token.replace(compound, "x").isalnum()):
+            if compound in token and (
+                token == compound or not token.replace(compound, "x").isalnum()
+            ):
                 return True
     return False
 
@@ -2249,17 +2635,54 @@ _CONSENT_MARKERS: Final[re.Pattern[str]] = re.compile(
 
 
 _COMMENT_WORDS: Final[frozenset[str]] = frozenset({"comment", "comments"})
-_COMMENT_COMPOUNDS: Final[frozenset[str]] = frozenset({
-    "commentlist", "commentlisting", "commentbox", "commentwrap", "commentsection",
-    "commentsarea", "disqus_thread", "wpdiscuz", "commento", "isso-thread", "remark42",
-})
-_NOT_A_COMMENT_SECTION: Final[frozenset[str]] = frozenset({
-    # Parts that make a token a flag, a count or a piece of one comment rather than the
-    # section: Squarespace stamps `has-comments` on the article itself.
-    "has", "enabled", "disabled", "count", "counts", "open", "closed", "no", "with",
-    "toggle", "icon", "link", "meta", "author", "date", "reply", "message", "notification",
-    "nonce", "privacy", "field", "recent", "button", "btn", "label", "input", "js",
-})
+_COMMENT_COMPOUNDS: Final[frozenset[str]] = frozenset(
+    {
+        "commentlist",
+        "commentlisting",
+        "commentbox",
+        "commentwrap",
+        "commentsection",
+        "commentsarea",
+        "disqus_thread",
+        "wpdiscuz",
+        "commento",
+        "isso-thread",
+        "remark42",
+    }
+)
+_NOT_A_COMMENT_SECTION: Final[frozenset[str]] = frozenset(
+    {
+        # Parts that make a token a flag, a count or a piece of one comment rather than the
+        # section: Squarespace stamps `has-comments` on the article itself.
+        "has",
+        "enabled",
+        "disabled",
+        "count",
+        "counts",
+        "open",
+        "closed",
+        "no",
+        "with",
+        "toggle",
+        "icon",
+        "link",
+        "meta",
+        "author",
+        "date",
+        "reply",
+        "message",
+        "notification",
+        "nonce",
+        "privacy",
+        "field",
+        "recent",
+        "button",
+        "btn",
+        "label",
+        "input",
+        "js",
+    }
+)
 
 
 def _names_comments(element: HtmlElement) -> bool:
@@ -2366,10 +2789,28 @@ def _widget_of(
     return result
 
 
-_FURNITURE_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "aside", "ul", "dl", "td", "span", "p", "footer", "header"})
-_RAIL_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "aside", "ul", "ol", "nav", "footer", "header", "table"})
+_FURNITURE_TAGS: Final[frozenset[str]] = frozenset(
+    {"div", "section", "aside", "ul", "dl", "td", "span", "p", "footer", "header"}
+)
+_RAIL_TAGS: Final[frozenset[str]] = frozenset(
+    {"div", "section", "aside", "ul", "ol", "nav", "footer", "header", "table"}
+)
 _COMMENT_TAGS: Final[frozenset[str]] = frozenset(
-    {"div", "section", "aside", "article", "ol", "ul", "li", "form", "footer", "table", "tbody", "tr", "td"}
+    {
+        "div",
+        "section",
+        "aside",
+        "article",
+        "ol",
+        "ul",
+        "li",
+        "form",
+        "footer",
+        "table",
+        "tbody",
+        "tr",
+        "td",
+    }
 )
 _WIDGET_TAGS: Final[frozenset[str]] = frozenset(
     {"div", "section", "aside", "form", "fieldset", "nav", "ul", "details"}
@@ -2378,20 +2819,56 @@ _MAX_WIDGET_SHARE: Final[float] = 0.4
 _MAX_COMMENTS_SHARE: Final[float] = 0.92
 
 
-_BODY_NAMES: Final[frozenset[str]] = frozenset({
-    # What a CMS calls the element holding the story and nothing else. The list is the
-    # core of trafilatura's BODY_XPATH and Readability's positive patterns, kept to names
-    # that mean the body: not `content`, `text` or `entry` alone, which themes hang on
-    # whole columns.
-    "entry-content", "entry-body", "entrycontent", "post-content", "post_content",
-    "postcontent", "post-body", "post_body", "postbody", "post-entry", "post-text",
-    "post_text", "posttext", "post-bodycopy", "article-body", "article__body",
-    "articlebody", "article-content", "article__content", "articlecontent", "article-text",
-    "articletext", "article__text", "story-body", "story__body", "storybody",
-    "story-content", "storycontent", "story-text", "storytext", "content-body",
-    "content__body", "body-copy", "bodycopy", "field-body", "fulltext", "td-post-content",
-    "news-body", "news-content", "news-text", "blog-content", "blog-post-content",
-})
+_BODY_NAMES: Final[frozenset[str]] = frozenset(
+    {
+        # What a CMS calls the element holding the story and nothing else. The list is the
+        # core of trafilatura's BODY_XPATH and Readability's positive patterns, kept to names
+        # that mean the body: not `content`, `text` or `entry` alone, which themes hang on
+        # whole columns.
+        "entry-content",
+        "entry-body",
+        "entrycontent",
+        "post-content",
+        "post_content",
+        "postcontent",
+        "post-body",
+        "post_body",
+        "postbody",
+        "post-entry",
+        "post-text",
+        "post_text",
+        "posttext",
+        "post-bodycopy",
+        "article-body",
+        "article__body",
+        "articlebody",
+        "article-content",
+        "article__content",
+        "articlecontent",
+        "article-text",
+        "articletext",
+        "article__text",
+        "story-body",
+        "story__body",
+        "storybody",
+        "story-content",
+        "storycontent",
+        "story-text",
+        "storytext",
+        "content-body",
+        "content__body",
+        "body-copy",
+        "bodycopy",
+        "field-body",
+        "fulltext",
+        "td-post-content",
+        "news-body",
+        "news-content",
+        "news-text",
+        "blog-content",
+        "blog-post-content",
+    }
+)
 _BODY_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "article", "main"})
 
 
