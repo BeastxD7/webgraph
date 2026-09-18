@@ -38,6 +38,21 @@ MAX_ALTERNATES: Final[int] = 24
 capped."""
 
 _ICON_RELS: Final[frozenset[str]] = frozenset({"icon", "shortcut icon", "apple-touch-icon"})
+_ADDRESS_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "og:url",
+        "og:image",
+        "og:image:url",
+        "og:image:secure_url",
+        "og:audio",
+        "og:video",
+        "twitter:image",
+        "twitter:image:src",
+        "twitter:url",
+    }
+)
+"""Share-card properties whose value is an address. A relative `og:image` is legal and
+common (`/og.png`), and a card renderer resolves it against the page; so does this."""
 _FEED_TYPES: Final[frozenset[str]] = frozenset({"application/rss+xml", "application/atom+xml"})
 
 
@@ -196,6 +211,9 @@ def read_metadata(
         value = _fold(meta.get("content"))
         if not key or value is None:
             continue
+        if key in _ADDRESS_KEYS:
+            # An address like any other in the head: absolute against the page's URL.
+            value = _absolute(value, url) or value
         if key.startswith(("og:", "article:", "product:", "profile:")):
             open_graph.setdefault(key, value)
         elif key.startswith("twitter:"):
@@ -229,10 +247,7 @@ def read_metadata(
                     alternates.append({"hreflang": hreflang, "href": href})
 
     declared_elsewhere: list[str] = []
-    for label, address in (
-        ("canonical", canonical),
-        ("og:url", _absolute(open_graph.get("og:url"), url)),
-    ):
+    for label, address in (("canonical", canonical), ("og:url", open_graph.get("og:url"))):
         if address and not same_site(address, url):
             declared_elsewhere.append(f"{label} -> {address}")
 

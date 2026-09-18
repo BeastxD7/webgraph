@@ -76,10 +76,8 @@ class TestReadMetadata:
         assert meta.icons == (f"{URL}favicon.ico", f"{URL}apple-touch-icon.png")
         assert meta.manifest == f"{URL}site.webmanifest"
         assert meta.feeds == (f"{URL}feed.xml",)
-        assert (
-            meta.open_graph["og:image"] == f"{URL}og.png"
-            or meta.open_graph["og:image"] == "/og.png"
-        )
+        # Share-card addresses are absolute, like every other address in the head.
+        assert meta.open_graph["og:image"] == f"{URL}og.png"
         assert meta.open_graph["og:title"] == "I Only Create"
         assert meta.twitter == {"twitter:card": "summary_large_image", "twitter:site": "@bhavyaz"}
         assert meta.alternates == (
