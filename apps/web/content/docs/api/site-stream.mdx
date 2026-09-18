@@ -95,6 +95,8 @@ One per page, whether it succeeded or not.
 | `chars`, `blocks`, `images`, `tables` | Size of the document |
 | `markdown`, `content_markdown`, `content_blocks`, `content_methods` | As on `/api/text`, plus `site-chrome` once enough pages exist (`CHROME_MIN_PAGES = 6`) |
 | `page_type`, `page_type_confidence`, `page_type_reasons`, `page_type_runner_up` | The router's verdict with its reasons |
+| `canvas` | Set when the page draws its content in a `<canvas>` rather than writing it: `canvases`, `words` (readable, under 40), `script_bytes` (how much of its own script was read for what the canvas shows). `null` for every other page |
+| `links_out` | Every address the page points at beyond this site, recorded and never queued. `external`: real links on the page, each `url` and `anchor`, capped at 60. `in_script`: addresses the page's own scripts store as named values (`github`, `live`, `url`), each `url` and `key` -- read only for a canvas page, found in code rather than on the page, capped at 60 |
 | `strategy` | How this page was fetched |
 | `queued`, `discovered`, `depth_counts`, `discovered_kinds`, `extracted`, `failed`, `newly_queued`, `new_urls`, `pages_per_minute`, `totals` | Running counters; `totals` has `chars`, `markdown`, `images`, `tables` |
 | `graph` | `pages`, `sections`, `entities`, `links`, `mentions` in the graph so far |

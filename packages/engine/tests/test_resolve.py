@@ -15,7 +15,9 @@ from webgraph.types import Rect
 
 
 def doc(body: str, *, geometry: dict[str, Rect] | None = None):
-    return build_document(f"<html><body>{body}</body></html>", "https://example.com/", geometry=geometry)
+    return build_document(
+        f"<html><body>{body}</body></html>", "https://example.com/", geometry=geometry
+    )
 
 
 class TestUnionKeepsEverything:
@@ -73,24 +75,35 @@ class TestUnionKeepsEverything:
         "Karri·2min ago"); the rendered one knows the second span was laid out as its own
         line and breaks there. Same block, and the rendered spelling is the one kept."""
         static = doc("<p>NewLoops →</p><p>Linear created the issue on behalf of Karri·2min ago</p>")
-        rendered = doc("<p>New Loops →</p><p>Linear created the issue on behalf of Karri · 2min ago</p>")
+        rendered = doc(
+            "<p>New Loops →</p><p>Linear created the issue on behalf of Karri · 2min ago</p>"
+        )
         merged, only_static, only_rendered = union_documents(static, rendered)
         assert (only_static, only_rendered) == (0, 0)
-        assert [b.text for b in merged.blocks] == ["New Loops →", "Linear created the issue on behalf of Karri · 2min ago"]
+        assert [b.text for b in merged.blocks] == [
+            "New Loops →",
+            "Linear created the issue on behalf of Karri · 2min ago",
+        ]
 
     def test_a_static_block_that_runs_a_rendered_block_into_hidden_matter_is_dropped(self) -> None:
         """linear.app's <h1> holds the headline and a `display: none` mobile copy of it. The
         rendered fetch sees the copy is hidden and strips it; the static one cannot and
         emits "HeadlineHeadline". That is the dirtier copy of a block already there."""
-        static = doc("<h1>The product development system for teams and agentsThe product development system for teams and agents</h1><p>Body of the page follows here.</p>")
-        rendered = doc("<h1>The product development system for teams and agents</h1><p>Body of the page follows here.</p>")
+        static = doc(
+            "<h1>The product development system for teams and agentsThe product development system for teams and agents</h1><p>Body of the page follows here.</p>"
+        )
+        rendered = doc(
+            "<h1>The product development system for teams and agents</h1><p>Body of the page follows here.</p>"
+        )
         merged, only_static, only_rendered = union_documents(static, rendered)
         assert only_static == 0  # the jammed copy is not "content only the static page had"
         assert only_rendered == 1  # the clean headline is, as far as the keys can tell, new
-        assert [b.text for b in merged.blocks if b.kind.value == "heading"] == ["The product development system for teams and agents"]
+        assert [b.text for b in merged.blocks if b.kind.value == "heading"] == [
+            "The product development system for teams and agents"
+        ]
 
     def test_a_short_rendered_block_does_not_swallow_static_content(self) -> None:
-        """"Menu" begins a lot of things; only a rendered block of some length counts."""
+        """ "Menu" begins a lot of things; only a rendered block of some length counts."""
         static = doc("<p>Menu</p><p>Menu of the day: soup, bread and a long list of things.</p>")
         rendered = doc("<p>Menu</p>")
         _merged, only_static, _only_rendered = union_documents(static, rendered)
@@ -109,11 +122,9 @@ class TestMathSourceUnion:
     """
 
     def test_the_same_formula_is_not_duplicated_across_static_and_render(self) -> None:
-        static = doc(
-            r"<p>In the first section we saw \(x = a\) all required us to compute.</p>"
-        )
+        static = doc(r"<p>In the first section we saw \(x = a\) all required us to compute.</p>")
         rendered = doc(
-            '<p>In the first section we saw '
+            "<p>In the first section we saw "
             '<mjx-container><mjx-math aria-hidden="true" data-latex="x = a">'
             "<mjx-mi>GARBLED</mjx-mi></mjx-math>"
             "<mjx-assistive-mml><math><mi>x</mi><mo>=</mo><mi>a</mi></math></mjx-assistive-mml>"
@@ -388,7 +399,9 @@ class TestBlockPages:
         assert block_page_evidence("About Us. Coming soon.") is None
         assert block_page_evidence("") is None
 
-    def test_resolve_raises_rather_than_returning_a_wall(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_resolve_raises_rather_than_returning_a_wall(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """End to end through `resolve_page`, with the fetch stubbed to serve a wall."""
         from webgraph import resolve as module
         from webgraph.fetch.static import FetchResult
@@ -459,7 +472,9 @@ class TestChallengesAndEmptyPages:
             resolve_page("https://www.amazon.in/", strategy=Strategy.STATIC_ONLY)
         assert "AWS WAF" in str(caught.value)
 
-    def test_an_empty_response_is_refused_with_its_size(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_an_empty_response_is_refused_with_its_size(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.resolve import Strategy, resolve_page
 
         self.stub(monkeypatch, "<html><head></head><body><div></div></body></html>", status=202)
@@ -482,7 +497,10 @@ class TestChallengesAndEmptyPages:
     def test_challenge_vendors_are_recognised(self) -> None:
         from webgraph.resolve import challenge_vendor
 
-        assert challenge_vendor("<script src='/cdn-cgi/challenge-platform/h/b'></script>") == "Cloudflare"
+        assert (
+            challenge_vendor("<script src='/cdn-cgi/challenge-platform/h/b'></script>")
+            == "Cloudflare"
+        )
         assert challenge_vendor("<script>var _pxhd='x'</script>") == "PerimeterX"
         assert challenge_vendor("<p>Hello</p>") is None
 
@@ -677,7 +695,11 @@ class TestLoginWalls:
     )
     WALL = TestAWallOnOneSide.WALL
     PAGE = TestAWallOnOneSide.PAGE
-    LONG = "<html><body>" + "".join(f"<p>Paragraph {i} of a page with plenty of words in it.</p>" for i in range(40)) + "</body></html>"
+    LONG = (
+        "<html><body>"
+        + "".join(f"<p>Paragraph {i} of a page with plenty of words in it.</p>" for i in range(40))
+        + "</body></html>"
+    )
 
     @staticmethod
     def stub(
@@ -715,14 +737,22 @@ class TestLoginWalls:
             ),
         )
 
-    def test_a_login_redirect_on_both_sides_is_named_as_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_login_redirect_on_both_sides_is_named_as_one(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """reddit's shape: the plain fetch lands on an empty login shell, the browser on
         Cloudflare's wall at the same login URL. The redirect is the cause and is what
         the error says; the wall is a consequence."""
         from webgraph import resolve as module
         from webgraph.resolve import PageBlockedError
 
-        self.stub(monkeypatch, static=self.SHELL, rendered=self.WALL, static_final=self.LOGIN, rendered_final=self.LOGIN)
+        self.stub(
+            monkeypatch,
+            static=self.SHELL,
+            rendered=self.WALL,
+            static_final=self.LOGIN,
+            rendered_final=self.LOGIN,
+        )
         with pytest.raises(PageBlockedError) as caught:
             module.resolve_page(self.THREAD)
         assert caught.value.kind == "login"
@@ -738,7 +768,13 @@ class TestLoginWalls:
         feed = "https://www.example.test/feed/"
         plain = "https://www.example.test/uas/login?session_redirect=https%3A%2F%2Fwww.example.test%2Ffeed%2F"
         browser = "https://www.example.test/login/?session_redirect=https%3A%2F%2Fwww.example.test%2Ffeed%2F"
-        self.stub(monkeypatch, static=self.FORM, rendered=self.FORM, static_final=plain, rendered_final=browser)
+        self.stub(
+            monkeypatch,
+            static=self.FORM,
+            rendered=self.FORM,
+            static_final=plain,
+            rendered_final=browser,
+        )
         with pytest.raises(PageBlockedError) as caught:
             module.resolve_page(feed)
         assert "redirected to a login page (" in str(caught.value)
@@ -752,7 +788,9 @@ class TestLoginWalls:
             module.resolve_page(self.THREAD, strategy=Strategy.STATIC_ONLY)
         assert caught.value.kind == "login"
 
-    def test_a_login_redirect_on_one_side_is_a_wall_on_that_side(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_login_redirect_on_one_side_is_a_wall_on_that_side(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A site that sends the plain fetch to sign in and serves the browser the page:
         the login side is left out exactly as a bot wall would be, and the page is read
         from the other side."""
@@ -770,7 +808,9 @@ class TestLoginWalls:
         assert resolved.render_error is not None
         assert "redirected to a login page" in resolved.render_error
 
-    def test_a_login_redirect_beside_a_wall_still_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_login_redirect_beside_a_wall_still_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph import resolve as module
         from webgraph.resolve import PageBlockedError
 
@@ -778,7 +818,9 @@ class TestLoginWalls:
         with pytest.raises(PageBlockedError):
             module.resolve_page(self.THREAD)
 
-    def test_a_long_page_with_a_sign_in_box_is_a_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_long_page_with_a_sign_in_box_is_a_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A shop's header carries a password field; nothing redirected anywhere."""
         from webgraph import resolve as module
 
@@ -786,7 +828,9 @@ class TestLoginWalls:
         self.stub(monkeypatch, static=shop, rendered=shop)
         assert module.resolve_page("https://shop.example.test/products/").strategy is Strategy.UNION
 
-    def test_a_page_that_links_to_its_login_is_a_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_page_that_links_to_its_login_is_a_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """news.ycombinator.com: a "login" link on the front page, no redirect."""
         from webgraph import resolve as module
 
@@ -794,7 +838,9 @@ class TestLoginWalls:
         self.stub(monkeypatch, static=front, rendered=front)
         assert module.resolve_page("https://news.example.test/").strategy is Strategy.UNION
 
-    def test_a_login_page_asked_for_is_the_login_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_login_page_asked_for_is_the_login_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Asking for /login and getting /login/ is not a wall: it is what was asked for."""
         from webgraph import resolve as module
 
@@ -840,9 +886,17 @@ class TestLoginWalls:
 
         asked = "https://www.example.test/r/programming/"
         assert _returns_to("https://www.example.test/accounts/?next=%2Fr%2Fprogramming%2F", asked)
-        assert _returns_to("https://www.example.test/accounts/?returnUrl=https%3A%2F%2Fwww.example.test%2Fr%2Fprogramming", asked)
-        assert _returns_to("https://www.example.test/accounts/?session_redirect=https://www.example.test/r/programming/", asked)
-        assert not _returns_to("https://www.example.test/accounts/?next=%2Fsomewhere-else%2F", asked)
+        assert _returns_to(
+            "https://www.example.test/accounts/?returnUrl=https%3A%2F%2Fwww.example.test%2Fr%2Fprogramming",
+            asked,
+        )
+        assert _returns_to(
+            "https://www.example.test/accounts/?session_redirect=https://www.example.test/r/programming/",
+            asked,
+        )
+        assert not _returns_to(
+            "https://www.example.test/accounts/?next=%2Fsomewhere-else%2F", asked
+        )
         assert not _returns_to("https://www.example.test/accounts/?utm_source=x", asked)
 
     def test_a_login_redirect_is_only_that_when_the_page_is_short_or_has_a_field(self) -> None:
@@ -851,7 +905,10 @@ class TestLoginWalls:
         asked = "https://www.example.test/feed/"
         short = build_document(self.SHELL, "https://www.example.test/login/?next=%2Ffeed%2F")
         assert login_redirect(short, asked) == "https://www.example.test/login/?next=%2Ffeed%2F"
-        with_field = build_document(self.LONG.replace("<body>", "<body><input type='password'>"), "https://www.example.test/login/")
+        with_field = build_document(
+            self.LONG.replace("<body>", "<body><input type='password'>"),
+            "https://www.example.test/login/",
+        )
         assert login_redirect(with_field, asked) == "https://www.example.test/login/"
         long_without = build_document(self.LONG, "https://www.example.test/login/")
         assert login_redirect(long_without, asked) is None
@@ -1052,7 +1109,14 @@ class TestAServerErrorInTheBrowser:
     """
 
     @staticmethod
-    def stub(monkeypatch: pytest.MonkeyPatch, *, static_html: str, static_status: int, rendered_html: str, rendered_status: int) -> None:
+    def stub(
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        static_html: str,
+        static_status: int,
+        rendered_html: str,
+        rendered_status: int,
+    ) -> None:
         from webgraph import resolve as module
         from webgraph.fetch.render import RenderResult
         from webgraph.fetch.static import FetchResult
@@ -1085,7 +1149,13 @@ class TestAServerErrorInTheBrowser:
     ) -> None:
         from webgraph.resolve import Strategy, resolve_page
 
-        self.stub(monkeypatch, static_html=PRODUCTS, static_status=200, rendered_html=BUSY, rendered_status=503)
+        self.stub(
+            monkeypatch,
+            static_html=PRODUCTS,
+            static_status=200,
+            rendered_html=BUSY,
+            rendered_status=503,
+        )
         resolved = resolve_page("https://shop.test/mobiles")
         assert resolved.strategy is Strategy.STATIC_ONLY
         assert "No server is available" not in resolved.document.text
@@ -1095,14 +1165,26 @@ class TestAServerErrorInTheBrowser:
     def test_both_sides_busy_is_a_refusal(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph.resolve import resolve_page
 
-        self.stub(monkeypatch, static_html=BUSY, static_status=503, rendered_html=BUSY, rendered_status=503)
+        self.stub(
+            monkeypatch,
+            static_html=BUSY,
+            static_status=503,
+            rendered_html=BUSY,
+            rendered_status=503,
+        )
         with pytest.raises(ValueError, match="503"):
             resolve_page("https://shop.test/mobiles")
 
     def test_a_200_render_is_still_the_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph.resolve import Strategy, resolve_page
 
-        self.stub(monkeypatch, static_html=PRODUCTS, static_status=200, rendered_html=PRODUCTS, rendered_status=200)
+        self.stub(
+            monkeypatch,
+            static_html=PRODUCTS,
+            static_status=200,
+            rendered_html=PRODUCTS,
+            rendered_status=200,
+        )
         assert resolve_page("https://shop.test/mobiles").strategy is Strategy.UNION
 
     def test_a_render_with_no_status_is_judged_as_before(self) -> None:
@@ -1110,4 +1192,37 @@ class TestAServerErrorInTheBrowser:
         words, not on a status it never got."""
         from webgraph.fetch.render import RenderResult
 
-        assert RenderResult(url="https://x.test/", html="<p>x</p>", rects={}, ok=True).status is None
+        assert (
+            RenderResult(url="https://x.test/", html="<p>x</p>", rects={}, ok=True).status is None
+        )
+
+
+class TestAnEmptyRender:
+    """A WebGL page in a headless browser renders as an empty `<body>` (bhavyadhanwani.dev's
+    /projects). The union keeps the static text, as it always did; it must also keep the
+    static *markup*, or the crawl reads the page's links from an empty shell."""
+
+    def test_the_static_markup_survives(self) -> None:
+        static = build_document(
+            '<html><head><title>Projects</title><meta name="description" content="Three projects"></head>'
+            '<body><canvas></canvas><p>Click on the Project for Details</p><a href="/">Home</a></body></html>',
+            "https://example.com/projects",
+        )
+        rendered = build_document(
+            "<html><head></head><body></body></html>", "https://example.com/projects"
+        )
+        merged, only_static, only_rendered = union_documents(static, rendered)
+        assert "<canvas" in merged.html and 'href="/"' in merged.html
+        assert merged.title == "Projects"
+        assert merged.description == "Three projects"
+        assert merged.text == static.text
+        assert (only_static, only_rendered) == (
+            len([b for b in static.blocks if b.text.strip()]),
+            0,
+        )
+
+    def test_a_render_with_content_still_leads(self) -> None:
+        static = doc("<p>Only in static.</p><p>Shared paragraph here.</p>")
+        rendered = doc("<p>Shared paragraph here.</p><p>Only in render.</p>")
+        merged, _, _ = union_documents(static, rendered)
+        assert merged.html == rendered.html

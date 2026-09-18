@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Final
+from typing import Any, Final
 
 from webgraph import config
 from webgraph.fetch import robots
@@ -101,6 +101,7 @@ class PageMissingError(Exception):
         self.url = url
         self.status = status
 
+
 class PageDisallowedError(ValueError):
     """The site's robots.txt asks automated clients not to read this page, and this client
     is one. A `ValueError` like every other "could not resolve"; its own type because the
@@ -121,7 +122,9 @@ class PageShellError(ValueError):
     (`__NEXT_DATA__`, JSON-LD) that is complete in the shell, and a browser adds nothing.
     """
 
-    def __init__(self, document: Document, *, status: int | None = None, rendered: bool = False) -> None:
+    def __init__(
+        self, document: Document, *, status: int | None = None, rendered: bool = False
+    ) -> None:
         said = f"HTTP {status}, " if status else ""
         if rendered:
             # The browser ran and the page still has no words. That is not a shell waiting
@@ -556,13 +559,25 @@ def union_documents(
         # weaker claim than the rendered document alone could make, and it gets the weaker name.
         method = ReadingOrderMethod.GEOMETRIC_ANCHORED
 
-    document = rendered_doc.model_copy(
-        update={
-            "blocks": tuple(merged),
-            "structured_data": tuple(payloads),
-            "reading_order_method": method,
-        }
-    )
+    # The merged document carries one markup, and the crawl reads its links from it. The
+    # rendered one leads, as everywhere above -- except when the render came back with no
+    # blocks at all, which a WebGL page in a headless browser does (bhavyadhanwani.dev's
+    # /projects rendered as an empty `<body>`): then its markup is an empty shell, and a
+    # crawl that read links from it would find none while the plain fetch's page had them.
+    # An empty render also has no title and no description worth keeping over the static
+    # page's.
+    empty_render = not any(b.text.strip() for b in rendered_doc.blocks)
+    update: dict[str, Any] = {
+        "blocks": tuple(merged),
+        "structured_data": tuple(payloads),
+        "reading_order_method": method,
+    }
+    if empty_render and static_doc.blocks:
+        update["html"] = static_doc.html
+        update["title"] = rendered_doc.title or static_doc.title
+        update["description"] = rendered_doc.description or static_doc.description
+        update["markup"] = static_doc.markup
+    document = rendered_doc.model_copy(update=update)
     return document, len(only_static), len(only_rendered)
 
 
@@ -659,7 +674,9 @@ def _compose_frameset(
             if body is not None
             else etree.tostring(root, encoding="unicode")
         )
-        parts.append(f'<section data-frame="{source}">{(body.text or "") if body is not None else ""}{inner}</section>')
+        parts.append(
+            f'<section data-frame="{source}">{(body.text or "") if body is not None else ""}{inner}</section>'
+        )
     fetched = len(parts)
     try:
         top = lxml_html.fromstring(static_result.html)
@@ -777,7 +794,9 @@ def login_redirect(document: Document, requested_url: str | None) -> str | None:
         return None
     if not (_path_is_login(urlsplit(final).path) or _returns_to(final, requested_url)):
         return None
-    if len(document.text.split()) >= MAX_LOGIN_PAGE_WORDS and not _PASSWORD_FIELD.search(document.html):
+    if len(document.text.split()) >= MAX_LOGIN_PAGE_WORDS and not _PASSWORD_FIELD.search(
+        document.html
+    ):
         return None
     return final
 
@@ -1074,9 +1093,7 @@ def _resolve_fetched(
     # ran; the status says whether a page was served. A 5xx render is a failed side.
     if rendered.ok and rendered.status is not None and rendered.status >= 500:
         said = BLOCKING_STATUSES.get(rendered.status, "the server answered with an error")
-        rendered = replace(
-            rendered, ok=False, error=f"HTTP {rendered.status} -- {said}"
-        )
+        rendered = replace(rendered, ok=False, error=f"HTTP {rendered.status} -- {said}")
 
     if not rendered.ok:
         if static_doc is None:
