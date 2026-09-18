@@ -142,7 +142,20 @@ the links are reported as off-screen links to other hosts for the owner to read.
 `display: none` menu -- vtu.ac.in's dropdowns link to 187 affiliated colleges -- is not a
 verdict; its 174 links to 170 foreign hosts positioned twenty trillion pixels off the left
 edge are. Walls, pages that could not be read, and a CMS branch older than
-`REPORT_STACK_OLD_YEARS` (3) years are the other findings.
+`REPORT_STACK_OLD_YEARS` (3) years are the other findings -- and three a site declares
+about itself without showing it:
+
+- **Canonicals name another host** (`canonical_elsewhere`, high): sampled pages whose
+  `<link rel=canonical>` is on a different site from the one that served them (`www.` and
+  the bare domain are one site). Search engines fold the page into the declared address; a
+  crawler that resolves links against it leaves the site. Usually a framework's base URL --
+  Next.js `metadataBase`, a CMS site URL -- left at a previous host after a move.
+- **The sitemap lists another host** (`sitemap_elsewhere`, high): every address the sitemap
+  lists is on another host, so to a crawler it advertises nothing of this site. The same
+  stale base URL, the same fix.
+- **Pages draw content in a canvas** (`canvas_content`, medium): a `<canvas>` and under
+  forty readable words. A search engine, a screen reader or an assistant gets those words
+  and nothing the scene draws. Put the text and the links in the markup as well.
 
 ## Suggested files
 

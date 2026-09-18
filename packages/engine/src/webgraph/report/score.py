@@ -27,8 +27,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final, Literal
+from urllib.parse import urlsplit
 
 from webgraph import config
+from webgraph.crawl.frontier import same_site
 from webgraph.report.bots import BotPolicy
 from webgraph.report.pages import PageReport
 from webgraph.report.stack import StackEntry
@@ -422,12 +424,87 @@ def score_site(
     return SiteScore(total=total, measured_weight=weight, subscores=subscores)
 
 
-def integrity_findings(pages: list[PageReport], stack: Iterable[StackEntry]) -> tuple[Finding, ...]:
+def integrity_findings(
+    pages: list[PageReport],
+    stack: Iterable[StackEntry],
+    *,
+    sitemap_elsewhere: tuple[int, tuple[str, ...]] | None = None,
+) -> tuple[Finding, ...]:
     """What an owner should look at first, in order of severity. One finding per kind
     across the sampled pages, naming the pages: five pages sharing one injected block are
-    one injection, not five."""
+    one injection, not five.
+
+    `sitemap_elsewhere` is `(how many addresses the sitemap listed, the hosts they were
+    on)` when every one of them was on another host -- the site telling crawlers its pages
+    live elsewhere."""
     findings: list[Finding] = []
     read = [p for p in pages if p.error is None]
+
+    # ---- The site declares another host as its own ----
+    # A canonical on another host is invisible on the page and decisive for every crawler:
+    # search engines fold the page into the declared address, and a crawl that resolved
+    # links against it left the site. bhavyadhanwani.dev kept its previous Vercel host as
+    # the canonical of every page, and the same host in its sitemap, after moving domains.
+    elsewhere = [
+        p for p in read if p.canonical and not same_site(p.canonical, p.url)
+    ]
+    if elsewhere:
+        hosts: dict[str, int] = {}
+        for p in elsewhere:
+            host = urlsplit(p.canonical or "").hostname or "?"
+            hosts[host] = hosts.get(host, 0) + 1
+        named = ", ".join(f"{host} ({count})" for host, count in sorted(hosts.items(), key=lambda i: -i[1]))
+        findings.append(
+            Finding(
+                severity="high",
+                kind="canonical_elsewhere",
+                title="Canonicals name another host",
+                detail=(
+                    f"{len(elsewhere)} of {len(read)} sampled pages declare <link rel=canonical> on "
+                    f"{named} -- a different site from the one that served them. Search engines "
+                    "treat the declared address as the real page and this one as a copy; a crawler "
+                    "that resolves links against it leaves the site. Nothing on the page shows it. "
+                    "Usually a framework's base URL (Next.js metadataBase, a CMS site URL) left at a "
+                    "previous host after a move."
+                ),
+                page=elsewhere[0].url,
+            )
+        )
+    if sitemap_elsewhere and sitemap_elsewhere[0] > 0:
+        count, hosts_listed = sitemap_elsewhere
+        findings.append(
+            Finding(
+                severity="high",
+                kind="sitemap_elsewhere",
+                title="The sitemap lists another host",
+                detail=(
+                    f"Every one of the {count} addresses the sitemap lists is on "
+                    f"{', '.join(hosts_listed[:4])}{'…' if len(hosts_listed) > 4 else ''}, not on this "
+                    "host. To a crawler the sitemap advertises nothing of this site; every address "
+                    "in it is turned away as off-site. The same stale base URL as a canonical on "
+                    "another host, and the same fix."
+                ),
+            )
+        )
+
+    # ---- Content drawn in a canvas ----
+    drawn = [p for p in read if p.canvas]
+    if drawn:
+        words = ", ".join(f"{_path(p)} ({p.union_words} words)" for p in drawn[:6])
+        findings.append(
+            Finding(
+                severity="medium",
+                kind="canvas_content",
+                title=f"{len(drawn)} sampled page{'s draw' if len(drawn) != 1 else ' draws'} content in a canvas",
+                detail=(
+                    f"{words}. What these pages show is drawn by script into a <canvas>, not written "
+                    "in the page: a search engine, a screen reader, an assistant, or anyone without "
+                    "JavaScript and a click gets the words counted here and nothing else. Put the "
+                    "text -- and every link the scene offers -- in the markup as well."
+                ),
+                page=drawn[0].url,
+            )
+        )
 
     def hosts_across(selected: list[PageReport]) -> dict[str, int]:
         totals: dict[str, int] = {}
