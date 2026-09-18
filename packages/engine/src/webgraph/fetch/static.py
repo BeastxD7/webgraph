@@ -29,6 +29,7 @@ same 403s because it is not imitating a browser, it is one. See `webgraph.resolv
 from __future__ import annotations
 
 import time
+import zlib
 from dataclasses import dataclass, field, replace
 
 import httpx
@@ -86,6 +87,7 @@ class FetchConfig:
         """
         return replace(self, user_agent=f"{self.contact} {config.DECLARED_AGENT_SUFFIX}")
 
+
 @dataclass(frozen=True, slots=True)
 class FetchResult:
     """Outcome of a fetch. `ok` is False for transport errors as well as HTTP errors."""
@@ -109,6 +111,15 @@ class FetchResult:
     @property
     def is_html(self) -> bool:
         return "html" in self.content_type.lower() or not self.content_type
+
+
+def _gunzip(body: bytes, max_bytes: int) -> bytes:
+    """The first `max_bytes` of a gzip member, or the bytes as given when they do not
+    decompress -- a page that merely begins with the magic is still a page."""
+    try:
+        return zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(body, max_bytes)
+    except zlib.error:
+        return body
 
 
 def _headers(config: FetchConfig) -> dict[str, str]:
@@ -136,9 +147,6 @@ def _headers(config: FetchConfig) -> dict[str, str]:
         "Sec-Fetch-User": "?1",
         **config.extra_headers,
     }
-
-
-
 
 
 def fetch_static(url: str, *, config: FetchConfig | None = None) -> FetchResult:
@@ -195,6 +203,12 @@ def _attempt(url: str, config: FetchConfig) -> FetchResult:
         ) as client:
             response = client.get(url)
             body = response.content[: config.max_bytes]
+            # A gzipped *file* -- `sitemap.xml.gz`, the shape large sites' sitemap indexes
+            # list their parts in -- arrives as gzip bytes, not gzip transport encoding, so
+            # httpx hands it over compressed; read it as the XML it is. Bounded by the same
+            # byte cap as any body, so a compression bomb decompresses to the cap and stops.
+            if body[:2] == b"\x1f\x8b":
+                body = _gunzip(body, config.max_bytes)
             # httpx picks the encoding from headers; fall back to the declared charset in
             # the markup, then to a lossy utf-8 rather than losing the page entirely.
             try:

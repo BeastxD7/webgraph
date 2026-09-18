@@ -8,6 +8,7 @@ result so a well-meaning simplification cannot quietly undo it.
 
 from __future__ import annotations
 
+import gzip
 import http.server
 import threading
 from collections.abc import Iterator
@@ -34,28 +35,30 @@ class Recorder(http.server.BaseHTTPRequestHandler):
     # per-instance script could never span the two attempts a retry test needs to observe.
     script: ClassVar[list[tuple[int, dict[str, str]]]] = []
     seen: ClassVar[list[dict[str, str]]] = []
+    body: ClassVar[bytes] = BODY
+    content_type: ClassVar[str] = "text/html"
 
     def log_message(self, *_args: object) -> None:
         return
 
     def do_GET(self) -> None:
         Recorder.seen.append({k.lower(): v for k, v in self.headers.items()})
-        status, extra = (
-            Recorder.script.pop(0) if Recorder.script else (200, {})
-        )
+        status, extra = Recorder.script.pop(0) if Recorder.script else (200, {})
         self.send_response(status)
         for key, value in extra.items():
             self.send_header(key, value)
-        self.send_header("Content-Type", "text/html")
-        self.send_header("Content-Length", str(len(BODY)))
+        self.send_header("Content-Type", Recorder.content_type)
+        self.send_header("Content-Length", str(len(Recorder.body)))
         self.end_headers()
-        self.wfile.write(BODY)
+        self.wfile.write(Recorder.body)
 
 
 @pytest.fixture
 def server() -> Iterator[str]:
     Recorder.script = []
     Recorder.seen = []
+    Recorder.body = BODY
+    Recorder.content_type = "text/html"
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Recorder)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -158,3 +161,28 @@ class TestProtocol:
         result = fetch_static(server)
         assert result.ok
         assert "Served." in result.html
+
+
+class TestGzippedFiles:
+    """`sitemap.xml.gz` is a gzip *file*: the bytes are gzip, the transport is not, so httpx
+    hands them over compressed. Large sites' sitemap indexes list their parts this way, and
+    each part read as "found, 0 URLs" until the body was decompressed."""
+
+    def test_a_gzipped_sitemap_is_read_as_its_xml(self, server: str) -> None:
+        xml = b'<?xml version="1.0"?><urlset><url><loc>https://example.com/a</loc></url></urlset>'
+        Recorder.body = gzip.compress(xml)
+        Recorder.content_type = "application/gzip"
+        result = fetch_static(server + "sitemap.xml.gz")
+        assert result.ok
+        assert "<loc>https://example.com/a</loc>" in result.html
+
+    def test_a_bomb_stops_at_the_byte_cap(self, server: str) -> None:
+        Recorder.body = gzip.compress(b"<x>" + b"a" * 5_000_000 + b"</x>")
+        Recorder.content_type = "application/gzip"
+        result = fetch_static(server + "big.xml.gz", config=FetchConfig(max_bytes=10_000))
+        assert len(result.html) <= 10_000
+
+    def test_bytes_that_only_look_gzipped_are_left_alone(self, server: str) -> None:
+        Recorder.body = b"\x1f\x8bnot really gzip"
+        result = fetch_static(server)
+        assert result.html.endswith("not really gzip")
