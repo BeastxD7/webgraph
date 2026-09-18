@@ -343,6 +343,8 @@ class TestRefusals:
         frontier.extend(["/deep"], 2, base=base)
         # Not a page.
         frontier.extend(["mailto:a@example.com", "javascript:void(0)", "/undefined"], 1, base=base)
+        # A place on the same page: neither queued nor counted (docs sites carry hundreds).
+        frontier.extend(["#top", "#__tab-guide", "#"], 1, base=base)
         # A same-site file: skipped and cited, not refused. An off-site image: neither.
         frontier.extend(["/brochure.pdf", "/logo.png", "https://cdn.example/x.png"], 1, base=base)
         # Accepted.
