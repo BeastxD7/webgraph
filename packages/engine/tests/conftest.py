@@ -36,3 +36,20 @@ def no_robots_on_the_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     robots.forget()
     yield
     robots.forget()
+
+
+@pytest.fixture(autouse=True)
+def no_common_crawl_on_the_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A crawl asks Common Crawl's index about the host at stage 0. Not from a test: the
+    index is answered as unavailable, which is what a crawl reports when it does not
+    answer, and `test_common_crawl.py` fakes the index itself when it wants an answer."""
+    from webgraph import site as site_module
+    from webgraph.crawl.discovery import CommonCrawlListing
+
+    monkeypatch.setattr(
+        site_module,
+        "discover_common_crawl",
+        lambda *_args, **_kwargs: CommonCrawlListing(
+            status="unavailable", error="not asked in tests"
+        ),
+    )

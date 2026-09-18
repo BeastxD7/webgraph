@@ -812,6 +812,19 @@ export interface DiscoveryEvent {
   };
   /** Sitemap URLs the frontier accepted -- what `from_sitemap` on `frontier` reports. */
   seeds: number;
+  /** What Common Crawl's latest index last saw on this host -- its own fact beside the
+   *  site's, months stale by design and chosen by someone else. Null when not asked.
+   *  `queued` says whether the listing was also seeded into the frontier (off by default). */
+  common_crawl?: {
+    status: "seen" | "not-seen" | "unavailable";
+    index: string | null;
+    index_name: string | null;
+    urls: number;
+    records: number;
+    sample: string[];
+    error: string | null;
+    queued: boolean;
+  } | null;
 }
 
 /**

@@ -16,6 +16,7 @@ distinct entities were actually found so the ceiling is visible rather than impl
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
@@ -32,9 +33,11 @@ from webgraph.boilerplate import SiteChrome, detect_site_chrome
 from webgraph.carried import ScriptLink, canvas_verdict, script_links
 from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
+    CommonCrawlListing,
     RobotsPolicy,
     SitemapAttempt,
     discover_by_crawling,
+    discover_common_crawl,
     discover_sitemap_urls,
     extract_links,
     load_robots,
@@ -134,6 +137,9 @@ class SiteConfig:
     default -- a deep site is still a finite one, and the page budget is the real bound."""
 
     strict_domain: bool = config.CRAWL_STRICT_DOMAIN
+    common_crawl: bool = config.CRAWL_COMMON_CRAWL
+    seed_from_common_crawl: bool = config.CRAWL_SEED_FROM_COMMON_CRAWL
+    """See `config.CRAWL_COMMON_CRAWL` and `config.CRAWL_SEED_FROM_COMMON_CRAWL`."""
     within_path: bool = config.CRAWL_WITHIN_PATH
     """Stay under the start address's path. See `config.CRAWL_WITHIN_PATH`."""
     include_paths: str = config.CRAWL_INCLUDE_PATHS
@@ -534,6 +540,40 @@ def build_inventory(
     )
 
 
+COMMON_CRAWL_TIMEOUT = 8.0
+"""Seconds to give Common Crawl's index, per request and in total: a third party's
+opinion is worth having and not worth waiting for."""
+
+
+class _Background:
+    """One call on one thread, answered later -- for a query stage 0 should not wait on.
+    `result` returns what the call returned, or an `unavailable` listing when it raised
+    or has not finished by `timeout`; the thread is a daemon, so a hung index cannot hold
+    the process."""
+
+    def __init__(self, fn: Callable[..., CommonCrawlListing], *args: Any, **kwargs: Any) -> None:
+        self._value: CommonCrawlListing | None = None
+        self._error: str | None = None
+
+        def run() -> None:
+            try:
+                self._value = fn(*args, **kwargs)
+            except Exception as exc:  # reported, never raised into the crawl
+                self._error = f"{type(exc).__name__}: {exc}"[:200]
+
+        self._thread = threading.Thread(target=run, name="common-crawl", daemon=True)
+        self._thread.start()
+
+    def result(self, *, timeout: float) -> CommonCrawlListing:
+        self._thread.join(timeout)
+        if self._value is not None:
+            return self._value
+        return CommonCrawlListing(
+            status="unavailable",
+            error=self._error or f"no answer within {timeout:.0f}s",
+        )
+
+
 CANVAS_MAX_SCRIPTS = 16
 """How many of a canvas page's own scripts are read for the addresses they hold -- more
 than the stack detector's four, because a framework splits a page's data into a chunk of
@@ -912,6 +952,9 @@ def _discovery_event(
     attempts: Iterable[SitemapAttempt],
     advertised: int,
     seeds: int,
+    *,
+    common_crawl: CommonCrawlListing | None = None,
+    seeded_from_common_crawl: bool = False,
 ) -> dict[str, Any]:
     """What the crawl learned about how this site wants to be found.
 
@@ -940,6 +983,13 @@ def _discovery_event(
             "total_urls": advertised,
         },
         "seeds": seeds,
+        # What Common Crawl's index last saw on this host, or None when it was not asked.
+        # Its own fact, beside the site's: stale by months and chosen by someone else.
+        "common_crawl": (
+            {**common_crawl.as_dict(), "queued": seeded_from_common_crawl}
+            if common_crawl is not None
+            else None
+        ),
     }
 
 
@@ -1015,6 +1065,22 @@ def stream_site(
 
     yield {"type": "stage", "stage": "analyze", "message": "Detecting technology stack"}
 
+    # Common Crawl's index is asked in the background while the root is fetched and the
+    # sitemaps read: it is a third party's opinion, often slow or refusing connections,
+    # and stage 0 must not wait on it. Short timeout, one try, and `unavailable` when it
+    # has not answered by the time discovery is reported.
+    common_crawl_query = (
+        _Background(
+            discover_common_crawl,
+            normalized_root,
+            config=replace(
+                config.fetch, timeout_seconds=min(config.fetch.timeout_seconds, COMMON_CRAWL_TIMEOUT)
+            ),
+        )
+        if config.common_crawl
+        else None
+    )
+
     probe = probe_site(
         normalized_root,
         fetch_config=config.fetch,
@@ -1074,7 +1140,24 @@ def stream_site(
     seeded = frontier.extend(list(seeds), 1, via="seed", found_on=None) if seeds else []
     seeded += frontier.extend(list(probe.sitemap_pages), 1, via="sitemap", found_on=analysis.root)
 
-    yield _discovery_event(policy, probe.sitemap_attempts, len(probe.sitemap_pages), len(seeded))
+    # A second opinion on the site's size from Common Crawl's index -- read, not fetched
+    # from the site; reported as its own fact, and queued only when asked.
+    common_crawl = (
+        common_crawl_query.result(timeout=COMMON_CRAWL_TIMEOUT)
+        if common_crawl_query is not None
+        else None
+    )
+    if common_crawl is not None and config.seed_from_common_crawl:
+        seeded += frontier.extend(list(common_crawl.urls), 1, via="common-crawl", found_on=None)
+
+    yield _discovery_event(
+        policy,
+        probe.sitemap_attempts,
+        len(probe.sitemap_pages),
+        len(seeded),
+        common_crawl=common_crawl,
+        seeded_from_common_crawl=config.seed_from_common_crawl,
+    )
 
     yield {
         "type": "frontier",

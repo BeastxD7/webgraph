@@ -88,7 +88,7 @@ interface RunState {
   discoveredUrls: string[];
   /** Where each discovered address came from: the page that linked to it (or the root, for
    *  the sitemap) and its link distance from the root. What the depth tree is drawn from. */
-  origins: Record<string, { foundOn: string | null; depth: number; via: "seed" | "sitemap" | "link" }>;
+  origins: Record<string, { foundOn: string | null; depth: number; via: "seed" | "sitemap" | "link" | "common-crawl" }>;
   /** Addresses accepted at each depth, from the engine's own frontier. */
   depthCounts: Record<string, number>;
   root: string | null;
@@ -203,11 +203,13 @@ function reduce(state: RunState, action: Action): RunState {
       for (const url of event.new_urls ?? []) {
         if (!(url in origins)) origins[url] = { foundOn: event.url, depth, via: "link" };
       }
-      if (!(event.url in origins)) {
+      // The frontier event guessed `sitemap` for every seed; the page's own citation is the
+      // fact, so it replaces the guess (a Common Crawl seed is cited as such).
+      if (!(event.url in origins) || (event.citation && origins[event.url]?.via !== event.citation.via)) {
         origins[event.url] = {
           foundOn: event.citation?.found_on ?? null,
           depth: event.depth ?? event.citation?.depth ?? 0,
-          via: (event.citation?.via as "seed" | "sitemap" | "link" | undefined) ?? "link",
+          via: (event.citation?.via as "seed" | "sitemap" | "link" | "common-crawl" | undefined) ?? "link",
         };
       }
       return {

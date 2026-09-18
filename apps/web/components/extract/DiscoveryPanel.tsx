@@ -343,7 +343,7 @@ const REFUSAL_LABEL: Record<RefusalReason, string> = {
  * its one link as "off-site" for a day, and nothing on screen said any address had been
  * refused at all. `evidence` is the first few refused addresses, once the run has ended.
  */
-function RefusedRow({ refused, evidence, live }: { refused: Refusals | null; evidence: DoneEvent["refused_urls"] | null; live: boolean }) {
+function RefusedRow({ refused, evidence, live, sitemapOutOfScope }: { refused: Refusals | null; evidence: DoneEvent["refused_urls"] | null; live: boolean; sitemapOutOfScope: boolean }) {
   const [open, setOpen] = useState(false);
   const counts = refused ?? { "off-site": 0, "past-depth": 0, "not-a-page": 0, excluded: 0, "not-included": 0, "queue-cap": 0 };
   const total = REFUSAL_ORDER.reduce((sum, r) => sum + counts[r], 0);
@@ -354,10 +354,12 @@ function RefusedRow({ refused, evidence, live }: { refused: Refusals | null; evi
         ? "nothing turned away yet"
         : "nothing turned away"
       : present.map((r) => `${n(counts[r])} ${REFUSAL_LABEL[r]}`).join(" · ");
-  const note =
-    counts["off-site"] > 0 && counts["off-site"] >= Math.max(3, total * 0.8)
-      ? "Most of what was turned away is on other sites. If the site's own pages are among them, its canonical or sitemap may name another host -- see the site metadata."
-      : null;
+  // Links to other sites are the ordinary case and no cause for a note. A sitemap whose
+  // every address was turned away is: the site is telling crawlers its pages live on another
+  // host -- the canonical-on-an-old-host shape -- and that is the fact to point at.
+  const note = sitemapOutOfScope
+    ? "Every address the sitemap listed was turned away as on another site: the site's sitemap names a different host from the one it serves. Its canonicals probably do too -- see the site metadata."
+    : null;
 
   return (
     <Row title="Addresses turned away" summary={summary} note={note} open={open} onToggle={() => setOpen((v) => !v)}>
@@ -384,6 +386,43 @@ function RefusedRow({ refused, evidence, live }: { refused: Refusals | null; evi
               <span className="min-w-0 truncate font-mono text-ink-soft" title={e.url}>{e.url}</span>
             </li>
           ))}
+        </ul>
+      )}
+    </Row>
+  );
+}
+
+/**
+ * A second opinion on the site's size, from Common Crawl's index rather than the site.
+ * Stale by months and chosen by someone else, so it is stated as what it is -- "last seen
+ * by Common Crawl" -- and never merged into what this crawl found. Off-site addresses are
+ * already left out; the sample is the first few it listed.
+ */
+function CommonCrawlRow({ listing }: { listing: NonNullable<DiscoveryEvent["common_crawl"]> }) {
+  const [open, setOpen] = useState(false);
+  const when = listing.index_name ? listing.index_name.replace(/ index$/i, "") : listing.index;
+  const summary =
+    listing.status === "seen"
+      ? `${n(listing.urls)} ${listing.urls === 1 ? "address" : "addresses"} in its ${when} index${listing.queued ? " · queued" : " · not queued"}`
+      : listing.status === "not-seen"
+        ? `not in its ${when} index`
+        : `index did not answer${listing.error ? ` (${listing.error})` : ""}`;
+  return (
+    <Row title="Seen by Common Crawl" summary={summary} open={open} onToggle={() => setOpen((v) => !v)}>
+      <p className="text-[12.5px] text-ink-soft">
+        Common Crawl fetches much of the web every month or two and publishes an index of what it got.
+        Asked once here, about this host, with nothing asked of the site. It is a different, older fact
+        from what this crawl found: what someone else fetched, months ago.
+        {listing.queued ? " These addresses were queued at depth 1, cited as found by Common Crawl." : " They are listed, not queued."}
+      </p>
+      {listing.status === "seen" && listing.sample.length > 0 && (
+        <ul className="mt-2 max-h-48 space-y-0.5 overflow-auto rounded-xl border border-line bg-surface px-3 py-2">
+          {listing.sample.map((url) => (
+            <li key={url} className="truncate font-mono text-[12px] text-ink-soft" title={url}>{prettyUrl(url)}</li>
+          ))}
+          {listing.urls > listing.sample.length && (
+            <li className="pt-1 text-[11.5px] text-ink-faint">and {n(listing.urls - listing.sample.length)} more</li>
+          )}
         </ul>
       )}
     </Row>
@@ -417,8 +456,14 @@ export default function DiscoveryPanel({
       <ul>
         <RobotsRow robots={discovery.robots} />
         <SitemapsRow sitemaps={discovery.sitemaps} seeds={discovery.seeds} />
+        {discovery.common_crawl && <CommonCrawlRow listing={discovery.common_crawl} />}
         <KindsRow kinds={kinds} live={live} />
-        <RefusedRow refused={refused} evidence={evidence} live={live} />
+        <RefusedRow
+          refused={refused}
+          evidence={evidence}
+          live={live}
+          sitemapOutOfScope={discovery.sitemaps.total_urls > 0 && discovery.seeds === 0}
+        />
       </ul>
     </section>
   );

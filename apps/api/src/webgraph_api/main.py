@@ -225,6 +225,16 @@ class CrawlOptions(BaseModel):
 
     max_depth: int | None = Field(default=None, ge=0, le=50)
     strict_domain: bool | None = None
+    common_crawl: bool | None = Field(
+        default=None,
+        description="Ask Common Crawl's index what it last saw on the host, reported in the "
+        "discovery event as its own fact. Nothing is asked of the site.",
+    )
+    seed_from_common_crawl: bool | None = Field(
+        default=None,
+        description="Also queue what Common Crawl listed, at depth 1, cited via common-crawl. "
+        "Off by default: a stale listing is full of pages that are gone.",
+    )
     within_path: bool | None = Field(
         default=None,
         description="Stay under the start address's path: a crawl of example.com/docs/ "

@@ -19,12 +19,12 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
 
 from webgraph import config
-from webgraph.crawl.frontier import reconcile_scheme
+from webgraph.crawl.frontier import normalize_url, reconcile_scheme, same_site
 from webgraph.fetch.static import DEFAULT_USER_AGENT, FetchConfig, FetchResult, fetch_static
 
 ROBOTS_AGENT_TOKEN = config.ROBOTS_AGENT_TOKEN
@@ -256,6 +256,109 @@ def discover_sitemap_urls(
     """Collect page URLs from a site's sitemaps. `discover_sitemaps` with the record of
     what was tried left out, for callers that only want the pages."""
     return discover_sitemaps(root, policy=policy, config=config, limit=limit)[0]
+
+
+COMMON_CRAWL_INDEX: Final[str] = "https://index.commoncrawl.org"
+COMMON_CRAWL_LIMIT: Final[int] = 2000
+COMMON_CRAWL_SAMPLE: Final[int] = 50
+
+
+@dataclass(frozen=True, slots=True)
+class CommonCrawlListing:
+    """What Common Crawl's index says it has seen on this host, from one query.
+
+    A second opinion on a site's size that costs the site nothing: the index is read, not
+    the site. It is also *stale by design* -- a monthly crawl of the whole web, months
+    behind -- and covers what Common Crawl chose to fetch, so it is reported as its own
+    fact ("last seen by Common Crawl"), never merged into what the crawl found itself.
+    `status` is `seen` (addresses came back), `not-seen` (the host is not in the latest
+    index), or `unavailable` (the index did not answer in time; nothing is known)."""
+
+    status: str
+    index: str | None = None
+    """The index queried, e.g. `CC-MAIN-2026-34`, and its month in `index_name`."""
+    index_name: str | None = None
+    urls: tuple[str, ...] = ()
+    """Distinct same-site page addresses, in the index's order, capped at `COMMON_CRAWL_LIMIT`."""
+    records: int = 0
+    """Index records returned before deduplication -- a page captured twice is two."""
+    error: str | None = None
+
+    def as_dict(self, *, sample: int = COMMON_CRAWL_SAMPLE) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "index": self.index,
+            "index_name": self.index_name,
+            "urls": len(self.urls),
+            "records": self.records,
+            "sample": list(self.urls[:sample]),
+            "error": self.error,
+        }
+
+
+def discover_common_crawl(
+    root: str,
+    *,
+    config: FetchConfig | None = None,
+    limit: int = COMMON_CRAWL_LIMIT,
+) -> CommonCrawlListing:
+    """Ask Common Crawl's latest index which addresses it has for this host.
+
+    Two requests: `collinfo.json` for the newest index, then that index's CDX endpoint for
+    `host/*` with status 200, `output=json` (one record per line). Bounded by the fetch
+    timeout each; any failure is `unavailable`, with the reason, and never an exception --
+    the site's own discovery does not depend on a third party answering.
+    """
+    from json import JSONDecodeError, loads
+
+    host = urlsplit(root).hostname or ""
+    if not host:
+        return CommonCrawlListing(status="unavailable", error="no host")
+    try:
+        info = fetch_static(f"{COMMON_CRAWL_INDEX}/collinfo.json", config=config)
+        if not info.ok:
+            # `error` names a refused connection or a timeout; a status names a refusal.
+            return CommonCrawlListing(status="unavailable", error=f"collinfo: {info.error}")
+        collections = loads(info.html)
+        latest = collections[0] if isinstance(collections, list) and collections else None
+        if not isinstance(latest, dict) or "id" not in latest:
+            return CommonCrawlListing(status="unavailable", error="collinfo: no index listed")
+        index, index_name = str(latest["id"]), str(latest.get("name") or "")
+        query = (
+            f"{COMMON_CRAWL_INDEX}/{index}-index?url={host}/*&output=json"
+            f"&filter==status:200&fl=url&limit={limit}"
+        )
+        result = fetch_static(query, config=config)
+    except (JSONDecodeError, ValueError, OSError) as exc:
+        return CommonCrawlListing(status="unavailable", error=f"{type(exc).__name__}: {exc}"[:200])
+    if result.status == 404:
+        # The CDX API answers 404 for a host with no captures in that index.
+        return CommonCrawlListing(status="not-seen", index=index, index_name=index_name)
+    if not result.ok:
+        return CommonCrawlListing(
+            status="unavailable", index=index, index_name=index_name, error=str(result.error)
+        )
+    seen: dict[str, None] = {}
+    records = 0
+    for line in result.html.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            url = str(loads(line).get("url") or "")
+        except (JSONDecodeError, AttributeError):
+            continue
+        records += 1
+        normalized = normalize_url(url)
+        if normalized and same_site(normalized, root) and normalized not in seen:
+            seen[normalized] = None
+    return CommonCrawlListing(
+        status="seen" if seen else "not-seen",
+        index=index,
+        index_name=index_name,
+        urls=tuple(seen),
+        records=records,
+    )
 
 
 def discover_sitemaps(
