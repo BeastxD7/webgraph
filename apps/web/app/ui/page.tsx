@@ -18,6 +18,26 @@ const ENTRIES: ReadonlyArray<{ href: Route; title: string; description: string }
     description: "The isometric illustration (how/Scene.tsx) with direct step controls, an in-view toggle, and bounding-box overlays for checking centering.",
   },
   {
+    href: "/ui/fetch-twice",
+    title: "Step 2 — fetch twice",
+    description: "A page from the crawl fetched two ways at once: raw HTML streaming on the left, a browser painting (then losing a block to hydration, gaining one from a script) on the right, and the union the engine keeps.",
+  },
+  {
+    href: "/ui/refuse-walls",
+    title: "Step 3 — refuse the walls, drop the hidden",
+    description: "A login redirect, a 503 and a bot challenge each stamped REFUSED; then the real page, with its cookie banner, off-screen links and display:none block surfaced and dropped.",
+  },
+  {
+    href: "/ui/reading-order",
+    title: "Step 4 — reading order, then Markdown",
+    description: "The page's boxes with the recursive XY-cut drawn over them, numbers landing in reading order (the sidebar reads fifth), and the Markdown writing itself in that order under a header that says how it was fetched.",
+  },
+  {
+    href: "/ui/build-graph",
+    title: "Step 5 — build the graph",
+    description: "Pages settle as nodes with their structure between them, the links they carry draw across the tree, sections hang off pages, and an entity with its schema.org identity gathers an edge from every page that names it.",
+  },
+  {
     href: "/ui/intro-bar",
     title: "Step 1 — intro bar",
     description: "Blank canvas → brand mark → mark dissolves into a search bar expanding from center → types → enters. Plain HTML/CSS, decoupled from the isometric scene, for iterating on timing and easing before it's ported in.",

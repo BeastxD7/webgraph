@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { CX, floor, poly, pt, SY, wall } from "./iso";
+import { floor, poly, pt, wall } from "./iso";
 
 /**
  * The illustration beside the five steps: a site's pages fanning out, one page fetched
@@ -10,18 +10,19 @@ import { CX, floor, poly, pt, SY, wall } from "./iso";
  * keyed on the stage's `data-in` and `data-step`, written by `HowMotion` from scroll
  * progress along the curved path beside it.
  *
- * Classes: `.rise` assembles on enter (stagger `--i`); `.s1..s5` belong to one step;
- * `.core` is the one page shared by fetch/refuse/reading-order, absent for discover and
- * graph (no single page exists yet at step 1; the scene has zoomed out past any one page
- * by step 5); `.hid` lifts off and dissolves in step 3, then keeps a slow drift once it
- * dissolves; `.draw` is a mask stroke that draws a path; `.dots` marches; `.cut` draws in
- * step 4; `.pop` scales in; `.glow` (step 2) is a quiet pulse behind the assembled page's
- * "union" tag; `.cursor` (step 4) blinks at the end of the Markdown's last written line;
- * `.disc-scan` (step 1) pulses each discovered page in turn; `.graph-dot` (step 5)
- * travels the real link edges. Every one of those is a plain, always-running CSS
- * animation once its step is active -- the point is that nothing here ever finishes and
- * holds still. A group that the stylesheet transforms never carries an attribute
- * transform of its own (CSS would replace it).
+ * Step 1 (discover the pages) is not drawn here at all -- it's a separate flat overlay,
+ * `Step1Intro.tsx`, shown in place of this scene while `data-step="1"`; see `HowMotion.tsx`.
+ *
+ * Classes: `.rise` assembles on enter (stagger `--i`); `.s2..s5` belong to one step; `.core`
+ * is the one page shared by fetch/refuse/reading-order, absent for the graph (the scene has
+ * zoomed out past any one page by step 5); `.hid` lifts off and dissolves in step 3, then
+ * keeps a slow drift once it dissolves; `.draw` is a mask stroke that draws a path; `.dots`
+ * marches; `.cut` draws in step 4; `.pop` scales in; `.glow` (step 2) is a quiet pulse
+ * behind the assembled page's "union" tag; `.cursor` (step 4) blinks at the end of the
+ * Markdown's last written line; `.graph-dot` (step 5) travels the real link edges. Every
+ * one of those is a plain, always-running CSS animation once its step is active -- the
+ * point is that nothing here ever finishes and holds still. A group that the stylesheet
+ * transforms never carries an attribute transform of its own (CSS would replace it).
  */
 const W = 200; // the page, in world units
 const H = 236;
@@ -47,42 +48,6 @@ const BLOCKS: ReadonlyArray<{ page: readonly [number, number]; md: number }> = [
   { page: [W / 2 + 6, 100], md: 114 },
   { page: [18, 160], md: 144 },
   { page: [18, 214], md: 172 },
-];
-
-/** The crawl tree (step 1): a site fanning into three categories, each into two pages. */
-const DISC_ROOT = { x: -550, y: 10, top: -22, w: 76, h: 56 } as const;
-/** The search bar standing where the tree's root sheet used to be -- same anchor, so the
- * tree's edges (computed from `DISC_ROOT.x/y/top` alone) don't need to change. */
-const SEARCH_W = 190;
-const SEARCH_H = 36;
-/** The exact inverse of `wall()`'s linear part -- their product is the identity matrix, so
- * content drawn inside this counter-transform renders flat and upright (a "billboard")
- * instead of taking on the parent wall's isometric shear. */
-const UNSHEAR = `matrix(${1 / CX} ${-SY / CX} 0 1 0 0)`;
-const DISC_BRANCH: ReadonlyArray<{ x: number; y: number; top: number; lines: readonly [number, number] }> = [
-  { x: -816, y: 95.5, top: -63.8, lines: [32, 38] },
-  { x: -550, y: 152.5, top: -71.4, lines: [34, 30] },
-  { x: -284, y: 95.5, top: -63.8, lines: [30, 40] },
-];
-const DISC_LEAVES: ReadonlyArray<{ x: number; y: number; top: number; lines: readonly [number, number] }> = [
-  { x: -949, y: 190.5, top: -94.2, lines: [26, 32] },
-  { x: -759, y: 228.5, top: -98, lines: [30, 24] },
-  { x: -626, y: 247.5, top: -98, lines: [28, 34] },
-  { x: -455, y: 247.5, top: -98, lines: [24, 30] },
-  { x: -341, y: 190.5, top: -94.2, lines: [30, 26] },
-  { x: -170, y: 171.5, top: -90.4, lines: [28, 32] },
-];
-
-/** Screen point of a discover-tree node (root, branch or leaf): `wall(x, y, top)`'s own
- * `(e, g)`, i.e. `pt(x, y, top)` -- used directly here for the connecting `.dots` paths,
- * which are drawn in screen space rather than inside a `wall`-transformed group. */
-const discScreen = (n: { x: number; y: number; top: number }) => pt(n.x, n.y, n.top);
-
-const ROOT_S = discScreen(DISC_ROOT);
-const [A_S, B_S, C_S] = DISC_BRANCH.map(discScreen) as [readonly [number, number], readonly [number, number], readonly [number, number]];
-const [A1_S, A2_S, B1_S, B2_S, C1_S, C2_S] = DISC_LEAVES.map(discScreen) as [
-  readonly [number, number], readonly [number, number], readonly [number, number],
-  readonly [number, number], readonly [number, number], readonly [number, number],
 ];
 
 /** The linked graph (step 5): a hub page and three it names, one not yet linked live. */
@@ -148,101 +113,6 @@ export default function Scene() {
       </g>
 
       <g className="world">
-        {/* ---- step 1: discover the pages -- a search bar typing a URL, then (once "entered")
-             the crawl tree it turns up: root fanning to categories fanning to pages. The tree
-             is wrapped in `.tree-reveal`, gated to the back half of the search bar's own
-             typing cycle below -- nothing here until enter, matching the real order: you
-             type a URL before there's anything to discover. */}
-        <g className="par" data-d="0.35">
-          <g className="rise s1" style={i(1)}>
-            <Shadow x={DISC_ROOT.x} y={DISC_ROOT.y} w={SEARCH_W} s={46} />
-            <g transform={wall(DISC_ROOT.x, DISC_ROOT.y, DISC_ROOT.top)}>
-              {/* The bar's face is "billboarded": a nested counter-shear cancels the parent
-                  `wall()` transform's isometric skew exactly (their product is the identity
-                  matrix), so the UI reads flat and upright -- like a real address bar sitting
-                  in the scene -- while still anchored at the correct isometric point. */}
-              <g transform={UNSHEAR} className="search-bar">
-                <rect className="search-bar-body" width={SEARCH_W} height={SEARCH_H} rx={SEARCH_H / 2} />
-                <g className="search-bar-icon">
-                  <circle cx={18} cy={18} r={4.5} />
-                  <line x1={21.2} y1={21.2} x2={25.5} y2={25.5} />
-                </g>
-                <clipPath id="how-type-clip">
-                  <rect className="how-type-rect" x={31} y={11} width={0} height={14} />
-                </clipPath>
-                <text className="search-bar-text" x={31} y={23} clipPath="url(#how-type-clip)">webgraph.com</text>
-                <rect className="search-bar-cursor" x={31} y={10} width={1.6} height={16} />
-                <g className="search-bar-enter">
-                  <circle cx={SEARCH_W - 22} cy={18} r={10} />
-                  <path d={`M${SEARCH_W - 27} 18 h8 M${SEARCH_W - 22} 13 l5 5 l-5 5`} />
-                </g>
-                {/* "robots ok" sits right on the bar, billboarded the same way, instead of
-                    floating alone elsewhere in isometric space disconnected from anything. */}
-                <g className="search-bar-badge">
-                  <rect x={0} y={SEARCH_H + 8} width={70} height={18} rx={9} />
-                  <circle cx={12} cy={SEARCH_H + 17} r={3} />
-                  <text x={20} y={SEARCH_H + 21}>robots ok</text>
-                </g>
-              </g>
-            </g>
-          </g>
-        </g>
-        <g className="tree-reveal-wave1">
-          <path
-            className="dots"
-            pathLength={1}
-            d={`M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${A_S[0].toFixed(2)} ${A_S[1]} `
-              + `M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${B_S[0].toFixed(2)} ${B_S[1]} `
-              + `M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${C_S[0].toFixed(2)} ${C_S[1]}`}
-          />
-          {DISC_BRANCH.map((n, k) => (
-            <g className="par" data-d="0.5" key={`disc-b-${k}`}>
-              <g className="rise s1 disc-scan" style={{ ...i(k + 2), animationDelay: `${-0.4 * (k + 1)}s` }}>
-                <Shadow x={n.x} y={n.y} w={52} s={36} />
-                <Sheet x={n.x} y={n.y} top={n.top} w={52} h={42}>
-                  <rect x={7} y={7} width={n.lines[0]} height={6} rx={1.5} className="ink" />
-                  <rect x={7} y={18} width={n.lines[1]} height={3} rx={1.5} className="line" />
-                  <rect x={7} y={25} width={n.lines[0] - 4} height={3} rx={1.5} className="line" />
-                </Sheet>
-              </g>
-            </g>
-          ))}
-        </g>
-        <g className="tree-reveal-wave2">
-          <path
-            className="dots"
-            pathLength={1}
-            style={{ animationDelay: "-0.4s" }}
-            d={`M${A_S[0].toFixed(2)} ${A_S[1]} L${A1_S[0].toFixed(2)} ${A1_S[1]} `
-              + `M${A_S[0].toFixed(2)} ${A_S[1]} L${A2_S[0].toFixed(2)} ${A2_S[1]}`}
-          />
-          <path
-            className="dots"
-            pathLength={1}
-            style={{ animationDelay: "-0.8s" }}
-            d={`M${B_S[0].toFixed(2)} ${B_S[1]} L${B1_S[0].toFixed(2)} ${B1_S[1]} `
-              + `M${B_S[0].toFixed(2)} ${B_S[1]} L${B2_S[0].toFixed(2)} ${B2_S[1]}`}
-          />
-          <path
-            className="dots"
-            pathLength={1}
-            style={{ animationDelay: "-1.2s" }}
-            d={`M${C_S[0].toFixed(2)} ${C_S[1]} L${C1_S[0].toFixed(2)} ${C1_S[1]} `
-              + `M${C_S[0].toFixed(2)} ${C_S[1]} L${C2_S[0].toFixed(2)} ${C2_S[1]}`}
-          />
-          {DISC_LEAVES.map((n, k) => (
-            <g className="par" data-d="0.6" key={`disc-l-${k}`}>
-              <g className="rise s1 disc-scan" style={{ ...i(k + 5), animationDelay: `${-0.3 * (k + 1)}s` }}>
-                <Shadow x={n.x} y={n.y} w={44} s={30} />
-                <Sheet x={n.x} y={n.y} top={n.top} w={44} h={36}>
-                  <rect x={6} y={6} width={n.lines[0]} height={5} rx={1.5} className="ink" />
-                  <rect x={6} y={15} width={n.lines[1]} height={3} rx={1.5} className="line" />
-                </Sheet>
-              </g>
-            </g>
-          ))}
-        </g>
-
         {/* ---- step 2: two sources and their paths (real step 1: fetch twice) ---- */}
         <g className="par" data-d="0.35">
           <g className="rise s2" style={i(1)}>

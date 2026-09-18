@@ -7,14 +7,13 @@ import { FIDELITY, RENDER_PREDICTION } from "@/lib/benchmarks";
 import "./how/how.css";
 
 import HowMotion from "./how/HowMotion";
-import Scene from "./how/Scene";
 
 /**
  * Chapters one to five -- how it reads a page -- as a full-width scroll story
- * (`how/HowMotion.tsx`): the isometric scene (`how/Scene.tsx`, inline SVG, server-rendered)
- * pins beside a curved path of five numbered stops while scroll progress, smoothed by a
- * spring, steps it through discovery, fetch, refuse the walls, read in order, then build
- * the graph. Below it, three cards, each holding a small piece of the product's real
+ * (`how/HowMotion.tsx`): five flat, looping illustrations (`how/Step1Intro.tsx` ...
+ * `Step5Graph.tsx`) pin beside a curved path of five numbered stops while scroll progress,
+ * smoothed by a spring, steps through discovery, fetch, refuse the walls, read in order,
+ * then build the graph. Below it, three cards, each holding a small piece of the product's real
  * output. The intro copy and the cards keep the page's usual column width; only the scroll
  * stage itself runs full-bleed. The behaviour is an enhancement: without JavaScript, or
  * under reduced motion, all five steps render stacked and unpinned (`how/HowMotion.tsx`'s
@@ -103,9 +102,7 @@ export default function Story() {
 
       {/* The scroll story: full-bleed, not boxed in the page column. */}
       <div className="mt-12 md:mt-16" data-reveal style={idx(3)}>
-        <HowMotion steps={STEPS}>
-          <Scene />
-        </HowMotion>
+        <HowMotion steps={STEPS} />
         <p className="how-outro">
           Stay on any step as long as you like — the illustration keeps moving; it never
           freezes waiting for you to scroll on.

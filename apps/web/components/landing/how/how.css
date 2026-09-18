@@ -3,16 +3,16 @@
    Imported by components/landing/Story.tsx; plain CSS on the site's tokens
    (globals.css §1), no Tailwind utilities of its own.
 
-   The scene (how/Scene.tsx) is pinned beside a curved path of five numbered
-   stops and alternating copy blocks (`.how-track`/`.how-illustration-col`/
-   `.how-stage-pin` + `.how-path`, both in `how/HowMotion.tsx`). Two
-   attributes drive the scene's own cross-morph, written by `HowMotion` from
-   a spring over scroll progress: `data-in` (once scrolled into range at
-   all) assembles it; `data-step` (which fifth of the scroll range) cross-
-   morphs it. Without JavaScript, or under reduced motion, neither is set
-   and `.how-static` renders instead: the scene stands complete at step one
-   and every step's text is stacked and readable, gated the same way
-   `Motion.tsx` gates every other reveal on this page (`main[data-motion]`).
+   Five flat illustrations (how/Step1Intro.tsx ... Step5Graph.tsx), stacked
+   on a stage pinned beside a curved path of five numbered stops and one
+   pinned caption (`.how-track`/`.how-illustration-col`/`.how-stage-pin` +
+   `.how-path`, both in `how/HowMotion.tsx`). `HowMotion` writes `data-step`
+   (which fifth of the scroll range, from a spring over scroll progress) on
+   `.how`, and `.how-step[data-for]` crossfades to that step's illustration.
+   Without JavaScript, or under reduced motion, it isn't set and `.how-static`
+   renders instead: step one's illustration at rest and every step's text
+   stacked and readable, gated the same way `Motion.tsx` gates every other
+   reveal on this page (`main[data-motion]`).
    --------------------------------------------------------------------------- */
 .how-eyebrow {
   display: inline-block;
@@ -42,7 +42,7 @@
 }
 
 /* The scroll track: two columns -- the illustration (pinned) and a curved path of five
-   numbered stops with alternating copy, scrolling normally beside it. Height comes from
+   numbered stops, scrolling normally beside it, with the caption pinned. Height comes from
    the taller child below, not set here. */
 .how-track {
   --plane: color-mix(in oklab, var(--surface) 86%, #fff);
@@ -99,15 +99,20 @@
 }
 .how-scene { display: block; width: 100%; height: 100%; overflow: visible; }
 
-/* The curved path: a fixed width so extra viewport width flows entirely to the
-   illustration instead of stretching this column and opening a gap between them. */
-.how-path { position: relative; flex: 1 1 28rem; max-width: 28rem; height: 325vh; }
+/* The curved path: a capped width so extra viewport width flows to the illustration
+   instead of stretching this column and opening a gap between them. Three lanes across it
+   (see `CURVE_D` in HowMotion.tsx): a caption on the left 40%, the curve's own 20% lane in
+   the middle, a caption on the right 40% -- wide enough that a 40% caption is still a
+   readable measure, the `vw` cap so the illustration keeps room at narrower desktops. */
+.how-path { position: relative; flex: 1 1 38rem; max-width: min(38rem, 42vw); height: 325vh; }
 @media (max-width: 63.9rem) {
   .how-path { height: auto; margin-top: 1.5rem; }
 }
 .how-curve { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.how-track-line { fill: none; stroke: var(--rule-strong); stroke-width: 2.5; stroke-dasharray: 1 7; stroke-linecap: round; }
-.how-fill-line { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+/* Both lines are `non-scaling-stroke` (set on the paths), so these widths and the dot
+   pattern are real pixels, not box units stretched with the column. */
+.how-track-line { fill: none; stroke: var(--rule-strong); stroke-width: 2.5; stroke-dasharray: 0 7; stroke-linecap: round; }
+.how-fill-line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
 
 .how-curve-num {
   position: absolute;
@@ -138,25 +143,48 @@
   .how-curve, .how-curve-num { display: none; }
 }
 
-/* The step copy: alternating either side of the curve, dimmed until its stop is current --
-   the illustration is the point now, this is the caption. */
+/* The step copy: a single caption, pinned and cross-fading between steps as the reader
+   scrolls, instead of traveling with the page -- it holds still, centered in the
+   viewport, for as long as its step is current, the same "pin" `.how-stage-pin` uses for
+   the scene, just released as an opacity cross-fade rather than a transform. Gated behind
+   `main[data-motion]` like every other reveal on this page: without it (or under the
+   narrow-viewport media query below), every step's copy simply stacks in reading order at
+   full opacity, position and pin included -- there's no scroll-linked step to pin against
+   without JavaScript. */
+.how-copy-pin { position: relative; }
+main[data-motion] .how-copy-pin { position: sticky; top: 0; height: 100svh; display: flex; align-items: center; }
 .how-copy {
-  position: absolute;
-  width: 44%;
-  transform: translateY(-50%);
-  cursor: pointer;
+  padding: 1.25rem var(--gutter);
+  border-top: 1px solid var(--rule);
 }
+.how-copy:first-child { border-top: 0; }
 .how-copy h3 { margin: 0; font-family: var(--font-sans-stack); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
 .how-copy p { margin: 0.5rem 0 0; color: var(--muted); font-size: var(--text-small); line-height: var(--text-small--line-height); }
-.how-copy--right { left: 54%; text-align: left; }
-.how-copy--left { right: 54%; text-align: right; }
 .how-copy .num-mobile { display: none; }
-/* Dimmed-until-current is an enhancement, gated the same way every other reveal on this
-   page is: without JavaScript every step's copy simply reads at full opacity. */
-main[data-motion] .how-copy { opacity: 0.4; transition: opacity var(--dur-base) var(--ease); }
-main[data-motion] .how-copy.is-active { opacity: 1; }
+/* Either side of the curve's lane (x 40..60% of the column, see `CURVE_D`), never in it:
+   the caption is pinned while the curve scrolls past it, so the two must never share
+   horizontal space or a bend would run through the words. The side alternates per step;
+   the curve leans the other way. The stop itself is a fixed-size circle (plus its ping
+   ring) centered 5% inside the lane's far edge, so the caption's inner edge is set from
+   the stop's radius, not the lane alone -- a percentage gap shrinks with the column and
+   at the narrowest desktop widths left the ring touching the words. */
+main[data-motion] .how-copy {
+  --stop-clear: calc(1.375rem + 0.4rem + 0.625rem); /* radius + ping ring + air */
+  position: absolute;
+  width: calc(45% - var(--stop-clear));
+  padding: 0;
+  border-top: 0;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--dur-base) var(--ease);
+}
+main[data-motion] .how-copy--right { left: calc(55% + var(--stop-clear)); text-align: left; }
+main[data-motion] .how-copy--left { right: calc(55% + var(--stop-clear)); text-align: right; }
+main[data-motion] .how-copy.is-active { opacity: 1; pointer-events: auto; }
 main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
 @media (max-width: 63.9rem) {
+  .how-copy-pin, main[data-motion] .how-copy-pin { position: static; height: auto; display: block; }
   .how-copy, main[data-motion] .how-copy {
     position: static;
     width: auto;
@@ -166,6 +194,7 @@ main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
     border-top: 1px solid var(--rule);
     text-align: left !important;
     cursor: auto;
+    pointer-events: auto;
   }
   .how-copy:first-child { border-top: 0; }
   .how-copy .num-mobile {
@@ -195,6 +224,36 @@ main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
 .how-static-step .how-num { grid-row: 1; font-size: var(--text-label); font-weight: 500; color: var(--accent-ink); font-family: var(--font-mono-stack); }
 .how-static-step h3 { grid-column: 2; margin: 0; font-weight: 700; font-size: var(--text-h3); letter-spacing: -0.01em; color: var(--ink); }
 .how-static-step p { grid-column: 2; margin-top: 0.5rem; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--muted); }
+
+/* The illustrations: one flat overlay per step (`Step1Intro.tsx` ... `Step5Graph.tsx`),
+   all five stacked on the stage, each filling it and centering its own content; a plain
+   crossfade to the one `data-step` names (step one before any step is set). Each one runs
+   its own looping story while it's current -- see `useTriggeredLoop`. */
+.how-step {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 400ms var(--ease);
+}
+.how:not([data-step]) .how-step[data-for="1"],
+.how[data-step="1"] .how-step[data-for="1"],
+.how[data-step="2"] .how-step[data-for="2"],
+.how[data-step="3"] .how-step[data-for="3"],
+.how[data-step="4"] .how-step[data-for="4"],
+.how[data-step="5"] .how-step[data-for="5"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Each illustration is laid out at one fixed size (36×24rem, so its fixed-rem internals
+   never collide) and scaled to fit the stage; `--how-zoom` is measured by `HowMotion`. */
+.how-step > * { transform: scale(var(--how-zoom, 1)); transform-origin: center; }
+
+/* ---- Everything from here to "The cards" paints the isometric scene (`Scene.tsx`), which
+   the landing page no longer shows: it survives only for the `/ui/how-scene` playground. ---- */
 
 /* Scene paint: tokens only, so it follows the theme. */
 .how-scene .floor line { stroke: var(--rule); stroke-width: 1; }
@@ -340,90 +399,6 @@ main[data-motion] .how:not([data-in]) .how-scene .draw { stroke-dashoffset: 1; }
 .how-scene .cursor { fill: var(--accent-ink); }
 .how[data-step="4"] .how-scene .cursor { animation: how-blink 1s step-end calc(1600ms) infinite; }
 @keyframes how-blink { 50% { opacity: 0; } }
-
-/* Step "discover the pages": pages scan in, one after another, on repeat. Gated on
-   data-step="1", not unconditional -- `.disc-scan` sits directly on the same elements
-   that carry `.s1` (unlike `.glow`/`.cursor` above, which are nested children of an `.sN`
-   element and so never fight its opacity rule). An always-running animation here would
-   drive opacity itself and override the plain `.s1 { opacity: 0 }` rule on every other
-   step -- exactly the `.hid` bug above, reintroduced in a second place. */
-.how[data-step="1"] .how-scene .disc-scan { animation: how-discscan 2400ms ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-@keyframes how-discscan { 0%, 100% { opacity: 0.25; transform: scale(0.88); } 50% { opacity: 1; transform: scale(1.08); } }
-
-/* Step "discover the pages": the tree's root is a search bar typing "webgraph.com," on
-   repeat -- type, pause, hit enter (a small scale-and-color flash on the return button),
-   hold, clear, retype. Every piece here is a child of the `.rise s1` wrapper, never `.s1`
-   itself, so (like `.glow`/`.cursor`) an always-running animation can't fight the plain
-   `.s1 { opacity: 0 }` rule on other steps -- no gating needed, by construction. */
-.how-scene .search-bar-body { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1.5; }
-.how-scene .search-bar-icon circle { fill: none; stroke: var(--muted); stroke-width: 1.6; }
-.how-scene .search-bar-icon line { stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; }
-.how-scene .search-bar-text { font-family: var(--font-mono-stack); font-size: 11px; font-weight: 500; fill: var(--ink); }
-.how-scene .search-bar-cursor {
-  fill: var(--accent-ink);
-  animation: how-type-cursor 6000ms steps(12, end) infinite, how-blink 1s step-end infinite;
-}
-.how-scene .how-type-rect { animation: how-type-width 6000ms steps(12, end) infinite; }
-@keyframes how-type-width {
-  0%, 4%   { width: 0; }
-  58%, 88% { width: 86px; }
-  96%, 100% { width: 0; }
-}
-@keyframes how-type-cursor {
-  0%, 4%   { transform: translateX(0); }
-  58%, 88% { transform: translateX(86px); }
-  96%, 100% { transform: translateX(0); }
-}
-.how-scene .search-bar-badge rect { fill: var(--good-soft); stroke: var(--good); stroke-width: 1; }
-.how-scene .search-bar-badge circle { fill: var(--good); }
-.how-scene .search-bar-badge text { font-family: var(--font-mono-stack); font-size: 9.5px; font-weight: 500; fill: var(--good); }
-.how-scene .search-bar-enter { transform-box: fill-box; transform-origin: center; animation: how-enter-pulse 6000ms ease-in-out infinite; }
-.how-scene .search-bar-enter circle { animation: how-enter-flash 6000ms ease-in-out infinite; }
-.how-scene .search-bar-enter path { fill: none; stroke: var(--accent-ink); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; animation: how-enter-arrow-flash 6000ms ease-in-out infinite; }
-@keyframes how-enter-pulse {
-  0%, 56%   { transform: scale(1); }
-  60%       { transform: scale(1.2); }
-  64%, 100% { transform: scale(1); }
-}
-@keyframes how-enter-flash {
-  0%, 56%   { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1.5; }
-  60%       { fill: var(--accent); stroke: var(--accent); stroke-width: 1.5; }
-  64%, 100% { fill: var(--surface); stroke: var(--rule-strong); stroke-width: 1.5; }
-}
-@keyframes how-enter-arrow-flash {
-  0%, 56%   { stroke: var(--accent-ink); }
-  60%       { stroke: var(--surface); }
-  64%, 100% { stroke: var(--accent-ink); }
-}
-/* The tree itself: nothing to discover until the URL is entered, and then the hierarchy
-   unfolds level by level -- the root's branches first, the branches' own pages a beat
-   later -- rather than the whole tree popping in as one block. Both waves are timed to the
-   same 6s cycle as the search bar above (enter fires at 60%), hold together while the bar
-   shows the full URL, then clear away before the next retype so nodes never freeze mid-fade
-   when the loop restarts. Neither wave is itself `.s1`-classed (only their children are),
-   so these unconditional animations can't fight the plain `.s1 { opacity: 0 }` rule on
-   other steps -- same safe pattern as `.glow`/`.cursor`, not the `.hid`/`.disc-scan` one
-   that needs explicit gating. */
-.how-scene .tree-reveal-wave1 {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: how-tree-reveal-wave1 6000ms var(--ease) infinite;
-}
-.how-scene .tree-reveal-wave2 {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: how-tree-reveal-wave2 6000ms var(--ease) infinite;
-}
-@keyframes how-tree-reveal-wave1 {
-  0%, 62%   { opacity: 0; transform: translateY(14px) scale(0.92); }
-  71%, 88%  { opacity: 1; transform: none; }
-  96%, 100% { opacity: 0; transform: translateY(14px) scale(0.92); }
-}
-@keyframes how-tree-reveal-wave2 {
-  0%, 70%   { opacity: 0; transform: translateY(14px) scale(0.92); }
-  79%, 88%  { opacity: 1; transform: none; }
-  96%, 100% { opacity: 0; transform: translateY(14px) scale(0.92); }
-}
 
 /* Step "build the graph": a pulse travels the real link edges, continuously -- driven by
    the SVG's own `<animateMotion>` in Scene.tsx, nothing here to gate. */

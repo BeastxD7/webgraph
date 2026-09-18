@@ -43,7 +43,7 @@ export function writeTheme(theme: Theme): void {
 }
 
 /**
- * Inlined in `<head>` so the attribute is set before first paint. Kept free of anything but
+ * Inlined into `<head>` via `ThemeBoot` so the attribute is set before first paint. Kept free of anything but
  * the storage read: a thrown error here would leave the page unstyled by theme, so it is
  * wrapped, and the values are re-checked rather than trusted.
  */
