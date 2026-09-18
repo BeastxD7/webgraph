@@ -214,6 +214,63 @@ main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
 
 .how-outro { margin-top: 1.5rem; padding-inline: var(--gutter); font-size: var(--text-small); color: var(--muted); }
 
+/* The "weave" layout (`HowMotion`'s `layout="weave"`): one full-width column. The curve
+   (`WEAVE_D`) swings side to side across the whole track; the pinned panel -- illustration
+   above its caption -- takes the half the curve leaves free and slides across as the step
+   changes (`data-side` on `.how-stage-pin`, from the current step's parity). The narrow-
+   viewport rules above still apply: the curve and stops hide, the pin releases, and the
+   panel is simply full width with every caption stacked. */
+.how-track--weave { display: block; height: 325vh; }
+.how-track--weave .how-stage-pin { justify-content: flex-start; align-items: stretch; }
+.how-weave-panel {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  width: 50%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: transform 700ms var(--ease);
+}
+/* A soft halo of the page's own colour under the panel: the curve, which sweeps through
+   this half on its way to the next stop, fades as it dives under the illustration and
+   re-emerges beyond it, instead of running through the words. Radial, not a box, so it
+   never cuts a visible rectangle out of the page's grid. */
+.how-weave-panel::before {
+  content: "";
+  position: absolute;
+  inset: 4% -6%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, var(--ground) 48%, transparent 74%);
+  pointer-events: none;
+}
+.how-track--weave .how-stage-pin[data-side="right"] .how-weave-panel { transform: translateX(100%); }
+.how-track--weave .how-stage { height: min(54vh, 30rem); }
+.how-track--weave .how-copy-pin, main[data-motion] .how-track--weave .how-copy-pin {
+  position: relative;
+  top: auto;
+  height: auto;
+  display: grid;
+  width: min(100%, 30rem);
+}
+main[data-motion] .how-track--weave .how-copy,
+main[data-motion] .how-track--weave .how-copy--left,
+main[data-motion] .how-track--weave .how-copy--right {
+  position: relative;
+  grid-area: 1 / 1;
+  left: auto;
+  right: auto;
+  width: 100%;
+  text-align: center;
+}
+@media (max-width: 63.9rem) {
+  .how-track--weave { height: auto; }
+  .how-weave-panel, .how-track--weave .how-stage-pin[data-side="right"] .how-weave-panel { width: 100%; transform: none; }
+  .how-track--weave .how-stage { height: 60vw; max-height: 20rem; }
+}
+
 /* The static fallback: reduced motion, or (via the media query above collapsing the
    track) also effectively a narrow viewport. No pin, no curve, the scene simply standing
    at step one with every step's text stacked in reading order beneath it. */

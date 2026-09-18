@@ -102,7 +102,7 @@ export default function Story() {
 
       {/* The scroll story: full-bleed, not boxed in the page column. */}
       <div className="mt-12 md:mt-16" data-reveal style={idx(3)}>
-        <HowMotion steps={STEPS} />
+        <HowMotion steps={STEPS} layout="weave" />
         <p className="how-outro">
           Stay on any step as long as you like — the illustration keeps moving; it never
           freezes waiting for you to scroll on.

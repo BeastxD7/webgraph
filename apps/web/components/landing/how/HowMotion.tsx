@@ -77,6 +77,22 @@ function drawnLength(path: SVGPathElement): number {
   return len;
 }
 
+/** The "weave" layout's curve: one full-width column, and the line swings from one side to
+ * the other between stops -- x 82 to x 18 and back, a real S each time -- with each stop at
+ * the extreme of a swing. The illustration and its caption ride together in a pinned panel
+ * that takes whichever half the curve has left free: the left for steps 1, 3, 5 (stop on
+ * the right), the right for 2 and 4, sliding across as the step changes. Same bands and
+ * stop heights as `CURVE_D`. */
+const WEAVE_D = "M82,335 C82,440 18,440 18,543 C18,647 82,647 82,750 "
+  + "C82,854 18,854 18,957 C18,1062 82,1062 82,1165";
+const WEAVE_STOPS: ReadonlyArray<{ left: string; top: string }> = [
+  { left: "82%", top: "22.3%" },
+  { left: "18%", top: "36.2%" },
+  { left: "82%", top: "50%" },
+  { left: "18%", top: "63.8%" },
+  { left: "82%", top: "77.7%" },
+];
+
 /** Each step's stop -- on the curve, at its band's center -- and which side its caption
  * takes (alternating, starting on the right, so the curve leans left first). */
 const STOPS: ReadonlyArray<{ left: string; top: string; side: "left" | "right" }> = [
@@ -102,7 +118,11 @@ const STOPS: ReadonlyArray<{ left: string; top: string; side: "left" | "right" }
  * CSS, a narrow viewport) skips the pin, the curve and the tall track outright and
  * renders `.how-static`: step one's illustration at rest, the five steps simply stacked.
  */
-export default function HowMotion({ steps = [] }: { steps?: readonly HowStep[] }) {
+export type HowLayout = "lanes" | "weave";
+
+export default function HowMotion({ steps = [], layout = "lanes" }: { steps?: readonly HowStep[]; layout?: HowLayout }) {
+  const weave = layout === "weave";
+  const curveD = weave ? WEAVE_D : CURVE_D;
   const trackRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -208,61 +228,90 @@ export default function HowMotion({ steps = [] }: { steps?: readonly HowStep[] }
     );
   }
 
+  const stage = (
+    <motion.div ref={stageRef} className="how-stage" style={{ scale: stageScale }}>
+      {SCENES.map((Scene, k) => (
+        <div key={k} className="how-step" data-for={k + 1} aria-hidden>
+          <Scene active={step === k} />
+        </div>
+      ))}
+    </motion.div>
+  );
+  const curve = (
+    <svg className="how-curve" viewBox="0 0 100 1500" preserveAspectRatio="none" aria-hidden>
+      <path className="how-track-line" d={curveD} vectorEffect="non-scaling-stroke" />
+      <motion.path
+        ref={fillRef}
+        className="how-fill-line"
+        d={curveD}
+        vectorEffect="non-scaling-stroke"
+        style={{ strokeDasharray: fillLength, strokeDashoffset: dashOffset }}
+      />
+    </svg>
+  );
+  const stops = (steps ?? []).map((s, k) => {
+    const at = weave ? WEAVE_STOPS[k] : STOPS[k];
+    return (
+      <button
+        key={`num-${s.title}`}
+        type="button"
+        className={`how-curve-num${k === step ? " is-active" : ""}`}
+        style={{ left: at?.left, top: at?.top }}
+        aria-label={`Go to step ${k + 1}: ${s.title}`}
+        onClick={() => jumpTo(k)}
+      >
+        <span className="ping-ring" aria-hidden />
+        <span>{String(k + 1).padStart(2, "0")}</span>
+      </button>
+    );
+  });
+  const captions = (
+    <div className="how-copy-pin">
+      {(steps ?? []).map((s, k) => (
+        <div
+          key={s.title}
+          role="button"
+          tabIndex={k === step ? 0 : -1}
+          className={`how-copy how-copy--${STOPS[k]?.side ?? "right"}${k === step ? " is-active" : ""}`}
+          onClick={() => jumpTo(k)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpTo(k); }
+          }}
+        >
+          <span className="num-mobile" aria-hidden>{String(k + 1).padStart(2, "0")}</span>
+          <h3>{s.title}</h3>
+          <p>{s.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+
+  if (weave) {
+    return (
+      <div ref={trackRef} className="how-track how-track--weave">
+        {curve}
+        {stops}
+        <div ref={panelRef} className="how how-stage-pin" data-side={step % 2 ? "right" : "left"}>
+          <div className="how-weave-panel">
+            {stage}
+            {captions}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={trackRef} className="how-track">
       <div className="how-illustration-col">
         <div ref={panelRef} className="how how-stage-pin">
-          <motion.div ref={stageRef} className="how-stage" style={{ scale: stageScale }}>
-            {SCENES.map((Scene, k) => (
-              <div key={k} className="how-step" data-for={k + 1} aria-hidden>
-                <Scene active={step === k} />
-              </div>
-            ))}
-          </motion.div>
+          {stage}
         </div>
       </div>
       <div className="how-path">
-        <svg className="how-curve" viewBox="0 0 100 1500" preserveAspectRatio="none" aria-hidden>
-          <path className="how-track-line" d={CURVE_D} vectorEffect="non-scaling-stroke" />
-          <motion.path
-            ref={fillRef}
-            className="how-fill-line"
-            d={CURVE_D}
-            vectorEffect="non-scaling-stroke"
-            style={{ strokeDasharray: fillLength, strokeDashoffset: dashOffset }}
-          />
-        </svg>
-        {(steps ?? []).map((s, k) => (
-          <button
-            key={`num-${s.title}`}
-            type="button"
-            className={`how-curve-num${k === step ? " is-active" : ""}`}
-            style={{ left: STOPS[k]?.left, top: STOPS[k]?.top }}
-            aria-label={`Go to step ${k + 1}: ${s.title}`}
-            onClick={() => jumpTo(k)}
-          >
-            <span className="ping-ring" aria-hidden />
-            <span>{String(k + 1).padStart(2, "0")}</span>
-          </button>
-        ))}
-        <div className="how-copy-pin">
-          {(steps ?? []).map((s, k) => (
-            <div
-              key={s.title}
-              role="button"
-              tabIndex={k === step ? 0 : -1}
-              className={`how-copy how-copy--${STOPS[k]?.side ?? "right"}${k === step ? " is-active" : ""}`}
-              onClick={() => jumpTo(k)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpTo(k); }
-              }}
-            >
-              <span className="num-mobile" aria-hidden>{String(k + 1).padStart(2, "0")}</span>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </div>
-          ))}
-        </div>
+        {curve}
+        {stops}
+        {captions}
       </div>
     </div>
   );
