@@ -1,13 +1,18 @@
 /* ---------------------------------------------------------------------------
-   Landing: "how it reads a page" -- the panel, the scene, the cards
+   Landing: "how it reads a page" -- the scroll story, the scene, the cards
    Imported by components/landing/Story.tsx; plain CSS on the site's tokens
    (globals.css §1), no Tailwind utilities of its own.
 
-   The panel is `[data-how]`: three <details> steps beside an inline isometric
-   SVG (how/Scene.tsx). Two attributes drive everything: `data-in` (Motion, on
-   scroll into view) assembles the scene; `data-step` (HowMotion, from the
-   open step) cross-morphs it. Without JavaScript neither is set: the scene
-   stands complete at step one.
+   Five flat illustrations (how/Step1Intro.tsx ... Step5Graph.tsx), stacked
+   on a stage pinned beside a curved path of five numbered stops and one
+   pinned caption (`.how-track`/`.how-illustration-col`/`.how-stage-pin` +
+   `.how-path`, both in `how/HowMotion.tsx`). `HowMotion` writes `data-step`
+   (which fifth of the scroll range, from a spring over scroll progress) on
+   `.how`, and `.how-step[data-for]` crossfades to that step's illustration.
+   Without JavaScript, or under reduced motion, it isn't set and `.how-static`
+   renders instead: step one's illustration at rest and every step's text
+   stacked and readable, gated the same way `Motion.tsx` gates every other
+   reveal on this page (`main[data-motion]`).
    --------------------------------------------------------------------------- */
 .how-eyebrow {
   display: inline-block;
@@ -36,111 +41,219 @@
   letter-spacing: -0.01em;
 }
 
-/* The panel: a rule with a restrained warm-to-green edge, the scene on a faint ground. */
-.how {
+/* The scroll track: two columns -- the illustration (pinned) and a curved path of five
+   numbered stops, scrolling normally beside it, with the caption pinned. Height comes from
+   the taller child below, not set here. */
+.how-track {
   --plane: color-mix(in oklab, var(--surface) 86%, #fff);
   --scene-shadow: var(--ink);
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  border-radius: 14px;
-  background: var(--surface);
-  overflow: hidden;
-  isolation: isolate;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(1.5rem, 4vw, 4rem);
+  padding-inline: var(--gutter);
 }
-.how::before {
-  /* the frame: a 1px gradient edge, drawn under a masked pseudo-element */
-  content: "";
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .how-track { --scene-shadow: #000; }
+}
+:root[data-theme="dark"] .how-track { --scene-shadow: #000; }
+@media (max-width: 63.9rem) {
+  /* No extra scroll room to pin against: the two columns stack, and every step's copy
+     stays visible and readable underneath the illustration (`.how-static`'s own layout,
+     reused here since a narrow viewport gets the same treatment reduced motion does). */
+  .how-track { display: block; padding-inline: 0; }
+}
+
+/* `max-width` only matters past very wide viewports: the pinned stage's height is capped
+   (below), and past a point a wider column just means more empty floor to the artwork's
+   left before the curve starts, not a bigger illustration. */
+.how-illustration-col { flex: 1 1 0%; min-width: 0; max-width: 64rem; min-height: 325vh; }
+@media (max-width: 63.9rem) {
+  .how-illustration-col { min-height: 0; }
+}
+
+/* The pinned stage: full width, no card edges -- this is the "container" removed. Sticky
+   and full viewport height so the (shorter) illustration inside it sits vertically centered
+   in the window as the reader scrolls, rather than glued to the top with dead space below --
+   `.how-stage-pin` is purely the centering shell; `.how-stage` below is the actual sized
+   box. `overflow: visible` so the widest step (discover's tree, panned furthest) is never
+   clipped. Stays stuck for the column's height, then releases into flow so ProofStrip
+   scrolls in under it. */
+.how-stage-pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+@media (max-width: 63.9rem) {
+  .how-stage-pin { position: static; height: auto; overflow: hidden; }
+}
+
+.how-stage { position: relative; width: 100%; height: 66vh; max-height: 38rem; }
+@media (max-width: 63.9rem) {
+  .how-stage { height: 60vw; max-height: 20rem; }
+}
+.how-scene { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* The curved path: a capped width so extra viewport width flows to the illustration
+   instead of stretching this column and opening a gap between them. Three lanes across it
+   (see `CURVE_D` in HowMotion.tsx): a caption on the left 40%, the curve's own 20% lane in
+   the middle, a caption on the right 40% -- wide enough that a 40% caption is still a
+   readable measure, the `vw` cap so the illustration keeps room at narrower desktops. */
+.how-path { position: relative; flex: 1 1 38rem; max-width: min(38rem, 42vw); height: 325vh; }
+@media (max-width: 63.9rem) {
+  .how-path { height: auto; margin-top: 1.5rem; }
+}
+.how-curve { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+/* Both lines are `non-scaling-stroke` (set on the paths), so these widths and the dot
+   pattern are real pixels, not box units stretched with the column. */
+.how-track-line { fill: none; stroke: var(--rule-strong); stroke-width: 2.5; stroke-dasharray: 0 7; stroke-linecap: round; }
+.how-fill-line { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+
+.how-curve-num {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 1.5px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--faint);
+  font-family: var(--font-mono-stack);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: color var(--dur-base) var(--ease), background var(--dur-base) var(--ease), border-color var(--dur-base) var(--ease);
+}
+.how-curve-num:hover { border-color: var(--accent-ink); color: var(--accent-ink); }
+.how-curve-num.is-active { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.how-curve-num .ping-ring { position: absolute; inset: -0.4rem; border-radius: 999px; border: 2px solid var(--accent); opacity: 0; pointer-events: none; }
+.how-curve-num.is-active .ping-ring { animation: how-ping 1800ms ease-out infinite; }
+@keyframes how-ping { 0% { transform: scale(0.7); opacity: 0.65; } 100% { transform: scale(1.7); opacity: 0; } }
+/* Below this, the media query wins on `display` because it comes later in source order
+   with equal specificity -- placed after the base rule deliberately, not incidentally. */
+@media (max-width: 63.9rem) {
+  .how-curve, .how-curve-num { display: none; }
+}
+
+/* The step copy: a single caption, pinned and cross-fading between steps as the reader
+   scrolls, instead of traveling with the page -- it holds still, centered in the
+   viewport, for as long as its step is current, the same "pin" `.how-stage-pin` uses for
+   the scene, just released as an opacity cross-fade rather than a transform. Gated behind
+   `main[data-motion]` like every other reveal on this page: without it (or under the
+   narrow-viewport media query below), every step's copy simply stacks in reading order at
+   full opacity, position and pin included -- there's no scroll-linked step to pin against
+   without JavaScript. */
+.how-copy-pin { position: relative; }
+main[data-motion] .how-copy-pin { position: sticky; top: 0; height: 100svh; display: flex; align-items: center; }
+.how-copy {
+  padding: 1.25rem var(--gutter);
+  border-top: 1px solid var(--rule);
+}
+.how-copy:first-child { border-top: 0; }
+.how-copy h3 { margin: 0; font-family: var(--font-sans-stack); font-size: 1.2rem; font-weight: 700; letter-spacing: -0.01em; color: var(--ink); }
+.how-copy p { margin: 0.5rem 0 0; color: var(--muted); font-size: var(--text-small); line-height: var(--text-small--line-height); }
+.how-copy .num-mobile { display: none; }
+/* Either side of the curve's lane (x 40..60% of the column, see `CURVE_D`), never in it:
+   the caption is pinned while the curve scrolls past it, so the two must never share
+   horizontal space or a bend would run through the words. The side alternates per step;
+   the curve leans the other way. The stop itself is a fixed-size circle (plus its ping
+   ring) centered 5% inside the lane's far edge, so the caption's inner edge is set from
+   the stop's radius, not the lane alone -- a percentage gap shrinks with the column and
+   at the narrowest desktop widths left the ring touching the words. */
+main[data-motion] .how-copy {
+  --stop-clear: calc(1.375rem + 0.4rem + 0.625rem); /* radius + ping ring + air */
+  position: absolute;
+  width: calc(45% - var(--stop-clear));
+  padding: 0;
+  border-top: 0;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity var(--dur-base) var(--ease);
+}
+main[data-motion] .how-copy--right { left: calc(55% + var(--stop-clear)); text-align: left; }
+main[data-motion] .how-copy--left { right: calc(55% + var(--stop-clear)); text-align: right; }
+main[data-motion] .how-copy.is-active { opacity: 1; pointer-events: auto; }
+main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
+@media (max-width: 63.9rem) {
+  .how-copy-pin, main[data-motion] .how-copy-pin { position: static; height: auto; display: block; }
+  .how-copy, main[data-motion] .how-copy {
+    position: static;
+    width: auto;
+    opacity: 1 !important;
+    transform: none;
+    padding: 1.25rem var(--gutter);
+    border-top: 1px solid var(--rule);
+    text-align: left !important;
+    cursor: auto;
+    pointer-events: auto;
+  }
+  .how-copy:first-child { border-top: 0; }
+  .how-copy .num-mobile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--surface);
+    font-family: var(--font-mono-stack);
+    font-size: var(--text-label);
+  }
+}
+
+.how-outro { margin-top: 1.5rem; padding-inline: var(--gutter); font-size: var(--text-small); color: var(--muted); }
+
+/* The static fallback: reduced motion, or (via the media query above collapsing the
+   track) also effectively a narrow viewport. No pin, no curve, the scene simply standing
+   at step one with every step's text stacked in reading order beneath it. */
+.how-static { display: flex; flex-direction: column; gap: 1.5rem; padding-inline: var(--gutter); }
+.how-static .how-stage { position: relative; aspect-ratio: 4 / 3; }
+.how-static-copy { display: flex; flex-direction: column; gap: 1.5rem; }
+.how-static-step { display: grid; grid-template-columns: 2.25rem 1fr; column-gap: 0.5rem; }
+.how-static-step .how-num { grid-row: 1; font-size: var(--text-label); font-weight: 500; color: var(--accent-ink); font-family: var(--font-mono-stack); }
+.how-static-step h3 { grid-column: 2; margin: 0; font-weight: 700; font-size: var(--text-h3); letter-spacing: -0.01em; color: var(--ink); }
+.how-static-step p { grid-column: 2; margin-top: 0.5rem; font-size: var(--text-small); line-height: var(--text-small--line-height); color: var(--muted); }
+
+/* The illustrations: one flat overlay per step (`Step1Intro.tsx` ... `Step5Graph.tsx`),
+   all five stacked on the stage, each filling it and centering its own content; a plain
+   crossfade to the one `data-step` names (step one before any step is set). Each one runs
+   its own looping story while it's current -- see `useTriggeredLoop`. */
+.how-step {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, color-mix(in oklab, var(--warn) 55%, var(--rule)), var(--rule) 40%, var(--rule) 60%, color-mix(in oklab, var(--accent) 60%, var(--rule)));
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 2;
-}
-@media (max-width: 63.9rem) {
-  .how { grid-template-columns: 1fr; }
-}
-@media (min-width: 64rem) {
-  .how { min-height: 31rem; }
-}
-/* In the dark the shadow is black, not ink (ink is light there). */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .how { --scene-shadow: #000; }
-}
-:root[data-theme="dark"] .how { --scene-shadow: #000; }
-
-/* The steps. */
-.how-steps {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(1.25rem, 3vw, 2.5rem);
-  border-right: 1px solid var(--rule);
-}
-@media (max-width: 63.9rem) {
-  .how-steps { order: 2; border-right: 0; border-top: 1px solid var(--rule); }
-}
-.how-step { border-top: 1px solid var(--rule); }
-.how-step:last-child { border-bottom: 1px solid var(--rule); }
-.how-step > summary {
-  position: relative;
-  display: grid;
-  grid-template-columns: 2.25rem 1fr 1rem;
   align-items: center;
-  gap: 0.5rem;
-  padding: 1rem 0;
-  cursor: pointer;
-  list-style: none;
-  font-weight: 700;
-  font-size: var(--text-h3);
-  letter-spacing: -0.01em;
-  color: var(--ink);
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 400ms var(--ease);
 }
-.how-step > summary::-webkit-details-marker { display: none; }
-.how-step > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
-.how-num { font-size: var(--text-label); font-weight: 500; color: var(--faint); }
-.how-step[open] .how-num { color: var(--accent-ink); }
-.how-chevron { width: 1rem; height: 1rem; color: var(--faint); transition: transform var(--dur-base) var(--ease); }
-.how-step[open] .how-chevron { transform: rotate(180deg); }
-.how-step-body {
-  margin: 0 0 1.125rem 2.75rem;
-  font-size: var(--text-small);
-  line-height: var(--text-small--line-height);
-  color: var(--muted);
+.how:not([data-step]) .how-step[data-for="1"],
+.how[data-step="1"] .how-step[data-for="1"],
+.how[data-step="2"] .how-step[data-for="2"],
+.how[data-step="3"] .how-step[data-for="3"],
+.how[data-step="4"] .how-step[data-for="4"],
+.how[data-step="5"] .how-step[data-for="5"] {
+  opacity: 1;
+  pointer-events: auto;
 }
-/* The auto-advance: a thin line under the open step fills over the dwell. */
-.how-step > summary::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: -1px;
-  height: 1px;
-  width: 100%;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-}
-.how[data-auto] .how-step[open] > summary::after { animation: how-dwell 6.5s linear both; }
-@keyframes how-dwell { to { transform: scaleX(1); } }
+/* Each illustration is laid out at one fixed size (36×24rem, so its fixed-rem internals
+   never collide) and scaled to fit the stage; `--how-zoom` is measured by `HowMotion`. */
+.how-step > * { transform: scale(var(--how-zoom, 1)); transform-origin: center; }
 
-/* The stage. */
-.how-stage {
-  position: relative;
-  min-height: 24rem;
-  background:
-    radial-gradient(60% 55% at 55% 45%, color-mix(in oklab, var(--accent) 9%, transparent), transparent 70%),
-    var(--ground);
-}
-.how-scene { display: block; width: 100%; height: 100%; min-height: 24rem; overflow: visible; }
-@media (max-width: 63.9rem) {
-  .how-stage, .how-scene { min-height: 0; aspect-ratio: 4 / 3; }
-}
+/* ---- Everything from here to "The cards" paints the isometric scene (`Scene.tsx`), which
+   the landing page no longer shows: it survives only for the `/ui/how-scene` playground. ---- */
 
 /* Scene paint: tokens only, so it follows the theme. */
 .how-scene .floor line { stroke: var(--rule); stroke-width: 1; }
@@ -177,15 +290,22 @@
 .how-scene .cut { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 0; }
 .how-scene .num circle { fill: var(--accent); }
 .how-scene .num text { fill: var(--surface); font-size: 10px; font-weight: 500; text-anchor: middle; }
+.how-scene .step-edge { stroke: var(--rule-strong); stroke-width: 1; fill: none; }
+.how-scene .step-edge-live { stroke: var(--accent); stroke-width: 1.2; fill: none; opacity: 0.55; }
+.how-scene .graph-dot { fill: var(--accent-ink); }
 
-/* Motion. Springs are overshoot curves; the stagger is --i. */
+/* Motion. Springs are overshoot curves; the stagger is --i. Five steps: discover the
+   pages, fetch twice, refuse the walls (drop the hidden), reading order (then Markdown),
+   build the graph. */
 .how-scene {
   --spring: cubic-bezier(0.2, 1.3, 0.3, 1);
 }
 .how-scene .world { transition: transform 1000ms var(--ease); }
-.how[data-step="1"] .world, .how:not([data-step]) .world { transform: translateX(80px); }
-.how[data-step="2"] .world { transform: translateX(20px); }
-.how[data-step="3"] .world { transform: translateX(-110px); }
+.how[data-step="1"] .world, .how:not([data-step]) .world { transform: translate(686px, 54px); }
+.how[data-step="2"] .world { transform: translateX(80px); }
+.how[data-step="3"] .world { transform: translateX(20px); }
+.how[data-step="4"] .world { transform: translateX(-110px); }
+.how[data-step="5"] .world { transform: translateX(-360px); }
 .how-scene .par { will-change: transform; }
 .how-scene .rise, .how-scene .pop, .how-scene .hid {
   transform-box: fill-box;
@@ -195,32 +315,97 @@
     opacity 500ms var(--ease) calc(var(--i, 0) * 80ms);
 }
 .how-scene .pop { transition-duration: 700ms, 300ms; }
+/* The page itself: shared across fetch/refuse/reading-order, absent for discover and
+   graph (no single page exists yet at step 1; the scene has zoomed out past any one page
+   by step 5) -- so it needs the same hide-by-default treatment as .s1..s5, just gated on
+   a range of steps instead of one. */
+.how-scene .core {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  transform: translateY(26px);
+  transition: transform 900ms var(--spring), opacity 500ms var(--ease);
+}
+.how[data-step="2"] .how-scene .core,
+.how[data-step="3"] .how-scene .core,
+.how[data-step="4"] .how-scene .core { opacity: 1; transform: none; }
 /* A step's pieces are away unless the panel is on that step (no data-step is step one). */
-.how-scene .s1, .how-scene .s2, .how-scene .s3 { opacity: 0; transform: translateY(26px); }
-.how-scene .pop.s1, .how-scene .pop.s2, .how-scene .pop.s3 { transform: scale(0.6); }
-.how:not([data-step="2"]):not([data-step="3"]) .how-scene .s1,
+.how-scene .s1, .how-scene .s2, .how-scene .s3, .how-scene .s4, .how-scene .s5 { opacity: 0; transform: translateY(26px); }
+.how-scene .pop.s1, .how-scene .pop.s2, .how-scene .pop.s3, .how-scene .pop.s4, .how-scene .pop.s5 { transform: scale(0.6); }
+.how[data-step="1"] .how-scene .s1, .how:not([data-step]) .how-scene .s1,
 .how[data-step="2"] .how-scene .s2,
-.how[data-step="3"] .how-scene .s3 { opacity: 1; transform: none; }
+.how[data-step="3"] .how-scene .s3,
+.how[data-step="4"] .how-scene .s4,
+.how[data-step="5"] .how-scene .s5 { opacity: 1; transform: none; }
 /* Not yet in view: everything is down and away, and the paths are undrawn. */
 main[data-motion] .how:not([data-in]) .how-scene .rise { opacity: 0 !important; transform: translateY(40px) !important; }
 main[data-motion] .how:not([data-in]) .how-scene .pop { opacity: 0 !important; transform: scale(0.6) !important; }
+main[data-motion] .how:not([data-in]) .how-scene .core { opacity: 0 !important; transform: translateY(40px) !important; }
 main[data-motion] .how:not([data-in]) .how-scene .draw { stroke-dashoffset: 1; }
-/* The paths draw themselves when step one arrives, and are undrawn on the others. */
+/* The paths draw themselves when "fetch twice" arrives, and are undrawn on every other step. */
 .how-scene .draw { transition: stroke-dashoffset 1300ms var(--ease) 350ms; }
-.how[data-step="2"] .how-scene .draw, .how[data-step="3"] .how-scene .draw { stroke-dashoffset: 1; transition-duration: 200ms; transition-delay: 0ms; }
+.how[data-step="1"] .how-scene .draw,
+.how[data-step="3"] .how-scene .draw,
+.how[data-step="4"] .how-scene .draw,
+.how[data-step="5"] .how-scene .draw { stroke-dashoffset: 1; transition-duration: 200ms; transition-delay: 0ms; }
 .how-scene .dots { animation: how-march 1.4s linear infinite; }
 @keyframes how-march { to { stroke-dashoffset: -0.028; } }
-/* Step three's cuts draw across the page. */
+/* Step "reading order, then Markdown": the cuts draw across the page. */
 .how-scene .cut { stroke-dashoffset: 1; transition: stroke-dashoffset 700ms var(--ease) calc(300ms + var(--i, 0) * 160ms), opacity 300ms; }
-.how[data-step="3"] .how-scene .cut { stroke-dashoffset: 0; }
-/* Step two: what the browser hid lifts off the page and dissolves. */
-.how[data-in][data-step="2"] .how-scene .hid { animation: how-lift 3000ms var(--ease) calc(500ms + var(--i, 0) * 220ms) both; }
+.how[data-step="4"] .how-scene .cut { stroke-dashoffset: 0; }
+/* Step "refuse the walls": what the browser hid lifts off the page and dissolves -- then
+   keeps drifting, rather than freezing mid-air once dissolved. The second animation's
+   keyframes are written in absolute terms matching how-lift's own end state (opacity 0.3,
+   translateY(-48px)) because a later animation in the same list replaces the property's
+   value outright; its delay is timed to start only once how-lift's own delay+duration
+   have elapsed, so the drift picks up exactly where the lift left off. The animation
+   itself -- not just the base `.s3 { opacity: 0 }` rule -- is gated on data-step="3",
+   because a running animation drives opacity directly and would otherwise override that
+   rule on every other step. */
+.how[data-in][data-step="3"] .how-scene .hid {
+  animation:
+    how-lift 3000ms var(--ease) calc(500ms + var(--i, 0) * 220ms) both,
+    how-drift 4000ms ease-in-out calc(3500ms + var(--i, 0) * 220ms) infinite;
+}
 @keyframes how-lift {
   0%   { opacity: 0; transform: translateY(14px); }
   22%  { opacity: 1; transform: translateY(0); }
   48%  { opacity: 1; transform: translateY(0); }
   100% { opacity: 0.3; transform: translateY(-48px); }
 }
+@keyframes how-drift {
+  0%, 100% { opacity: 0.3; transform: translateY(-48px); }
+  50%      { opacity: 0.38; transform: translateY(-55px); }
+}
+
+/* Step "fetch twice": the assembled page's "union" tag keeps a slow, quiet pulse once it
+   settles, so "fetched and merged" still reads as live rather than a still frame. `.glow`
+   is a child of a `.pop.s2` group, not itself `.sN`-classed, so an unconditional animation
+   here never fights the plain opacity-gating rule the way `.hid`/`.disc-scan` would. */
+.how-scene .glow {
+  fill: var(--accent);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.how[data-step="2"] .how-scene .glow { animation: how-glow 2600ms ease-in-out calc(1400ms + var(--i, 0) * 80ms) infinite; }
+@keyframes how-glow {
+  0%, 100% { opacity: 0.12; transform: scale(1); }
+  50%      { opacity: 0.28; transform: scale(1.35); }
+}
+
+/* Step "reading order, then Markdown": a cursor blinking at the end of the last written
+   line -- "still writing." */
+.how-scene .cursor { fill: var(--accent-ink); }
+.how[data-step="4"] .how-scene .cursor { animation: how-blink 1s step-end calc(1600ms) infinite; }
+@keyframes how-blink { 50% { opacity: 0; } }
+
+/* Step "build the graph": a pulse travels the real link edges, continuously -- driven by
+   the SVG's own `<animateMotion>` in Scene.tsx, nothing here to gate. */
+
+/* The capstone -- the assembled result settling with a small overshoot as the scroll-
+   through nears its end -- is driven by HowMotion directly on `.how-stage`'s transform via
+   a Framer Motion spring, not CSS; nothing here to add for it. */
 
 /* The cards. */
 .how-card {

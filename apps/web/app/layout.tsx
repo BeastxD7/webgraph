@@ -4,7 +4,7 @@ import { Instrument_Serif, JetBrains_Mono, Manrope } from "next/font/google";
 import SiteChrome from "@/components/site/SiteChrome";
 import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
-import { THEME_BOOT_SCRIPT } from "@/lib/theme";
+import ThemeBoot from "@/components/site/ThemeBoot";
 
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -84,10 +84,7 @@ export default function RootLayout({
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
     >
       <head>
-        {/* A plain synchronous script, as next-themes does it: it must run before first
-            paint so a remembered theme does not flash the other one, and `next/script`'s
-            beforeInteractive queue runs after DOMContentLoaded (measured). */}
-        <script suppressHydrationWarning dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+        <ThemeBoot />
       </head>
       <body className="flex min-h-dvh flex-col antialiased">
         <SiteChrome>

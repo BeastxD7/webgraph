@@ -7,20 +7,30 @@ import { FIDELITY, RENDER_PREDICTION } from "@/lib/benchmarks";
 import "./how/how.css";
 
 import HowMotion from "./how/HowMotion";
-import Scene from "./how/Scene";
 
 /**
- * Chapters one to three -- how it reads a page -- as one framed panel: the three steps as
- * an accordion on the left, and on the right an isometric scene that changes with the open
- * step (`how/Scene.tsx`, inline SVG, server-rendered). Below it, three cards, each holding a
- * small piece of the product's real output. The behaviour (`how/HowMotion.tsx`) is an
- * enhancement: without JavaScript the accordion is the browser's own and the scene shows
- * the first step.
+ * Chapters one to five -- how it reads a page -- as a full-width scroll story
+ * (`how/HowMotion.tsx`): five flat, looping illustrations (`how/Step1Intro.tsx` ...
+ * `Step5Graph.tsx`) pin beside a curved path of five numbered stops while scroll progress,
+ * smoothed by a spring, steps through discovery, fetch, refuse the walls, read in order,
+ * then build the graph. Below it, three cards, each holding a small piece of the product's real
+ * output. The intro copy and the cards keep the page's usual column width; only the scroll
+ * stage itself runs full-bleed. The behaviour is an enhancement: without JavaScript, or
+ * under reduced motion, all five steps render stacked and unpinned (`how/HowMotion.tsx`'s
+ * `.how-static` branch).
  *
  * Every figure is read from `lib/benchmarks.ts`; every example is one the changelog
  * records; every message on the cards is quoted from the engine.
  */
 const STEPS: ReadonlyArray<{ title: string; body: string }> = [
+  {
+    title: "Discover the pages",
+    body:
+      "Every crawl starts by finding out what's actually there: robots.txt, then " +
+      "sitemap.xml, then the links each page turns up. A queue, not a guess. On one " +
+      "university site that queue held 17,000 URLs, a third of them PDFs, counted but " +
+      "never fetched.",
+  },
   {
     title: "Fetch twice",
     body:
@@ -46,6 +56,13 @@ const STEPS: ReadonlyArray<{ title: string; body: string }> = [
       "how the page was fetched and what was refused. The Site Truth Report says the same " +
       "for a whole site.",
   },
+  {
+    title: "Build the graph",
+    body:
+      "Pages, sections and the links between them become a graph: the site already is one, " +
+      "nothing here is LLM-inferred. Entities carry their schema.org identity across every " +
+      "page that mentions them.",
+  },
 ];
 
 const REFUSALS = [
@@ -65,140 +82,126 @@ const idx = (i: number) => ({ "--i": i }) as CSSProperties;
 
 export default function Story() {
   return (
-    <section aria-labelledby="how-title" className="page-col max-md:pt-14 md:pt-24">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="how-eyebrow" data-reveal>
-          How it reads a page
-        </p>
-        <h2 id="how-title" className="how-title mt-5" data-reveal style={idx(1)}>
-          Reads the page the way a <em>person</em> does.
-        </h2>
-        <p className="measure-lede mx-auto mt-5 text-body text-muted" data-reveal style={idx(2)}>
-          Point a naive reader at a website and it returns the cookie banner as the article, a
-          login page as the page, a 503 as text, sixty links no reader ever saw. This engine
-          fetches twice, refuses the walls, drops what the browser hides, and writes the page
-          in the order a reader sees it.
-        </p>
-      </div>
-
-      {/* The panel: steps on the left, the scene on the right. */}
-      <div className="how mt-12 md:mt-16" data-how data-reveal style={idx(3)}>
-        <div className="how-steps">
-          {STEPS.map((step, k) => (
-            <details key={step.title} className="how-step" data-step-id={k + 1} open={k === 0}>
-              <summary>
-                <span className="how-num font-mono" aria-hidden>
-                  {String(k + 1).padStart(2, "0")}
-                </span>
-                <span className="how-step-title">
-                  <span className="sr-only">Step {k + 1}: </span>
-                  {step.title}
-                </span>
-                <svg className="how-chevron" viewBox="0 0 16 16" aria-hidden>
-                  <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                </svg>
-              </summary>
-              <p className="how-step-body">{step.body}</p>
-            </details>
-          ))}
-        </div>
-        <div className="how-stage">
-          <Scene />
+    <section aria-labelledby="how-title" className="max-md:pt-14 md:pt-24">
+      <div className="page-col">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="how-eyebrow" data-reveal>
+            How it reads a page
+          </p>
+          <h2 id="how-title" className="how-title mt-5" data-reveal style={idx(1)}>
+            Reads the page the way a <em>person</em> does.
+          </h2>
+          <p className="measure-lede mx-auto mt-5 text-body text-muted" data-reveal style={idx(2)}>
+            Point a naive reader at a website and it returns the cookie banner as the article, a
+            login page as the page, a 503 as text, sixty links no reader ever saw. This engine
+            fetches twice, refuses the walls, drops what the browser hides, and writes the page
+            in the order a reader sees it.
+          </p>
         </div>
       </div>
-      <HowMotion />
 
-      {/* Three cards, each holding a piece of the real output. */}
-      <div className="how-cards mt-6 grid gap-4 md:grid-cols-3">
-        <article className="how-card" data-reveal style={idx(0)}>
-          <h3 className="text-h3 font-bold text-ink">Fidelity, measured</h3>
-          <p className="mt-2 text-small text-muted">
-            Whole-page word recall against Chromium&rsquo;s own innerText, on {FIDELITY.sites}{" "}
-            sites: 1.000 on {FIDELITY.perfect}, nothing below {FIDELITY.floor}.
-          </p>
-          <div className="mock mock-recall" aria-hidden>
-            <div className="mock-ui">
-              <div className="mock-head">
-                <span className="dot" />
-                <span>fidelity · sqlite.org/lang.html</span>
-              </div>
-              <div className="mock-body">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-small font-semibold text-ink">Word recall</span>
-                  <span className="chip chip-good">measured</span>
-                </div>
-                <p className="tabular mt-2 font-display text-stat text-ink" data-count>
-                  1.000
-                </p>
-                <div className="bar mt-2">
-                  <span className="bar-fill" />
-                </div>
-                <p className="mt-2 font-mono text-caption text-muted">
-                  vs Chromium innerText · was 0.749
-                </p>
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article className="how-card" data-reveal style={idx(1)}>
-          <h3 className="text-h3 font-bold text-ink">Refusals, named</h3>
-          <p className="mt-2 text-small text-muted">
-            A page it cannot read is a refusal in the engine&rsquo;s own words, not a guess.
-            The message names the wall.
-          </p>
-          <div className="mock mock-refusals" aria-hidden>
-            <div className="mock-ui">
-              <div className="mock-head">
-                <span className="dot dot-bad" />
-                <span>refusals · resolve.py</span>
-              </div>
-              <div className="mock-body">
-                {REFUSALS.map(([label, msg], k) => (
-                  <div key={label} className="row" style={idx(k)}>
-                    <span className="chip chip-bad">{label}</span>
-                    <span className="font-mono text-caption text-ink">{msg}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </article>
-
-        <article className="how-card" data-reveal style={idx(2)}>
-          <h3 className="text-h3 font-bold text-ink">Provenance</h3>
-          <p className="mt-2 text-small text-muted">
-            Every quote carries its address: the page, and the block on it. Check it without
-            fetching again.
-          </p>
-          <div className="mock mock-prov" aria-hidden>
-            <div className="mock-ui">
-              <div className="mock-head">
-                <span className="dot" />
-                <span>citations · url#xpath</span>
-              </div>
-              <div className="mock-body">
-                {PROVENANCE.map(([anchor, quote], k) => (
-                  <div key={anchor} className="row" style={idx(k)}>
-                    <span className="anchor font-mono text-caption text-accent-ink">{anchor}</span>
-                    <span className="text-caption text-ink">&ldquo;{quote}&rdquo;</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </article>
+      {/* The scroll story: full-bleed, not boxed in the page column. */}
+      <div className="mt-12 md:mt-16" data-reveal style={idx(3)}>
+        <HowMotion steps={STEPS} />
+        <p className="how-outro">
+          Stay on any step as long as you like — the illustration keeps moving; it never
+          freezes waiting for you to scroll on.
+        </p>
       </div>
 
-      <p className="mt-6 max-w-prose text-small text-muted" data-reveal>
-        Each example is a page this engine met while being measured; the recall is the suite
-        in <code className="font-mono">benchmark/fidelity</code>, not yet a per-page score in
-        the UI. The{" "}
-        <Link href="/report" className="font-medium text-accent-ink underline underline-offset-2">
-          Site Truth Report
-        </Link>{" "}
-        — what a site shows people against what it shows crawlers — runs on any site.
-      </p>
+      <div className="page-col">
+        {/* Three cards, each holding a piece of the real output. */}
+        <div className="how-cards mt-6 grid gap-4 md:grid-cols-3">
+          <article className="how-card" data-reveal style={idx(0)}>
+            <h3 className="text-h3 font-bold text-ink">Fidelity, measured</h3>
+            <p className="mt-2 text-small text-muted">
+              Whole-page word recall against Chromium&rsquo;s own innerText, on {FIDELITY.sites}{" "}
+              sites: 1.000 on {FIDELITY.perfect}, nothing below {FIDELITY.floor}.
+            </p>
+            <div className="mock mock-recall" aria-hidden>
+              <div className="mock-ui">
+                <div className="mock-head">
+                  <span className="dot" />
+                  <span>fidelity · sqlite.org/lang.html</span>
+                </div>
+                <div className="mock-body">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-small font-semibold text-ink">Word recall</span>
+                    <span className="chip chip-good">measured</span>
+                  </div>
+                  <p className="tabular mt-2 font-display text-stat text-ink" data-count>
+                    1.000
+                  </p>
+                  <div className="bar mt-2">
+                    <span className="bar-fill" />
+                  </div>
+                  <p className="mt-2 font-mono text-caption text-muted">
+                    vs Chromium innerText · was 0.749
+                  </p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="how-card" data-reveal style={idx(1)}>
+            <h3 className="text-h3 font-bold text-ink">Refusals, named</h3>
+            <p className="mt-2 text-small text-muted">
+              A page it cannot read is a refusal in the engine&rsquo;s own words, not a guess.
+              The message names the wall.
+            </p>
+            <div className="mock mock-refusals" aria-hidden>
+              <div className="mock-ui">
+                <div className="mock-head">
+                  <span className="dot dot-bad" />
+                  <span>refusals · resolve.py</span>
+                </div>
+                <div className="mock-body">
+                  {REFUSALS.map(([label, msg], k) => (
+                    <div key={label} className="row" style={idx(k)}>
+                      <span className="chip chip-bad">{label}</span>
+                      <span className="font-mono text-caption text-ink">{msg}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <article className="how-card" data-reveal style={idx(2)}>
+            <h3 className="text-h3 font-bold text-ink">Provenance</h3>
+            <p className="mt-2 text-small text-muted">
+              Every quote carries its address: the page, and the block on it. Check it without
+              fetching again.
+            </p>
+            <div className="mock mock-prov" aria-hidden>
+              <div className="mock-ui">
+                <div className="mock-head">
+                  <span className="dot" />
+                  <span>citations · url#xpath</span>
+                </div>
+                <div className="mock-body">
+                  {PROVENANCE.map(([anchor, quote], k) => (
+                    <div key={anchor} className="row" style={idx(k)}>
+                      <span className="anchor font-mono text-caption text-accent-ink">{anchor}</span>
+                      <span className="text-caption text-ink">&ldquo;{quote}&rdquo;</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <p className="mt-6 max-w-prose text-small text-muted" data-reveal>
+          Each example is a page this engine met while being measured; the recall is the suite
+          in <code className="font-mono">benchmark/fidelity</code>, not yet a per-page score in
+          the UI. The{" "}
+          <Link href="/report" className="font-medium text-accent-ink underline underline-offset-2">
+            Site Truth Report
+          </Link>{" "}
+          — what a site shows people against what it shows crawlers — runs on any site.
+        </p>
+      </div>
     </section>
   );
 }

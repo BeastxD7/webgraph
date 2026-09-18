@@ -1,0 +1,18 @@
+/* ---------------------------------------------------------------------------
+   Step 1's intro overlay. Nearly every animation here is generated at runtime
+   by `discoverTree.ts` (`buildKeyframesCss`) from one shared ms-based
+   schedule -- the intro's own keyframes (`discover-logo`, `discover-bar-shape`,
+   etc.) and one `discover-node-*` / `discover-edge-*` / `discover-ping-*`
+   triple per discovered page -- and injected via a `<style>` tag in
+   `Step1Intro.tsx`. This file holds only what that generator doesn't: the one
+   static override Tailwind can't reach, and the cursor's blink (independent
+   of the main cycle's length on purpose -- a blinking caret keeps its own
+   ~500ms rhythm regardless of how fast everything around it is retimed).
+   --------------------------------------------------------------------------- */
+
+/* `Mark` (components/site/Wordmark.tsx) hardcodes its own `size-7`; this class-selector
+   override (specificity 0,2,0) beats that utility (0,1,0) without touching the shared
+   component. */
+.step1-intro-logo .mark { width: 2.75rem; height: 2.75rem; }
+
+@keyframes step1-intro-blink { 50% { opacity: 0; } }
