@@ -26,6 +26,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from webgraph import config
+from webgraph.carried import canvas_verdict
 from webgraph.crawl.discovery import RobotsPolicy, extract_links
 from webgraph.dom.blocks import parse_html
 from webgraph.dom.rich import styled_off_the_page
@@ -157,6 +158,10 @@ class PageReport:
     """Links whose check produced no HTTP answer at all: a timeout or a refused connection.
     Not counted as dead -- the fault may be on this side."""
     in_sitemap: bool | None = None
+    canvas: bool = False
+    """The page draws its content in a `<canvas>` rather than writing it -- a `<canvas>`
+    and under forty readable words (`carried.canvas_verdict`). What a reader without
+    JavaScript and a click gets is `union_words`."""
     error: str | None = None
 
     @property
@@ -187,6 +192,7 @@ class PageReport:
             "static_chars": self.static_chars,
             "rendered_chars": self.rendered_chars,
             "union_chars": self.union_chars,
+            "canvas": self.canvas,
             "static_words": self.static_words,
             "rendered_words": self.rendered_words,
             "union_words": self.union_words,
@@ -378,6 +384,7 @@ def measure_page(
         total_words=total_words,
         canonical=extract_links(document.html, document.url).canonical if document.html else None,
         lang=lang,
+        canvas=canvas_verdict(document) is not None,
         structured_data=tuple(dict.fromkeys(p.source.value for p in document.structured_data)),
         internal_links=len(links),
         links_checked=checked,

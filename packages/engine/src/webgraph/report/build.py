@@ -37,6 +37,7 @@ from urllib.parse import urlsplit
 from webgraph import config
 from webgraph.analyze import probe_site
 from webgraph.crawl.discovery import RobotsPolicy
+from webgraph.crawl.frontier import same_site
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
 from webgraph.fetch.static import FetchConfig
 from webgraph.report.bots import BotPolicy, declared_policies
@@ -387,7 +388,15 @@ def build_site_report(
         llms_found=llms["/llms.txt"].found,
         llms_full_found=llms["/llms-full.txt"].found,
     )
-    findings = integrity_findings(reports, stack)
+    # A sitemap whose every address is on another host advertises nothing of this site.
+    listed_hosts = sorted({urlsplit(u).hostname or "?" for u in probe.sitemap_pages})
+    on_host = [u for u in probe.sitemap_pages if same_site(u, root.url)]
+    sitemap_elsewhere = (
+        (len(probe.sitemap_pages), tuple(listed_hosts))
+        if probe.sitemap_pages and not on_host
+        else None
+    )
+    findings = integrity_findings(reports, stack, sitemap_elsewhere=sitemap_elsewhere)
 
     return SiteReport(
         url=url,
