@@ -968,6 +968,10 @@ export interface PageEvent {
    *  0 is the plain fetch's page alone: the browser produced an empty page. */
   static_chars?: number;
   rendered_chars?: number;
+  /** Set when the browser was shown a gate that hid the page -- one hidden element holding
+   *  more of the page's prose than the whole visible render -- and the plain fetch's page
+   *  was kept whole behind it. The sentence says how much was behind it. */
+  render_note?: string | null;
   depth: number;
   queued: number;
   discovered: number;

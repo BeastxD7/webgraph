@@ -87,6 +87,11 @@ export default function PageRow({
               <span>{compact(page.markdown.length)} chars</span>
               {page.images.length > 0 && <span>{page.images.length} img</span>}
               {page.tables > 0 && <span>{page.tables} tbl</span>}
+              {page.render_note && (
+                <span title={page.render_note} className="rounded-full bg-flag-warn/10 px-2 py-0.5 font-semibold text-flag-warn">
+                  gate hid the page
+                </span>
+              )}
               {page.strategy === "union" && page.rendered_chars === 0 && (page.static_chars ?? 0) > 0 && (
                 <span
                   title={`The browser rendered an empty page; the plain fetch's ${page.static_chars} characters are what was read`}
