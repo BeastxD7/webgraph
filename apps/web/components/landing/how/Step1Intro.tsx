@@ -16,10 +16,9 @@ interface Edge { id: string; d: string }
  * search bar that expands from the same center point, typing "webgraph.com," "entering" --
  * and then the page tree the crawl turns up, revealed strictly breadth-first (one whole
  * depth settles before the next starts, anywhere in the tree), connected by smooth curves
- * measured from the nodes' own real positions. Plain HTML/CSS/SVG overlaid on the isometric
- * scene (`how.css`'s `.how-intro-overlay`, shown only while `data-step="1"`), not part of
- * the scene's own SVG -- this content reads as flat "browser chrome," not an isometric
- * object, so it deliberately isn't drawn the way the other four steps are.
+ * measured from the nodes' own real positions. Plain HTML/CSS/SVG, the first of the five
+ * flat illustrations `HowMotion` stacks on the stage (`how.css`'s `.how-step`, shown while
+ * `data-step="1"`), and the idiom the other four follow.
  *
  * Every animation's timing comes from one shared ms-based schedule in `discoverTree.ts`,
  * generated into real `@keyframes` and injected once below, so the intro and the tree

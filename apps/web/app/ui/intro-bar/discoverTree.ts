@@ -213,7 +213,7 @@ export function buildKeyframesCss(layout: Layout): string {
 }`).join("\n");
 
   // A brief expanding "ping" ring on arrival, once per node -- a nested child of the node's
-  // own element, so (like `.glow`/`.cursor` in the real Scene.tsx) it only reads as visible
+  // own element, so (a nested element, never the animated one itself) it only reads as visible
   // for as long as the parent's own opacity keyframe already says it should.
   const pingCss = flattenExceptRoot(root).map((n) => `
 @keyframes discover-ping-${n.id} {

@@ -45,8 +45,6 @@
    numbered stops, scrolling normally beside it, with the caption pinned. Height comes from
    the taller child below, not set here. */
 .how-track {
-  --plane: color-mix(in oklab, var(--surface) 86%, #fff);
-  --scene-shadow: var(--ink);
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -54,10 +52,6 @@
   gap: clamp(1.5rem, 4vw, 4rem);
   padding-inline: var(--gutter);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .how-track { --scene-shadow: #000; }
-}
-:root[data-theme="dark"] .how-track { --scene-shadow: #000; }
 @media (max-width: 63.9rem) {
   /* No extra scroll room to pin against: the two columns stack, and every step's copy
      stays visible and readable underneath the illustration (`.how-static`'s own layout,
@@ -97,7 +91,6 @@
 @media (max-width: 63.9rem) {
   .how-stage { height: 60vw; max-height: 20rem; }
 }
-.how-scene { display: block; width: 100%; height: 100%; overflow: visible; }
 
 /* The curved path: a capped width so extra viewport width flows to the illustration
    instead of stretching this column and opening a gap between them. Three lanes across it
@@ -252,161 +245,6 @@ main[data-motion] .how-copy.is-active h3 { color: var(--accent-ink); }
    never collide) and scaled to fit the stage; `--how-zoom` is measured by `HowMotion`. */
 .how-step > * { transform: scale(var(--how-zoom, 1)); transform-origin: center; }
 
-/* ---- Everything from here to "The cards" paints the isometric scene (`Scene.tsx`), which
-   the landing page no longer shows: it survives only for the `/ui/how-scene` playground. ---- */
-
-/* Scene paint: tokens only, so it follows the theme. */
-.how-scene .floor line { stroke: var(--rule); stroke-width: 1; }
-.how-scene .sheet .face { fill: var(--plane); stroke: var(--rule-strong); stroke-width: 1; }
-.how-scene .sheet .edge { fill: color-mix(in oklab, var(--ink) 14%, var(--plane)); stroke: var(--rule-strong); stroke-width: 1; stroke-linejoin: round; }
-.how-scene .sheet-bad .face { fill: var(--bad-soft); stroke: var(--bad); }
-.how-scene .sheet-bad .edge { fill: color-mix(in oklab, var(--bad) 30%, var(--bad-soft)); stroke: var(--bad); }
-.how-scene .shadow { fill: url(#how-shadow); }
-.how-scene .sh0 { stop-color: var(--scene-shadow); stop-opacity: 0.18; }
-.how-scene .sh1 { stop-color: var(--scene-shadow); stop-opacity: 0; }
-.how-scene .line { fill: var(--faint); opacity: 0.55; }
-.how-scene .ink { fill: var(--ink); opacity: 0.82; }
-.how-scene .code { fill: var(--accent-ink); opacity: 0.8; }
-.how-scene .bad { fill: var(--bad); opacity: 0.8; }
-.how-scene .line-bad { fill: var(--bad); opacity: 0.25; }
-.how-scene .ghost { fill: none; stroke: var(--rule-strong); stroke-dasharray: 3 3; }
-.how-scene .sunk { fill: var(--sunk); }
-.how-scene .grid rect { fill: none; stroke: var(--rule-strong); }
-.how-scene .grid path { stroke: var(--rule-strong); fill: none; }
-.how-scene .grid .head { fill: var(--sunk); stroke: none; }
-.how-scene text { font-family: var(--font-mono-stack); font-size: 9px; fill: var(--muted); }
-.how-scene text.strong { fill: var(--ink); font-weight: 500; }
-.how-scene text.faint { fill: var(--faint); }
-.how-scene text.good { fill: var(--accent-ink); }
-.how-scene .head { fill: var(--sunk); }
-.how-scene .tag rect { fill: var(--plane); stroke: var(--rule-strong); }
-.how-scene .tag text { font-size: 9.5px; fill: var(--ink); font-weight: 500; }
-.how-scene .tag-bad rect { fill: var(--bad-soft); stroke: var(--bad); }
-.how-scene .tag-bad text { fill: var(--bad); }
-.how-scene .tag-good rect { fill: var(--good-soft); stroke: var(--good); }
-.how-scene .tag-good text { fill: var(--good); }
-.how-scene .dots { fill: none; stroke: var(--accent-ink); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 0.006 0.022; }
-.how-scene .draw { fill: none; stroke: #fff; stroke-width: 14; stroke-linecap: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
-.how-scene .cut { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 1; stroke-dashoffset: 0; }
-.how-scene .num circle { fill: var(--accent); }
-.how-scene .num text { fill: var(--surface); font-size: 10px; font-weight: 500; text-anchor: middle; }
-.how-scene .step-edge { stroke: var(--rule-strong); stroke-width: 1; fill: none; }
-.how-scene .step-edge-live { stroke: var(--accent); stroke-width: 1.2; fill: none; opacity: 0.55; }
-.how-scene .graph-dot { fill: var(--accent-ink); }
-
-/* Motion. Springs are overshoot curves; the stagger is --i. Five steps: discover the
-   pages, fetch twice, refuse the walls (drop the hidden), reading order (then Markdown),
-   build the graph. */
-.how-scene {
-  --spring: cubic-bezier(0.2, 1.3, 0.3, 1);
-}
-.how-scene .world { transition: transform 1000ms var(--ease); }
-.how[data-step="1"] .world, .how:not([data-step]) .world { transform: translate(686px, 54px); }
-.how[data-step="2"] .world { transform: translateX(80px); }
-.how[data-step="3"] .world { transform: translateX(20px); }
-.how[data-step="4"] .world { transform: translateX(-110px); }
-.how[data-step="5"] .world { transform: translateX(-360px); }
-.how-scene .par { will-change: transform; }
-.how-scene .rise, .how-scene .pop, .how-scene .hid {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition:
-    transform 900ms var(--spring) calc(var(--i, 0) * 80ms),
-    opacity 500ms var(--ease) calc(var(--i, 0) * 80ms);
-}
-.how-scene .pop { transition-duration: 700ms, 300ms; }
-/* The page itself: shared across fetch/refuse/reading-order, absent for discover and
-   graph (no single page exists yet at step 1; the scene has zoomed out past any one page
-   by step 5) -- so it needs the same hide-by-default treatment as .s1..s5, just gated on
-   a range of steps instead of one. */
-.how-scene .core {
-  transform-box: fill-box;
-  transform-origin: center;
-  opacity: 0;
-  transform: translateY(26px);
-  transition: transform 900ms var(--spring), opacity 500ms var(--ease);
-}
-.how[data-step="2"] .how-scene .core,
-.how[data-step="3"] .how-scene .core,
-.how[data-step="4"] .how-scene .core { opacity: 1; transform: none; }
-/* A step's pieces are away unless the panel is on that step (no data-step is step one). */
-.how-scene .s1, .how-scene .s2, .how-scene .s3, .how-scene .s4, .how-scene .s5 { opacity: 0; transform: translateY(26px); }
-.how-scene .pop.s1, .how-scene .pop.s2, .how-scene .pop.s3, .how-scene .pop.s4, .how-scene .pop.s5 { transform: scale(0.6); }
-.how[data-step="1"] .how-scene .s1, .how:not([data-step]) .how-scene .s1,
-.how[data-step="2"] .how-scene .s2,
-.how[data-step="3"] .how-scene .s3,
-.how[data-step="4"] .how-scene .s4,
-.how[data-step="5"] .how-scene .s5 { opacity: 1; transform: none; }
-/* Not yet in view: everything is down and away, and the paths are undrawn. */
-main[data-motion] .how:not([data-in]) .how-scene .rise { opacity: 0 !important; transform: translateY(40px) !important; }
-main[data-motion] .how:not([data-in]) .how-scene .pop { opacity: 0 !important; transform: scale(0.6) !important; }
-main[data-motion] .how:not([data-in]) .how-scene .core { opacity: 0 !important; transform: translateY(40px) !important; }
-main[data-motion] .how:not([data-in]) .how-scene .draw { stroke-dashoffset: 1; }
-/* The paths draw themselves when "fetch twice" arrives, and are undrawn on every other step. */
-.how-scene .draw { transition: stroke-dashoffset 1300ms var(--ease) 350ms; }
-.how[data-step="1"] .how-scene .draw,
-.how[data-step="3"] .how-scene .draw,
-.how[data-step="4"] .how-scene .draw,
-.how[data-step="5"] .how-scene .draw { stroke-dashoffset: 1; transition-duration: 200ms; transition-delay: 0ms; }
-.how-scene .dots { animation: how-march 1.4s linear infinite; }
-@keyframes how-march { to { stroke-dashoffset: -0.028; } }
-/* Step "reading order, then Markdown": the cuts draw across the page. */
-.how-scene .cut { stroke-dashoffset: 1; transition: stroke-dashoffset 700ms var(--ease) calc(300ms + var(--i, 0) * 160ms), opacity 300ms; }
-.how[data-step="4"] .how-scene .cut { stroke-dashoffset: 0; }
-/* Step "refuse the walls": what the browser hid lifts off the page and dissolves -- then
-   keeps drifting, rather than freezing mid-air once dissolved. The second animation's
-   keyframes are written in absolute terms matching how-lift's own end state (opacity 0.3,
-   translateY(-48px)) because a later animation in the same list replaces the property's
-   value outright; its delay is timed to start only once how-lift's own delay+duration
-   have elapsed, so the drift picks up exactly where the lift left off. The animation
-   itself -- not just the base `.s3 { opacity: 0 }` rule -- is gated on data-step="3",
-   because a running animation drives opacity directly and would otherwise override that
-   rule on every other step. */
-.how[data-in][data-step="3"] .how-scene .hid {
-  animation:
-    how-lift 3000ms var(--ease) calc(500ms + var(--i, 0) * 220ms) both,
-    how-drift 4000ms ease-in-out calc(3500ms + var(--i, 0) * 220ms) infinite;
-}
-@keyframes how-lift {
-  0%   { opacity: 0; transform: translateY(14px); }
-  22%  { opacity: 1; transform: translateY(0); }
-  48%  { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0.3; transform: translateY(-48px); }
-}
-@keyframes how-drift {
-  0%, 100% { opacity: 0.3; transform: translateY(-48px); }
-  50%      { opacity: 0.38; transform: translateY(-55px); }
-}
-
-/* Step "fetch twice": the assembled page's "union" tag keeps a slow, quiet pulse once it
-   settles, so "fetched and merged" still reads as live rather than a still frame. `.glow`
-   is a child of a `.pop.s2` group, not itself `.sN`-classed, so an unconditional animation
-   here never fights the plain opacity-gating rule the way `.hid`/`.disc-scan` would. */
-.how-scene .glow {
-  fill: var(--accent);
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.how[data-step="2"] .how-scene .glow { animation: how-glow 2600ms ease-in-out calc(1400ms + var(--i, 0) * 80ms) infinite; }
-@keyframes how-glow {
-  0%, 100% { opacity: 0.12; transform: scale(1); }
-  50%      { opacity: 0.28; transform: scale(1.35); }
-}
-
-/* Step "reading order, then Markdown": a cursor blinking at the end of the last written
-   line -- "still writing." */
-.how-scene .cursor { fill: var(--accent-ink); }
-.how[data-step="4"] .how-scene .cursor { animation: how-blink 1s step-end calc(1600ms) infinite; }
-@keyframes how-blink { 50% { opacity: 0; } }
-
-/* Step "build the graph": a pulse travels the real link edges, continuously -- driven by
-   the SVG's own `<animateMotion>` in Scene.tsx, nothing here to gate. */
-
-/* The capstone -- the assembled result settling with a small overshoot as the scroll-
-   through nears its end -- is driven by HowMotion directly on `.how-stage`'s transform via
-   a Framer Motion spring, not CSS; nothing here to add for it. */
-
 /* The cards. */
 .how-card {
   min-width: 0;
@@ -472,6 +310,5 @@ main[data-motion] .how-card .mock-prov .row > span:last-child { transition: opac
 main[data-motion] .how-card:not([data-in]) .mock-prov .row > span:last-child { opacity: 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .how-scene *, .how-card * { transition: none !important; animation: none !important; }
-  .how-scene .par { transform: none !important; }
+  .how-card * { transition: none !important; animation: none !important; }
 }

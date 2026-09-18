@@ -11,7 +11,7 @@ import "./intro-bar.css";
 interface Edge { id: string; d: string }
 
 /**
- * A focused experiment, decoupled from the isometric scene on purpose: the opening beat of
+ * A focused experiment, on its own on purpose: the opening beat of
  * "how it reads a page" step 1 -- blank canvas, the brand mark, the mark dissolving into a
  * search bar that expands from the same center point, typing, "entering" -- and what happens
  * after: the page tree the crawl turns up, revealed strictly breadth-first (one whole depth
@@ -19,9 +19,8 @@ interface Edge { id: string; d: string }
  * from the nodes' own real positions rather than flat CSS lines guessed at layout time.
  * Every animation's timing comes from one shared ms-based schedule in `discoverTree.ts`,
  * generated into real `@keyframes` and injected once below, so the intro and the tree reveal
- * share a single cycle. Plain HTML/CSS/SVG, not the isometric scene, so the timing, easing
- * and look can be iterated on quickly; once this reads right it gets ported into
- * `how/Scene.tsx` as billboarded elements in the real scene.
+ * share a single cycle. Plain HTML/CSS/SVG so the timing, easing and look can be iterated
+ * on quickly; the landing page's copy of it is `components/landing/how/Step1Intro.tsx`.
  */
 export default function IntroBarPlayground() {
   const layout = useMemo(() => layoutTree(DISCOVER_TREE), []);

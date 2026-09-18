@@ -13,11 +13,6 @@ export const metadata: Metadata = { title: "UI playground", robots: { index: fal
  */
 const ENTRIES: ReadonlyArray<{ href: Route; title: string; description: string }> = [
   {
-    href: "/ui/how-scene",
-    title: "How it reads a page — scene",
-    description: "The isometric illustration (how/Scene.tsx) with direct step controls, an in-view toggle, and bounding-box overlays for checking centering.",
-  },
-  {
     href: "/ui/fetch-twice",
     title: "Step 2 — fetch twice",
     description: "A page from the crawl fetched two ways at once: raw HTML streaming on the left, a browser painting (then losing a block to hydration, gaining one from a script) on the right, and the union the engine keeps.",
@@ -40,7 +35,7 @@ const ENTRIES: ReadonlyArray<{ href: Route; title: string; description: string }
   {
     href: "/ui/intro-bar",
     title: "Step 1 — intro bar",
-    description: "Blank canvas → brand mark → mark dissolves into a search bar expanding from center → types → enters. Plain HTML/CSS, decoupled from the isometric scene, for iterating on timing and easing before it's ported in.",
+    description: "Blank canvas → brand mark → mark dissolves into a search bar expanding from center → types → enters. Plain HTML/CSS, for iterating on timing and easing; the landing page runs its own copy (how/Step1Intro.tsx).",
   },
 ];
 
