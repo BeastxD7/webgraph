@@ -977,6 +977,9 @@ def stream_site(
         "union_chars": analysis.union_chars,
         "static_coverage": round(analysis.static_coverage, 4),
         "strategy": strategy.value,
+        # What the root page declares about itself -- the same kind of fact as the stack
+        # above, what the site says rather than what it is -- read once, here.
+        "metadata": analysis.metadata,
     }
 
     yield {"type": "stage", "stage": "enumerate", "message": "Seeding from sitemap"}

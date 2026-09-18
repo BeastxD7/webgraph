@@ -28,6 +28,7 @@ from webgraph.crawl.discovery import (
 from webgraph.crawl.frontier import normalize_url
 from webgraph.fetch.render import PLAYWRIGHT_AVAILABLE, RenderConfig
 from webgraph.fetch.static import FetchConfig
+from webgraph.metadata import read_metadata
 from webgraph.profile.bundle import collect_bundle_source
 from webgraph.profile.technology import (
     Technology,
@@ -80,6 +81,12 @@ class SiteAnalysis:
 
     sample_pages: tuple[str, ...] = ()
     notes: tuple[str, ...] = field(default_factory=tuple)
+
+    metadata: dict[str, Any] | None = None
+    """The root page's `<head>` declarations (`metadata.PageMetadata.as_dict`): title,
+    description, canonical, language, Open Graph, Twitter card, icons, feeds, alternates,
+    schema.org types -- and `declared_elsewhere`, the declarations that name another site.
+    None only when the root could not be fetched."""
 
     @property
     def static_coverage(self) -> float:
@@ -293,6 +300,12 @@ def probe_site(
             if gained > 0:
                 notes.append(f"{gained} further technologies identified from bundle source")
 
+    metadata = read_metadata(document.html, document.url, structured_data=document.structured_data)
+    if metadata.declared_elsewhere:
+        notes.append(
+            "the page declares another site as its own: " + "; ".join(metadata.declared_elsewhere)
+        )
+
     analysis = SiteAnalysis(
         root=normalized,
         reachable=True,
@@ -320,6 +333,7 @@ def probe_site(
         public_page_count=len(on_site) if on_site else None,
         sample_pages=tuple(on_site[:8]),
         notes=tuple(notes),
+        metadata=metadata.as_dict(),
     )
     return SiteProbe(
         analysis=analysis,

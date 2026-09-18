@@ -34,6 +34,7 @@ from typing import Any
 from webgraph.content import select_content
 from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig
+from webgraph.metadata import read_metadata
 from webgraph.pagetype import PageType, default_router, policy_for
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import (
@@ -137,6 +138,11 @@ def stream_page(
         # did, with the deployment's `WEBGRAPH_CONTACT`. A reader of the log should know
         # the page was served to a declared client, not to the ordinary fetch.
         "identity_declared": resolved.identity_declared,
+        # The page's own `<head>` declarations, read here because this is the first stage
+        # with the page in hand: what it says it is, before what it contains.
+        "metadata": read_metadata(
+            document.html, document.url, structured_data=document.structured_data
+        ).as_dict(),
     }
 
     yield {

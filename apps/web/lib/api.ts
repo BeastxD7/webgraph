@@ -703,6 +703,50 @@ export interface Technology {
   evidence: string;
 }
 
+/**
+ * What a page declares about itself in its `<head>`: the metadata a crawler, a search
+ * engine or a share card reads before any of the page's text. Every address is absolute
+ * against the address the page was served at; every text value is one line, capped.
+ *
+ * `declared_elsewhere` is the part worth reading first: declarations (`canonical`, `og:url`)
+ * that name a different site from the one that served the page, as
+ * `"canonical -> https://old-host.example"`. Empty is normal. A site that moved domains and
+ * kept its old `metadataBase` fills it, and nothing on the page shows it -- the crawl that
+ * trusted such a canonical once finished after one page.
+ */
+export interface PageMetadata {
+  url: string;
+  title: string | null;
+  description: string | null;
+  canonical: string | null;
+  /** `<html lang>`. */
+  language: string | null;
+  charset: string | null;
+  /** `<meta name="robots">`, verbatim. */
+  robots: string | null;
+  /** `<meta name="generator">`: the CMS or builder, by its own account. */
+  generator: string | null;
+  author: string | null;
+  keywords: string | null;
+  theme_color: string | null;
+  viewport: string | null;
+  /** `rel="icon"`, `shortcut icon`, `apple-touch-icon`, in document order. */
+  icons: string[];
+  manifest: string | null;
+  /** Every `og:*` and `article:*` property. */
+  open_graph: Record<string, string>;
+  /** Every `twitter:*` name. */
+  twitter: Record<string, string>;
+  /** `<link rel="alternate" hreflang>`, capped at 24; `alternate_count` is the whole. */
+  alternates: Array<{ hreflang: string; href: string }>;
+  alternate_count: number;
+  /** RSS and Atom feeds the page advertises. */
+  feeds: string[];
+  /** The `@type`s of the page's JSON-LD and microdata, in order of first appearance. */
+  schema_types: string[];
+  declared_elsewhere: string[];
+}
+
 export interface AnalysisEvent {
   type: "analysis";
   root: string;
@@ -716,6 +760,9 @@ export interface AnalysisEvent {
   union_chars: number;
   static_coverage: number;
   strategy: string;
+  /** The root page's `<head>`, read in the same stage as the stack. Absent from runs
+   *  recorded before it was reported. */
+  metadata?: PageMetadata | null;
 }
 
 /**
@@ -1022,6 +1069,8 @@ export type PageStageEvent =
       /** Set when the browser was unavailable or gave up. Not a failure: it says the result
        *  is the plain fetch alone, which a completeness claim has to account for. */
       render_error: string | null;
+      /** The page's `<head>` declarations -- the first thing known about it. */
+      metadata?: PageMetadata | null;
     }
   | {
       type: "parse";

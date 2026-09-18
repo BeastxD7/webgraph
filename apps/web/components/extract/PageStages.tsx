@@ -138,6 +138,19 @@ export default function PageStages({ run }: { run: PageRun }) {
                   )}
                 </>
               )}
+              {run.resolve.metadata && (
+                <>
+                  <Row label="Title" value={run.resolve.metadata.title ?? "none declared"} />
+                  <Row
+                    label="Canonical"
+                    value={
+                      (run.resolve.metadata.canonical ?? "none declared") +
+                      (run.resolve.metadata.declared_elsewhere.some((d) => d.startsWith("canonical")) ? " · another site" : "")
+                    }
+                  />
+                  <Row label="Language" value={run.resolve.metadata.language ?? "none declared"} />
+                </>
+              )}
             </dl>
           )}
 

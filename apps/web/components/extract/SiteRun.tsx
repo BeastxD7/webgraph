@@ -13,6 +13,7 @@ import ProgressRail from "./ProgressRail";
 import RunLog from "./RunLog";
 import RunSummary from "./RunSummary";
 import RunTabs, { type RunTab } from "./RunTabs";
+import MetadataPanel from "./MetadataPanel";
 import TechnologyPanel from "./TechnologyPanel";
 import UrlList from "./UrlList";
 import Citation from "@/components/ui/Citation";
@@ -169,6 +170,7 @@ export default function SiteRun({
       <RunLog log={run.log} meta={logMeta} />
 
       {run.analysis && <TechnologyPanel analysis={run.analysis} />}
+      {run.analysis?.metadata && <MetadataPanel metadata={run.analysis.metadata} />}
 
       {/* Why discovery looks the way it does: what robots.txt asked, which sitemaps were
           tried, and what kind of thing the addresses are. Shown the moment Stage 0 reports

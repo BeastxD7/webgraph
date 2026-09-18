@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import MetadataPanel from "./MetadataPanel";
 import PageStages from "./PageStages";
 import RunLog from "./RunLog";
 import { usePageStream } from "@/hooks/usePageStream";
@@ -265,6 +266,8 @@ export default function SinglePageRun({ url }: { url: string }) {
       {/* Always visible, running or not: while the run is going it is the only thing
           happening, and once it has finished or failed it is the record of what was done. */}
       <PageStages run={run} />
+
+      {run.resolve?.metadata && <MetadataPanel metadata={run.resolve.metadata} heading="Page metadata" />}
 
       {/* Outside the `text &&` block below on purpose: a run that produced no page is
           exactly the run whose log someone needs. */}

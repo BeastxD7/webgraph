@@ -49,6 +49,8 @@ Framing is as for [`/api/text/stream`](/docs/api/text-stream#framing). After the
 
 The root fetched both ways, measured. `root`, `frameworks`, `technologies` (each `name`, `category`, `version`, `confidence`, `evidence` - the fingerprint that matched), `payload_sources`, `render_required`, `render_loses_content`, `static_chars`, `rendered_chars`, `union_chars`, `static_coverage`, and `strategy`, the one the crawl will use.
 
+`metadata` is what the root page declares in its `<head>`, read once here: `title`, `description`, `canonical`, `language`, `charset`, `robots`, `generator`, `author`, `keywords`, `theme_color`, `viewport`, `icons`, `manifest`, `open_graph` (every `og:*` and `article:*` property), `twitter` (every `twitter:*`), `alternates` (`hreflang` → `href`, capped at 24, with `alternate_count` whole), `feeds` (RSS and Atom), `schema_types` (the `@type`s of its JSON-LD and microdata), and `declared_elsewhere`: the declarations that name a different site from the one that served the page, as `"canonical -> https://old-host.example"`. Empty is the normal case; a site that moved domains and kept its old `metadataBase` is what fills it, and nothing on the page shows it. Every address is absolute; every text value is folded to one line and capped at 300 characters. The single-page stream's `resolve` event carries the same object for its page.
+
 ### `discovery`
 
 How the site wants to be found.
