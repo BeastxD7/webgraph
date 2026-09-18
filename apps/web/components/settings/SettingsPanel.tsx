@@ -15,6 +15,8 @@ const SOURCE: Record<"crawl" | "fetch" | "renderOptions", Record<string, string>
     max_depth: "CRAWL_MAX_DEPTH",
     strict_domain: "CRAWL_STRICT_DOMAIN",
     within_path: "CRAWL_WITHIN_PATH",
+    common_crawl: "CRAWL_COMMON_CRAWL",
+    seed_from_common_crawl: "CRAWL_SEED_FROM_COMMON_CRAWL",
     include_paths: "CRAWL_INCLUDE_PATHS",
     exclude_paths: "CRAWL_EXCLUDE_PATHS",
     delay_seconds: "CRAWL_DELAY_SECONDS",

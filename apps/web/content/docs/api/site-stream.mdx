@@ -69,9 +69,15 @@ How the site wants to be found.
     ],
     "found": 1, "total_urls": 412
   },
-  "seeds": 380
+  "seeds": 380,
+  "common_crawl": {
+    "status": "seen", "index": "CC-MAIN-2026-34", "index_name": "August 2026 Index",
+    "urls": 1952, "records": 2000, "sample": ["https://docs.example.com/", "…"], "error": null, "queued": false
+  }
 }
 ```
+
+`common_crawl` is what Common Crawl's latest index last saw on this host -- asked once, in the background, with nothing asked of the site (`CRAWL_COMMON_CRAWL`, on by default). It is its own fact beside the site's: a monthly crawl of the whole web, months stale, chosen by someone else; `urls` are distinct same-site page addresses (capped at 2,000), `records` the index rows before deduplication, `sample` the first fifty. `status` is `seen`, `not-seen` (the host is not in that index) or `unavailable` (the index refused or did not answer within eight seconds -- it often does; `error` says which). Nothing from it is queued unless `crawl.seed_from_common_crawl` is set, in which case the addresses go in at depth 1 cited `via: "common-crawl"` and `queued` is `true`. `null` when not asked.
 
 `text` is capped at `DISCOVERY_ROBOTS_TEXT_CHARS` (`4000`); `rules_for_us` is never cut. `source` is `robots` (a `Sitemap:` line), `conventional` (`/sitemap.xml`, `/sitemap_index.xml`) or `index`. `ok` means the response parsed as a sitemap and carried a `<loc>`. `seeds` is how many sitemap URLs the frontier accepted after scope and normalisation.
 

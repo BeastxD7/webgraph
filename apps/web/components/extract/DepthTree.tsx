@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import type { PageEvent } from "@/lib/api";
 
-type Origin = { foundOn: string | null; depth: number; via: "seed" | "sitemap" | "link" };
+type Origin = { foundOn: string | null; depth: number; via: "seed" | "sitemap" | "link" | "common-crawl" };
 
 /**
  * The site as the crawl found it: a tree from the root, one level per link away.
@@ -176,6 +176,7 @@ function Node({
           {host || label}
         </a>
         {via === "sitemap" && <span className="shrink-0 text-[10px] text-ink-faint">sitemap</span>}
+        {via === "common-crawl" && <span className="shrink-0 text-[10px] text-ink-faint">common crawl</span>}
         {(kids.length > 0 || leaves > 0) && (
           <span className="tabular ml-auto shrink-0 text-[11px] text-ink-faint">
             {kids.length > 0 && `${kids.length.toLocaleString("en-US")} found here`}

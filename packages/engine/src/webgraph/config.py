@@ -362,6 +362,17 @@ CRAWL_STRICT_DOMAIN = True
 # address it started from. Off, because a site is the unit this engine reads.
 CRAWL_WITHIN_PATH = False
 
+# Ask Common Crawl's latest index which addresses it has seen on the host, once, at the
+# start of a crawl (two requests to index.commoncrawl.org, ~1-2 s; nothing is asked of the
+# site). Reported in the run's `discovery` as its own fact -- "last seen by Common Crawl",
+# months stale by design -- never merged into what the crawl found.
+CRAWL_COMMON_CRAWL = True
+
+# Also queue what Common Crawl listed, at depth 1, cited `via: common-crawl`. Off: a
+# stale listing is full of pages that are gone, and every one would be fetched and
+# recorded as a 404. On, for a site with no sitemap whose pages nothing links to.
+CRAWL_SEED_FROM_COMMON_CRAWL = False
+
 # Paths to follow, as regular expressions searched in the address's path (never the host),
 # comma-separated -- "^/docs/, ^/blog/". Empty means no restriction. When set, only
 # matching addresses are crawled; the rest are counted as `not-included` in the run's

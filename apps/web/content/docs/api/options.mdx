@@ -57,6 +57,8 @@ Accepted by `/api/site/stream` only, as `crawl`. `max_pages`, `concurrency` and 
 |---|---|---|---|
 | `max_depth` | integer 0–50 | `12` (`CRAWL_MAX_DEPTH`) | Links away from the root the crawl goes. `0` is the root alone; `1` adds everything it links to or its sitemap lists. Breadth-first, so a page budget is spent near the root |
 | `strict_domain` | boolean | `true` (`CRAWL_STRICT_DOMAIN`) | Stay on the root's host (`www.example.com` and `example.com` are one host). `false` also follows subdomains, never other sites |
+| `common_crawl` | boolean | `true` (`CRAWL_COMMON_CRAWL`) | Ask Common Crawl's index what it last saw on the host, reported in `discovery.common_crawl` as its own fact. Nothing is asked of the site |
+| `seed_from_common_crawl` | boolean | `false` (`CRAWL_SEED_FROM_COMMON_CRAWL`) | Also queue what Common Crawl listed, at depth 1, cited `via: common-crawl`. Off, because a stale listing is full of pages that are gone and each would be fetched and recorded as a 404 |
 | `within_path` | boolean | `false` (`CRAWL_WITHIN_PATH`) | Stay under the start address's path: a crawl of `example.com/docs/guide` follows `/docs/...` and turns `/blog/...` away as `not-included`. Off, because a site is the unit this engine reads |
 | `include_paths` | string | `""` (`CRAWL_INCLUDE_PATHS`) | Comma-separated regular expressions searched in the address's path (never the host). When set, only matching addresses are crawled; the rest are counted as `not-included` in the run's `refused`. A pattern that does not compile is a `422` |
 | `exclude_paths` | string | `""` (`CRAWL_EXCLUDE_PATHS`) | Comma-separated regular expressions searched in the path; a match is turned away as `excluded`, whatever else says |
