@@ -1072,6 +1072,7 @@ def stream_site(
         "discovered": frontier.seen_count,
         "depth_counts": frontier.depth_counts(),
         "discovered_kinds": dict(frontier.kinds),
+        "refused": dict(frontier.refusals),
         "from_sitemap": len(seeded),
         "extracted": 0,
         # The root plus everything the sitemap contributed. Clients rebuild the discovered
@@ -1334,6 +1335,7 @@ def stream_site(
                     # Copied, like `depth_counts`: the API serialises events on another
                     # thread after this one has moved on and the frontier has grown.
                     "discovered_kinds": dict(frontier.kinds),
+                    "refused": dict(frontier.refusals),
                     "extracted": extracted,
                     "failed": failed,
                     "newly_queued": len(discovered_here),
@@ -1376,6 +1378,14 @@ def stream_site(
             "max_queue": config.max_queue,
         },
         "queue_refused": frontier.refused_by_cap,
+        # Every address the crawl turned away, by reason, and the first of each as
+        # evidence -- so "why is X not here" has an answer without a re-run. Files are
+        # `skipped` below, not refused: they are the site's, just not fetched.
+        "refused": dict(frontier.refusals),
+        "refused_total": sum(frontier.refusals.values()),
+        "refused_urls": [
+            {"url": url, "reason": reason} for url, reason in frontier.refused_urls.items()
+        ],
         # Files the site links to, counted by kind and never fetched (`fetch_files`). The
         # counts are complete; the list is capped, each entry with the page that linked it.
         "fetch_files": config.fetch_files,

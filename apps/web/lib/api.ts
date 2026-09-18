@@ -830,6 +830,25 @@ export interface DiscoveredKinds {
   tag: number;
 }
 
+/**
+ * Every address the crawl turned away, counted by reason -- distinct addresses, so a link
+ * on every page counts once. The reason is the fact about the address, not the setting to
+ * change. Files are not here: they are `skipped`, with the page that linked to each.
+ * `off-site`: another site (a subdomain counts, unless allowed). `past-depth`: more links
+ * from the root than the crawl follows. `not-a-page`: `mailto:`, `javascript:`, a
+ * template's `/undefined`. `excluded` / `not-included`: the crawl's own path patterns.
+ * `queue-cap`: the frontier was full.
+ */
+export interface Refusals {
+  "off-site": number;
+  "past-depth": number;
+  "not-a-page": number;
+  excluded: number;
+  "not-included": number;
+  "queue-cap": number;
+}
+export type RefusalReason = keyof Refusals;
+
 export interface InventoryEvent {
   type: "inventory";
   source: string;
@@ -856,6 +875,8 @@ export interface FrontierEvent {
   depth_counts?: DepthCounts;
   /** The running tally of discovered addresses by kind; replaces, never adds to, the last. */
   discovered_kinds?: DiscoveredKinds;
+  /** Running tally of addresses turned away, by reason. */
+  refused?: Refusals;
 }
 
 /**
@@ -941,6 +962,8 @@ export interface PageEvent {
   depth_counts?: DepthCounts;
   /** The running tally of discovered addresses by kind; replaces, never adds to, the last. */
   discovered_kinds?: DiscoveredKinds;
+  /** Running tally of addresses turned away, by reason. */
+  refused?: Refusals;
   pages_per_minute: number;
   totals: { chars: number; markdown: number; images: number; tables: number };
   /** Null when graph building is disabled. */
@@ -989,6 +1012,10 @@ export interface DoneEvent {
   limits: { max_pages: number; max_seconds: number; max_queue: number };
   /** Addresses the queue cap turned away. */
   queue_refused: number;
+  /** Every address turned away, by reason; `refused_urls` is the first 200 as evidence. */
+  refused: Refusals;
+  refused_total: number;
+  refused_urls: Array<{ url: string; reason: RefusalReason }>;
   /** Whether links to PDFs and other files were fetched, or only counted. */
   fetch_files: boolean;
   /** Same-site files counted and never fetched, by kind. */

@@ -176,7 +176,13 @@ export default function SiteRun({
           tried, and what kind of thing the addresses are. Shown the moment Stage 0 reports
           it, and the kinds tally moves with every page. */}
       {run.discovery && (
-        <DiscoveryPanel discovery={run.discovery} kinds={run.kinds} live={run.running} />
+        <DiscoveryPanel
+          discovery={run.discovery}
+          kinds={run.kinds}
+          refused={run.summary?.refused ?? run.refused}
+          evidence={run.summary?.refused_urls ?? null}
+          live={run.running}
+        />
       )}
 
       {run.summary && <RunSummary summary={run.summary} />}

@@ -226,6 +226,28 @@ def same_site(url: str, root: str, *, allow_subdomains: bool = False) -> bool:
     return target.endswith(f".{origin}")
 
 
+def _is_file_address(url: str, base: str | None) -> bool:
+    """Whether `normalize_url` refused this address for being a file (an image, a stylesheet,
+    an archive) rather than for not being an address at all. `_skip_file` records the
+    same-site ones; an off-site file is neither a page refusal nor a site file, and is
+    left out of both tallies."""
+    try:
+        resolved = urljoin(base, url) if base else url
+        parts = urlsplit(resolved)
+    except ValueError:
+        return False
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        return False
+    return url_kind(resolved) in FILE_KINDS or _suffix_of(parts.path) in NON_PAGE_SUFFIXES
+
+
+def _suffix_of(path: str) -> str:
+    """`.pdf` for `/a/b.PDF`; empty when the last segment has no extension. The same shape
+    `NON_PAGE_SUFFIXES` is written in."""
+    name = path.rsplit("/", 1)[-1]
+    return "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
 def canonical_key(url: str) -> str:
     """Identity for deduplication, distinct from the URL used to fetch.
 
@@ -260,15 +282,21 @@ class CrawlScope:
     max_depth: int = 3
 
     def permits(self, url: str, depth: int) -> bool:
+        return self.refusal(url, depth) is None
+
+    def refusal(self, url: str, depth: int) -> str | None:
+        """Why this scope turns `url` away, as one of `REFUSALS` -- or None when it is
+        allowed. The reason is the fact about the address, not the setting to change:
+        "on another site" is what a report needs, and the setting is one word away."""
         if depth > self.max_depth:
-            return False
+            return "past-depth"
         if not same_site(url, self.root, allow_subdomains=self.allow_subdomains):
-            return False
+            return "off-site"
         if any(pattern.search(url) for pattern in self.exclude_patterns):
-            return False
-        if self.include_patterns:
-            return any(pattern.search(url) for pattern in self.include_patterns)
-        return True
+            return "excluded"
+        if self.include_patterns and not any(pattern.search(url) for pattern in self.include_patterns):
+            return "not-included"
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +324,31 @@ class Discovery:
             "depth": self.depth,
         }
 
+
+
+REFUSALS: Final[tuple[str, ...]] = (
+    "off-site",
+    "past-depth",
+    "not-a-page",
+    "excluded",
+    "not-included",
+    "queue-cap",
+)
+"""Every reason the frontier turns an address away, as a closed shape (every reason is
+reported, zeros included). `off-site`: another site (subdomains count, unless allowed).
+`past-depth`: more links from the root than the crawl follows. `not-a-page`: `mailto:`,
+`javascript:`, a template's `/undefined`, a scheme that is not http(s). `excluded` /
+`not-included`: the crawl's own path patterns. `queue-cap`: the frontier was full. Files
+are not refusals -- they are counted by kind in `skipped`, with a citation each.
+
+A crawl that turns an address away silently is a crawl whose result cannot be questioned:
+bhavyadhanwani.dev's `/projects` was dropped as off-site for a day (a canonical on the
+site's old host made it so) and nothing in the log said any address had been refused at
+all. Each refusal is now counted by reason, and the first of each kept as evidence."""
+
+REFUSED_URLS_KEPT: Final[int] = 200
+"""How many refused addresses are kept with their reason, in the order refused. The counts
+are complete; the list is evidence, not inventory."""
 
 
 @dataclass
@@ -350,6 +403,15 @@ class Frontier:
     refused_by_cap: int = 0
     """Addresses `add` turned away because the queue was at `max_queue`."""
 
+    refusals: dict[str, int] = field(default_factory=lambda: dict.fromkeys(REFUSALS, 0))
+    """How many distinct addresses were turned away, by reason (`REFUSALS`)."""
+
+    refused_urls: dict[str, str] = field(default_factory=dict)
+    """The first `REFUSED_URLS_KEPT` refused addresses -> reason, in the order refused."""
+
+    _refused_seen: set[str] = field(default_factory=set)
+    """Addresses already counted as refused, so a link from every page counts once."""
+
     origin: dict[str, Discovery] = field(default_factory=dict)
     """How each address came to be in this crawl, for whoever accepted it first.
 
@@ -358,26 +420,41 @@ class Frontier:
     ever knew. Kept for the *first* acceptance: a URL linked from twenty pages is one page,
     and the citation that matters is the one that brought it into the crawl."""
 
+    def _refuse(self, url: str, reason: str) -> None:
+        """Count a turned-away address once, under its reason, and keep the first few."""
+        if url in self._refused_seen:
+            return
+        self._refused_seen.add(url)
+        self.refusals[reason] = self.refusals.get(reason, 0) + 1
+        if len(self.refused_urls) < REFUSED_URLS_KEPT:
+            self.refused_urls[url] = reason
+
     def add(self, url: str, depth: int, *, base: str | None = None) -> bool:
         """Queue a URL. Returns whether it was newly accepted.
 
         Membership is tested on `canonical_key`, so `example.com/a` and `www.example.com/a/`
         count as one page, while the queued URL stays the one the site actually linked to.
+        Every refusal is recorded (`refusals`, `refused_urls`), files aside -- those are
+        `skipped`, with a citation.
         """
         normalized = normalize_url(url, base=base)
         if normalized is None:
-            self._skip_file(url, base)
+            if self._skip_file(url, base) is None and not _is_file_address(url, base):
+                self._refuse(urljoin(base, url) if base else url, "not-a-page")
             return False
         key = canonical_key(normalized)
         if key in self._seen:
             return False
-        if not self.scope.permits(normalized, depth):
+        refusal = self.scope.refusal(normalized, depth)
+        if refusal is not None:
+            self._refuse(normalized, refusal)
             return False
         if not self.fetch_files and url_kind(normalized) in FILE_KINDS:
             self._skip_file(normalized, None)
             return False
         if self.max_queue > 0 and len(self) >= self.max_queue:
             self.refused_by_cap += 1
+            self._refuse(normalized, "queue-cap")
             return False
         self._seen.add(key)
         self._lanes.setdefault(depth, deque()).append(normalized)
@@ -455,12 +532,15 @@ class Frontier:
             label = (anchors or {}).get(url) or None
             normalized = normalize_url(url, base=base)
             if normalized is None:
-                # A file, or nothing worth recording. A file keeps its citation: a PDF is
-                # never fetched, but "which page links to this circular" is still a
-                # question the crawl can answer.
+                # A file, or not a page at all. A file keeps its citation: a PDF is never
+                # fetched, but "which page links to this circular" is still a question the
+                # crawl can answer. Anything else -- `mailto:`, `javascript:`, `/undefined`
+                # -- is counted as refused, so the tally of what was turned away is whole.
                 skipped = self._skip_file(url, base)
                 if skipped is not None:
                     self._cite(skipped, via=via, found_on=found_on, anchor=label, depth=depth)
+                elif not _is_file_address(url, base):
+                    self._refuse(urljoin(base, url) if base else url, "not-a-page")
                 continue
             if not self.fetch_files and url_kind(normalized) in FILE_KINDS:
                 skipped = self._skip_file(normalized, None)

@@ -46,6 +46,9 @@ export default function RunSummary({ summary }: { summary: DoneEvent }) {
         )}
         {endedBecause(summary)} · {duration(summary.duration_seconds)}
         {skipped && <> · {skipped}</>}
+        {summary.refused_total > 0 && (
+          <> · {summary.refused_total.toLocaleString("en-US")} {summary.refused_total === 1 ? "address" : "addresses"} turned away{summary.refused["off-site"] > 0 ? ` (${summary.refused["off-site"].toLocaleString("en-US")} on other sites)` : ""}</>
+        )}
       </p>
     </div>
   );
