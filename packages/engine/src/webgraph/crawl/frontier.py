@@ -452,7 +452,8 @@ REFUSALS: Final[tuple[str, ...]] = (
 """Every reason the frontier turns an address away, as a closed shape (every reason is
 reported, zeros included). `off-site`: another site (subdomains count, unless allowed).
 `past-depth`: more links from the root than the crawl follows. `not-a-page`: `mailto:`,
-`javascript:`, a template's `/undefined`, a scheme that is not http(s). `excluded` /
+`javascript:`, a template's `/undefined`, a scheme that is not http(s) -- but not a
+`#fragment` link to the same page, which is the page itself and counted nowhere. `excluded` /
 `not-included`: the crawl's own path patterns. `queue-cap`: the frontier was full. Files
 are not refusals -- they are counted by kind in `skipped`, with a citation each.
 
@@ -552,6 +553,11 @@ class Frontier:
         Every refusal is recorded (`refusals`, `refused_urls`), files aside -- those are
         `skipped`, with a citation.
         """
+        if url.startswith("#"):
+            # A link to a place on the same page -- `#top`, a tab, a heading. Not an
+            # address the page offers, so neither queued nor counted as turned away: the
+            # page is already in the crawl.
+            return False
         normalized = normalize_url(url, base=base)
         if normalized is None:
             if self._skip_file(url, base) is None and not _is_file_address(url, base):
@@ -645,6 +651,8 @@ class Frontier:
         accepted: list[str] = []
         for url in urls:
             label = (anchors or {}).get(url) or None
+            if url.startswith("#"):
+                continue  # a place on the same page, not an address; see `add`
             normalized = normalize_url(url, base=base)
             if normalized is None:
                 # A file, or not a page at all. A file keeps its citation: a PDF is never
