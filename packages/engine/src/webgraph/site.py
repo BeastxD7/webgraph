@@ -79,7 +79,6 @@ __all__ = [
 ]
 
 
-
 @dataclass(frozen=True, slots=True)
 class SiteConfig:
     max_pages: int = config.CRAWL_MAX_PAGES
@@ -161,6 +160,7 @@ class SiteConfig:
 
     fetch: FetchConfig = field(default_factory=FetchConfig)
     render: RenderConfig = field(default_factory=RenderConfig)
+
 
 def resolve_root(root: str, *, config: FetchConfig | None = None) -> str:
     """Follow redirects from `root` and return the URL the site actually serves.
@@ -314,7 +314,9 @@ class SiteExtraction:
 
         lines.append("")
         lines.append("  STAGE 0 - TECHNOLOGY")
-        lines.append(f"    Frameworks       {', '.join(self.analysis.frameworks) or 'none detected'}")
+        lines.append(
+            f"    Frameworks       {', '.join(self.analysis.frameworks) or 'none detected'}"
+        )
         lines.append(f"    Strategy         {self.analysis.recommended_strategy.value}")
         if self.analysis.render_required:
             lines.append("    Rendering        REQUIRED (static HTML incomplete)")
@@ -363,7 +365,9 @@ class SiteExtraction:
         lines.append(f"    Distinct entities  {len(self.entities)}")
         for entity in self.entities[:10]:
             keys = ", ".join(list(entity.data)[:5])
-            lines.append(f"      {entity.entity_type:<22} on {entity.page_count:>3} pages  [{keys}]")
+            lines.append(
+                f"      {entity.entity_type:<22} on {entity.page_count:>3} pages  [{keys}]"
+            )
 
         if self.site_facts:
             lines.append("")
@@ -500,9 +504,7 @@ def build_inventory(
 
     # Verify enough to fill the page budget with headroom for dead URLs.
     to_check = candidates[: max(config.max_pages * 4, 40)]
-    live, dead = verify_inventory(
-        to_check, concurrency=config.concurrency, config=config.fetch
-    )
+    live, dead = verify_inventory(to_check, concurrency=config.concurrency, config=config.fetch)
     return PageInventory(
         advertised=tuple(candidates),
         live=live,
@@ -528,9 +530,7 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         facts = merge_facts(extract_facts(document.structured_data, schema, document.url))
 
     markdown = to_markdown(document, options=MarkdownOptions())
-    images = tuple(
-        b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href
-    )
+    images = tuple(b.href for b in document.blocks if b.kind is BlockKind.IMAGE and b.href)
     tables = sum(1 for b in document.blocks if b.kind is BlockKind.TABLE)
     heading = next(
         (b.text for b in document.blocks if b.kind is BlockKind.HEADING and b.level <= 2),
@@ -689,7 +689,7 @@ def _page_title(document: Document) -> str:
             if title.endswith(separator + site) and len(title) > len(separator + site):
                 return title[: -len(separator + site)].strip()
             if title.startswith(site + separator) and len(title) > len(site + separator):
-                return title[len(site + separator):].strip()
+                return title[len(site + separator) :].strip()
     return title
 
 
@@ -757,13 +757,18 @@ def extract_site(
     inventory = build_inventory(normalized_root, config=config, probe=probe)
 
     if config.max_pages > 0:
-        targets = [u for u in inventory.live if u != normalized_root][: max(config.max_pages - 1, 0)]
+        targets = [u for u in inventory.live if u != normalized_root][
+            : max(config.max_pages - 1, 0)
+        ]
     else:
         targets = [u for u in inventory.live if u != normalized_root]
 
     # One page a second per host across the pool, or the site's own Crawl-delay if longer.
     throttle = HostThrottle(
-        max(config.host_interval_seconds, (probe.policy.crawl_delay if probe.policy else None) or 0.0)
+        max(
+            config.host_interval_seconds,
+            (probe.policy.crawl_delay if probe.policy else None) or 0.0,
+        )
     )
 
     def one(url: str) -> PageExtraction:
@@ -991,9 +996,7 @@ def stream_site(
     frontier.mark_seen(normalized_root)
     # The root is the one page nothing pointed at. Recorded so every page in the crawl has a
     # citation, including the one the crawl began from.
-    frontier.origin.setdefault(
-        normalized_root, Discovery(url=normalized_root, via="seed", depth=0)
-    )
+    frontier.origin.setdefault(normalized_root, Discovery(url=normalized_root, via="seed", depth=0))
     # The caller's seeds go in first: a watch re-verifies what it knows before it explores,
     # so a capped run spends its pages on the previous run's pages rather than on whatever
     # the sitemap lists first.
@@ -1022,7 +1025,8 @@ def stream_site(
     yield {
         "type": "stage",
         "stage": "extract",
-        "message": "Crawling and extracting" + ("" if unlimited else f" up to {config.max_pages} pages"),
+        "message": "Crawling and extracting"
+        + ("" if unlimited else f" up to {config.max_pages} pages"),
         "unlimited": unlimited,
         "max_pages": config.max_pages,
         "max_seconds": config.max_seconds,
@@ -1156,10 +1160,17 @@ def stream_site(
                     )
 
                 # Each page extends the frontier, which is what makes the crawl unbounded.
+                # Relative links resolve against the address the page was *served* at, as
+                # a browser resolves them -- never against its canonical. The canonical is a
+                # deduplication hint, and sites get it wrong in ways a base URL cannot
+                # survive: bhavyadhanwani.dev declares its old host,
+                # `bhavyaz-portfolio.vercel.app`, as canonical on every page, and resolving
+                # its one link, `/projects`, against that made it off-site -- so a two-page
+                # site crawled as one page, with nothing in the log to say why.
                 discovered_here = frontier.extend(
                     fetched.links,
                     depth + 1,
-                    base=fetched.canonical or page.url,
+                    base=page.url,
                     found_on=page.url,
                     via="link",
                     # The words a reader would have clicked. Often the only human-readable
