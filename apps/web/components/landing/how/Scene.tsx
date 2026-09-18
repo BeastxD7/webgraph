@@ -1,18 +1,27 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { floor, poly, pt, wall } from "./iso";
+import { CX, floor, poly, pt, SY, wall } from "./iso";
 
 /**
- * The illustration beside the three steps: one page standing on an isometric floor, and
- * around it what each step adds. Server-rendered inline SVG; the stylesheet (globals.css
- * §7b) does the assembling, the step cross-morph and the reduced-motion still, keyed on the
- * panel's `data-in` (set by `Motion`) and `data-step` (set by `HowMotion`). `HowMotion`
- * also moves the `.par` groups a few pixels with the pointer.
+ * The illustration beside the five steps: a site's pages fanning out, one page fetched
+ * twice and merged, its hidden parts lifted away, cut into reading order and written as
+ * Markdown, then linked into a graph. Server-rendered inline SVG; the stylesheet
+ * (how.css) does the assembling, the step cross-morph and the reduced-motion still,
+ * keyed on the stage's `data-in` and `data-step`, written by `HowMotion` from scroll
+ * progress along the curved path beside it.
  *
- * Classes: `.rise` assembles on enter (stagger `--i`); `.s1/.s2/.s3` belong to one step;
- * `.hid` lifts off and dissolves in step 2; `.draw` is a mask stroke that draws a path;
- * `.dots` marches; `.cut` draws in step 3; `.pop` scales in. A group that the stylesheet
- * transforms never carries an attribute transform of its own (CSS would replace it).
+ * Classes: `.rise` assembles on enter (stagger `--i`); `.s1..s5` belong to one step;
+ * `.core` is the one page shared by fetch/refuse/reading-order, absent for discover and
+ * graph (no single page exists yet at step 1; the scene has zoomed out past any one page
+ * by step 5); `.hid` lifts off and dissolves in step 3, then keeps a slow drift once it
+ * dissolves; `.draw` is a mask stroke that draws a path; `.dots` marches; `.cut` draws in
+ * step 4; `.pop` scales in; `.glow` (step 2) is a quiet pulse behind the assembled page's
+ * "union" tag; `.cursor` (step 4) blinks at the end of the Markdown's last written line;
+ * `.disc-scan` (step 1) pulses each discovered page in turn; `.graph-dot` (step 5)
+ * travels the real link edges. Every one of those is a plain, always-running CSS
+ * animation once its step is active -- the point is that nothing here ever finishes and
+ * holds still. A group that the stylesheet transforms never carries an attribute
+ * transform of its own (CSS would replace it).
  */
 const W = 200; // the page, in world units
 const H = 236;
@@ -40,12 +49,66 @@ const BLOCKS: ReadonlyArray<{ page: readonly [number, number]; md: number }> = [
   { page: [18, 214], md: 172 },
 ];
 
+/** The crawl tree (step 1): a site fanning into three categories, each into two pages. */
+const DISC_ROOT = { x: -550, y: 10, top: -22, w: 76, h: 56 } as const;
+/** The search bar standing where the tree's root sheet used to be -- same anchor, so the
+ * tree's edges (computed from `DISC_ROOT.x/y/top` alone) don't need to change. */
+const SEARCH_W = 190;
+const SEARCH_H = 36;
+/** The exact inverse of `wall()`'s linear part -- their product is the identity matrix, so
+ * content drawn inside this counter-transform renders flat and upright (a "billboard")
+ * instead of taking on the parent wall's isometric shear. */
+const UNSHEAR = `matrix(${1 / CX} ${-SY / CX} 0 1 0 0)`;
+const DISC_BRANCH: ReadonlyArray<{ x: number; y: number; top: number; lines: readonly [number, number] }> = [
+  { x: -816, y: 95.5, top: -63.8, lines: [32, 38] },
+  { x: -550, y: 152.5, top: -71.4, lines: [34, 30] },
+  { x: -284, y: 95.5, top: -63.8, lines: [30, 40] },
+];
+const DISC_LEAVES: ReadonlyArray<{ x: number; y: number; top: number; lines: readonly [number, number] }> = [
+  { x: -949, y: 190.5, top: -94.2, lines: [26, 32] },
+  { x: -759, y: 228.5, top: -98, lines: [30, 24] },
+  { x: -626, y: 247.5, top: -98, lines: [28, 34] },
+  { x: -455, y: 247.5, top: -98, lines: [24, 30] },
+  { x: -341, y: 190.5, top: -94.2, lines: [30, 26] },
+  { x: -170, y: 171.5, top: -90.4, lines: [28, 32] },
+];
+
+/** Screen point of a discover-tree node (root, branch or leaf): `wall(x, y, top)`'s own
+ * `(e, g)`, i.e. `pt(x, y, top)` -- used directly here for the connecting `.dots` paths,
+ * which are drawn in screen space rather than inside a `wall`-transformed group. */
+const discScreen = (n: { x: number; y: number; top: number }) => pt(n.x, n.y, n.top);
+
+const ROOT_S = discScreen(DISC_ROOT);
+const [A_S, B_S, C_S] = DISC_BRANCH.map(discScreen) as [readonly [number, number], readonly [number, number], readonly [number, number]];
+const [A1_S, A2_S, B1_S, B2_S, C1_S, C2_S] = DISC_LEAVES.map(discScreen) as [
+  readonly [number, number], readonly [number, number], readonly [number, number],
+  readonly [number, number], readonly [number, number], readonly [number, number],
+];
+
+/** The linked graph (step 5): a hub page and three it names, one not yet linked live. */
+const GRAPH_HUB = { x: 520, y: 0, top: 390 } as const;
+const GRAPH_NODES: ReadonlyArray<{ x: number; y: number; top: number; tag?: string; live: boolean }> = [
+  { x: 660, y: 0, top: 450, tag: "Article", live: true },
+  { x: 620, y: 0, top: 360, live: true },
+  { x: 480, y: 0, top: 290, tag: "Organization", live: false },
+];
+
 export default function Scene() {
+  const hub = pt(GRAPH_HUB.x, GRAPH_HUB.y, GRAPH_HUB.top);
+  const graphPts = GRAPH_NODES.map((n) => pt(n.x, n.y, n.top)) as [
+    readonly [number, number], readonly [number, number], readonly [number, number],
+  ];
+  const dotPath = `M${hub[0].toFixed(2)} ${hub[1]} L${graphPts[0][0].toFixed(2)} ${graphPts[0][1]} `
+    + `L${hub[0].toFixed(2)} ${hub[1]} L${graphPts[1][0].toFixed(2)} ${graphPts[1][1]} `
+    + `L${hub[0].toFixed(2)} ${hub[1]} L${graphPts[2][0].toFixed(2)} ${graphPts[2][1]} `
+    + `L${hub[0].toFixed(2)} ${hub[1]}`;
+
   return (
     <svg className="how-scene" viewBox="30 40 700 510" role="img" aria-labelledby="how-scene-title" focusable="false">
       <title id="how-scene-title">
-        A page fetched twice and merged, its hidden parts lifted away, then cut into reading
-        order and written as Markdown.
+        Pages discovered across a site, one fetched twice and merged, its hidden parts
+        lifted away, cut into reading order and written as Markdown, then linked into a
+        graph.
       </title>
       <defs>
         <radialGradient id="how-floor-fade" cx="50%" cy="60%" r="55%">
@@ -85,9 +148,104 @@ export default function Scene() {
       </g>
 
       <g className="world">
-        {/* ---- step 1: two sources and their paths --------------------------------- */}
+        {/* ---- step 1: discover the pages -- a search bar typing a URL, then (once "entered")
+             the crawl tree it turns up: root fanning to categories fanning to pages. The tree
+             is wrapped in `.tree-reveal`, gated to the back half of the search bar's own
+             typing cycle below -- nothing here until enter, matching the real order: you
+             type a URL before there's anything to discover. */}
         <g className="par" data-d="0.35">
           <g className="rise s1" style={i(1)}>
+            <Shadow x={DISC_ROOT.x} y={DISC_ROOT.y} w={SEARCH_W} s={46} />
+            <g transform={wall(DISC_ROOT.x, DISC_ROOT.y, DISC_ROOT.top)}>
+              {/* The bar's face is "billboarded": a nested counter-shear cancels the parent
+                  `wall()` transform's isometric skew exactly (their product is the identity
+                  matrix), so the UI reads flat and upright -- like a real address bar sitting
+                  in the scene -- while still anchored at the correct isometric point. */}
+              <g transform={UNSHEAR} className="search-bar">
+                <rect className="search-bar-body" width={SEARCH_W} height={SEARCH_H} rx={SEARCH_H / 2} />
+                <g className="search-bar-icon">
+                  <circle cx={18} cy={18} r={4.5} />
+                  <line x1={21.2} y1={21.2} x2={25.5} y2={25.5} />
+                </g>
+                <clipPath id="how-type-clip">
+                  <rect className="how-type-rect" x={31} y={11} width={0} height={14} />
+                </clipPath>
+                <text className="search-bar-text" x={31} y={23} clipPath="url(#how-type-clip)">webgraph.com</text>
+                <rect className="search-bar-cursor" x={31} y={10} width={1.6} height={16} />
+                <g className="search-bar-enter">
+                  <circle cx={SEARCH_W - 22} cy={18} r={10} />
+                  <path d={`M${SEARCH_W - 27} 18 h8 M${SEARCH_W - 22} 13 l5 5 l-5 5`} />
+                </g>
+                {/* "robots ok" sits right on the bar, billboarded the same way, instead of
+                    floating alone elsewhere in isometric space disconnected from anything. */}
+                <g className="search-bar-badge">
+                  <rect x={0} y={SEARCH_H + 8} width={70} height={18} rx={9} />
+                  <circle cx={12} cy={SEARCH_H + 17} r={3} />
+                  <text x={20} y={SEARCH_H + 21}>robots ok</text>
+                </g>
+              </g>
+            </g>
+          </g>
+        </g>
+        <g className="tree-reveal-wave1">
+          <path
+            className="dots"
+            pathLength={1}
+            d={`M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${A_S[0].toFixed(2)} ${A_S[1]} `
+              + `M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${B_S[0].toFixed(2)} ${B_S[1]} `
+              + `M${ROOT_S[0].toFixed(2)} ${ROOT_S[1]} L${C_S[0].toFixed(2)} ${C_S[1]}`}
+          />
+          {DISC_BRANCH.map((n, k) => (
+            <g className="par" data-d="0.5" key={`disc-b-${k}`}>
+              <g className="rise s1 disc-scan" style={{ ...i(k + 2), animationDelay: `${-0.4 * (k + 1)}s` }}>
+                <Shadow x={n.x} y={n.y} w={52} s={36} />
+                <Sheet x={n.x} y={n.y} top={n.top} w={52} h={42}>
+                  <rect x={7} y={7} width={n.lines[0]} height={6} rx={1.5} className="ink" />
+                  <rect x={7} y={18} width={n.lines[1]} height={3} rx={1.5} className="line" />
+                  <rect x={7} y={25} width={n.lines[0] - 4} height={3} rx={1.5} className="line" />
+                </Sheet>
+              </g>
+            </g>
+          ))}
+        </g>
+        <g className="tree-reveal-wave2">
+          <path
+            className="dots"
+            pathLength={1}
+            style={{ animationDelay: "-0.4s" }}
+            d={`M${A_S[0].toFixed(2)} ${A_S[1]} L${A1_S[0].toFixed(2)} ${A1_S[1]} `
+              + `M${A_S[0].toFixed(2)} ${A_S[1]} L${A2_S[0].toFixed(2)} ${A2_S[1]}`}
+          />
+          <path
+            className="dots"
+            pathLength={1}
+            style={{ animationDelay: "-0.8s" }}
+            d={`M${B_S[0].toFixed(2)} ${B_S[1]} L${B1_S[0].toFixed(2)} ${B1_S[1]} `
+              + `M${B_S[0].toFixed(2)} ${B_S[1]} L${B2_S[0].toFixed(2)} ${B2_S[1]}`}
+          />
+          <path
+            className="dots"
+            pathLength={1}
+            style={{ animationDelay: "-1.2s" }}
+            d={`M${C_S[0].toFixed(2)} ${C_S[1]} L${C1_S[0].toFixed(2)} ${C1_S[1]} `
+              + `M${C_S[0].toFixed(2)} ${C_S[1]} L${C2_S[0].toFixed(2)} ${C2_S[1]}`}
+          />
+          {DISC_LEAVES.map((n, k) => (
+            <g className="par" data-d="0.6" key={`disc-l-${k}`}>
+              <g className="rise s1 disc-scan" style={{ ...i(k + 5), animationDelay: `${-0.3 * (k + 1)}s` }}>
+                <Shadow x={n.x} y={n.y} w={44} s={30} />
+                <Sheet x={n.x} y={n.y} top={n.top} w={44} h={36}>
+                  <rect x={6} y={6} width={n.lines[0]} height={5} rx={1.5} className="ink" />
+                  <rect x={6} y={15} width={n.lines[1]} height={3} rx={1.5} className="line" />
+                </Sheet>
+              </g>
+            </g>
+          ))}
+        </g>
+
+        {/* ---- step 2: two sources and their paths (real step 1: fetch twice) ---- */}
+        <g className="par" data-d="0.35">
+          <g className="rise s2" style={i(1)}>
             <Shadow x={-190} y={20} w={120} s={70} />
             <Sheet x={-190} y={20} top={150} w={120} h={150}>
               <Lines rows={[[14, 18, 70, 8, "ink"], [14, 36, 92, 4], [14, 46, 84, 4], [14, 56, 60, 4]]} />
@@ -98,7 +256,7 @@ export default function Scene() {
           </g>
         </g>
         <g className="par" data-d="0.5">
-          <g className="rise s1" style={i(2)}>
+          <g className="rise s2" style={i(2)}>
             <Shadow x={-190} y={150} w={120} s={70} />
             <Sheet x={-190} y={150} top={150} w={120} h={150}>
               <Lines rows={[[14, 18, 70, 8, "ink"], [14, 36, 92, 4], [14, 46, 84, 4], [14, 56, 90, 4], [14, 66, 52, 4]]} />
@@ -108,7 +266,7 @@ export default function Scene() {
             </Sheet>
           </g>
         </g>
-        <g className="rise s1" style={i(3)}>
+        <g className="rise s2" style={i(3)}>
           <g mask="url(#how-draw-a)">
             <path className="dots" d={PATH_A} pathLength={1} transform={floor(0, 0)} />
           </g>
@@ -117,26 +275,29 @@ export default function Scene() {
           </g>
         </g>
 
-        {/* ---- the page, in every step ------------------------------------------- */}
+        {/* ---- the page, shared by fetch twice / refuse the walls / reading order ---- */}
         <g className="par" data-d="0.7">
-          <g className="rise" style={i(0)}>
+          <g className="core" style={i(0)}>
             <Shadow x={0} y={0} w={W} s={110} />
             <Sheet x={0} y={0} top={H} w={W} h={H}>
               <Page />
-              <g className="pop s1" style={i(4)}>
+              <g className="pop s2" style={i(4)}>
+                {/* A quiet pulse behind the tag once it settles, so "fetched and merged"
+                    keeps reading as live rather than a still frame (how.css: .glow). */}
+                <circle className="glow" cx={40} cy={H - 10} r={14} style={i(0)} />
                 <Tag u={-6} v={H - 18} text="union · 2,198 words" tone="good" />
               </g>
-              {/* step 3: the XY-cut lines */}
+              {/* step 4: the XY-cut lines */}
               <path className="cut" d={`M12 72 H${W - 12}`} pathLength={1} />
               <path className="cut" d={`M${W / 2} 80 V132`} pathLength={1} style={i(1)} />
               <path className="cut" d={`M12 140 H${W - 12}`} pathLength={1} style={i(2)} />
               <path className="cut" d={`M12 198 H${W - 12}`} pathLength={1} style={i(3)} />
             </Sheet>
           </g>
-          {/* step 3: the blocks numbered in reading order, in screen space so they stay round */}
+          {/* step 4: the blocks numbered in reading order, in screen space so they stay round */}
           {BLOCKS.map(({ page }, n) => (
             <g key={n} transform={at(onPage(...page))}>
-              <g className="num pop s3" style={i(n + 1)}>
+              <g className="num pop s4" style={i(n + 1)}>
                 <circle r={8} />
                 <text y={3.2}>{n + 1}</text>
               </g>
@@ -144,27 +305,27 @@ export default function Scene() {
           ))}
         </g>
 
-        {/* ---- step 2: the page exploded ------------------------------------------ */}
+        {/* ---- step 3: the page exploded (real step 2: refuse the walls, drop the hidden) ---- */}
         <g className="par" data-d="1">
-          <g className="rise s2" style={i(1)}>
+          <g className="rise s3" style={i(1)}>
             <Sheet x={16} y={56} top={218} w={104} h={26} thin>
               <rect x={10} y={8} width={64} height={9} rx={1.5} className="ink" />
               <Tag u={-8} v={16} text="Heading" />
             </Sheet>
           </g>
-          <g className="rise s2" style={i(2)}>
+          <g className="rise s3" style={i(2)}>
             <Sheet x={16} y={84} top={176} w={104} h={40} thin>
               <Lines rows={[[10, 9, 84, 4], [10, 18, 76, 4], [10, 27, 60, 4]]} />
               <Tag u={-8} v={30} text="Paragraph" />
             </Sheet>
           </g>
-          <g className="rise s2" style={i(3)}>
+          <g className="rise s3" style={i(3)}>
             <Sheet x={16} y={112} top={122} w={104} h={50} thin>
               <Grid u={10} v={8} w={84} h={34} cols={3} rows={3} />
               <Tag u={-8} v={40} text="Table" />
             </Sheet>
           </g>
-          <g className="rise s2" style={i(4)}>
+          <g className="rise s3" style={i(4)}>
             <Sheet x={16} y={140} top={60} w={104} h={34} thin>
               <rect x={10} y={8} width={84} height={18} rx={2} className="sunk" />
               <Lines rows={[[16, 13, 40, 3, "code"], [16, 19, 56, 3, "code"]]} />
@@ -173,13 +334,13 @@ export default function Scene() {
           </g>
         </g>
         <g className="par" data-d="1.3">
-          <g className="hid s2" style={i(0)}>
+          <g className="hid s3" style={i(0)}>
             <Sheet x={-90} y={24} top={156} w={64} h={44} tone="bad" thin>
               <Lines rows={[[8, 8, 48, 3, "bad"], [8, 15, 44, 3, "bad"], [8, 22, 48, 3, "bad"], [8, 29, 36, 3, "bad"]]} />
               <Tag u={-6} v={36} text="off-screen links" tone="bad" />
             </Sheet>
           </g>
-          <g className="hid s2" style={i(1)}>
+          <g className="hid s3" style={i(1)}>
             <Sheet x={96} y={24} top={168} w={96} h={62} tone="bad" thin>
               <rect x={10} y={10} width={50} height={7} rx={1.5} className="bad" />
               <rect x={10} y={24} width={76} height={9} rx={2} className="line-bad" />
@@ -188,29 +349,29 @@ export default function Scene() {
               <Tag u={-6} v={52} text="login modal" tone="bad" />
             </Sheet>
           </g>
-          <g className="hid s2" style={i(2)}>
+          <g className="hid s3" style={i(2)}>
             <Sheet x={110} y={24} top={92} w={84} h={30} tone="bad" thin>
               <rect x={8} y={8} width={68} height={14} rx={2} className="line-bad" />
               <Tag u={-6} v={22} text="display:none" tone="bad" />
             </Sheet>
           </g>
-          <g className="hid s2" style={i(3)}>
+          <g className="hid s3" style={i(3)}>
             <Sheet x={40} y={24} top={44} w={140} h={24} tone="bad" thin>
               <Lines rows={[[8, 7, 70, 3, "bad"], [8, 14, 54, 3, "bad"]]} />
               <rect x={96} y={7} width={26} height={10} rx={2} className="bad" />
               <Tag u={-6} v={18} text="cookie banner" tone="bad" />
             </Sheet>
           </g>
-          <g className="pop s2" style={i(5)}>
+          <g className="pop s3" style={i(5)}>
             <g transform={wall(20, 30, 278)}>
               <Tag u={0} v={0} text="refused · redirected to a login page" tone="bad" />
             </g>
           </g>
         </g>
 
-        {/* ---- step 3: the Markdown and the report --------------------------------- */}
+        {/* ---- step 4: the Markdown and the report (real step 3: reading order, then Markdown) ---- */}
         <g className="par" data-d="0.55">
-          <g className="rise s3" style={i(1)}>
+          <g className="rise s4" style={i(1)}>
             <Shadow x={MD.x} y={MD.y} w={MD.w} s={80} />
             <Sheet x={MD.x} y={MD.y} top={MD.top} w={MD.w} h={MD.h}>
               <text x={10} y={13} className="faint">---</text>
@@ -224,11 +385,13 @@ export default function Scene() {
               <text x={10} y={172} className="faint">```</text>
               <rect x={30} y={164} width={104} height={16} rx={2} className="sunk" />
               <Lines rows={[[36, 169, 40, 3, "code"], [36, 175, 60, 3, "code"]]} />
+              {/* A cursor blinking at the end of the last line: "still writing" (how.css: .cursor). */}
+              <rect className="cursor" x={98} y={174} width={2} height={5} />
             </Sheet>
           </g>
           {BLOCKS.map(({ md }, n) => (
             <g key={n} transform={at(onMd(md))}>
-              <g className="num pop s3" style={i(n + 4)}>
+              <g className="num pop s4" style={i(n + 4)}>
                 <circle r={7} />
                 <text y={3}>{n + 1}</text>
               </g>
@@ -236,7 +399,7 @@ export default function Scene() {
           ))}
         </g>
         <g className="par" data-d="0.9">
-          <g className="rise s3" style={i(6)}>
+          <g className="rise s4" style={i(6)}>
             <Shadow x={230} y={20} w={140} s={34} />
             <Sheet x={230} y={20} top={104} w={140} h={72}>
               <rect x={0} y={0} width={140} height={16} className="head" />
@@ -247,6 +410,38 @@ export default function Scene() {
               <text x={52} y={60} className="good">order · measured</text>
             </Sheet>
           </g>
+        </g>
+
+        {/* ---- step 5: build the graph -- a hub page and the entities it names, linked ---- */}
+        <g className="s5">
+          <line x1={hub[0]} y1={hub[1]} x2={graphPts[0][0]} y2={graphPts[0][1]} className="step-edge-live" />
+          <line x1={hub[0]} y1={hub[1]} x2={graphPts[1][0]} y2={graphPts[1][1]} className="step-edge-live" />
+          <line x1={hub[0]} y1={hub[1]} x2={graphPts[2][0]} y2={graphPts[2][1]} className="step-edge" />
+        </g>
+        <g className="rise s5" style={i(1)}>
+          <Sheet x={GRAPH_HUB.x} y={GRAPH_HUB.y} top={GRAPH_HUB.top} w={44} h={40}>
+            <rect x={6} y={7} width={28} height={5} rx={1.5} className="ink" />
+            <rect x={6} y={17} width={32} height={3} rx={1.5} className="line" />
+            <rect x={6} y={24} width={22} height={3} rx={1.5} className="line" />
+          </Sheet>
+        </g>
+        {GRAPH_NODES.map((n, k) => (
+          <g className="rise s5" style={i(k + 2)} key={`graph-${k}`}>
+            <Sheet x={n.x} y={n.y} top={n.top} w={44} h={40}>
+              <rect x={6} y={7} width={n.tag ? 26 : 30} height={5} rx={1.5} className="ink" />
+              <rect x={6} y={17} width={n.tag ? 30 : 24} height={3} rx={1.5} className="line" />
+            </Sheet>
+            {n.tag ? (
+              <g transform={wall(n.x - (n.tag.length * 5.7 + 12 - 44) / 2, n.y, n.top + 18)}>
+                <Tag u={0} v={0} text={n.tag} tone="good" />
+              </g>
+            ) : null}
+          </g>
+        ))}
+        <g className="s5">
+          <circle className="graph-dot" r={3.5}>
+            <animateMotion dur="5s" repeatCount="indefinite" path={dotPath} />
+          </circle>
         </g>
       </g>
     </svg>
