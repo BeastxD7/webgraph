@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import type { AnalysisEvent, PageEvent } from "@/lib/api";
 import type { Phase, PhaseTiming } from "@/hooks/useSiteStream";
@@ -53,19 +53,28 @@ const COPY: Record<StageId, { title: string; does: string; phase: Phase }> = {
  * result depending on when React happened to run it. The running stage still needs a moving
  * duration, so the time is state that advances on an interval and stops when the run does.
  */
-function useNow(active: boolean): number {
+function useNow(active: boolean): number | null {
+  // Null until hydrated: the server's clock and the client's first render never agree,
+  // and a running stage's duration rendered on the server was a hydration mismatch on
+  // every run page. `useSyncExternalStore` with a server snapshot of `false` is React's
+  // own way to render one thing on the server and another once the client owns the tree.
+  // A finished stage has its own `endedAt` and needs no clock.
+  const hydrated = useSyncExternalStore(subscribeToNothing, () => true, () => false);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
     const ticker = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(ticker);
   }, [active]);
-  return now;
+  return hydrated ? now : null;
 }
 
-function seconds(timing: PhaseTiming | undefined, now: number): string {
+const subscribeToNothing = () => () => {};
+
+function seconds(timing: PhaseTiming | undefined, now: number | null): string {
   if (!timing) return "";
   const end = timing.endedAt ?? now;
+  if (end === null) return "";
   return `${((end - timing.startedAt) / 1000).toFixed(1)}s`;
 }
 

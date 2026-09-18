@@ -102,7 +102,10 @@ interface RunState {
   cap: number;
 }
 
-const INITIAL: RunState = {
+/** The state a run starts in. A function, not a constant: the `analyzing` phase's clock
+ * starts when the run does, not when this module was first imported -- on the server,
+ * that could be hours before the page is served. */
+const initial = (): RunState => ({
   phase: "analyzing",
   timings: { analyzing: { startedAt: Date.now(), endedAt: null } },
   analysis: null,
@@ -119,7 +122,7 @@ const INITIAL: RunState = {
   summary: null,
   error: null,
   cap: 0,
-};
+});
 
 /** Stamp the current phase as finished and the next one as started. */
 function closeAndOpen(state: RunState, next: Phase): Pick<RunState, "timings"> {
@@ -273,7 +276,7 @@ export interface SiteStream extends RunState {
  * true — dropping it would leave two unbounded crawls racing against a live site.
  */
 export function useSiteStream(request: SiteStreamRequest): SiteStream {
-  const [state, dispatch] = useReducer(reduce, INITIAL);
+  const [state, dispatch] = useReducer(reduce, undefined, initial);
   const [elapsed, setElapsed] = useState(0);
   const log = useRunLog();
   const controllerRef = useRef<AbortController | null>(null);
