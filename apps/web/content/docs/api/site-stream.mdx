@@ -77,7 +77,7 @@ How the site wants to be found.
 
 ### `frontier`
 
-The queue after seeding: `queued`, `discovered`, `depth_counts` (URLs per depth), `discovered_kinds`, `from_sitemap`, `extracted` (`0`), `new_urls` (the root plus every seed - clients rebuild the discovered set from these deltas). `discovered_kinds` tallies addresses by kind: `page`, `pdf`, `image`, `other_file`, `archive`, `category`, `tag`.
+The queue after seeding: `queued`, `discovered`, `depth_counts` (URLs per depth), `discovered_kinds`, `from_sitemap`, `extracted` (`0`), `new_urls` (the root plus every seed - clients rebuild the discovered set from these deltas). `discovered_kinds` tallies addresses by kind: `page`, `pdf`, `image`, `other_file`, `archive`, `category`, `tag`. `refused` tallies the addresses the crawl met and turned away, once each, by reason: `off-site` (another site; a subdomain counts unless allowed), `past-depth`, `not-a-page` (`mailto:`, `javascript:`, a template's `/undefined`), `excluded` / `not-included` (the crawl's own patterns), `queue-cap`. The same tally rides on every `page` event, so a client can show it moving; the `done` event adds `refused_total` and `refused_urls`, the first 200 refused addresses with their reason, as evidence. Files are not refusals -- they are `skipped`, with the page that linked to each.
 
 ### `fetching`
 
@@ -118,6 +118,8 @@ One per page, whether it succeeded or not.
   "duration_seconds": 412.6
 }
 ```
+
+`refused`, `refused_total` and `refused_urls` (see `frontier`) say what the crawl turned away and why -- the counterpart of what it found. A site whose sitemap and canonicals name another host shows every one of its own addresses here as `off-site`, which is the fact a reader needs and could not see before.
 
 `exhausted` is `true` only when the frontier emptied on its own; `stopped` is `true` when the client disconnected and the engine's stop flag ended the run. A crawl that hit `max_pages` has both `false` and a non-zero `remaining_queued`.
 

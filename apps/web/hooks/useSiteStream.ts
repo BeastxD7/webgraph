@@ -9,6 +9,7 @@ import {
   type DoneEvent,
   type StoppedBy,
   type PageEvent,
+  type Refusals,
   type SiteEvent,
   streamSite,
 } from "@/lib/api";
@@ -80,6 +81,8 @@ interface RunState {
   /** Discovered addresses by kind, as the engine last counted them. Replaced on every
    *  `frontier` and `page` event -- it is a tally the engine keeps, not a delta. */
   kinds: DiscoveredKinds | null;
+  /** Addresses turned away so far, by reason; the running tally from the last event. */
+  refused: Refusals | null;
   pages: PageEvent[];
   /** Every URL the crawl has accepted, in discovery order, rebuilt from `new_urls` deltas. */
   discoveredUrls: string[];
@@ -105,6 +108,7 @@ const INITIAL: RunState = {
   analysis: null,
   discovery: null,
   kinds: null,
+  refused: null,
   pages: [],
   discoveredUrls: [],
   origins: {},
@@ -180,6 +184,7 @@ function reduce(state: RunState, action: Action): RunState {
         origins,
         depthCounts: event.depth_counts ?? state.depthCounts,
         kinds: event.discovered_kinds ?? state.kinds,
+        refused: event.refused ?? state.refused,
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: { ...state.live, discovered: event.discovered, queued: event.queued },
       };
@@ -209,6 +214,7 @@ function reduce(state: RunState, action: Action): RunState {
         root: state.root ?? (event.depth === 0 ? event.url : null),
         depthCounts: event.depth_counts ?? state.depthCounts,
         kinds: event.discovered_kinds ?? state.kinds,
+        refused: event.refused ?? state.refused,
         inFlight: state.inFlight.filter((url) => url !== event.url),
         discoveredUrls: [...state.discoveredUrls, ...(event.new_urls ?? [])],
         live: {

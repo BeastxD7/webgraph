@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { DiscoveredKinds, DiscoveryEvent } from "@/lib/api";
+import type { DiscoveredKinds, DiscoveryEvent, DoneEvent, RefusalReason, Refusals } from "@/lib/api";
 import { prettyUrl } from "@/lib/format";
 
 /**
@@ -327,13 +327,82 @@ function KindsRow({ kinds, live }: { kinds: DiscoveredKinds | null; live: boolea
   );
 }
 
+const REFUSAL_ORDER: RefusalReason[] = ["off-site", "past-depth", "not-a-page", "excluded", "not-included", "queue-cap"];
+const REFUSAL_LABEL: Record<RefusalReason, string> = {
+  "off-site": "on another site",
+  "past-depth": "past the crawl's depth",
+  "not-a-page": "not a page (mailto, javascript, a template's /undefined)",
+  excluded: "excluded by a pattern",
+  "not-included": "outside the included patterns",
+  "queue-cap": "queue was full",
+};
+
+/**
+ * What the crawl turned away and why -- the counterpart of what it found. A crawl that
+ * refuses silently cannot be questioned: a site whose canonical named its old host lost
+ * its one link as "off-site" for a day, and nothing on screen said any address had been
+ * refused at all. `evidence` is the first few refused addresses, once the run has ended.
+ */
+function RefusedRow({ refused, evidence, live }: { refused: Refusals | null; evidence: DoneEvent["refused_urls"] | null; live: boolean }) {
+  const [open, setOpen] = useState(false);
+  const counts = refused ?? { "off-site": 0, "past-depth": 0, "not-a-page": 0, excluded: 0, "not-included": 0, "queue-cap": 0 };
+  const total = REFUSAL_ORDER.reduce((sum, r) => sum + counts[r], 0);
+  const present = REFUSAL_ORDER.filter((r) => counts[r] > 0);
+  const summary =
+    total === 0
+      ? live
+        ? "nothing turned away yet"
+        : "nothing turned away"
+      : present.map((r) => `${n(counts[r])} ${REFUSAL_LABEL[r]}`).join(" · ");
+  const note =
+    counts["off-site"] > 0 && counts["off-site"] >= Math.max(3, total * 0.8)
+      ? "Most of what was turned away is on other sites. If the site's own pages are among them, its canonical or sitemap may name another host -- see the site metadata."
+      : null;
+
+  return (
+    <Row title="Addresses turned away" summary={summary} note={note} open={open} onToggle={() => setOpen((v) => !v)}>
+      <p className="text-[12.5px] text-ink-soft">
+        Every address the crawl met and did not queue, counted once each by the reason. Files
+        are not here -- they are counted by kind above, with the page that links to each.
+      </p>
+      <ul className="mt-2 flex flex-col gap-1">
+        {REFUSAL_ORDER.map((r) => (
+          <li key={r} className="grid grid-cols-[minmax(0,14rem)_1fr_3.5rem] items-center gap-2">
+            <span className={`truncate text-[12px] ${counts[r] === 0 ? "text-ink-faint" : "font-semibold"}`}>{REFUSAL_LABEL[r]}</span>
+            <span className="h-1.5 overflow-hidden rounded-full bg-sunk">
+              <span className="block h-full rounded-full bg-ink-faint/40 transition-[width] duration-500 ease-out" style={{ width: `${(counts[r] / Math.max(total, 1)) * 100}%` }} />
+            </span>
+            <span className="tabular text-right font-mono text-[11.5px] text-ink-soft">{n(counts[r])}</span>
+          </li>
+        ))}
+      </ul>
+      {evidence && evidence.length > 0 && (
+        <ul className="mt-3 max-h-56 space-y-0.5 overflow-auto border-t border-line pt-2">
+          {evidence.slice(0, 60).map((e) => (
+            <li key={e.url} className="flex items-baseline gap-2 text-[12px]">
+              <span className="shrink-0 rounded bg-sunk px-1 font-mono text-[10.5px] text-ink-faint">{e.reason}</span>
+              <span className="min-w-0 truncate font-mono text-ink-soft" title={e.url}>{e.url}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Row>
+  );
+}
+
 export default function DiscoveryPanel({
   discovery,
   kinds,
+  refused = null,
+  evidence = null,
   live,
 }: {
   discovery: DiscoveryEvent;
   kinds: DiscoveredKinds | null;
+  /** Addresses turned away so far, by reason. */
+  refused?: Refusals | null;
+  /** The first refused addresses with their reason, once the run has ended. */
+  evidence?: DoneEvent["refused_urls"] | null;
   /** Whether the crawl is still running, so an empty tally reads as "not yet". */
   live: boolean;
 }) {
@@ -349,6 +418,7 @@ export default function DiscoveryPanel({
         <RobotsRow robots={discovery.robots} />
         <SitemapsRow sitemaps={discovery.sitemaps} seeds={discovery.seeds} />
         <KindsRow kinds={kinds} live={live} />
+        <RefusedRow refused={refused} evidence={evidence} live={live} />
       </ul>
     </section>
   );

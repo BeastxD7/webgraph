@@ -56,8 +56,13 @@ class TestNormalization:
     @pytest.mark.parametrize(
         "raw",
         [
-            "#anchor", "javascript:void(0)", "mailto:a@b.com", "tel:+1234",
-            "data:text/html,x", "ftp://example.com/f", "",
+            "#anchor",
+            "javascript:void(0)",
+            "mailto:a@b.com",
+            "tel:+1234",
+            "data:text/html,x",
+            "ftp://example.com/f",
+            "",
         ],
     )
     def test_non_pages_rejected(self, raw: str) -> None:
@@ -66,9 +71,12 @@ class TestNormalization:
     @pytest.mark.parametrize(
         "raw",
         [
-            "https://example.com/a.jpg", "https://example.com/s.css",
-            "https://example.com/b.js", "https://example.com/f.zip",
-            "https://example.com/v.mp4", "https://example.com/f.woff2",
+            "https://example.com/a.jpg",
+            "https://example.com/s.css",
+            "https://example.com/b.js",
+            "https://example.com/f.zip",
+            "https://example.com/v.mp4",
+            "https://example.com/f.woff2",
         ],
     )
     def test_asset_urls_rejected(self, raw: str) -> None:
@@ -88,7 +96,9 @@ class TestSameSite:
         assert not same_site("https://blog.example.com/a", "https://example.com/")
 
     def test_subdomain_allowed_when_requested(self) -> None:
-        assert same_site("https://blog.example.com/a", "https://example.com/", allow_subdomains=True)
+        assert same_site(
+            "https://blog.example.com/a", "https://example.com/", allow_subdomains=True
+        )
 
     def test_www_and_bare_domain_are_the_same_site(self) -> None:
         """Regression: persyn.ai declares a `www.` canonical while resolving at the bare
@@ -99,13 +109,17 @@ class TestSameSite:
         assert same_site("https://www.example.com/", "https://www.example.com/")
 
     def test_www_prefix_handled(self) -> None:
-        assert same_site("https://shop.example.com/a", "https://www.example.com/", allow_subdomains=True)
+        assert same_site(
+            "https://shop.example.com/a", "https://www.example.com/", allow_subdomains=True
+        )
 
     def test_different_host(self) -> None:
         assert not same_site("https://other.com/a", "https://example.com/")
 
     def test_lookalike_domain_rejected(self) -> None:
-        assert not same_site("https://notexample.com/a", "https://example.com/", allow_subdomains=True)
+        assert not same_site(
+            "https://notexample.com/a", "https://example.com/", allow_subdomains=True
+        )
 
 
 class TestFrontier:
@@ -310,3 +324,72 @@ class TestDomainStrictness:
         assert scope.permits("https://shop.example.com/a", 1)
         assert not scope.permits("https://other.com/a", 1)
         assert not scope.permits("https://notexample.com/a", 1)
+
+
+class TestRefusals:
+    """Every address the frontier turns away is counted under a reason, and the first of
+    each is kept -- files aside, which are `skipped` with a citation instead."""
+
+    def test_each_reason_is_counted_once_per_address(self) -> None:
+        scope = CrawlScope(root="https://example.com/", max_depth=1)
+        frontier = Frontier(scope=scope)
+        base = "https://example.com/"
+        assert frontier.add("https://example.com/", 0)
+        # Off-site: once, however many pages link to it.
+        frontier.extend(["https://other.example/x", "https://other.example/x"], 1, base=base)
+        frontier.extend(["https://other.example/x"], 1, base=base)
+        # Past depth.
+        frontier.extend(["/deep"], 2, base=base)
+        # Not a page.
+        frontier.extend(["mailto:a@example.com", "javascript:void(0)", "/undefined"], 1, base=base)
+        # A same-site file: skipped and cited, not refused. An off-site image: neither.
+        frontier.extend(["/brochure.pdf", "/logo.png", "https://cdn.example/x.png"], 1, base=base)
+        # Accepted.
+        frontier.extend(["/about"], 1, base=base)
+
+        assert frontier.refusals == {
+            "off-site": 1,
+            "past-depth": 1,
+            "not-a-page": 3,
+            "excluded": 0,
+            "not-included": 0,
+            "queue-cap": 0,
+        }
+        assert frontier.refused_urls == {
+            "https://other.example/x": "off-site",
+            "https://example.com/deep": "past-depth",
+            "mailto:a@example.com": "not-a-page",
+            "javascript:void(0)": "not-a-page",
+            "https://example.com/undefined": "not-a-page",
+        }
+        assert frontier.skipped["pdf"] == 1 and frontier.skipped["image"] == 1
+        assert len(frontier) == 2  # the root and /about
+
+    def test_patterns_and_the_cap(self) -> None:
+        scope = CrawlScope(
+            root="https://example.com/",
+            include_patterns=(re.compile(r"/docs/"),),
+            exclude_patterns=(re.compile(r"/docs/private"),),
+        )
+        frontier = Frontier(scope=scope, max_queue=1)
+        base = "https://example.com/"
+        frontier.extend(["/docs/a", "/docs/private/b", "/blog/c", "/docs/d"], 1, base=base)
+        assert frontier.refusals["excluded"] == 1
+        assert frontier.refusals["not-included"] == 1
+        assert frontier.refusals["queue-cap"] == 1
+        assert frontier.refused_urls["https://example.com/docs/private/b"] == "excluded"
+        assert frontier.refused_urls["https://example.com/blog/c"] == "not-included"
+        assert frontier.refused_urls["https://example.com/docs/d"] == "queue-cap"
+
+    def test_the_reason_is_the_fact_about_the_address(self) -> None:
+        scope = CrawlScope(root="https://example.com/", max_depth=2)
+        assert scope.refusal("https://example.com/a", 2) is None
+        assert scope.refusal("https://example.com/a", 3) == "past-depth"
+        assert scope.refusal("https://blog.example.com/a", 1) == "off-site"
+        assert (
+            CrawlScope(root="https://example.com/", allow_subdomains=True).refusal(
+                "https://blog.example.com/a", 1
+            )
+            is None
+        )
+        assert scope.refusal("https://www.example.com/a", 1) is None
