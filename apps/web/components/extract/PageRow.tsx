@@ -87,6 +87,14 @@ export default function PageRow({
               <span>{compact(page.markdown.length)} chars</span>
               {page.images.length > 0 && <span>{page.images.length} img</span>}
               {page.tables > 0 && <span>{page.tables} tbl</span>}
+              {page.canvas && (
+                <span
+                  title={`${page.canvas.words} readable words; ${page.canvas.canvases} canvas; ${compact(page.canvas.script_bytes)} bytes of script read`}
+                  className="rounded-full bg-flag-warn/10 px-2 py-0.5 font-semibold text-flag-warn"
+                >
+                  drawn in a canvas
+                </span>
+              )}
               {hasCleanView && (
                 <span
                   title="Share of the page identified as site chrome"
@@ -201,6 +209,18 @@ export default function PageRow({
             </div>
           </div>
 
+          {page.canvas && (
+            <p className="mt-3 rounded-xl border border-flag-warn/30 bg-flag-warn/10 px-4 py-2.5 text-small text-ink-soft">
+              <span className="font-bold text-flag-warn">Content drawn in a canvas.</span> This page has{" "}
+              {page.canvas.words} readable {page.canvas.words === 1 ? "word" : "words"} and {page.canvas.canvases}{" "}
+              {page.canvas.canvases === 1 ? "canvas" : "canvases"}; what it shows is drawn by script, not written in
+              the page. A reader without JavaScript and a click — a search engine, a screen reader, this crawl — gets
+              the words.{page.canvas.script_bytes > 0 && ` ${compact(page.canvas.script_bytes)} bytes of its own script were read for the addresses it holds.`}
+            </p>
+          )}
+
+          <LinksOut links={page.links_out} />
+
           {page.images.length > 0 && (
             <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
               {page.images.slice(0, 12).map((src, n) => (
@@ -229,5 +249,52 @@ export default function PageRow({
         </div>
       )}
     </li>
+  );
+}
+
+/** Where the page points beyond this site: its real links, and -- for a canvas page -- the
+ * addresses its scripts hold. Two lists, labelled, because they are two different facts: a
+ * link is something the page offers a reader; a URL in a bundle is something the code says. */
+function LinksOut({ links }: { links: PageEvent["links_out"] }) {
+  if (!links || (links.external.length === 0 && links.in_script.length === 0)) return null;
+  const host = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
+  return (
+    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      {links.external.length > 0 && (
+        <div className="rounded-xl border border-line bg-surface px-4 py-3">
+          <p className="text-label font-bold uppercase tracking-[0.1em] text-ink-faint">
+            Links to other sites · {links.external.length}
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {links.external.slice(0, 20).map((l) => (
+              <li key={l.url} className="flex items-baseline gap-2 text-small">
+                <a href={l.url} target="_blank" rel="noreferrer" className="min-w-0 truncate font-mono text-ink-soft hover:text-ink hover:underline" title={l.url}>
+                  {host(l.url)}
+                </a>
+                {l.anchor && <span className="shrink-0 truncate text-caption text-ink-faint">“{l.anchor.slice(0, 40)}”</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {links.in_script.length > 0 && (
+        <div className="rounded-xl border border-line bg-surface px-4 py-3">
+          <p className="text-label font-bold uppercase tracking-[0.1em] text-ink-faint">
+            Addresses in its scripts · {links.in_script.length}
+          </p>
+          <p className="mt-0.5 text-caption text-ink-faint">Found in code, not on the page. Not crawled.</p>
+          <ul className="mt-1.5 space-y-1">
+            {links.in_script.slice(0, 20).map((l) => (
+              <li key={l.url} className="flex items-baseline gap-2 text-small">
+                <span className="shrink-0 rounded bg-sunk px-1 font-mono text-caption text-ink-faint">{l.key}</span>
+                <a href={l.url} target="_blank" rel="noreferrer" className="min-w-0 truncate font-mono text-ink-soft hover:text-ink hover:underline" title={l.url}>
+                  {host(l.url)}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

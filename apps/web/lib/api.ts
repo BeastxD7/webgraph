@@ -917,6 +917,18 @@ export interface PageEvent {
   page_type_runner_up: { type: string; confidence: number };
   images: string[];
   tables: number;
+  /** Set when the page draws its content in a `<canvas>` rather than writing it: how many
+   *  canvases, how few readable words, how much of its own script was read for what the
+   *  canvas shows. Null for every other page. */
+  canvas?: { canvases: number; words: number; script_bytes: number } | null;
+  /** Every address the page points at beyond this site -- recorded, never queued. `external`
+   *  are real links on the page, with their anchor text. `in_script` are addresses the page's
+   *  own scripts store as named values (`github`, `live`, `url`), read only for a canvas page:
+   *  found in code, not on the page, and labelled so wherever they are shown. */
+  links_out?: {
+    external: Array<{ url: string; anchor: string }>;
+    in_script: Array<{ url: string; key: string }>;
+  };
   strategy: string | null;
   depth: number;
   queued: number;

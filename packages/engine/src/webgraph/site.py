@@ -29,6 +29,7 @@ from webgraph import config
 from webgraph.analyze import SiteAnalysis, SiteProbe, probe_site
 from webgraph.boilerplate import MIN_PAGES as MIN_CHROME_PAGES
 from webgraph.boilerplate import SiteChrome, detect_site_chrome
+from webgraph.carried import ScriptLink, canvas_verdict, script_links
 from webgraph.content import ContentSelection, select_content
 from webgraph.crawl.discovery import (
     RobotsPolicy,
@@ -45,6 +46,7 @@ from webgraph.crawl.frontier import (
     Frontier,
     normalize_url,
     reconcile_scheme,
+    same_site,
     url_kind,
 )
 from webgraph.crawl.politeness import HostThrottle
@@ -53,6 +55,7 @@ from webgraph.fetch.render import RenderConfig
 from webgraph.fetch.static import FetchConfig, fetch_static
 from webgraph.graph.build import GraphBuilder
 from webgraph.pagetype import default_router, policy_for
+from webgraph.profile.bundle import collect_bundle_source
 from webgraph.render_markdown import MarkdownOptions, to_markdown
 from webgraph.resolve import PageMissingError, ResolvedPage, Strategy, resolve_page
 from webgraph.types import BlockKind, Document, Fact, PayloadSource
@@ -263,6 +266,14 @@ class PageExtraction:
     images: tuple[str, ...] = ()
     tables: int = 0
     title: str = ""
+
+    canvas: dict[str, Any] | None = None
+    """Set when the page draws its content in a `<canvas>` rather than writing it
+    (`carried.canvas_verdict`): how many canvases, how few words, how much script was read."""
+
+    script_links: tuple[dict[str, str], ...] = ()
+    """Addresses the page's own scripts store as named values (`carried.script_links`),
+    read only for a canvas page. Found in code, not on the page: listed, never queued."""
 
     @property
     def ok(self) -> bool:
@@ -517,7 +528,18 @@ def build_inventory(
     )
 
 
-def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -> PageExtraction:
+CANVAS_MAX_SCRIPTS = 16
+"""How many of a canvas page's own scripts are read for the addresses they hold -- more
+than the stack detector's four, because a framework splits a page's data into a chunk of
+its own and source order says nothing about which; the byte cap still applies."""
+
+
+def _page_from_resolved(
+    resolved: ResolvedPage,
+    schema: dict[str, Any] | None,
+    *,
+    fetch_config: FetchConfig | None = None,
+) -> PageExtraction:
     """Everything a crawl records about one page, from a page already resolved.
 
     Split from `_extract_one` so the root -- which Stage 0 has already fetched both ways --
@@ -525,6 +547,18 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
     a second time to reach it.
     """
     document = resolved.document
+
+    # A page that draws its content in a canvas has, at best, a script that knows what it
+    # draws. Read that script -- bounded, same-origin, only for such a page -- for the
+    # addresses it stores, so the crawl can at least say what the canvas points at.
+    canvas = canvas_verdict(document)
+    carried: tuple[ScriptLink, ...] = ()
+    if canvas is not None:
+        source = collect_bundle_source(
+            document.html, document.url, config=fetch_config, max_scripts=CANVAS_MAX_SCRIPTS
+        )
+        carried = script_links(source, page_url=document.url)
+        canvas = replace(canvas, script_bytes=len(source))
     facts: dict[str, Fact] = {}
     if schema:
         facts = merge_facts(extract_facts(document.structured_data, schema, document.url))
@@ -558,6 +592,8 @@ def _page_from_resolved(resolved: ResolvedPage, schema: dict[str, Any] | None) -
         page_type_runner_up=(
             (routing.runner_up[0], round(routing.runner_up[1], 4)) if routing else ("", 0.0)
         ),
+        canvas=canvas.as_dict() if canvas is not None else None,
+        script_links=tuple(link.as_dict() for link in carried),
     )
 
 
@@ -575,7 +611,7 @@ def _extract_one(
         return PageExtraction(url=url, error=f"HTTP {exc.status}")
     except ValueError as exc:
         return PageExtraction(url=url, error=str(exc))
-    return _page_from_resolved(resolved, schema)
+    return _page_from_resolved(resolved, schema, fetch_config=config.fetch)
 
 
 def _without_html(page: PageExtraction) -> PageExtraction:
@@ -828,6 +864,13 @@ class _Fetched:
     canonical: str | None
     anchored: list[tuple[str, str]]
     requested: str
+    external: list[tuple[str, str]] = field(default_factory=list)
+    """The page's links to other sites, `(url, anchor)`, in document order, capped. The
+    frontier turns these away; the page event reports them, because "what does this page
+    point at" has an answer beyond this site and the crawl knew it."""
+
+
+MAX_EXTERNAL_LINKS = 60
 
 
 def _fetched(page: PageExtraction, depth: int, requested: str, root: str) -> _Fetched:
@@ -835,12 +878,27 @@ def _fetched(page: PageExtraction, depth: int, requested: str, root: str) -> _Fe
     links: list[str] = []
     anchored: list[tuple[str, str]] = []
     canonical: str | None = None
+    external: list[tuple[str, str]] = []
     if page.document is not None and page.document.html:
         found = extract_links(page.document.html, page.url)
         links = [reconcile_scheme(link, root) for link in found.links]
         anchored = [(reconcile_scheme(href, root), text) for href, text in found.anchored]
         canonical = found.canonical
-    return _Fetched(_without_html(page), depth, links, canonical, anchored, requested)
+        labels: dict[str, str] = {}
+        for href, text in found.anchored:
+            labels.setdefault(href, text)  # the first anchor a reader meets names the link
+        seen: set[str] = set()
+        for href in found.links:
+            absolute = urljoin(page.url, href)
+            if absolute in seen or not absolute.startswith(("http://", "https://")):
+                continue
+            if same_site(absolute, root):
+                continue
+            seen.add(absolute)
+            external.append((absolute, labels.get(href, "")))
+            if len(external) >= MAX_EXTERNAL_LINKS:
+                break
+    return _Fetched(_without_html(page), depth, links, canonical, anchored, requested, external)
 
 
 def _discovery_event(
@@ -1063,7 +1121,12 @@ def stream_site(
 
     # The root is already in hand. It is the first result, at no cost.
     pending: list[_Fetched] = [
-        _fetched(_page_from_resolved(probe.resolved, schema), 0, normalized_root, normalized_root)
+        _fetched(
+            _page_from_resolved(probe.resolved, schema, fetch_config=config.fetch),
+            0,
+            normalized_root,
+            normalized_root,
+        )
     ]
     stopped = False
     stopped_by: str | None = None
@@ -1255,6 +1318,15 @@ def stream_site(
                     "blocks": len(page.document.blocks) if page.document is not None else 0,
                     "images": list(page.images),
                     "tables": page.tables,
+                    # What the page carries beyond its own text and its same-site links:
+                    # a canvas that draws its content, and every address it points at
+                    # elsewhere -- on the page as a link, or in its scripts as data. Recorded,
+                    # never queued: a crawl of this site does not start reading another.
+                    "canvas": page.canvas,
+                    "links_out": {
+                        "external": [{"url": u, "anchor": a} for u, a in fetched.external],
+                        "in_script": list(page.script_links),
+                    },
                     "strategy": page.strategy.value if page.strategy else None,
                     "queued": len(frontier),
                     "discovered": frontier.seen_count,

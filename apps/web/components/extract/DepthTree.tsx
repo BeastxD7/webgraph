@@ -17,6 +17,11 @@ type Origin = { foundOn: string | null; depth: number; via: "seed" | "sitemap" |
  * Each node is a page the crawl accepted, under the page that first linked to it. A page
  * linked from twenty places appears once, under the first; that is the frontier's rule and
  * the tree draws what the frontier did rather than a prettier fiction.
+ *
+ * Under a page, after its child pages, come the addresses it points at that the crawl did
+ * not follow: links to other sites, and -- for a page that draws its content in a canvas --
+ * the addresses its scripts hold. Dimmed, tagged, never counted in a depth: the tree shows
+ * every address the site carries, and says which of them are pages of it.
  */
 export default function DepthTree({
   root,
@@ -112,6 +117,9 @@ export default function DepthTree({
   );
 }
 
+/** Addresses the crawl did not follow, shown under a page: at most this many of each kind. */
+const LEAF_LIMIT = 12;
+
 const PAGE_SIZE = 50;
 
 function Node({
@@ -134,6 +142,7 @@ function Node({
   const kids = childrenOf.get(url) ?? [];
   const page = status.get(url);
   const via = origins[url]?.via;
+  const leaves = (page?.links_out?.external.length ?? 0) + (page?.links_out?.in_script.length ?? 0);
 
   const state = page ? (page.ok ? "ok" : "failed") : "queued";
   const dot = state === "ok" ? "bg-leaf-600" : state === "failed" ? "bg-flag-bad" : "border border-line-strong bg-transparent";
@@ -143,7 +152,7 @@ function Node({
   return (
     <div>
       <div className="flex items-center gap-2 py-1" style={{ paddingLeft: `${depth * 1.25}rem` }}>
-        {kids.length > 0 ? (
+        {kids.length > 0 || leaves > 0 ? (
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
@@ -167,14 +176,28 @@ function Node({
           {host || label}
         </a>
         {via === "sitemap" && <span className="shrink-0 text-[10px] text-ink-faint">sitemap</span>}
-        {kids.length > 0 && (
-          <span className="tabular ml-auto shrink-0 text-[11px] text-ink-faint">{kids.length.toLocaleString("en-US")} found here</span>
+        {(kids.length > 0 || leaves > 0) && (
+          <span className="tabular ml-auto shrink-0 text-[11px] text-ink-faint">
+            {kids.length > 0 && `${kids.length.toLocaleString("en-US")} found here`}
+            {kids.length > 0 && leaves > 0 && " · "}
+            {leaves > 0 && `${leaves.toLocaleString("en-US")} elsewhere`}
+          </span>
         )}
       </div>
       {expanded &&
         kids.slice(0, shown).map((child) => (
           <Node key={child} url={child} depth={depth + 1} childrenOf={childrenOf} status={status} origins={origins} />
         ))}
+      {expanded && page?.links_out && (
+        <>
+          {page.links_out.external.slice(0, LEAF_LIMIT).map((l) => (
+            <Leaf key={`ext-${l.url}`} url={l.url} depth={depth + 1} tag="other site" note={l.anchor} />
+          ))}
+          {page.links_out.in_script.slice(0, LEAF_LIMIT).map((l) => (
+            <Leaf key={`js-${l.url}`} url={l.url} depth={depth + 1} tag="in script" note={l.key} />
+          ))}
+        </>
+      )}
       {expanded && kids.length > shown && (
         <button
           type="button"
@@ -185,6 +208,22 @@ function Node({
           show {Math.min(PAGE_SIZE * 4, kids.length - shown).toLocaleString("en-US")} more of {kids.length.toLocaleString("en-US")}
         </button>
       )}
+    </div>
+  );
+}
+
+/** An address under a page that is not a page of this site: a link to another site, or an
+ * address the page's script holds. No dot, no depth badge -- it was never in the frontier. */
+function Leaf({ url, depth, tag, note }: { url: string; depth: number; tag: string; note: string }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5 text-[12.5px]" style={{ paddingLeft: `${depth * 1.25}rem` }}>
+      <span className="size-4 shrink-0" />
+      <span aria-hidden className="size-2 shrink-0 rounded-full border border-dashed border-line-strong" />
+      <span className="shrink-0 rounded bg-sunk px-1 text-[10px] text-ink-faint">{tag}</span>
+      <a href={url} target="_blank" rel="noreferrer" className="truncate text-ink-faint hover:text-ink hover:underline" title={url}>
+        {url.replace(/^https?:\/\//, "").replace(/^www\./, "")}
+      </a>
+      {note && <span className="shrink-0 truncate text-[10.5px] text-ink-faint">{note.slice(0, 40)}</span>}
     </div>
   );
 }
