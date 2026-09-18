@@ -107,6 +107,8 @@ export default function DepthTree({
           <h2 className="text-[15px] font-extrabold tracking-tight">Discovery tree</h2>
           <p className="mt-0.5 text-[12.5px] text-ink-faint">
             Each page under the page that first linked to it. Open a level to see what it led to.
+            Depth is <em>links from the root</em>, not path segments: <code className="font-mono">d1</code> is one click
+            away wherever its address sits. The path&apos;s own depth is shown after it when the two differ.
           </p>
         </header>
         <div className="max-h-[40rem] overflow-auto px-3 py-2 font-mono text-[12px]">
@@ -147,6 +149,9 @@ function Node({
   const state = page ? (page.ok ? "ok" : "failed") : "queued";
   const dot = state === "ok" ? "bg-leaf-600" : state === "failed" ? "bg-flag-bad" : "border border-line-strong bg-transparent";
   const label = url.replace(/^https?:\/\/[^/]+/, "") || "/";
+  // Path segments, the depth Firecrawl and crawl4ai users count in. Shown beside the link
+  // distance when they differ, so a reader coming from those tools is not misled by ours.
+  const pathDepth = label.split("/").filter(Boolean).length;
   const host = depth === 0 ? url.replace(/^https?:\/\//, "").split("/")[0] : "";
 
   return (
@@ -165,7 +170,7 @@ function Node({
           <span className="size-4 shrink-0" />
         )}
         <span aria-hidden className={`size-2 shrink-0 rounded-full ${dot}`} title={state} />
-        <span className="shrink-0 rounded bg-sunk px-1 text-[10px] text-ink-faint">d{depth}</span>
+        <span className="shrink-0 rounded bg-sunk px-1 text-[10px] text-ink-faint" title={`${depth} ${depth === 1 ? "link" : "links"} from the root`}>d{depth}</span>
         <a
           href={url}
           target="_blank"
@@ -175,6 +180,11 @@ function Node({
         >
           {host || label}
         </a>
+        {pathDepth !== depth && depth > 0 && (
+          <span className="shrink-0 text-[10px] text-ink-faint" title="Segments in the address's path -- how other crawlers count depth">
+            /{pathDepth}
+          </span>
+        )}
         {via === "sitemap" && <span className="shrink-0 text-[10px] text-ink-faint">sitemap</span>}
         {via === "common-crawl" && <span className="shrink-0 text-[10px] text-ink-faint">common crawl</span>}
         {(kids.length > 0 || leaves > 0) && (
