@@ -60,8 +60,9 @@ Each frame is `data: {json}` with a `type` and a `stage`
 2. `stage` — `resolve` is running, with a message such as "Fetching as plain HTTP and
    through a browser, then merging".
 3. `resolve` — `static_chars`, `rendered_chars`, `union_chars`, `static_coverage`,
-   `blocks_only_in_static`, `blocks_only_in_rendered`, and `render_error` when the
-   browser was unavailable, gave up, or was served a wall that was left out.
+   `blocks_only_in_static`, `blocks_only_in_rendered`, `render_error` when the
+   browser was unavailable, gave up, or was served a wall that was left out, and
+   `metadata` — what the page declares in its `<head>` (see the site stream's `analysis`).
 4. `parse` — `blocks`, `words`, `reading_order`, `reading_order_measured`,
    `dom_order_differs`, `kinds`.
 5. `classify` — `page_type`, `confidence`, the model's `reasons`, `runner_up`.
@@ -102,8 +103,8 @@ look. The events (`webgraph.site.stream_site`), in order:
 - `run`, then `stage` — `analyze` ("Detecting technology stack", or "Waiting for a crawl
   slot"), later `enumerate` and `extract`.
 - `analysis` — the resolved `root`, `frameworks`, `technologies` with evidence and
-  confidence, `render_required`, `render_loses_content`, character counts both ways, and
-  the `strategy` chosen.
+  confidence, `render_required`, `render_loses_content`, character counts both ways,
+  the `strategy` chosen, and `metadata`: what the root page declares in its `<head>`.
 - `discovery` — what `robots.txt` said (`rules_for_us`, `crawl_delay`, the file), every
   sitemap tried with its status and URL count, and `seeds` accepted into the frontier.
 - `frontier` — `queued`, `discovered`, `depth_counts`, `discovered_kinds` (page, pdf,

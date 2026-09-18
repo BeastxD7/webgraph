@@ -194,6 +194,22 @@ export default function LivePipeline({
                 label="Strategy chosen by measurement"
                 value={analysis.render_required ? `${analysis.strategy} (browser needed)` : analysis.strategy}
               />
+              {analysis.metadata && (
+                <>
+                  <Row label="Title" value={analysis.metadata.title ?? "none declared"} />
+                  <Row
+                    label="Canonical"
+                    value={
+                      analysis.metadata.declared_elsewhere.some((d) => d.startsWith("canonical")) ? (
+                        <span className="text-flag-warn">{analysis.metadata.canonical} · another site</span>
+                      ) : (
+                        analysis.metadata.canonical ?? "none declared"
+                      )
+                    }
+                  />
+                  <Row label="Language" value={analysis.metadata.language ?? "none declared"} />
+                </>
+              )}
             </dl>
           )}
 

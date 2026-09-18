@@ -233,11 +233,20 @@
   // Serialise shadow roots as `<template shadowrootmode>`, which the Python side unwraps.
   // `getHTML` is Chromium 125+; without it we fall back to the light DOM only rather than
   // failing, and the shadow content is lost as it always was.
+  //
+  // `getHTML` serialises an element's *children*, where `outerHTML` serialises the element:
+  // taken as is, the snapshot began at `<head>` and `<html lang="en">` -- the page's own
+  // declaration of its language -- was gone. The root's start tag is put back by hand.
   let serialized;
   try {
-    serialized = (shadowRoots.length && typeof document.documentElement.getHTML === 'function')
-      ? document.documentElement.getHTML({ serializableShadowRoots: true, shadowRoots })
-      : document.documentElement.outerHTML;
+    if (shadowRoots.length && typeof document.documentElement.getHTML === 'function') {
+      const attrs = Array.from(document.documentElement.attributes)
+        .map((a) => ` ${a.name}="${a.value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`)
+        .join('');
+      serialized = `<html${attrs}>` + document.documentElement.getHTML({ serializableShadowRoots: true, shadowRoots }) + '</html>';
+    } else {
+      serialized = document.documentElement.outerHTML;
+    }
   } catch (e) {
     serialized = document.documentElement.outerHTML;
   }
