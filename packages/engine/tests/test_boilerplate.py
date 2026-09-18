@@ -53,8 +53,12 @@ class TestDetection:
         """A footer link appearing three times on one page is still one page's worth."""
         pages = [page("dup", "dup", "dup", f"unique {i}") for i in range(MIN_PAGES + 2)]
         pages[0] = page("dup", "dup", "dup", "unique 0")
-        profile = detect_boilerplate([page("only here", "only here", f"u{i}") if i == 0
-                                      else page(f"u{i}") for i in range(MIN_PAGES + 2)])
+        profile = detect_boilerplate(
+            [
+                page("only here", "only here", f"u{i}") if i == 0 else page(f"u{i}")
+                for i in range(MIN_PAGES + 2)
+            ]
+        )
         assert "only here" not in profile.keys
 
     def test_threshold_is_insensitive_in_the_middle(self) -> None:
@@ -111,14 +115,27 @@ class TestTemplateDifferencing:
     def _pages(self, n: int = 10) -> list[list[Block]]:
         pages = []
         for i in range(n):
-            pages.append([
-                Block(text="Site Name", tag="div", xpath="/html/body/header/div[1]",
-                      dom_index=0),
-                Block(text=f"Article {i}", tag="h1", xpath="/html/body/main/h1",
-                      dom_index=1, kind=BlockKind.HEADING, level=1),
-                Block(text=f"Body text for article {i}", tag="p",
-                      xpath="/html/body/main/p[1]", dom_index=2),
-            ])
+            pages.append(
+                [
+                    Block(
+                        text="Site Name", tag="div", xpath="/html/body/header/div[1]", dom_index=0
+                    ),
+                    Block(
+                        text=f"Article {i}",
+                        tag="h1",
+                        xpath="/html/body/main/h1",
+                        dom_index=1,
+                        kind=BlockKind.HEADING,
+                        level=1,
+                    ),
+                    Block(
+                        text=f"Body text for article {i}",
+                        tag="p",
+                        xpath="/html/body/main/p[1]",
+                        dom_index=2,
+                    ),
+                ]
+            )
         return pages
 
     def test_static_slot_is_chrome(self) -> None:
@@ -165,9 +182,15 @@ class TestNearDuplicateGuard:
 
     def test_healthy_corpus_still_strips(self) -> None:
         pages = [
-            [Block(text="Nav", tag="div", xpath="/html/body/nav", dom_index=0),
-             Block(text=f"unique article body number {i} with plenty of distinct words here",
-                   tag="p", xpath="/html/body/main/p", dom_index=1)]
+            [
+                Block(text="Nav", tag="div", xpath="/html/body/nav", dom_index=0),
+                Block(
+                    text=f"unique article body number {i} with plenty of distinct words here",
+                    tag="p",
+                    xpath="/html/body/main/p",
+                    dom_index=1,
+                ),
+            ]
             for i in range(10)
         ]
         chrome = detect_site_chrome(pages)
@@ -223,7 +246,8 @@ class TestLandmarks:
         from webgraph.boilerplate import strip_landmarks
 
         blocks = self.blocks_of(
-            "<nav>" + "".join(f"<a href='/p{i}'>Page number {i}</a>" for i in range(40))
+            "<nav>"
+            + "".join(f"<a href='/p{i}'>Page number {i}</a>" for i in range(40))
             + "</nav><p>x</p>"
         )
         assert len(strip_landmarks(blocks)) == len(blocks)
@@ -250,9 +274,13 @@ class TestFilterWidgets:
         from webgraph.pipeline import build_document
 
         facets = "".join(
-            f'<li><label><input type="checkbox">Brand {i}</label> <span>({i * 7})</span></li>' for i in range(6)
+            f'<li><label><input type="checkbox">Brand {i}</label> <span>({i * 7})</span></li>'
+            for i in range(6)
         )
-        cards = "".join(f"<li><a href='/p/{i}'>Graphics Card {i} 16GB GDDR6</a><span>$ {400 + i}.99</span></li>" for i in range(8))
+        cards = "".join(
+            f"<li><a href='/p/{i}'>Graphics Card {i} 16GB GDDR6</a><span>$ {400 + i}.99</span></li>"
+            for i in range(8)
+        )
         html = (
             "<html><body><main><h1>GPUs</h1>"
             f'<div class="product-filters"><h3>Brand</h3><ul>{facets}</ul></div>'
@@ -288,7 +316,10 @@ class TestConsentDialogs:
 
         html = (
             "<html><body><main><h1>Thread</h1><p>No YT stream link this time. The VOD goes up in an hour.</p>"
-            + "".join(f"<p>Reply number {i}: I think the timing is unusual and it will kick ass, honestly.</p>" for i in range(8))
+            + "".join(
+                f"<p>Reply number {i}: I think the timing is unusual and it will kick ass, honestly.</p>"
+                for i in range(8)
+            )
             + "</main>"
             '<div id="onetrust-consent-sdk"><div id="onetrust-pc-sdk"><h2>We Care About Your Privacy</h2>'
             "<p>We and our 644 partners store and access personal data, like browsing data or unique identifiers.</p>"
@@ -313,7 +344,6 @@ class TestConsentDialogs:
         assert widgets["This site"] == "consent"
         assert widgets["Our cooki"] is None
 
-
     def test_camel_case_cookie_wrapper_is_consent(self) -> None:
         """qburst.com hand-rolls its dialog as `cookieWrapper` > `cookiePolicy` > `cookieText`;
         with the nav lists beside it gone, its 200 words were bridged into the page."""
@@ -323,7 +353,10 @@ class TestConsentDialogs:
             '<html><body><header><div class="cookieWrapper cookieWrapperCommon"><div class="cookiePolicy">'
             "<p>This website uses cookies.</p><p>Cookies are small text files that allow us to create the best browsing experience.</p>"
             "</div></div></header><main><h1>Quality Engineering</h1>"
-            + "".join(f"<p>Offering {i}: we deliver comprehensive functional testing to validate every feature you ship.</p>" for i in range(6))
+            + "".join(
+                f"<p>Offering {i}: we deliver comprehensive functional testing to validate every feature you ship.</p>"
+                for i in range(6)
+            )
             + "</main></body></html>"
         )
         document = build_document(html, "https://qburst.test/services")
@@ -336,11 +369,15 @@ class TestConsentDialogs:
 
         html = (
             '<html><body><div id="cookie-policy"><h1>Cookie policy</h1>'
-            + "".join(f"<p>Section {i}: we use cookies to remember your preferences, to measure traffic and to keep you signed in.</p>" for i in range(8))
+            + "".join(
+                f"<p>Section {i}: we use cookies to remember your preferences, to measure traffic and to keep you signed in.</p>"
+                for i in range(8)
+            )
             + "</div></body></html>"
         )
         document = build_document(html, "https://site.test/cookies")
         assert all(b.widget is None for b in document.blocks)
+
 
 class TestAsideStripped:
     """mspoweruser.com: a "Deals" river of twenty teasers in an `<aside>` inside `<main>`,
@@ -351,8 +388,14 @@ class TestAsideStripped:
         from webgraph.boilerplate import strip_landmarks
         from webgraph.pipeline import build_document
 
-        body = "".join(f"<p>Paragraph {i} of the article, with enough words to count as prose here.</p>" for i in range(8))
-        deals = "".join(f"<h3>Deal Alert {i}: gadget {i} discounted</h3><p>Amazon is offering gadget {i} at a discount today.</p>" for i in range(6))
+        body = "".join(
+            f"<p>Paragraph {i} of the article, with enough words to count as prose here.</p>"
+            for i in range(8)
+        )
+        deals = "".join(
+            f"<h3>Deal Alert {i}: gadget {i} discounted</h3><p>Amazon is offering gadget {i} at a discount today.</p>"
+            for i in range(6)
+        )
         html = f"<html><body><main><article><h1>Title</h1>{body}</article><aside>{deals}</aside></main></body></html>"
         document = build_document(html, "https://news.test/story")
         kept = strip_landmarks(list(document.blocks))
@@ -368,7 +411,9 @@ class TestComments:
     @staticmethod
     def story() -> str:
         sentence = "long enough to read as prose on its own, with clauses that run on a little further than they need to"
-        body = "".join(f"<p>Paragraph {i} of the story, {sentence}, {sentence}.</p>" for i in range(8))
+        body = "".join(
+            f"<p>Paragraph {i} of the story, {sentence}, {sentence}.</p>" for i in range(8)
+        )
         comments = "".join(
             f'<li class="comment"><p>Reply {i}: a paragraph of opinion long enough to read like the article itself.</p></li>'
             for i in range(6)
@@ -396,7 +441,10 @@ class TestComments:
         document = build_document(self.story(), "https://news.test/story")
         selection = select_content(list(document.blocks), model=None, title="Story")
         replies = [b.text for b in selection.comments if b.text.startswith("Reply")]
-        assert replies == [f"Reply {i}: a paragraph of opinion long enough to read like the article itself." for i in range(6)]
+        assert replies == [
+            f"Reply {i}: a paragraph of opinion long enough to read like the article itself."
+            for i in range(6)
+        ]
         assert all(b.widget == "comments" for b in selection.comments)
         assert not any(b.text.startswith("Reply") for b in selection.blocks)
 
@@ -413,7 +461,9 @@ class TestComments:
         )
         html = f'<html><body><main><article><h1>Thread</h1><p>The opening post asks a question in two sentences. It is short.</p></article><section id="comments"><ol class="comment-list">{replies}</ol></section></main></body></html>'
         document = build_document(html, "https://forum.test/t/1")
-        selection = select_content(list(document.blocks), model=None, config=policy_for("forum"), title="Thread")
+        selection = select_content(
+            list(document.blocks), model=None, config=policy_for("forum"), title="Thread"
+        )
         assert selection.comments == ()
         assert sum(1 for b in selection.blocks if b.text.startswith("Reply")) == 40
 
@@ -451,8 +501,12 @@ class TestComments:
         )
         html = f'<html><body><main><article><h1>Thread</h1>{opening}</article><ol class="comment-list">{replies}</ol></main></body></html>'
         document = build_document(html, "https://forum.test/t/1")
-        forum = select_content(list(document.blocks), model=None, config=policy_for("forum"), main_content=False).blocks
-        article = select_content(list(document.blocks), model=None, config=policy_for("article"), main_content=False).blocks
+        forum = select_content(
+            list(document.blocks), model=None, config=policy_for("forum"), main_content=False
+        ).blocks
+        article = select_content(
+            list(document.blocks), model=None, config=policy_for("article"), main_content=False
+        ).blocks
         assert any("Reply" in b.text for b in forum)
         assert not any("Reply" in b.text for b in article)
 
@@ -470,7 +524,9 @@ class TestComments:
         )
         html = f"<html><body><main><h1>Keyboard shortcut to focus the file pane?</h1>{answers}</main></body></html>"
         document = build_document(html, "https://superuser.test/questions/1")
-        kept = select_content(list(document.blocks), model=None, config=policy_for("forum"), main_content=False).blocks
+        kept = select_content(
+            list(document.blocks), model=None, config=policy_for("forum"), main_content=False
+        ).blocks
         assert sum(1 for b in kept if b.text.startswith("Answer ")) == 5
         assert not any("really feel" in b.text for b in kept)
 
@@ -484,7 +540,10 @@ class TestInnermostLandmarkWins:
         from webgraph.boilerplate import strip_landmarks
         from webgraph.pipeline import build_document
 
-        body = "".join(f"<p>Paragraph {i} of the service description, long enough to be prose.</p>" for i in range(8))
+        body = "".join(
+            f"<p>Paragraph {i} of the service description, long enough to be prose.</p>"
+            for i in range(8)
+        )
         html = (
             "<html><body><header><nav><ul><li><a href='/'>Home</a>"
             f"<main><article><h1>Data and Analytics Services</h1>{body}</article></main>"
@@ -505,12 +564,15 @@ class TestCalloutAsides:
         from webgraph.boilerplate import strip_landmarks
         from webgraph.pipeline import build_document
 
-        body = "".join(f"<p>Paragraph {i} of the guide, long enough to read as prose on its own.</p>" for i in range(6))
+        body = "".join(
+            f"<p>Paragraph {i} of the guide, long enough to read as prose on its own.</p>"
+            for i in range(6)
+        )
         html = (
             f"<html><body><main><article><h1>Markdown</h1>{body}"
             '<aside aria-label="Tip" class="starlight-aside starlight-aside--tip"><p>Tip</p>'
             "<p>For additional functionality, add the MDX integration to write your content using MDX.</p></aside>"
-            "</article><aside class=\"right-sidebar-container\"><h2>On this page</h2><ul><li>Markdown</li><li>MDX</li></ul></aside></main></body></html>"
+            '</article><aside class="right-sidebar-container"><h2>On this page</h2><ul><li>Markdown</li><li>MDX</li></ul></aside></main></body></html>'
         )
         document = build_document(html, "https://docs.test/guides/markdown/")
         kept = strip_landmarks(list(document.blocks))
@@ -527,7 +589,9 @@ class TestMainScopeByScript:
         from webgraph.boilerplate import scope_to_main
         from webgraph.pipeline import build_document
 
-        menu = "".join(f"<li><a href='/s/{i}'>メニュー項目{i}のリンクテキスト</a></li>" for i in range(120))
+        menu = "".join(
+            f"<li><a href='/s/{i}'>メニュー項目{i}のリンクテキスト</a></li>" for i in range(120)
+        )
         body = "".join(
             f"<p>第{i}段落。川崎市にある小田急線・柿生駅から徒歩十五分ほどの閑静な住宅街にある分譲マンションは、全十九戸で築三十年ほどを迎える。"
             "このマンションでは三年前に一度、将来の建て替えを検討したが、費用の試算に住民は驚いた。</p>"
@@ -591,7 +655,10 @@ class TestRails:
             f"<li><a href='/n/{i}'>Headline number {i} about something else</a> CITY: The first sentence of that other story, long enough to look like prose.</li>"
             for i in range(10)
         )
-        body = "".join(f"<p>Paragraph {i} of the actual article, long enough to be read as prose on its own, and then some more words.</p>" for i in range(24))
+        body = "".join(
+            f"<p>Paragraph {i} of the actual article, long enough to be read as prose on its own, and then some more words.</p>"
+            for i in range(24)
+        )
         html = f'<html><body><div class="breaking-news"><b>Breaking News</b><ul>{items}</ul></div><article><h1>Deportees return home</h1>{body}</article></body></html>'
         document = build_document(html, "https://news.test/story")
         assert sum(1 for b in document.blocks if b.widget == "rail") >= 10
@@ -606,14 +673,16 @@ class TestRails:
         document = build_document(html, "https://news.test/story")
         assert all(b.widget is None for b in document.blocks)
 
-
     def test_a_rail_name_around_the_headline_or_article_body_is_not_a_rail(self) -> None:
         """jpost.com: the headline row and the story row are both `g-row-breaking-news`,
         named after the section like the ticker beside them; the story says what it is
         with `itemprop="articleBody"`. The page scored 0.00 on the Zyte benchmark."""
         from webgraph.pipeline import build_document
 
-        ticker = "".join(f'<div class="breaking-news-link-container"><a href="/b/{i}">Ticker headline {i} about something else</a></div>' for i in range(12))
+        ticker = "".join(
+            f'<div class="breaking-news-link-container"><a href="/b/{i}">Ticker headline {i} about something else</a></div>'
+            for i in range(12)
+        )
         html = (
             '<html><body><div class="g-row-breaking-news"><h1>Son of former president stabbed to death</h1><p>By STAFF</p></div>'
             '<div class="g-row-breaking-news"><div class="article-inner-content-breaking-news" itemprop="articleBody">'
@@ -656,11 +725,15 @@ class TestRails:
 
         html = (
             '<html><body><p>Intro.</p><div id="footer">'
-            + "".join(f"<p>Paragraph {i} of the only text on this page, long enough to count as its content on any reading.</p>" for i in range(10))
+            + "".join(
+                f"<p>Paragraph {i} of the only text on this page, long enough to count as its content on any reading.</p>"
+                for i in range(10)
+            )
             + "</div></body></html>"
         )
         document = build_document(html, "https://odd.test/")
         assert all(b.widget is None for b in document.blocks)
+
 
 class TestPostFurniture:
     """forum.nationstates.net (phpBB) and every XenForo board: under each post a signature,
@@ -674,7 +747,7 @@ class TestPostFurniture:
         posts = "".join(
             f'<div class="post"><dl class="postprofile"><dt>User {i}</dt><dd>Senator</dd><dd>Posts: 4032</dd><dd>Founded: Dec 11, 2021</dd></dl>'
             f'<div class="postbody"><p class="author">by User {i} » Tue Aug 27, 2019</p>'
-            f"<div class=\"content\"><p>Post {i}: the season is one of the wildest in football history, with minnows qualifying everywhere and chaos on the world scene.</p></div>"
+            f'<div class="content"><p>Post {i}: the season is one of the wildest in football history, with minnows qualifying everywhere and chaos on the world scene.</p></div>'
             f'<div class="signature">NS local megafan {i}. This nation does not reflect my politics. Member of The Glitches.</div></div></div>'
             for i in range(6)
         )
@@ -694,10 +767,54 @@ class TestPostFurniture:
             '<html><body><main><article class="message"><div class="message-cell message-cell--user"><div class="message-user">'
             '<h4 class="message-name">alice</h4><div class="message-userExtras"><dl><dt>Messages</dt><dd>1,204</dd></dl></div></div></div>'
             '<div class="message-cell message-cell--main"><div class="message-userContent"><article class="message-body">'
-            "<div class=\"bbWrapper\">The message body itself, which is the content of the thread and must survive whatever the user cell is called.</div>"
+            '<div class="bbWrapper">The message body itself, which is the content of the thread and must survive whatever the user cell is called.</div>'
             "</article></div></div></article></main></body></html>"
         )
         document = build_document(html, "https://forum.test/threads/1/")
         body = [b for b in document.blocks if b.text.startswith("The message body")]
         assert body and body[0].widget is None
-        assert any(b.widget == "post-furniture" for b in document.blocks if "1,204" in b.text or b.text == "Messages")
+        assert any(
+            b.widget == "post-furniture"
+            for b in document.blocks
+            if "1,204" in b.text or b.text == "Messages"
+        )
+
+
+class TestAnAsideThatCarriesTheTitle:
+    """allbirds.com's product buy box -- the `<h1>`, the price, the colour, the sizes --
+    sits in an `<aside>`. An aside that holds the page's own title block is the page's
+    subject, not a complement: it is kept and read as main; every other aside still goes.
+    Measured on WCXB dev: identical F1 on every type (no page there has this shape)."""
+
+    def test_the_titles_aside_is_kept_and_read_as_main(self) -> None:
+        from webgraph.boilerplate import strip_landmarks
+        from webgraph.content import _title_block
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><head><title>Trino Tubers - Onyx | Allbirds</title></head><body>"
+            "<aside><h1>Trino Tubers</h1><p>$16</p><p>Color: Onyx</p></aside>"
+            "<aside><h2>You may also like</h2><p>Tree Runner $98</p></aside>"
+            "<main>"
+            + "".join(
+                f"<p>Paragraph {i}: wool tube socks, made for everyday wear, breathable and machine washable, with a snug fit.</p>"
+                for i in range(8)
+            )
+            + "</main>"
+            "</body></html>"
+        )
+        document = build_document(html, "https://example.com/products/trino")
+        title_block = _title_block(document.blocks, document.title)
+        assert title_block is not None and title_block.text == "Trino Tubers"
+
+        kept = strip_landmarks(list(document.blocks), title_block=title_block)
+        texts = [b.text for b in kept]
+        assert "Trino Tubers" in texts and "$16" in texts and "Color: Onyx" in texts
+        assert "You may also like" not in texts and "Tree Runner $98" not in texts
+        assert all(
+            b.in_main and b.region == "main" for b in kept if b.text in ("$16", "Color: Onyx")
+        )
+
+        # Without a title block, both asides are stripped as before.
+        plain = [b.text for b in strip_landmarks(list(document.blocks))]
+        assert "Trino Tubers" not in plain and "$16" not in plain
