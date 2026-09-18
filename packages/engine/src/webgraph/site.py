@@ -1433,6 +1433,9 @@ def stream_site(
                     # is the plain fetch's page alone, the browser having produced nothing.
                     "static_chars": page.static_chars,
                     "rendered_chars": page.rendered_chars,
+                    # Set when the browser was shown a gate that hid the page and the
+                    # plain fetch's page was kept whole behind it.
+                    "render_note": page.document.gated if page.document is not None else None,
                     "queued": len(frontier),
                     "discovered": frontier.seen_count,
                     "depth_counts": frontier.depth_counts(),
