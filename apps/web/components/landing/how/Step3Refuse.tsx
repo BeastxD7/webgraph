@@ -105,14 +105,16 @@ export default function Step3Refuse({ active = true }: { active?: boolean }) {
       {/* The engine's log, in its own words. */}
       <div className="absolute right-0 top-4 w-[10rem] rounded-xl border border-rule-strong bg-surface shadow-sm" style={loop("refuse-log")}>
         <div className="border-b border-rule px-3 py-1.5 font-mono text-caption text-ink">engine log</div>
-        <ul className="space-y-1.5 px-3 py-2 font-mono text-[10px] leading-snug">
+        {/* Plain divs, not a list: this is drawn text in an aria-hidden illustration, not
+            body copy (which the responsive check rightly holds to 14px on phones). */}
+        <div className="space-y-1.5 px-3 py-2 font-mono text-[10px] leading-snug">
           {WALLS.map((w) => (
-            <li key={w.id} className="text-bad" style={loop(`refuse-logline-wall-${w.id}`)}>{w.log}</li>
+            <div key={w.id} className="text-bad" style={loop(`refuse-logline-wall-${w.id}`)}>{w.log}</div>
           ))}
           {HIDDEN.map((h) => (
-            <li key={h.id} className="text-muted" style={loop(`refuse-logline-${h.id}`)}>{h.log}</li>
+            <div key={h.id} className="text-muted" style={loop(`refuse-logline-${h.id}`)}>{h.log}</div>
           ))}
-        </ul>
+        </div>
       </div>
     </div>
   );
