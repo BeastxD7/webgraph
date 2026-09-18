@@ -398,6 +398,15 @@ def _words(text: str) -> int:
 _RUN_IN_MIN_CHARS: Final[int] = 20
 _HIDDEN_MIN_CHARS: Final[int] = 12
 
+_CHROME_REGIONS: Final[frozenset[str]] = frozenset({"nav", "header", "footer", "aside"})
+_GATE_MIN_CHARS: Final[int] = 2_000
+_GATE_RATIO: Final[float] = 1.5
+"""When *one* hidden element holds more of the page's own prose than the whole visible
+render -- at least `_GATE_MIN_CHARS`, more than `_GATE_RATIO` times what was shown -- the
+browser was shown a gate, not a page with a hidden menu: a country picker, a consent
+dialog, an age check, drawn over a page whose body it sets `display: none`. Behind a
+gate the static page is the page, and the union keeps it whole."""
+
 
 def _key(block: Block) -> str:
     """Identity for deduplication: normalised text.
@@ -479,11 +488,31 @@ def union_documents(
     def hidden_in_render(key: str) -> bool:
         return hidden is not None and hidden.holds(key, min_chars=_HIDDEN_MIN_CHARS)
 
-    only_static = {
-        k
-        for k in static_keys - rendered_keys
-        if not runs_into_rendered(k) and not hidden_in_render(k)
+    candidates = {k for k in static_keys - rendered_keys if not runs_into_rendered(k)}
+    behind = {k for k in candidates if hidden_in_render(k)}
+    # A gate is *one* hidden element holding more than the whole visible render, and what
+    # it holds is the page's own prose -- not a standalone link, not a block inside a
+    # `nav`, `header`, `footer` or `aside` landmark. Many small hidden elements are menus
+    # and collapsed sections, and stay hidden; one vast hidden footer of template text
+    # (allbirds.com's 88,000 characters of cart and size-guide copy) is chrome, and stays
+    # hidden too.
+    prose_of = {
+        _key(b): b.href is None and b.region not in _CHROME_REGIONS
+        for b in static_doc.blocks
+        if b.text.strip()
     }
+    hidden_chars = sum(len(k) for k in behind if prose_of.get(k, True))
+    visible = len(rendered_doc.text)
+    gated = (
+        hidden is not None
+        and hidden.largest >= _GATE_MIN_CHARS
+        and hidden.largest > _GATE_RATIO * visible
+        and hidden_chars >= _GATE_MIN_CHARS
+        and hidden_chars > _GATE_RATIO * visible
+    )
+    # A gate hides the page; a hidden menu hides a menu. Behind a gate, the render's hiding
+    # is not a judgement about the content and the static page is kept whole.
+    only_static = candidates if gated else candidates - behind
 
     for block in static_doc.blocks:
         key = _key(block)
@@ -577,6 +606,11 @@ def union_documents(
         update["title"] = rendered_doc.title or static_doc.title
         update["description"] = rendered_doc.description or static_doc.description
         update["markup"] = static_doc.markup
+    if gated:
+        update["gated"] = (
+            f"the browser was shown a gate that hid the page: {hidden_chars:,} characters "
+            f"behind it, {len(rendered_doc.text):,} in front; the plain fetch's page was kept"
+        )
     document = rendered_doc.model_copy(update=update)
     return document, len(only_static), len(only_rendered)
 

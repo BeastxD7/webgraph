@@ -544,6 +544,13 @@ class HiddenMatter:
     text: str
     """The hidden elements' text joined, for a block that spans several nodes."""
 
+    largest: int = 0
+    """Characters of the single largest hidden element (outermost: an element inside
+    another hidden one is counted in its ancestor). One element that hides more than the
+    page shows is a gate over the page -- a country picker, a consent dialog with the
+    body set `display: none` behind it -- where many small ones are menus and collapsed
+    sections; `resolve.union_documents` tells the two apart by this."""
+
     def holds(self, key: str, *, min_chars: int) -> bool:
         return key in self.lines or (len(key) >= min_chars and key in self.text)
 
@@ -570,6 +577,8 @@ def hidden_matter(html: str) -> HiddenMatter:
     root = parse_html(html)
     lines: set[str] = set()
     wholes: list[str] = []
+    largest = 0
+    hidden_kinds = ("display", "visibility", "offscreen")
     for element in root.xpath(
         f"//*[@{HIDDEN_ATTRIBUTE}='display' or @{HIDDEN_ATTRIBUTE}='visibility'"
         f" or @{HIDDEN_ATTRIBUTE}='offscreen']"
@@ -583,7 +592,10 @@ def hidden_matter(html: str) -> HiddenMatter:
             key = "".join(text.split()).casefold()
             if key:
                 lines.add(key)
-    return HiddenMatter(frozenset(lines), "\n".join(wholes))
+        # Outermost only: a hidden element inside a hidden element is its ancestor's.
+        if not any(a.get(HIDDEN_ATTRIBUTE) in hidden_kinds for a in element.iterancestors()):
+            largest = max(largest, len(whole))
+    return HiddenMatter(frozenset(lines), "\n".join(wholes), largest)
 
 
 def geometry_by_xpath(html: str, rects: dict[str, Rect]) -> dict[str, Rect]:

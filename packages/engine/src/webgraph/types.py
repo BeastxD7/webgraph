@@ -515,6 +515,10 @@ class Document(BaseModel):
     """Raw payloads from the zero-cost path, before any schema mapping."""
 
     content_hash: str = ""
+    gated: str | None = None
+    """Set on a merged (`union`) document when the browser was shown a gate that hid the
+    page -- a country picker, a consent dialog -- and the static page was kept whole
+    behind it (`resolve.union_documents`). The sentence says how much was behind it."""
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property

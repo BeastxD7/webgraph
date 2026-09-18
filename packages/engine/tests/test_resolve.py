@@ -1226,3 +1226,99 @@ class TestAnEmptyRender:
         rendered = doc("<p>Shared paragraph here.</p><p>Only in render.</p>")
         merged, _, _ = union_documents(static, rendered)
         assert merged.html == rendered.html
+
+
+class TestAGateIsNotAHiddenMenu:
+    """allbirds.com draws a country picker over the page and sets the page's body to
+    `display: none` behind it. The render's hidden matter then holds the whole page, and a
+    union that trusts the hiding keeps the picker and drops the site. Hidden matter that
+    outweighs the visible render by a wide margin is a gate, and behind a gate the static
+    page is the page. A hidden menu -- php.net's TOC -- stays out as before."""
+
+    def test_the_page_behind_a_gate_is_kept(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        body = "".join(
+            f"<p>Paragraph number {i} of the store, with enough words that the page behind the gate is real content and not a menu.</p>"
+            for i in range(40)
+        )
+        static = doc(f"<div id='site'>{body}</div>")
+        # The render: the same body, hidden; a small picker in front.
+        rendered_html = (
+            f"<html><body><div role='dialog'><p>Where are we shipping to?</p><p>Confirm</p></div>"
+            f"<div id='site' {HIDDEN_ATTRIBUTE}='display'>{body}</div></body></html>"
+        )
+        rendered = build_document(
+            "<html><body><div role='dialog'><p>Where are we shipping to?</p><p>Confirm</p></div></body></html>",
+            "https://example.com/",
+        )
+        merged, only_static, _ = union_documents(
+            static, rendered, hidden=hidden_matter(rendered_html)
+        )
+        assert "Paragraph number 39" in merged.text
+        assert only_static == 40
+        assert merged.gated is not None and "gate" in merged.gated and "behind it" in merged.gated
+
+    def test_a_hidden_menu_stays_out(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        article = "".join(
+            f"<p>Article paragraph {i}, long enough to be the page's own text and to outweigh a menu by a wide margin indeed.</p>"
+            for i in range(20)
+        )
+        menu = "<ul><li>Manual section one entry</li><li>Manual section two entry</li></ul>"
+        static = doc(f"{menu}{article}")
+        rendered = doc(article)
+        rendered_html = (
+            f"<html><body><div {HIDDEN_ATTRIBUTE}='display'>{menu}</div>{article}</body></html>"
+        )
+        merged, only_static, _ = union_documents(
+            static, rendered, hidden=hidden_matter(rendered_html)
+        )
+        assert "Manual section one entry" not in merged.text
+        assert only_static == 0
+        assert merged.gated is None
+
+    def test_a_vast_hidden_menu_on_a_thin_page_is_still_a_menu(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        menu = "".join(
+            f"<li><a href='/section-{i}'>Section {i} of the manual with a long descriptive entry title</a></li>"
+            for i in range(60)
+        )
+        page = "<p>A short landing page with one line of its own text.</p>"
+        static = doc(f"<nav><ul>{menu}</ul></nav>{page}")
+        rendered = doc(page)
+        rendered_html = f"<html><body><nav {HIDDEN_ATTRIBUTE}='display'><ul>{menu}</ul></nav>{page}</body></html>"
+        merged, only_static, _ = union_documents(
+            static, rendered, hidden=hidden_matter(rendered_html)
+        )
+        assert "Section 59" not in merged.text
+        assert only_static == 0 and merged.gated is None
+
+    def test_many_small_hidden_sections_are_not_a_gate(self) -> None:
+        """Collapsed FAQ answers: a lot of hidden prose in total, no one element bigger
+        than the page. What the browser hides stays hidden."""
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        questions = "".join(f"<h3>Question number {i} about the product?</h3>" for i in range(30))
+        answers = [
+            f"<div {HIDDEN_ATTRIBUTE}='display'><p>Answer number {i}: a collapsed paragraph with enough words to be real prose about the question above it.</p></div>"
+            for i in range(30)
+        ]
+        static_html = "".join(
+            f"<h3>Question number {i} about the product?</h3><div><p>Answer number {i}: a collapsed paragraph with enough words to be real prose about the question above it.</p></div>"
+            for i in range(30)
+        )
+        static = doc(static_html)
+        rendered = doc(questions)
+        rendered_html = f"<html><body>{''.join(f'<h3>Question number {i} about the product?</h3>{answers[i]}' for i in range(30))}</body></html>"
+        merged, only_static, _ = union_documents(
+            static, rendered, hidden=hidden_matter(rendered_html)
+        )
+        assert "Answer number 29" not in merged.text
+        assert only_static == 0 and merged.gated is None
