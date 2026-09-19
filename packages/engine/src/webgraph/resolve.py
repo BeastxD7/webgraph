@@ -222,7 +222,8 @@ _BLOCK_PAGE_PHRASES: Final[re.Pattern[str]] = re.compile(
     r"|unusual traffic from your|enable javascript and cookies|just a moment\.\.\."
     r"|attention required!|blocked by network security|checking your browser"
     r"|complete the security check|security check to access|bot detection|pardon our interruption"
-    r"|request blocked|automated access to|please enable cookies|ray id:)",
+    r"|request blocked|automated access to|please enable cookies|ray id:"
+    r"|experiencing an access issue|access issue, please contact)",
     re.IGNORECASE,
 )
 """How CDNs and bot-management products phrase a refusal. Only consulted on a page too short
@@ -1163,6 +1164,22 @@ def _resolve_fetched(
     if rendered.ok and rendered.status is not None and rendered.status >= 500:
         said = BLOCKING_STATUSES.get(rendered.status, "the server answered with an error")
         rendered = replace(rendered, ok=False, error=f"HTTP {rendered.status} -- {said}")
+
+    # A 404 to the browser is a page that does not exist, as it is to the plain fetch --
+    # unless the plain fetch was served the page, in which case the browser was refused
+    # and that is the failed side. es.ogs.ny.gov/veterans: the plain fetch got a
+    # Cloudflare challenge (403), the browser a real "404 no encontrado" from nginx, and
+    # the union returned the 404 page's four words as the page.
+    if rendered.ok and rendered.status in MISSING_STATUSES:
+        if (
+            static_doc is None
+            or not _is_a_page(static_doc)
+            or block_page_evidence(static_doc.text) is not None
+        ):
+            raise PageMissingError(url, rendered.status)
+        rendered = replace(
+            rendered, ok=False, error=f"HTTP {rendered.status} -- the page does not exist"
+        )
 
     if not rendered.ok:
         if static_doc is None:
