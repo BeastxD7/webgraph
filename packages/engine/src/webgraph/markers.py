@@ -22,6 +22,7 @@ __all__ = [
     "HIDDEN_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
     "PATH_ATTRIBUTE",
+    "REVEALED_ATTRIBUTE",
     "marker_arguments",
 ]
 
@@ -52,6 +53,12 @@ markup. Absent on a static fetch, where `flowed_text` then behaves exactly as `t
 did: a page nobody rendered gets no layout claims. Stamped by `fetch/js/collect.js`."""
 
 GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
+
+REVEALED_ATTRIBUTE: Final[str] = "data-wg-revealed"
+"""Stamped by `fetch/js/reveal.js` on a panel it opened -- a collapsed `<details>`, a
+disclosure, a tab panel, a panel a control names -- so the page's own record says which
+content was hidden until someone would have interacted. Read back by nothing yet; kept in
+the serialised DOM so a trace can show what the reveal step did."""
 
 FLOAT_ATTRIBUTE: Final[str] = "data-wg-float"
 """Stamped by the renderer on elements the browser floats, with the value `left` or `right`.
@@ -88,4 +95,5 @@ def marker_arguments() -> dict[str, str]:
         "gate": GATE_ATTRIBUTE,
         "hidden": HIDDEN_ATTRIBUTE,
         "float": FLOAT_ATTRIBUTE,
+        "revealed": REVEALED_ATTRIBUTE,
     }

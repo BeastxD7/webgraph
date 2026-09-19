@@ -278,3 +278,46 @@ class TestHiddenBoxes:
         assert [b.text for b in geometric.blocks if b.text.startswith("Significant")] == [
             "Significant others"
         ]
+
+
+class TestRevealCollapsed:
+    """`reveal.js` opens tab panels and named panels without a click, and never a menu."""
+
+    HTML = """<!doctype html><html><body>
+    <nav><button data-bs-target="#menu" aria-expanded="false">Menu</button>
+      <div id="menu" style="display:none"><a href="/a">Alpha link</a><a href="/b">Beta link</a></div></nav>
+    <main>
+      <div role="tablist">
+        <button role="tab" aria-selected="true" aria-controls="p1">Details</button>
+        <button role="tab" aria-selected="false" aria-controls="p2">Delivery</button>
+      </div>
+      <div role="tabpanel" id="p1"><p>The details panel is the one showing when the page loads.</p></div>
+      <div role="tabpanel" id="p2" hidden><p>Delivery takes three to five working days across the country.</p></div>
+      <a href="#faq" class="toggle">Frequently asked questions</a>
+      <div id="faq" style="display:none"><p>Returns are accepted within thirty days of delivery.</p></div>
+      <a href="#visible">Jump to the visible section</a>
+      <section id="visible"><p>A visible section that a link merely jumps to.</p></section>
+    </main></body></html>"""
+
+    def test_panels_open_and_the_menu_stays_shut(self, tmp_path: pathlib.Path) -> None:
+        page = tmp_path / "tabs.html"
+        page.write_text(self.HTML, encoding="utf-8")
+        result = render_page(
+            page.as_uri(),
+            config=RenderConfig(wait_until="load", settle_ms=150, reveal_collapsed=True),
+        )
+        assert result.ok, result.error
+        html = result.html
+        assert html.count('data-wg-revealed="1"') == 2  # the Delivery tab panel and #faq
+        # Opened: the browser laid them out, so they carry a box and no hidden mark.
+        document = build_document(
+            html, page.as_uri(), geometry=geometry_by_xpath(html, result.rects)
+        )
+        texts = [b.text for b in document.blocks]
+        assert "Delivery takes three to five working days across the country." in texts
+        assert "Returns are accepted within thirty days of delivery." in texts
+        # The menu under <nav> is left alone: still display:none, not stamped. (The parser
+        # may still keep it as a reachable tray -- a button names it -- but unmeasured.)
+        assert 'id="menu" style="display:none"' in html
+        menu = next(b for b in document.blocks if "Alpha link" in b.text)
+        assert menu.rect is None

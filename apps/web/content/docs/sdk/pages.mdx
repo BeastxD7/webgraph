@@ -103,7 +103,7 @@ Only matters when a render runs (`UNION` or `RENDERED_ONLY` with Playwright inst
 | `viewport_height` | `int` | `900` | CSS pixels |
 | `settle_ms` | `int` | `900` | Pause after load for hydration and layout to settle before geometry is measured |
 | `dismiss_gates` | `bool` | `True` | Click through a first-run interstitial (persona picker, age gate) that blocks the page from mounting: one guarded click, kept only if the text grows 1.5× |
-| `reveal_collapsed` | `bool` | `False` | Open `<details>` and ARIA disclosure panels before measuring, without clicking anything else |
+| `reveal_collapsed` | `bool` | `True` | Open collapsed content before measuring, without clicking: `<details>`, ARIA disclosures, tab panels, and panels a control names (`data-bs-target`, `href="#id"`) — never inside site chrome or a menu. Recall on the fidelity board unchanged, extra +0.001; content behind a click is measured and ordered where it sits instead of anchored after its neighbour |
 | `user_agent` | `str \| None` | `None` = the browser's own | Override the browser's User-Agent |
 | `headless` | `bool` | `True` | Run the browser without a window. `False` is for watching a page render while debugging |
 | `reuse_browser` | `bool` | `True` | Reuse the calling thread's browser across pages instead of launching one per page (a launch costs about a second and 150 MB) |

@@ -20,6 +20,12 @@ All notable changes to this project are documented here. The format follows
   withdrawn the same day: on the 300-page random-web sample it cost a store that keeps its
   size chart, delivery and payment in slide-in panels 60% of its words. An off-canvas panel
   a button opens is a collapsed tray, not hidden matter (#160).
+- Changed: `reveal_collapsed` (RenderOptions / `RenderConfig`) opens tab panels
+  (`role="tab"` → `aria-controls`) and panels a control names (`data-bs-target`,
+  `data-target`, `href="#id"`) as well as `<details>` and ARIA disclosures, never inside
+  `nav`/`header`/`footer` or a menu, and stamps each opened panel `data-wg-revealed`. **On
+  by default** (was off, "until measured"): fidelity board recall unchanged, extra +0.001
+  mean, +0.027 at most on arxiv.org's own bibliographic-tools tabs (#162).
 - Changed: a `<select>`'s choices are one block of the whole page (`Block.widget ==
   "select"`, tag `select`, choices joined by ` · `) and never part of the content:
   Chromium shows them, and dclt.co.uk's news listing kept 118 of its 734 words in two

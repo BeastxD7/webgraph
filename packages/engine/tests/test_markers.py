@@ -25,7 +25,7 @@ from webgraph.dom import rich
 from webgraph.fetch import render
 
 SCRIPTS = ("reveal", "gate_probe", "collect")
-LITERALS = ("data-wg-id", "data-wg-brk", "data-wg-gate")
+LITERALS = ("data-wg-id", "data-wg-brk", "data-wg-gate", "data-wg-revealed")
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -52,10 +52,11 @@ def test_every_js_file_is_shipped_and_loadable() -> None:
     assert on_disk == sorted(f"{name}.js" for name in SCRIPTS)
 
 
-def test_marker_arguments_carry_exactly_the_five_names() -> None:
+def test_marker_arguments_carry_exactly_the_six_names() -> None:
     arguments = markers.marker_arguments()
-    assert set(arguments) == {"marker", "brk", "gate", "hidden", "float"}
+    assert set(arguments) == {"marker", "brk", "gate", "hidden", "float", "revealed"}
     assert arguments["hidden"] == markers.HIDDEN_ATTRIBUTE
+    assert arguments["revealed"] == markers.REVEALED_ATTRIBUTE
     assert arguments["float"] == markers.FLOAT_ATTRIBUTE
     assert arguments["marker"] == markers.MARKER_ATTRIBUTE
     assert arguments["brk"] == markers.BREAK_ATTRIBUTE
