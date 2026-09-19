@@ -317,6 +317,8 @@ class TestTheStreamReportsIt:
                 blocks_only_in_rendered=0,
             )
 
+        listed: list[str] = []
+
         def fake_probe(root: str, **_: Any) -> SiteProbe:
             return SiteProbe(
                 analysis=SiteAnalysis(root=root, reachable=True),
@@ -330,7 +332,7 @@ class TestTheStreamReportsIt:
                     group="*",
                     crawl_delay=2.0,
                 ),
-                sitemap_pages=(),
+                sitemap_pages=tuple(listed),
                 sitemap_attempts=(
                     SitemapAttempt(
                         f"{root}sitemap.xml",
@@ -353,6 +355,7 @@ class TestTheStreamReportsIt:
 
         monkeypatch.setattr(site_module, "probe_site", fake_probe)
         monkeypatch.setattr(site_module, "resolve_page", lambda url, **_: resolved_for(url))
+        self.listed = listed
 
     def _events(self) -> list[dict[str, Any]]:
         from webgraph.site import SiteConfig, stream_site
@@ -386,6 +389,41 @@ class TestTheStreamReportsIt:
         assert event["sitemaps"]["total_urls"] == 0
         assert [a["status"] for a in event["sitemaps"]["attempts"]] == [404, 404]
         assert event["seeds"] == 0
+
+    def test_a_sitemap_naming_only_the_root_is_in_scope_and_seeds_nothing(self) -> None:
+        """lakshx.in's sitemap lists the home page and nothing else. The home page was
+        fetched before the crawl began, so it seeded nothing -- and `seeds == 0` beside
+        `total_urls == 1` read, on screen, as "every listed address is on another site".
+        `in_scope` is the count the scope admits, whatever was already known."""
+        self.listed[:] = ["https://x.test"]
+        event = next(e for e in self._events() if e["type"] == "discovery")
+        assert event["sitemaps"]["total_urls"] == 1
+        assert event["sitemaps"]["in_scope"] == 1
+        assert event["seeds"] == 0
+
+    def test_a_sitemap_naming_another_host_is_out_of_scope(self) -> None:
+        self.listed[:] = ["https://elsewhere.test/a", "https://elsewhere.test/b"]
+        event = next(e for e in self._events() if e["type"] == "discovery")
+        assert event["sitemaps"]["total_urls"] == 2
+        assert event["sitemaps"]["in_scope"] == 0
+
+    def test_the_done_event_names_the_depth_cap(self) -> None:
+        from webgraph.site import SiteConfig, stream_site
+
+        events = list(
+            stream_site(
+                ROOT,
+                config=SiteConfig(
+                    max_pages=1,
+                    max_depth=3,
+                    concurrency=1,
+                    delay_seconds=0.0,
+                    host_interval_seconds=0.0,
+                ),
+            )
+        )
+        done = next(e for e in events if e["type"] == "done")
+        assert done["limits"]["max_depth"] == 3
 
     def test_the_robots_text_is_capped_but_the_rules_are_not(
         self, monkeypatch: pytest.MonkeyPatch

@@ -12,8 +12,17 @@ export function endedBecause(summary: DoneEvent): string {
       return `stopped at the time limit (${duration(summary.limits.max_seconds)}) · ${queued} still queued`;
     case "queue":
       return `the queue cap (${summary.limits.max_queue.toLocaleString("en-US")}) turned ${summary.queue_refused.toLocaleString("en-US")} addresses away · not every page was reached`;
-    default:
-      return summary.exhausted ? "every reachable page crawled" : `${queued} still queued`;
+    default: {
+      if (!summary.exhausted) return `${queued} still queued`;
+      // A crawl past its depth has nothing left to queue and reports `exhausted`, which
+      // used to read "every reachable page crawled" -- on lakshx.in with a saved depth of
+      // 1, seven pages of twenty-four, and 209 addresses turned away one panel down.
+      const pastDepth = summary.refused["past-depth"];
+      if (pastDepth > 0 && summary.limits.max_depth !== undefined) {
+        return `every page within depth ${summary.limits.max_depth} crawled · ${pastDepth.toLocaleString("en-US")} addresses were past the depth cap and not crawled`;
+      }
+      return "every reachable page crawled";
+    }
   }
 }
 

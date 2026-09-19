@@ -7,6 +7,7 @@ import { hostOf } from "@/lib/country";
 import { normalizeInput } from "@/lib/url";
 
 import RunCard from "./RunCard";
+import RunOptions, { OverrideChips } from "./RunOptions";
 
 export type Mode = "page" | "site" | "report";
 
@@ -152,7 +153,11 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
               )}
             </button>
           </div>
+          {/* What is in force for this run, before it starts: a saved depth of 1 once cut
+              a 24-page site to 7 with nothing on this screen to say so. */}
+          <OverrideChips mode={mode} />
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 px-2 pb-3 pt-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
             <div role="radiogroup" aria-label="What to do with it" className="inline-flex pill-shape bg-sunk p-0.5">
               {MODES.map((option) => {
                 const selected = mode === option.id;
@@ -172,6 +177,8 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
                   </button>
                 );
               })}
+            </div>
+            {mode !== "report" && <RunOptions mode={mode} />}
             </div>
             <p id={hintId} className="sr-only">
               {current.hint}

@@ -1034,7 +1034,7 @@ class TestCrawlLimits:
         assert done["pages_total"] == 2
         assert done["stopped_by"] == "pages"
         assert done["exhausted"] is False
-        assert done["limits"] == {"max_pages": 2, "max_seconds": 120, "max_queue": 50}
+        assert done["limits"] == {"max_pages": 2, "max_seconds": 120, "max_queue": 50, "max_depth": 12}
 
     def test_a_pdf_is_counted_and_cited_and_never_requested(
         self, client: TestClient, small_site: tuple[str, list[str]]

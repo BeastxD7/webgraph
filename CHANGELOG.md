@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI, engine (2026-09-19, PR #168) -- options at the prompt; a file per page
+- Added: an **Options** button on the address box opens the run's options -- max pages,
+  max depth, within path, exact host, include/exclude paths, respect robots.txt, the
+  rendering switches, the fetch timeout -- with the engine's defaults as placeholders,
+  saved to the same store as the Settings page. What is changed shows as chips under the
+  address ("runs with · max depth 1 ×") before the run starts. The owner crawled
+  lakshx.in with a saved depth of 1 and got 7 pages of 24 with nothing on the prompt to
+  say why.
+- Added: **.zip, a file per page** beside **Download .md**: one Markdown file per page,
+  named by host and path, with `url` and `title` front matter. Written in the browser
+  (`lib/zip.ts`, stored entries, no dependency).
+- Fixed: the run summary names a depth cap that applied -- "every page within depth 1
+  crawled · 209 addresses were past the depth cap" -- instead of "every reachable page
+  crawled"; the `done` event's `limits` carry `max_depth`.
+- Fixed: a sitemap that lists only the home page no longer reads as "names a different
+  host": the `discovery` event's `sitemaps.in_scope` counts what the scope admits,
+  apart from what was queued (`seeds`).
+
 ### Engine (2026-09-19, PR #166) -- slides are not hidden menus; a 404 to the browser
 - Fixed: a hidden element with a *showing* twin under the same parent (same tag, same
   leading class, outside `nav`/`header`/`footer`) is a carousel slide, not hidden matter,

@@ -960,6 +960,7 @@ def _discovery_event(
     advertised: int,
     seeds: int,
     *,
+    in_scope: int,
     common_crawl: CommonCrawlListing | None = None,
     seeded_from_common_crawl: bool = False,
 ) -> dict[str, Any]:
@@ -988,6 +989,12 @@ def _discovery_event(
             "attempts": [attempt.as_dict() for attempt in attempts],
             "found": sum(1 for attempt in attempts if attempt.ok and not attempt.index),
             "total_urls": advertised,
+            # How many of the listed addresses this crawl's scope admits. Distinct from
+            # `seeds`, which counts what was *queued*: lakshx.in's sitemap lists the home
+            # page and nothing else, and the home page was already fetched, so it seeded
+            # nothing -- which the run view read as "every listed address is on another
+            # site". One in scope, zero queued, is the true statement.
+            "in_scope": in_scope,
         },
         "seeds": seeds,
         # What Common Crawl's index last saw on this host, or None when it was not asked.
@@ -1163,6 +1170,11 @@ def stream_site(
         probe.sitemap_attempts,
         len(probe.sitemap_pages),
         len(seeded),
+        in_scope=sum(
+            1
+            for listed in probe.sitemap_pages
+            if (address := normalize_url(listed)) is not None and scope.permits(address, 1)
+        ),
         common_crawl=common_crawl,
         seeded_from_common_crawl=config.seed_from_common_crawl,
     )
@@ -1484,6 +1496,10 @@ def stream_site(
             "max_pages": config.max_pages,
             "max_seconds": config.max_seconds,
             "max_queue": config.max_queue,
+            # Not a stop reason -- a crawl past its depth simply has nothing left to queue
+            # and reports `exhausted` -- but the number a reader needs beside
+            # `refused["past-depth"]` to see that the cap, not the site, ended the run.
+            "max_depth": config.max_depth,
         },
         "queue_refused": frontier.refused_by_cap,
         # Every address the crawl turned away, by reason, and the first of each as
