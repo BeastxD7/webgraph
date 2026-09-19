@@ -121,10 +121,13 @@ class RenderConfig:
     """
 
     reveal_collapsed: bool = config.RENDER_REVEAL_COLLAPSED
-    """Open `<details>` and ARIA disclosure panels before measuring.
+    """Open collapsed content before measuring: `<details>`, ARIA disclosures, tab panels,
+    and panels a control names (`data-bs-target`, `href="#id"`), never inside site chrome.
 
     Reaches content the page hides until someone interacts, without clicking anything -- see
-    `fetch/js/reveal.js` for why clicking is the wrong tool. Off until measured; see MEMORY.md.
+    `fetch/js/reveal.js` for why clicking is the wrong tool. Each opened panel is stamped
+    `REVEALED_ATTRIBUTE`. On by default since 19 Sep 2026; `config.RENDER_REVEAL_COLLAPSED`
+    has the measurement.
     """
 
     user_agent: str | None = None

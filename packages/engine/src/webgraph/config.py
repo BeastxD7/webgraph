@@ -76,8 +76,14 @@ RENDER_SETTLE_MS = 900
 # from mounting. One guarded click, discarded unless the page measurably improves.
 RENDER_DISMISS_GATES = True
 
-# Open <details> and ARIA disclosure panels before measuring. Off until measured.
-RENDER_REVEAL_COLLAPSED = False
+# Open collapsed content before measuring, without clicking: <details>, ARIA disclosures,
+# tab panels, and panels a control names (data-bs-target, href="#id"). Never inside
+# nav/header/footer or a menu. Measured 19 Sep 2026 on the fidelity board: recall
+# unchanged (Chromium's own text never counts a closed panel), extra words +0.001 mean,
+# +0.027 at most (arxiv.org's bibliographic-tools tabs, which are the page's own). What
+# it changes is that content reachable by a click is measured and ordered where it sits
+# rather than anchored after its neighbour.
+RENDER_REVEAL_COLLAPSED = True
 
 # Run the browser without a window.
 RENDER_HEADLESS = True
