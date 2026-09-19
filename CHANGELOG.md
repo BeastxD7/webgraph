@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI (2026-09-19, PR #170)
+- Removed: the example-site chips (vtu.ac.in, docs.python.org, …) under the address box.
+  Owner's request; the prompt is the address, the mode and the run's options.
+
 ### Engine (2026-09-19, PR #169) -- a link is not its label; card links
 - Fixed: a plain label followed by a link with the same words is two blocks, not a
   duplicate -- lakshx.in's sidebar says "Slash Commands" as a group label and again as the

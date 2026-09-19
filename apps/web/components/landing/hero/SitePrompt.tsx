@@ -17,20 +17,19 @@ const MODES: ReadonlyArray<{ id: Mode; label: string; hint: string }> = [
   { id: "report", label: "Site report", hint: "what the site shows people against what it shows crawlers" },
 ];
 
-/** Sites the changelog records; each is a story the reader can tell. */
-const EXAMPLES: readonly string[] = ["vtu.ac.in", "docs.python.org", "gov.uk/browse", "sode-edu.in"];
+/** What the preview card shows while no address is typed (it is hidden then). */
+const PLACEHOLDER_HOST = "your-site.com";
 
 /**
  * The prompt: the one thing to do on the page, standing in the scene. A wide field with a
  * round dark submit, and beneath the field, inside the box, the mode as a segmented row and
- * example addresses as chips.
+ * the run's options.
  * Submitting normalises the address (`lib/url`) and routes it: a page or a site to
  * `/extract`, a report to `/report`.
  *
  * In the hero (`scene`) it also drives the Earth: the frame's `data-hero-host` is the host
  * typed or hovered, and the planet turns to its country; `data-hero-state` becomes
- * `preview` while an example is hovered (the run card rises above the prompt as what the
- * address becomes) and `running` once Run is pressed, when the camera pushes in for 620 ms
+ * `running` once Run is pressed, when the camera pushes in for 620 ms
  * before the app navigates.
  */
 export default function SitePrompt({ id, scene = false }: { id?: string; scene?: boolean }) {
@@ -44,21 +43,20 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
   const [mode, setMode] = useState<Mode>("site");
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
 
   const setState = useCallback(
-    (next: "idle" | "focus" | "preview" | "running") => {
+    (next: "idle" | "focus" | "running") => {
       if (!scene) return;
       const frame = box.current?.closest<HTMLElement>("[data-hero-frame]");
       if (frame) frame.dataset.heroState = next;
     },
     [scene],
   );
-  const state = running ? "running" : preview ? "preview" : focused ? "focus" : "idle";
+  const state = running ? "running" : focused ? "focus" : "idle";
   useEffect(() => setState(state), [state, setState]);
   // The host the scene should turn to: the example under the pointer, else what is typed.
-  const sceneHost = preview ?? hostOf(value) ?? "";
+  const sceneHost = hostOf(value) ?? "";
   useEffect(() => {
     if (!scene) return;
     const frame = box.current?.closest<HTMLElement>("[data-hero-frame]");
@@ -87,13 +85,13 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
   }, [value, mode, router, scene]);
 
   const current = MODES.find((m) => m.id === mode) ?? MODES[1]!;
-  const shownHost = preview ?? (value.trim() ? normalizeHost(value) : null);
+  const shownHost = value.trim() ? normalizeHost(value) : null;
 
   return (
     <div ref={box} className={scene ? "hero-prompt" : ""} data-scene-card={scene ? "" : undefined}>
       {scene && (
         <div className="hero-preview" aria-hidden={!shownHost} data-shown={shownHost ? "" : undefined}>
-          <RunCard host={shownHost ?? EXAMPLES[0]!} mode={mode} />
+          <RunCard host={shownHost ?? PLACEHOLDER_HOST} mode={mode} />
         </div>
       )}
       {/* A plain GET form underneath: before React attaches (a slow phone, a failed script)
@@ -183,29 +181,6 @@ export default function SitePrompt({ id, scene = false }: { id?: string; scene?:
             <p id={hintId} className="sr-only">
               {current.hint}
             </p>
-            {/* Examples, inside the composer so the nearest pages of the field never cover them. */}
-            <ul className="flex flex-wrap items-center gap-1.5" aria-label="Try one">
-              {EXAMPLES.map((host, i) => (
-                <li key={host} className={i >= 2 ? "max-sm:hidden" : i === EXAMPLES.length - 1 ? "max-lg:hidden" : ""}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setValue(host);
-                      setPreview(host);
-                      setError(null);
-                      document.getElementById(inputId)?.focus();
-                    }}
-                    onPointerEnter={() => setPreview(host)}
-                    onPointerLeave={() => setPreview(value.trim() ? normalizeHost(value) : null)}
-                    onFocus={() => setPreview(host)}
-                    onBlur={() => setPreview(value.trim() ? normalizeHost(value) : null)}
-                    className="inline-flex h-8 items-center pill-shape border border-rule px-2.5 font-mono text-caption text-muted transition-colors duration-(--dur-fast) hover:border-rule-strong hover:bg-sunk hover:text-ink"
-                  >
-                    {host}
-                  </button>
-                </li>
-              ))}
-            </ul>
           </div>
         </div>
 
