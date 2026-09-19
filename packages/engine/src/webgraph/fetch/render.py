@@ -27,6 +27,7 @@ the contract between the two runtimes is written down exactly once, in `webgraph
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
@@ -553,6 +554,23 @@ class HiddenMatter:
 
     def holds(self, key: str, *, min_chars: int) -> bool:
         return key in self.lines or (len(key) >= min_chars and key in self.text)
+
+    def holds_cells(self, rows: Sequence[Sequence[str]], *, min_chars: int) -> bool:
+        """Whether a table's every cell was hidden.
+
+        A table block's key is its rows joined with ` | ` and newlines, a form no text node
+        ever has, so `holds` could not see a hidden table at all: allbirds.com's privacy
+        modal (`display: none`, `aria-hidden`) holds a six-row table of personal-data
+        categories, and the union put it back from the static page while the paragraphs
+        around it stayed out. Each cell is a text node of its own and matches exactly;
+        the table is hidden when all of them are, and at least one is long enough to be
+        more than a stray number.
+        """
+        cells = ["".join(cell.split()).casefold() for row in rows for cell in row]
+        cells = [c for c in cells if c]
+        if not cells or max(len(c) for c in cells) < min_chars:
+            return False
+        return all(c in self.lines or (len(c) >= min_chars and c in self.text) for c in cells)
 
 
 def hidden_matter(html: str) -> HiddenMatter:
