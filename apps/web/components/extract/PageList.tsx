@@ -14,7 +14,8 @@ export default function PageList({
   siteUrl: string;
 }) {
   const [query, setQuery] = useState("");
-  const [contentOnly, setContentOnly] = useState(true);
+  // Full page by default, as on the single-page view.
+  const [contentOnly, setContentOnly] = useState(false);
 
   // Failures live in their own tab, so this list is always the successful pages.
   const candidates = pages;

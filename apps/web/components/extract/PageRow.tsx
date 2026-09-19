@@ -200,8 +200,8 @@ export default function PageRow({
             {hasCleanView && (
               <div role="group" aria-label="What to show" className="flex rounded-full bg-sunk p-0.5">
                 {[
-                  { id: true, label: "Content only" },
                   { id: false, label: "Full page" },
+                  { id: true, label: "Content only" },
                 ].map((option) => (
                   <button
                     key={String(option.id)}

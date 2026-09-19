@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI and SDK (2026-09-19, PR #164) -- the whole page is the default
+- Changed: the extract views open on **Full page**; "Content only" is the opt-in. The SDK
+  docs, the package README and the `webgraph` docstring show `to_markdown(page.document)`
+  and `event["markdown"]` as the default and `select_content` / `content_markdown` as the
+  reduction a caller opts into. The API is unchanged: `/api/text` and the crawl carry both.
+
 ### Engine (2026-09-19, PRs #152-#155)
 - Added: `from webgraph import resolve_page, build_document, to_markdown, select_content,
   stream_site, read_metadata` is the package's stable surface; `webgraph.__version__`. The

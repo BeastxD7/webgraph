@@ -5,16 +5,16 @@ The stable surface, enough for the common jobs:
     from webgraph import resolve_page, to_markdown
 
     page = resolve_page("https://example.com/")     # plain fetch + browser, merged
-    print(to_markdown(page.document))                # the whole page, in reading order
+    print(to_markdown(page.document))                # the whole page, in reading order: the default
 
-    from webgraph import select_content
+    from webgraph import select_content              # opt in to the content alone
     body = select_content(page.document.blocks, title=page.document.title)
     print(to_markdown(page.document.model_copy(update={"blocks": tuple(body.blocks)})))
 
     from webgraph import stream_site
     for event in stream_site("https://example.com/"):
         if event["type"] == "page":
-            print(event["url"], event["content_markdown"][:80])
+            print(event["url"], event["markdown"][:80])
 
     from webgraph import build_site_report, create_watch, run_watch, ContextAssembler
 
