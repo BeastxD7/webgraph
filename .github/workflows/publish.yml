@@ -1,0 +1,62 @@
+name: Publish engine
+
+# Builds the `webgraph` wheel and sdist from packages/engine and publishes them with PyPI's
+# trusted publishing (OIDC): no token lives in this repository. One-time setup on PyPI:
+# project settings -> Publishing -> add GitHub publisher (owner BeastxD7, repository
+# webgraph, workflow publish.yml, environment pypi). TestPyPI first with the same form.
+#
+# A tag `v1.2.3` publishes to PyPI. The workflow_dispatch button publishes to TestPyPI, for
+# rehearsing a release without spending a version number.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Check the tag matches the package version
+        if: github.event_name == 'push'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(uv version --package webgraph --short)"
+          test "$tag" = "$version" || { echo "tag v$tag != package version $version"; exit 1; }
+      - run: uv build --package webgraph --out-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

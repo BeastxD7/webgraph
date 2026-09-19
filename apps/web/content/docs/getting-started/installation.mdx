@@ -27,6 +27,31 @@ memory (`WEBGRAPH_MAX_BROWSERS`, six by default on a laptop, four in the contain
 Without Playwright the engine still runs, silently degrading to a static-only fetch and
 saying so in `render_error`.
 
+## The engine alone, as a library
+
+The engine is a Python package of its own (`packages/engine`, distribution `webgraph`), with
+no dependency on the API or the web UI. It builds as a wheel today; publication to PyPI is
+one `git tag` away (`.github/workflows/publish.yml`, trusted publishing), so until the first
+release install it from the repository:
+
+```bash
+pip install "webgraph[render] @ git+https://github.com/BeastxD7/webgraph#subdirectory=packages/engine"
+playwright install chromium
+```
+
+Then:
+
+```python
+from webgraph import resolve_page, to_markdown
+
+page = resolve_page("https://example.com/")
+print(to_markdown(page.document))
+```
+
+The names exported from `webgraph` itself -- `resolve_page`, `build_document`, `to_markdown`,
+`select_content`, `stream_site`, `read_metadata` and the `Document`/`Block` types -- are the
+stable surface; everything else is importable from its module and documented there.
+
 ## From the repository
 
 <Steps>

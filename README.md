@@ -160,7 +160,11 @@ MEMORY.md                 # the engineering journal — read before changing ext
 ```
 
 The engine has no dependency on the API or the web app, and ships a `py.typed` marker. It
-can be used as a library or through its CLI (`webgraph extract`, `webgraph bench`).
+can be used as a library or through its CLI (`webgraph text`, `webgraph site`, `webgraph
+report`, `webgraph bench`); `packages/engine/README.md` is its own front page, and
+`from webgraph import resolve_page, to_markdown, select_content, stream_site` is the stable
+surface. It builds as a wheel (`uv build --package webgraph`) and publishes with
+`.github/workflows/publish.yml`.
 
 ---
 
