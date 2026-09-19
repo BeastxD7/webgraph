@@ -254,6 +254,47 @@ class TestInlineLinks:
         assert "](" not in doc.text
 
 
+class TestCardLinks:
+    """A card is an `<a href>` around blocks -- a title in a `<div>`, a description in a
+    `<p>` -- and the link was on none of them. lakshx.in/docs: "The Chat Panel / Talk to
+    the agent…" came out as two plain paragraphs and the address a reader clicks to was
+    lost; Firecrawl kept it, as `[The Chat Panel\\ \\ Talk to…](…)`. The first block under
+    the anchor carries the link; the card's body after it stays plain."""
+
+    CARD = (
+        '<a class="card" href="/docs/chat"><div><span>The Chat Panel</span></div>'
+        "<p>Talk to the agent, attach files, and steer a run.</p></a>"
+    )
+
+    def test_the_first_block_under_the_anchor_carries_its_link(self) -> None:
+        out = md(self.CARD)
+        assert "[The Chat Panel](https://example.com/docs/chat)" in out
+        assert "Talk to the agent, attach files, and steer a run." in out
+        assert out.count("](https://example.com/docs/chat)") == 1, "the body stays plain"
+
+    def test_two_cards_are_two_links(self) -> None:
+        out = md(
+            self.CARD
+            + self.CARD.replace("/docs/chat", "/docs/feedback").replace("Chat Panel", "Feedback")
+        )
+        assert "[The Chat Panel](https://example.com/docs/chat)" in out
+        assert "[The Feedback](https://example.com/docs/feedback)" in out
+
+    def test_a_block_with_its_own_links_is_left_alone(self) -> None:
+        out = md('<a href="/card"><div><p>See <a href="/inner">the docs</a></p></div></a>')
+        assert "[the docs](https://example.com/inner)" in out
+        assert "](https://example.com/card)" not in out
+
+    def test_a_javascript_anchor_gives_no_link(self) -> None:
+        out = md('<a href="javascript:void(0)"><div><p>Open the panel now please</p></div></a>')
+        assert "](" not in out
+
+    def test_plain_text_stays_plain(self) -> None:
+        doc = build_document(f"<html><body>{self.CARD}</body></html>", BASE)
+        assert doc.blocks[0].text == "The Chat Panel"
+        assert doc.blocks[0].rich_text == "[The Chat Panel](https://example.com/docs/chat)"
+
+
 class TestPermalinkAnchors:
     """Documentation generators attach a permalink anchor to every heading.
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import re
 from typing import TYPE_CHECKING, Final
 
 from webgraph import config
@@ -263,6 +264,16 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             kept[previous] = None
             seen[key] = len(kept)
             kept.append(block)
+        elif _link_targets(earlier) is None and _link_targets(block) is not None:
+            # A plain label and then the link that carries the same words: lakshx.in's
+            # sidebar says "Slash Commands" as a group label and again as the link under
+            # it, and the link, the copy a reader can follow, was the one dropped. Two
+            # things. Only this shape: two *links* with the same words and different
+            # targets stay one, measured -- keeping both cost WCXB 0.864 -> 0.863 with
+            # forum 0.798 -> 0.790 and repeated blocks 2.5% -> 8.4%, a listing's title
+            # linked from its picture and again from its caption being the usual pair.
+            # (A heading over its own echo in the sidebar is decided above, before this.)
+            kept.append(block)
         elif block.rect is not None and earlier.rect is None:
             # A later copy that was measured wins over an earlier one that was not -- and
             # it wins *where it was drawn*. Moving it up into the unmeasured copy's slot
@@ -282,6 +293,21 @@ def _deduplicate(blocks: list[Block]) -> list[Block]:
             kept[position] = None
 
     return [block for block in kept if block is not None]
+
+
+_LINK_TARGET: Final[re.Pattern[str]] = re.compile(r"\]\(([^)\s]+)")
+
+
+def _link_targets(block: Block) -> str | None:
+    """The addresses a text block links to, as one string, or None for a block with no link.
+
+    Compared between two blocks of the same text in `_deduplicate`: two copies that link
+    to the same places are one thing -- the mobile navigation beside the desktop one
+    repeats its hrefs along with its words -- and two that link differently are two."""
+    if not block.rich_text:
+        return None
+    targets = sorted(set(_LINK_TARGET.findall(block.rich_text)))
+    return " ".join(targets) if targets else None
 
 
 def _substantial(block: Block) -> bool:
