@@ -138,6 +138,7 @@ MISSING_STATUSES = frozenset({404, 410})
 # Statuses that mean something a person can act on, said in words.
 BLOCKING_STATUSES = {
     401: "the page requires a sign-in",
+    402: "the site answered 'payment required', which is how some of them refuse automated clients",
     403: "the site refused this client",
     429: "the site is rate-limiting this client",
     451: "the page is blocked for legal reasons",

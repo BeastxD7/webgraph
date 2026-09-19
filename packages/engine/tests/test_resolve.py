@@ -297,6 +297,13 @@ class TestMissingPagesAreNeverExtracted:
         for status in (403, 429, 500, 502, 503):
             assert status not in MISSING_STATUSES
 
+    def test_payment_required_is_a_refusal_in_words(self) -> None:
+        """investopedia.com answers a plain fetch with 402 and "experiencing an access
+        issue"; the status is how the site refuses automated clients, not a paywall."""
+        from webgraph.config import BLOCKING_STATUSES
+
+        assert "payment required" in BLOCKING_STATUSES[402]
+
     def test_error_carries_url_and_status(self) -> None:
         from webgraph.resolve import PageMissingError
 
@@ -378,6 +385,7 @@ class TestBlockPages:
             "Attention Required! | Cloudflare. Please complete the security check to access",
             "Access Denied. You don't have permission to access this resource. Ray ID: 8a1",
             "Pardon Our Interruption. As you were browsing something about your browser made us think you were a bot.",
+            "We are experiencing an access issue, please contact support with the reference below.",
         ],
     )
     def test_the_common_walls(self, text: str) -> None:
@@ -616,6 +624,82 @@ class TestAWallOnOneSide:
         self.stub(monkeypatch, static=self.PAGE, rendered=self.PAGE)
         resolved = module.resolve_page("https://www.example.test/sample.html")
         assert resolved.strategy is Strategy.UNION
+
+
+class TestAMissingPageServedToTheBrowser:
+    """es.ogs.ny.gov/veterans: the plain fetch met a Cloudflare challenge (403), the
+    browser a real nginx "404 no encontrado", and the union returned the 404 page's four
+    words as the page, with a green tick. A 404 to the browser is a page that does not
+    exist, as it is to the plain fetch -- unless the plain fetch was served the page, in
+    which case the browser was refused and that is the side that failed."""
+
+    NOT_FOUND = "<html><body><h1>404</h1><p>No encontrado</p></body></html>"
+
+    @staticmethod
+    def stub(
+        monkeypatch: pytest.MonkeyPatch, *, static: tuple[int, str], rendered: tuple[int, str]
+    ) -> None:
+        from webgraph import resolve as module
+        from webgraph.fetch.render import RenderResult
+        from webgraph.fetch.static import FetchResult
+
+        monkeypatch.setattr(module, "PLAYWRIGHT_AVAILABLE", True)
+        monkeypatch.setattr(
+            module,
+            "fetch_static",
+            lambda url, config=None: FetchResult(  # noqa: ARG005
+                url=url,
+                requested_url=url,
+                status=static[0],
+                html=static[1],
+                content_type="text/html",
+                elapsed_seconds=0.01,
+                ok=static[0] < 400,
+                error=None if static[0] < 400 else f"HTTP {static[0]}",
+            ),
+        )
+        monkeypatch.setattr(
+            module,
+            "render_page",
+            lambda url, config=None: RenderResult(  # noqa: ARG005
+                url=url, html=rendered[1], rects={}, ok=True, status=rendered[0]
+            ),
+        )
+
+    def test_a_404_beside_a_refused_plain_fetch_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import resolve as module
+        from webgraph.resolve import PageMissingError
+
+        self.stub(monkeypatch, static=(403, ""), rendered=(404, self.NOT_FOUND))
+        with pytest.raises(PageMissingError) as caught:
+            module.resolve_page("https://es.example.test/veterans")
+        assert "404" in str(caught.value)
+
+    def test_a_404_beside_a_wall_is_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph import resolve as module
+        from webgraph.resolve import PageMissingError
+
+        self.stub(
+            monkeypatch, static=(200, TestAWallOnOneSide.WALL), rendered=(404, self.NOT_FOUND)
+        )
+        with pytest.raises(PageMissingError):
+            module.resolve_page("https://es.example.test/veterans")
+
+    def test_a_404_beside_a_served_page_is_the_browser_being_refused(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from webgraph import resolve as module
+
+        self.stub(
+            monkeypatch, static=(200, TestAWallOnOneSide.PAGE), rendered=(404, self.NOT_FOUND)
+        )
+        resolved = module.resolve_page("https://es.example.test/veterans")
+        assert resolved.strategy is Strategy.STATIC_ONLY
+        assert "first paragraph of a real page" in resolved.document.text
+        assert "No encontrado" not in resolved.document.text
+        assert resolved.render_error is not None and "404" in resolved.render_error
 
 
 class TestHiddenInRender:
@@ -1414,3 +1498,84 @@ class TestAGateIsNotAHiddenMenu:
         )
         assert "Answer number 29" not in merged.text
         assert only_static == 0 and merged.gated is None
+
+
+class TestASlideIsNotAHiddenMenu:
+    """blueheroncap.com: three testimonials in an Elementor loop carousel, one showing
+    and two under `visibility: hidden` until they rotate in. The union read the two as
+    hidden matter and dropped the static page's copies -- 300 of 468 words. A hidden
+    element with a *showing* twin under the same parent (same tag, same leading class) is
+    a slide, and slides are content the author wrote for the page. A menu has no showing
+    twin. Under `nav`/`header`/`footer` nothing is a slide."""
+
+    @staticmethod
+    def slides(hidden: str) -> str:
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        mark = f" {HIDDEN_ATTRIBUTE}='visibility'" if hidden else ""
+        return (
+            "<div class='swiper-wrapper'>"
+            "<div class='swiper-slide first'><p>The first testimonial, showing, with enough words to be a slide of its own.</p></div>"
+            f"<div class='swiper-slide'{mark}><p>The second testimonial, waiting its turn, with enough words to be a slide of its own.</p></div>"
+            f"<div class='swiper-slide'{mark}><p>The third testimonial, also waiting, with enough words to be a slide of its own.</p></div>"
+            "</div>"
+        )
+
+    def test_hidden_slides_beside_a_showing_one_are_not_hidden_matter(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+
+        matter = hidden_matter(f"<html><body>{self.slides(hidden='yes')}</body></html>")
+        assert matter.largest == 0 and not matter.lines
+
+    def test_the_static_copies_of_the_slides_are_kept(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+
+        static = doc(self.slides(hidden=""))
+        rendered = doc(
+            "<div class='swiper-wrapper'><div class='swiper-slide first'><p>The first "
+            "testimonial, showing, with enough words to be a slide of its own.</p></div></div>"
+        )
+        merged, only_static, _ = union_documents(
+            static,
+            rendered,
+            hidden=hidden_matter(f"<html><body>{self.slides(hidden='yes')}</body></html>"),
+        )
+        assert "second testimonial" in merged.text and "third testimonial" in merged.text
+        assert only_static == 2
+
+    def test_a_hidden_menu_with_no_showing_twin_is_still_hidden(self) -> None:
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        matter = hidden_matter(
+            f"<html><body><div class='menu'><ul class='menu-list' {HIDDEN_ATTRIBUTE}='display'>"
+            "<li>Manual section one</li><li>Manual section two</li></ul></div></body></html>"
+        )
+        assert matter.largest > 0
+
+    def test_twins_under_the_site_chrome_are_not_slides(self) -> None:
+        """A header's two `.menu-panel`s, one showing: a menu, whatever its shape."""
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        for chrome in ("<header>", "<nav>", "<footer>", "<div role='navigation'>"):
+            close = "</" + chrome[1:].split()[0].rstrip(">") + ">"
+            matter = hidden_matter(
+                f"<html><body>{chrome}<div class='menu-panel'><a href='/a'>Products and services</a></div>"
+                f"<div class='menu-panel' {HIDDEN_ATTRIBUTE}='display'><a href='/b'>Company and careers</a></div>"
+                f"{close}</body></html>"
+            )
+            assert matter.largest > 0, chrome
+
+    def test_bare_divs_are_not_twins(self) -> None:
+        """The gate case: a picker in front of a hidden site, both plain `<div>`s under
+        `<body>`. No shared class, no carousel."""
+        from webgraph.fetch.render import hidden_matter
+        from webgraph.markers import HIDDEN_ATTRIBUTE
+
+        matter = hidden_matter(
+            "<html><body><div role='dialog'><p>Where are we shipping to?</p></div>"
+            f"<div {HIDDEN_ATTRIBUTE}='display'><p>The whole site, hidden behind the picker.</p></div>"
+            "</body></html>"
+        )
+        assert matter.largest > 0

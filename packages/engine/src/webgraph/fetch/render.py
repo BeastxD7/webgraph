@@ -33,7 +33,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
-from typing import Any, Literal
+from typing import Any, Final, Literal
 from urllib.parse import urlsplit
 
 from webgraph import config
@@ -43,6 +43,7 @@ from webgraph.fetch.browser import shared_browser
 from webgraph.markers import (
     BREAK_ATTRIBUTE,
     GATE_ATTRIBUTE,
+    HIDDEN_ATTRIBUTE,
     MARKER_ATTRIBUTE,
     marker_arguments,
 )
@@ -750,19 +751,26 @@ def hidden_matter(html: str) -> HiddenMatter:
     collapsed `overflow` tray is in the flow of the page.
     """
     from webgraph.dom.blocks import parse_html
-    from webgraph.markers import HIDDEN_ATTRIBUTE
 
     root = parse_html(html)
     lines: set[str] = set()
     wholes: list[str] = []
     largest = 0
     hidden_kinds = ("display", "visibility", "offscreen")
+    slides: list[Any] = []
     for element in root.xpath(
         f"//*[@{HIDDEN_ATTRIBUTE}='display' or @{HIDDEN_ATTRIBUTE}='visibility'"
         f" or @{HIDDEN_ATTRIBUTE}='offscreen']"
     ):
         whole = "".join(element.text_content().split()).casefold()
         if not whole:
+            continue
+        # A slide, and everything inside it (its descendants carry the mark too): the
+        # loop runs in document order, so a slide is seen before what it holds.
+        if any(slide is element or slide in element.iterancestors() for slide in slides):
+            continue
+        if _is_a_slide(element, hidden_kinds):
+            slides.append(element)
             continue
         wholes.append(whole)
         lines.add(whole)
@@ -774,6 +782,49 @@ def hidden_matter(html: str) -> HiddenMatter:
         if not any(a.get(HIDDEN_ATTRIBUTE) in hidden_kinds for a in element.iterancestors()):
             largest = max(largest, len(whole))
     return HiddenMatter(frozenset(lines), "\n".join(wholes), largest)
+
+
+_CHROME_TAGS: Final[frozenset[str]] = frozenset({"nav", "header", "footer"})
+
+
+def _is_a_slide(element: Any, hidden_kinds: tuple[str, ...]) -> bool:
+    """Whether a hidden element is one slide of a carousel: a sibling of the same shape --
+    same tag, same leading class -- is *showing* under the same parent, outside the site's
+    chrome.
+
+    A carousel shows one slide and hides the rest until they rotate in, and every slide is
+    content the author wrote for the page: blueheroncap.com's three testimonials, of which
+    the render showed one (`visibility: hidden` on the other two, Elementor's loop
+    carousel) and the union then dropped the static page's copies as "hidden". A menu is
+    the case the hidden-matter rule exists for, and a menu has no showing twin: php.net's
+    `nav#trick` is the only nav under its parent, and a hover submenu's siblings are links,
+    not submenus. Under `nav`/`header`/`footer` nothing is a slide, whatever its shape."""
+    parent = element.getparent()
+    if parent is None or not isinstance(element.tag, str):
+        return False
+    for ancestor in element.iterancestors():
+        tag = ancestor.tag if isinstance(ancestor.tag, str) else ""
+        role = (ancestor.get("role") or "").strip().lower()
+        if tag in _CHROME_TAGS or role in ("navigation", "banner", "contentinfo", "menu"):
+            return False
+    own_class = (element.get("class") or "").split()
+    if not own_class:
+        # Slides share a class (`swiper-slide`, `slick-slide`, Elementor's `e-loop-item`);
+        # two bare `<div>`s under one parent are not twins -- a country picker in front of
+        # a hidden site is the gate case, not a carousel.
+        return False
+    lead = own_class[0]
+    for sibling in parent:
+        if sibling is element or not isinstance(sibling.tag, str) or sibling.tag != element.tag:
+            continue
+        if sibling.get(HIDDEN_ATTRIBUTE) in hidden_kinds:
+            continue
+        sibling_class = (sibling.get("class") or "").split()
+        if not sibling_class or sibling_class[0] != lead:
+            continue
+        if sibling.text_content().strip():
+            return True
+    return False
 
 
 def geometry_by_xpath(html: str, rects: dict[str, Rect]) -> dict[str, Rect]:
