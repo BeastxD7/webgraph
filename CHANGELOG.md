@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Engine (2026-09-19, PR #169) -- a link is not its label; card links
+- Fixed: a plain label followed by a link with the same words is two blocks, not a
+  duplicate -- lakshx.in's sidebar says "Slash Commands" as a group label and again as the
+  link under it, and the link was the copy dropped. Only that shape: two links with the
+  same words and different targets stay one (keeping both cost WCXB 0.864 -> 0.863 and
+  tripled repeated blocks). WCXB dev 0.864 unchanged (collection, listing -0.001).
+- Fixed: a card -- an `<a href>` around a title and a description in blocks of their own
+  -- gives its link to the first block under it (`[The Chat Panel](…/docs/chat)`); the
+  address a reader clicks to was lost before.
+
 ### Web UI, engine (2026-09-19, PR #168) -- options at the prompt; a file per page
 - Added: an **Options** button on the address box opens the run's options -- max pages,
   max depth, within path, exact host, include/exclude paths, respect robots.txt, the

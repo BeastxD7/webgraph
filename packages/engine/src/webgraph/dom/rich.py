@@ -1528,6 +1528,23 @@ def _orphan_runs(element: HtmlElement, base: str) -> list[_OrphanRun]:
     return runs
 
 
+_LINKABLE: Final[frozenset[BlockKind]] = frozenset(
+    {BlockKind.PARAGRAPH, BlockKind.HEADING, BlockKind.LIST_ITEM}
+)
+
+
+def _enclosing_anchor(element: HtmlElement) -> HtmlElement | None:
+    """The nearest `<a href>` above a block-level element, or None. Stops at the body: an
+    anchor is never that far up, and the walk is per admitted block."""
+    for ancestor in element.iterancestors():
+        tag = ancestor.tag
+        if tag == "a" and ancestor.get("href"):
+            return ancestor
+        if tag in ("body", "html", "main", "article", "section", "nav", "header", "footer"):
+            return None
+    return None
+
+
 def _holds_a_block(element: HtmlElement) -> bool:
     """Whether some descendant is a block another emitter carries."""
     return any(
@@ -2161,6 +2178,8 @@ def extract_rich_blocks(
     held_before: dict[HtmlElement, list[tuple[HtmlElement, _OrphanRun]]] = {}
     held_after: dict[HtmlElement, list[tuple[HtmlElement, _OrphanRun]]] = {}
 
+    linked_anchors: set[HtmlElement] = set()
+
     def admit(block: Block, element: HtmlElement) -> None:
         nonlocal index
         if (
@@ -2188,6 +2207,18 @@ def extract_rich_blocks(
         templated = _templated_of(element, templated_cache)
         if templated is not None:
             block = block.model_copy(update={"templated": templated})
+        if block.kind in _LINKABLE and block.rich_text is None:
+            # A card is an `<a href>` around blocks -- a title in a `<div>`, a description
+            # in a `<p>` -- and the link is on none of them. lakshx.in/docs: "The Chat
+            # Panel / Talk to the agent…" came out as two plain paragraphs, and the address
+            # a reader clicks to was lost. The first block admitted under such an anchor
+            # carries its link; the ones after it are the card's body and stay plain.
+            anchor = _enclosing_anchor(element)
+            if anchor is not None and anchor not in linked_anchors:
+                href = _absolute(anchor.get("href"), base_url)
+                if href and not href.lower().startswith("javascript:"):
+                    linked_anchors.add(anchor)
+                    block = block.model_copy(update={"rich_text": f"[{block.text}]({href})"})
         blocks.append(block)
         index += 1
 
