@@ -1,0 +1,90 @@
+---
+title: Watch a site
+description: create_watch, run_watch and stream_watch, the changes they record, and feeds - the Watch page of the UI as library calls.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A watch is a site plus a crawl configuration, stored, that is crawled again on demand and
+reports what changed since last time — page by page, section by section, with noise
+(dates, view counts, rotating promos) suppressed. The UI's Watch page and the
+`/api/watch` routes are these calls.
+
+## Register
+
+```python
+from webgraph import create_watch, list_watches, get_watch
+
+watch = create_watch(
+    "https://docs.python.org/3/tutorial/",
+    {"max_pages": 50, "within_path": True, "strategy": "static-only"},   # SiteConfig fields by name
+    schedule_seconds=0,
+)
+watch.id             # '98f616b9e7fd'
+watch.root, watch.config, watch.created_at, watch.schedule_seconds
+list_watches()       # every watch in the store
+get_watch(watch.id)  # or None
+```
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `root` | — | An `http` or `https` address; anything else raises `ValueError` |
+| `config` | `None` | [`SiteConfig`](/docs/sdk/sites#siteconfig) fields by name, plus the watch's own `noise` (`False` turns noise suppression off) and `noise_patterns` (extra regular expressions to strip before comparing). Validated by building the `SiteConfig` once, so a bad value fails here, not on the first run |
+| `schedule_seconds` | `0` | Recorded for a scheduler to read; the library does not run a clock |
+| `store` | the shared database | A `WatchStore`, or a path to an SQLite file: `store="watches.sqlite"`. Every call on this page takes it |
+
+## Run
+
+```python
+from webgraph import run_watch
+
+first = run_watch(watch.id)
+first.baseline, first.pages_ok, first.changed     # True, 3, 0 -- the first run records the baseline
+second = run_watch(watch.id)
+second.baseline, second.unchanged, second.changed  # False, 3, 0 -- nothing moved
+```
+
+`run_watch(watch_id, *, store=, should_stop=, on_event=, adjust=)` returns a `RunSummary`:
+`watch_id`, `run_id`, `baseline`, `pages_ok`, `pages_failed`, `stopped_by`, `added`,
+`removed`, `changed`, `suppressed` (differences the noise rules explained away),
+`unchanged`, `unverified` (pages that could not be fetched this time and are not counted as
+gone), `duration_seconds`, and `changes`, the `Change` records it wrote. `on_event` sees
+every crawl event as it happens; `adjust` lets you cap the stored configuration before it
+runs (the API clamps `max_pages` here).
+
+`stream_watch(watch_id, ...)` is the same run as an iterator — a `watch` event first, the
+crawl's events with their Markdown stripped, a `change` event per page that differed, and a
+`done` event carrying the summary — for a UI that shows the run live.
+
+## Read the changes
+
+```python
+from webgraph import list_changes, export_changes
+
+for change in list_changes(watch.id, since=None, limit=500):
+    change.kind            # 'added' | 'removed' | 'changed'
+    change.url, change.title, change.run_id, change.detected_at
+    change.before_hash, change.after_hash
+    change.sections        # for a changed page: each section's kind, heading, before, after
+
+export_changes(watch.id, fmt="json")                              # also "markdown", "rss", "atom"
+export_changes(watch.id, fmt="rss", feed_url="https://you.example/feed.xml")
+```
+
+`since` is an epoch timestamp; `run_id` narrows to one run. The feed formats are what
+`/api/watch/{id}/feed.xml` serves, so a feed reader can follow a site's changes.
+
+## From a shell
+
+```bash
+webgraph watch create https://docs.python.org/3/tutorial/     # prints the id
+webgraph watch run <id>
+webgraph watch changes <id>
+webgraph watch list
+```
+
+<Callout type="info">
+A watch compares *content*, not markup: it diffs the sections of the site graph two crawls
+produced, after reading order and content selection, so a changed build hash or a rotated
+ad is not a change. The [Watch](/docs/watch) section has the noise rules and what counts.
+</Callout>

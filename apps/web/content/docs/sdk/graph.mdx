@@ -1,0 +1,126 @@
+---
+title: Site graph and Ask
+description: GraphBuilder fills a SiteGraph during a crawl; ContextAssembler answers a question from it; GraphStore keeps it; export writes JSONL or Cypher; diff_graphs compares two.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The web UI's graph view, the "Ask" box and `/api/site/context` are one structure: a
+`SiteGraph` of pages, heading-scoped sections, links and entities that a crawl fills in as
+pages arrive. The library exposes each piece.
+
+## Build a graph while crawling
+
+```python
+from webgraph import GraphBuilder, SiteConfig, stream_site
+
+builder = GraphBuilder("https://docs.python.org/3/tutorial/")
+for event in stream_site("https://docs.python.org/3/tutorial/", config=SiteConfig(max_pages=4, within_path=True), builder=builder):
+    if event["type"] == "done":
+        print(event["graph"])          # {'pages': 4, 'sections': 31, 'entities': 4, 'links': 81, 'mentions': 6}
+
+graph = builder.graph
+graph.describe()                       # the same counts
+```
+
+`GraphBuilder(root)` has one method beyond the crawl's use of it:
+`add(document, depth=, title=, anchored_links=, requested_url=, canonical_url=)` adds one
+extracted page and returns its sections — for a graph built from pages you resolved
+yourself.
+
+## `SiteGraph`
+
+| Field | Type | What it holds |
+|---|---|---|
+| `root` | `str` | The site |
+| `pages` | `dict[str, PageNode]` | Keyed by normalised URL: `url`, `title`, `depth`, `chars`, `section_ids`, `content_hash` |
+| `sections` | `dict[str, Section]` | Heading-scoped runs of content — the unit retrieval works on: `heading`, `level`, `text`, `chars`, `page_key`, `order`, `parent_id`, `blocks` (which blocks, at which offsets). A heading owns the text beneath it until the next heading of equal or higher level, which is only knowable because reading order was recovered first |
+| `links` / `links_to` / `linked_from` | | The internal link graph, with anchor texts |
+| `external_links` | | Per page, every off-site address and the anchors that pointed at it |
+| `entities` / `mentions` / `mentioned_in` | | Things the site is about, and which sections mention them |
+| `aliases` | `dict[str, str]` | Other addresses a page answered to (the one that redirected here, the canonical) → its key |
+
+`derive_entities(graph)` adds two kinds the crawl does not: each page's subject (from its
+structured data and inbound anchors) and the code symbols a documentation site defines.
+Idempotent; the API calls it before the first question.
+
+## Ask: `ContextAssembler`
+
+```python
+from webgraph import Budget, ContextAssembler, derive_entities
+
+derive_entities(graph)
+assembler = ContextAssembler(graph)
+result = assembler.assemble("how do I use a for loop with range", budget=Budget(max_chars=3000), max_hops=1)
+
+result.text[:120]
+# '# Context assembled for: how do I use a for loop with range\n\nSite: https://docs.python.org/3/tutorial/ — 4 pages, 31 sections indexed.\n\n## Relevant content ...'
+len(result.sections_full), len(result.sections_opening)    # 6, 1
+result.sections_full[0].section.heading, round(result.sections_full[0].score, 2), result.sections_full[0].reason
+result.stats     # {'chars': 2659.0, 'approx_tokens': 664.75, 'sections_considered': 31.0, ...}
+```
+
+There is no language model here either: it is retrieval over the graph, and what it returns
+is the material an answer would be written from — a bounded Markdown context with each
+section's page, heading and why it was chosen — for you to hand to whatever answers.
+
+| `assemble(...)` parameter | Default | What it does |
+|---|---|---|
+| `query` | — | The question, tokenised and matched against section text and headings |
+| `budget` | `Budget()` | `max_chars=400_000` (roughly 100k tokens), split `full_share=0.65` on whole sections, `opening_share=0.20` on section openings, with `neighbour_share=0.35` of the content budget reserved for sections reached by expansion |
+| `seed_limit` | `40` | Best-matching sections to start from |
+| `max_hops` | `2` | How far to follow links and parent/child relations from the seeds |
+| `accumulate` | `True` | Let a page's score accumulate over its matching sections |
+| `normalize` | `True` | Normalise scores by section length |
+
+`Assembled` carries `text`, `sections_full`, `sections_opening` (each a `ScoredSection`
+with `section`, `score`, `hops`, `reason`), `pages_mapped`, `seeds` and `stats`.
+
+## Keep it: `GraphStore`
+
+```python
+from webgraph import GraphStore
+
+store = GraphStore()                    # the shared cache directory; or GraphStore("./graphs")
+path = store.save(graph)                # one JSONL file, named after the root
+store.load("https://docs.python.org/3/tutorial/")     # SiteGraph, or None
+store.stored()                          # [(root, bytes, modified_epoch), ...]
+store.prune(keep=32, max_age_days=30)   # what the API does to its cache
+```
+
+A crawl costs minutes; reading the file costs milliseconds. The API keeps the last graphs
+this way so the Ask box answers without re-crawling.
+
+## Export
+
+```python
+from webgraph import to_jsonl, write_jsonl, load_jsonl, to_cypher
+
+write_jsonl(graph, "site.jsonl")        # returns the line count (248 for the four-page graph)
+for line in to_jsonl(graph): ...        # the same, streamed: a `site` header, then pages, sections, links, entities, mentions
+graph = load_jsonl("site.jsonl")
+for statement in to_cypher(graph, include_text=False): ...   # Neo4j / Kuzu; `include_text=True` embeds section bodies
+```
+
+`webgraph graph <urls> --format jsonl|cypher` is the same from the command line.
+
+## Compare two crawls
+
+```python
+from webgraph.graph.diff import diff_graphs
+
+diff = diff_graphs(before, after)
+diff.added, diff.removed     # PageNode lists
+diff.changed                 # PageChange list: url, title, and the SectionChanges (kind, heading, before, after)
+diff.unchanged               # a count
+```
+
+This is what [watches](/docs/sdk/watch) record between runs and what `webgraph diff`
+prints.
+
+<Callout type="info">
+The **WebGraph knowledge graph** (`/graph` in the UI, `webgraph kg`, behind
+`WEBGRAPH_KG=1`) is a separate, richer graph with typed entities and optional LLM
+providers; it has [its own section](/docs/webgraph). The site graph on this page needs no
+flag and no provider.
+</Callout>
