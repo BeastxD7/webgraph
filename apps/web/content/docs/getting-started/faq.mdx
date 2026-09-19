@@ -48,13 +48,15 @@ one, including a pasted login page whose `<link rel="canonical">` gives it away.
 
 ## Does it respect robots.txt?
 
-Yes. The crawl always has; since PR #83 a single page does too. `resolve_page` asks the
-host's `robots.txt` before fetching, one fetch of the file per host per hour, matching rules
-for the token `webgraph` (`ROBOTS_AGENT_TOKEN`). A disallowed page is not fetched at all
-and the refusal quotes the group and rule that decided and says what the site offers
-instead — the Stack Exchange or Reddit data API where the engine can cite one, or your own
-HTML. `Crawl-delay` is honoured on a crawl. `fetch.respect_robots: false` on the request is
-your explicit override.
+On request. Since 19 September 2026 the default is to read every page the engine can
+reach; `respect_robots: true` (on `fetch` for a page, on `crawl` for a site, or in
+Settings) asks the host's `robots.txt` before fetching — one fetch of the file per host per
+hour, matching rules for the token `webgraph` (`ROBOTS_AGENT_TOKEN`) — and a disallowed
+page is then not fetched at all: the refusal quotes the group and rule that decided and
+says what the site offers instead. Two things do not depend on the switch: politeness
+(one page a second per host, and the file's `Crawl-delay` when larger), and the
+[site report](/docs/site-report), which measures what the site declares and always obeys
+it.
 
 ## Does it read PDFs?
 

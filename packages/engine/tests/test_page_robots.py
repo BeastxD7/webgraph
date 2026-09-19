@@ -56,7 +56,21 @@ def serve(monkeypatch: pytest.MonkeyPatch, robots: str | None, page: str = PAGE)
     return fetched
 
 
+ROBOTS_ON = FetchConfig(respect_robots=True)
+
+
 class TestASinglePageHonoursRobots:
+    """With `respect_robots=True`. Off by default since 19 Sep 2026 (the owner's decision:
+    explore everything, honour the file on request); the check itself is unchanged."""
+
+    def test_the_default_reads_a_disallowed_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from webgraph.resolve import Strategy, resolve_page
+
+        fetched = serve(monkeypatch, "User-agent: *\nDisallow: /\n")
+        resolved = resolve_page("https://example.com/page", strategy=Strategy.STATIC_ONLY)
+        assert "The page" in resolved.document.text
+        assert "https://example.com/robots.txt" not in fetched
+
     def test_a_disallowed_page_is_refused_with_the_rule(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -64,7 +78,11 @@ class TestASinglePageHonoursRobots:
 
         fetched = serve(monkeypatch, "User-agent: *\nDisallow: /\n")
         with pytest.raises(PageDisallowedError) as caught:
-            resolve_page("https://stackoverflow.com/questions/1/x", strategy=Strategy.STATIC_ONLY)
+            resolve_page(
+                "https://stackoverflow.com/questions/1/x",
+                strategy=Strategy.STATIC_ONLY,
+                fetch_config=ROBOTS_ON,
+            )
         message = str(caught.value)
         assert "https://stackoverflow.com/robots.txt" in message
         assert "Disallow: /" in message and "User-agent: *" in message
@@ -78,7 +96,9 @@ class TestASinglePageHonoursRobots:
         from webgraph.resolve import Strategy, resolve_page
 
         fetched = serve(monkeypatch, "User-agent: *\nDisallow: /private/\n")
-        resolved = resolve_page("https://example.com/public/page", strategy=Strategy.STATIC_ONLY)
+        resolved = resolve_page(
+            "https://example.com/public/page", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON
+        )
         assert "The page" in resolved.document.text
         assert fetched == ["https://example.com/robots.txt", "https://example.com/public/page"]
 
@@ -86,15 +106,17 @@ class TestASinglePageHonoursRobots:
         from webgraph.resolve import Strategy, resolve_page
 
         serve(monkeypatch, None)
-        resolved = resolve_page("https://example.com/page", strategy=Strategy.STATIC_ONLY)
+        resolved = resolve_page(
+            "https://example.com/page", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON
+        )
         assert "The page" in resolved.document.text
 
     def test_the_file_is_fetched_once_per_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph.resolve import Strategy, resolve_page
 
         fetched = serve(monkeypatch, "User-agent: *\nDisallow: /private/\n")
-        resolve_page("https://example.com/a", strategy=Strategy.STATIC_ONLY)
-        resolve_page("https://example.com/b", strategy=Strategy.STATIC_ONLY)
+        resolve_page("https://example.com/a", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON)
+        resolve_page("https://example.com/b", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON)
         assert fetched.count("https://example.com/robots.txt") == 1
 
     def test_the_caller_can_decline_the_check(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,7 +142,9 @@ class TestASinglePageHonoursRobots:
 
         serve(monkeypatch, "User-agent: webgraph\nDisallow: /\n\nUser-agent: *\nAllow: /\n")
         with pytest.raises(PageDisallowedError) as caught:
-            resolve_page("https://example.com/page", strategy=Strategy.STATIC_ONLY)
+            resolve_page(
+                "https://example.com/page", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON
+            )
         assert "User-agent: webgraph" in str(caught.value)
 
     def test_a_rule_for_another_client_does_not_apply(
@@ -129,7 +153,9 @@ class TestASinglePageHonoursRobots:
         from webgraph.resolve import Strategy, resolve_page
 
         serve(monkeypatch, "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n")
-        resolved = resolve_page("https://example.com/page", strategy=Strategy.STATIC_ONLY)
+        resolved = resolve_page(
+            "https://example.com/page", strategy=Strategy.STATIC_ONLY, fetch_config=ROBOTS_ON
+        )
         assert "The page" in resolved.document.text
 
     def test_the_disallowed_error_is_a_value_error(self) -> None:

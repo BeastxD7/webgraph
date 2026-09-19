@@ -64,7 +64,7 @@ has the rules; `include_hidden_text` is the only one you can turn.
 ```python
 from webgraph import FetchConfig
 
-resolve_page(url, fetch_config=FetchConfig(timeout_seconds=45, retries=2, respect_robots=False))
+resolve_page(url, fetch_config=FetchConfig(timeout_seconds=45, retries=2, respect_robots=True))
 ```
 
 A frozen dataclass; build one with keyword arguments, or `dataclasses.replace()` an existing
@@ -82,7 +82,7 @@ differently from one that negotiates what a browser negotiates.
 | `extra_headers` | `dict[str, str]` | `{}` | Added to every request, after the defaults |
 | `http2` | `bool` | `True` | Negotiate HTTP/2 when offered; falls back to HTTP/1.1 |
 | `retries` | `int` | `1` | Extra attempts after a `429`/`503` (honouring `Retry-After` up to 5 s) or a transport error. A definite answer — `403`, `404` — is never retried |
-| `respect_robots` | `bool` | `True` | Ask the host's `robots.txt` first and raise [`PageDisallowedError`](#when-a-page-is-refused) if it disallows this client, quoting the rule. `False` is your explicit choice; the crawl has its own switch in `SiteConfig` |
+| `respect_robots` | `bool` | `False` | Off by default: the engine reads every page it can reach. `True` asks the host's `robots.txt` first and raises [`PageDisallowedError`](#when-a-page-is-refused) if it disallows this client, quoting the rule. Politeness is not a robots rule and applies either way; the crawl has its own switch in `SiteConfig`
 | `contact` | `str` | `WEBGRAPH_CONTACT` from the environment, else `""` | Who runs this client, `Name contact@example.com`, for the sites that ask automated clients to say so. Empty means there is nothing to declare and nothing is |
 
 ## `RenderConfig`
@@ -188,7 +188,7 @@ exceptions, all importable from `webgraph`:
 | Exception | Raised when | Example message |
 |---|---|---|
 | `PageMissingError` | The URL does not exist: HTTP 404 or 410 | `HTTP 404: page does not exist` |
-| `PageDisallowedError` (a `ValueError`) | `robots.txt` disallows this page for this client and `respect_robots` is on. The message quotes the rule and names what the site offers instead | `https://www.google.com/robots.txt disallows /search for this client (User-agent: * / Disallow: /search)` |
+| `PageDisallowedError` (a `ValueError`) | `respect_robots=True` was asked for and `robots.txt` disallows this page for this client. The message quotes the rule and names what the site offers instead | `https://www.google.com/robots.txt disallows /search for this client (User-agent: * / Disallow: /search)` |
 | `PageBlockedError` (a `ValueError`) | The server answered with a wall instead of the page: a Cloudflare or Akamai challenge, a "verify you are human" page, a login redirect — on both fetches | `the site answered with a Cloudflare challenge ...` (stackoverflow.com) |
 | `PageShellError` (a `ValueError`) | The page has no readable text: a JavaScript shell that was not rendered (`STATIC_ONLY`), or a page the browser rendered and that still says nothing — a silent bot check. Carries `.document`, whose hydration payload may still be complete | `the page is a JavaScript shell with no readable text until a browser runs it (41,203 bytes of markup); rendering was not used for this request` |
 
