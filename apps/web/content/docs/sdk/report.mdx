@@ -1,0 +1,92 @@
+---
+title: Site analysis and report
+description: analyze_site measures how a site should be read; build_site_report says what it shows people and machines and scores how ready it is for agents.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## `analyze_site`
+
+Stage 0 of every crawl, on its own: the root fetched both ways and measured, `robots.txt`
+and the sitemaps read, the strategy the crawl would use. What `webgraph analyze` prints
+and the `analysis` event of a crawl carries.
+
+```python
+from webgraph import analyze_site
+
+analysis = analyze_site("https://docs.python.org/3/")
+analysis.reachable                # True
+analysis.recommended_strategy     # union -- the render revealed text the plain fetch lacked
+analysis.render_required          # True
+analysis.static_chars, analysis.rendered_chars, analysis.union_chars
+analysis.technologies             # [{'name': 'nginx', 'category': 'Web servers', ...}, {'name': 'Fastly', 'category': 'CDN', ...}]
+analysis.robots_found, analysis.crawl_delay, analysis.robots_rules
+analysis.sitemap_urls, analysis.sitemap_attempts
+analysis.metadata                 # the root's PageMetadata
+analysis.report()                 # the printed report, as text; analysis.static_coverage the share the plain fetch held
+```
+
+`analyze_site(url, *, fetch_config=None, render_config=None, sitemap_limit=5000)`.
+`SiteAnalysis` also carries `frameworks`, `payload_sources`, `render_loses_content`,
+`public_page_count` and `sample_pages` when the sitemap gave them, `notes`, and `error`
+when the root could not be read. `webgraph.analyze.probe_site` is the same measurement
+returning the resolved root page and its content policy as well, for a caller that will
+go on to crawl.
+
+## `build_site_report`
+
+The [site report](/docs/site-report): for a site you do not own, what it shows people and
+what it shows machines, and how ready it is for agents, with every claim tied to a measured
+page. `/api/site/report` and `webgraph report` call this.
+
+```python
+from webgraph import build_site_report
+
+report = build_site_report("https://docs.python.org/3/", pages=3)      # 71 s on 19 September
+report.reachable, report.host            # True, 'docs.python.org'
+report.score.total                       # 87 (of report.score.measured_weight, 100)
+for s in report.score.subscores:
+    print(s.key, s.weight, round(s.score), "|", s.evidence)
+# readable_without_js 25 24 | Across 3 rendered pages the plain fetch holds 97% of the text a browser sees. Worst: /3/download.html ...
+# robots_ai_bots 20 20 | robots.txt names 0 of the 15 well-known bots; the other 15 fall under `User-agent: *`, partly restricted ...
+# no_walls 15 15 | All 3 sampled pages were served to both the plain fetch and the browser.
+# sitemap 10 9 | Sitemap found with 8 URLs; 2 of 3 sampled pages are listed.
+# structured_data 10 4 | 0 of 3 pages carry JSON-LD or microdata; title, description, lang and OpenGraph are present on 100% ...
+# no_hidden_content 10 10 | Nothing parked off the page on any sampled page; 430 hidden words in all. ...
+# llms_txt 5 0 | No /llms.txt.
+# dead_links 5 5 | 0 of 72 internal links checked answered 4xx/5xx.
+```
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `url` | — | The site |
+| `pages` | `5` (`REPORT_PAGES`) | Pages to sample beyond the root, chosen from the sitemap and the root's links across sections; clamped to `1..10` (`REPORT_MAX_PAGES`). Each is fetched both ways at one request a second |
+| `fetch_config`, `render_config` | defaults | As for [`resolve_page`](/docs/sdk/pages) |
+| `today` | today | The date the freshness checks are relative to, for a reproducible report |
+
+### `SiteReport`
+
+| Field | What it holds |
+|---|---|
+| `url`, `root`, `host`, `generated_at` | The site, where its root landed, and when |
+| `reachable`, `refusal` | Whether the root could be read; the reason when it could not |
+| `stack` | Technologies detected across the sample, each with `name`, `category`, `version`, `confidence` |
+| `robots` | `RobotsReport`: `found`, `status`, the `text`, the group and `rules_for_us`, `crawl_delay_for_us`, `allows_us_root`, `sitemaps_declared`, and `bots` — for each of 15 well-known crawlers (GPTBot, ClaudeBot, Googlebot, CCBot, …): `operator`, `purpose` (`search` / `assistant` / `training`), `access` (`allowed` / `partly` / `blocked`), `via` (`named` / `wildcard` / `none`), the paths disallowed |
+| `sitemap_found`, `sitemap_urls`, `sitemap_attempts` | What the sitemap said |
+| `llms_txt`, `llms_full_txt` | `LlmsFile`: `found`, `status`, `bytes`, `sections`, `links`, `links_checked` |
+| `signals` | What the site declares to machines, grouped `ai` / `discovery` / `agents` / `metadata` / `trust` (security.txt, humans.txt, OpenAPI, ai.txt, …), each with what was found and where |
+| `pages` | One `PageReport` per sampled page: `url`, `section`, `title`, `strategy`, `static_words` / `rendered_words` / `union_words`, `static_coverage`, `wall`, `hidden_words` by kind, `hidden_links`, `hidden_hosts`, `offscreen_links`, `consent_words`, `total_words` |
+| `score` | `SiteScore`: `total` out of `measured_weight`, and the `subscores` above, each with `evidence`, a `recommendation` when it lost points and a `source` page |
+| `findings` | `Finding`s: `severity` (`high` / `medium` / `low` / `info`), `kind`, `title`, `detail`, `page` — the things worth fixing, in order |
+| `suggested_robots_txt`, `suggested_llms_txt`, `suggested_security_txt` | Drafts built from what was sampled |
+| `measured` | `MeasuredHow`: engine version and commit, the User-Agent used, pages requested and sampled, request interval, duration, whether a browser was available, and the statement that nothing was fetched under another bot's name |
+| `notes` | Anything the report wants you to know about how it was made |
+
+`report.as_dict()` is the JSON the API returns. The report samples at most ten pages: it
+is a measurement of how the site treats readers, not a crawl of it.
+
+<Callout type="warn">
+The report never impersonates other bots. The `bots` table is what the site's `robots.txt`
+*declares* for each name, not what that bot would be served, and the report says so in
+`measured.statement`.
+</Callout>

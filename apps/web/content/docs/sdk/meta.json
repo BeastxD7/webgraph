@@ -1,4 +1,15 @@
 {
   "title": "Python SDK",
-  "pages": ["pages", "markdown", "content", "sites", "types", "cli"]
+  "pages": [
+    "pages",
+    "markdown",
+    "content",
+    "sites",
+    "extract",
+    "graph",
+    "report",
+    "watch",
+    "types",
+    "cli"
+  ]
 }

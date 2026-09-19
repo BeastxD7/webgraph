@@ -64,6 +64,23 @@ Measured as written: the first snippet resolves the tutorial page in about 3 s (
 fetches), 164 blocks, and `select_content` keeps 116 of them; the crawl reads three pages in
 11 s at the default politeness of one page a second per host.
 
+## What the web UI does, as library calls
+
+Everything on the site is a call into this package. There is no capability the UI has that
+the library lacks; the UI adds a screen and the API adds HTTP.
+
+| In the UI | Job | Library | Page |
+|---|---|---|---|
+| Extract → *Page* | One page as Markdown, whole and content-only | `resolve_page` + `to_markdown` + `select_content` | [Pages](/docs/sdk/pages), [Content selection](/docs/sdk/content) |
+| Extract → *Site* | A whole site, streamed page by page, with discovery and refusals | `stream_site` | [Sites](/docs/sdk/sites) |
+| Extract → *facts* | Fields against a JSON Schema, with provenance | `extract_facts`, `facts_for_page` | [Facts against a schema](/docs/sdk/extract) |
+| Site graph, *Ask* | The crawl's graph of pages and sections; a bounded context for a question | `GraphBuilder`, `ContextAssembler`, `GraphStore` | [Site graph and Ask](/docs/sdk/graph) |
+| Stage 0 panel | Technology, render behaviour, page count | `analyze_site` | [Site analysis and report](/docs/sdk/report) |
+| Site Report | What the site shows people and machines; agent-readiness score | `build_site_report` | [Site analysis and report](/docs/sdk/report) |
+| Watch | Crawl again, get what changed, as a list or a feed | `create_watch`, `run_watch`, `list_changes`, `export_changes` | [Watch a site](/docs/sdk/watch) |
+| WebGraph (knowledge graph) | Typed entities and relations, optional LLM providers, Neo4j | `webgraph.kg` (behind `WEBGRAPH_KG=1`) | [WebGraph](/docs/webgraph) |
+| Settings | The per-request options and their defaults | `FetchConfig`, `RenderConfig`, `SiteConfig`, `MainContentConfig` | each reference page |
+
 ## What is in the box
 
 Every name below is importable from `webgraph` itself, and its signature is kept stable
@@ -83,6 +100,10 @@ documented there, but may move.
 | Tune a fetch or a render | `FetchConfig`, `RenderConfig` | [Pages](/docs/sdk/pages#fetchconfig) |
 | Tune the content boundary | `MainContentConfig` | [Content selection](/docs/sdk/content#maincontentconfig) |
 | Handle a refusal | `PageMissingError`, `PageDisallowedError`, `PageBlockedError`, `PageShellError` | [Pages](/docs/sdk/pages#when-a-page-is-refused) |
+| Facts against a schema | `extract_facts`, `merge_facts`, `facts_for_page` → `Fact`, `PageFacts` | [Facts against a schema](/docs/sdk/extract) |
+| Build, query, keep and export the site graph | `GraphBuilder`, `SiteGraph`, `derive_entities`, `ContextAssembler`, `Budget`, `GraphStore`, `to_jsonl` / `write_jsonl` / `load_jsonl` / `to_cypher` | [Site graph and Ask](/docs/sdk/graph) |
+| Measure a site, report on it | `analyze_site` → `SiteAnalysis`; `build_site_report` → `SiteReport` | [Site analysis and report](/docs/sdk/report) |
+| Watch a site | `create_watch`, `get_watch`, `list_watches`, `run_watch`, `stream_watch`, `list_changes`, `export_changes` → `Watch`, `RunSummary` | [Watch a site](/docs/sdk/watch) |
 | The data | `Document`, `Block`, `BlockKind`, `Rect`, `ReadingOrderMethod`, `Strategy`, `PageType`, `Routing` | [Types](/docs/sdk/types) |
 
 `webgraph.__version__` is the installed version.
@@ -113,6 +134,10 @@ these pages depends on one.
   <Card title="Markdown and other formats" href="/docs/sdk/markdown">to_markdown and MarkdownOptions, text, JSON.</Card>
   <Card title="Content selection" href="/docs/sdk/content">select_content, page types and policies, every knob.</Card>
   <Card title="Sites" href="/docs/sdk/sites">stream_site, SiteConfig and the event stream.</Card>
+  <Card title="Facts against a schema" href="/docs/sdk/extract">extract_facts, facts_for_page, Fact provenance.</Card>
+  <Card title="Site graph and Ask" href="/docs/sdk/graph">GraphBuilder, ContextAssembler, GraphStore, export, diff.</Card>
+  <Card title="Site analysis and report" href="/docs/sdk/report">analyze_site and build_site_report.</Card>
+  <Card title="Watch a site" href="/docs/sdk/watch">create_watch, run_watch, changes and feeds.</Card>
   <Card title="Types" href="/docs/sdk/types">Document, Block, ResolvedPage, PageMetadata.</Card>
   <Card title="Command line" href="/docs/sdk/cli">The same jobs from a shell.</Card>
 </Cards>

@@ -1,0 +1,93 @@
+---
+title: Facts against a schema
+description: extract_facts and merge_facts for a schema you wrote, facts_for_page for the schema of the page's own type, and what a Fact's provenance says.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The "Extract" tab of the web UI and `/api/extract` map a page to a JSON Schema and return
+each field with where it came from. The library does it in two calls, and never guesses:
+a field with no evidence on the page is left out rather than filled in.
+
+## `extract_facts` and `merge_facts`
+
+```python
+from webgraph import resolve_page, extract_facts, merge_facts
+
+page = resolve_page("https://www.allbirds.com/products/mens-wool-runners-natural-white")
+schema = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "brand": {"type": "string"},
+        "offers": {"type": "object", "properties": {
+            "price": {"type": "number"},
+            "priceCurrency": {"type": "string"},
+        }},
+    },
+}
+facts = merge_facts(extract_facts(list(page.document.structured_data), schema, page.url))
+{path: fact.value for path, fact in facts.items()}
+# {'name': "Men's Wool Runner", 'description': 'The Allbirds Wool Runner is the original ...',
+#  'offers.price': 110.0, 'offers.priceCurrency': 'USD'}
+```
+
+| Call | Parameters | Returns |
+|---|---|---|
+| `extract_facts(payloads, schema, url)` | `payloads`: the page's `document.structured_data`; `schema`: a JSON Schema object with `properties`; `url`: the page, recorded as each fact's source | `list[Fact]` — every candidate, including the same path from several payloads |
+| `merge_facts(facts)` | The list above | `dict[str, Fact]` — one fact per dotted path (`offers.price`), the best-supported one |
+
+What it reads is the page's **structured data**: JSON-LD, microdata, Open Graph, and the
+hydration payloads frameworks ship (`__NEXT_DATA__`, Nuxt, RSC flight, an initial state).
+That is the zero-cost path — no model, no selector, no inference — and on the pages that
+carry it, it answers most schemas outright. `brand` above came back empty because the
+page's JSON-LD nests it as `brand.name`; ask for that path and it is there.
+
+## `facts_for_page`
+
+Without a schema of your own, the page's type chooses one, and only the structured-data
+node that *describes the page* is read — not the site's `Organization`, not the
+breadcrumbs. Without that gate a category page reports the shop's name as its own product
+46% of the time.
+
+```python
+from webgraph import default_router, facts_for_page
+
+routing = default_router().route(page.document, page.url)       # product
+result = facts_for_page(page.document.structured_data, routing.page_type, page.url)
+
+sorted(result.schema["properties"])   # ['aggregateRating', 'brand', 'description', 'image', 'name', 'offers', 'sku']
+{p: f.value for p, f in result.facts.items()}
+# {'name': "Men's Wool Runner", 'offers.price': 110.0, 'offers.priceCurrency': 'USD',
+#  'offers.availability': 'OutOfStock', 'brand.name': 'Allbirds', 'sku': 'MENS_WOOL_RUNNERS', ...}
+result.subject_types                  # ('ProductGroup',)
+result.payloads_considered, result.payloads_used   # 3, 1
+```
+
+`PageFacts` carries `page_type`, `facts`, the `schema` used, `subject_types` (the
+schema.org types of the node it read), `payloads_considered` / `payloads_used`, and
+`filled_from_generic` — the paths a fallback vocabulary supplied when the type's own did
+not. For `PageType.UNKNOWN`, and for a page whose structured data is all about the site,
+the result is empty: "this shop sells no products" and "IKEA" are different answers.
+`webgraph.extract.pageschema.schema_for(page_type)` returns the schema each type uses.
+
+## `Fact`
+
+| Field | Meaning |
+|---|---|
+| `path` | Dotted path into the schema: `offers.price` |
+| `value` | The value, typed as the schema asked (`110.0`, not `"110"`) |
+| `provenance.source_url` | The page |
+| `provenance.extractor` | How it was found: `structured-data` for everything above |
+| `provenance.modality` | What kind of thing it was read from: `dom-json` for a JSON-LD block |
+| `provenance.confidence` | `0.95` for a value read verbatim from structured data |
+| `provenance.source_xpath` | Where in the document, when known |
+| `provenance.verification` | `verified` by default; a merge that had to choose between disagreeing payloads says so |
+| `provenance.extracted_at` | When |
+
+<Callout type="info">
+There is no text-mining path: a fact is read from data the page published as data, or it
+is not reported. The API's [extract](/docs/api/extract) page has the schema conventions
+(nested objects, arrays, `enum`s) and what a `SchemaChoice` reports.
+</Callout>
