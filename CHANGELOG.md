@@ -15,8 +15,11 @@ All notable changes to this project are documented here. The format follows
 - Changed: a static-only block under a client-template directive (`v-if`, `x-show`,
   `ng-if`, ...) that the browser did not build stays out of the union -- never built, not
   lost (`Block.templated`). Hidden tables are matched cell-wise against the render's hidden
-  matter; a frame the browser gave no box, or hid, is a beacon; a `position: fixed` box
-  wholly outside the viewport is off-screen (#152).
+  matter; a frame the browser gave no box, or hid, is a beacon (#152). The fourth rule
+  of #152 -- a `position: fixed` box wholly outside the viewport is off-screen -- was
+  withdrawn the same day: on the 300-page random-web sample it cost a store that keeps its
+  size chart, delivery and payment in slide-in panels 60% of its words. An off-canvas panel
+  a button opens is a collapsed tray, not hidden matter (#160).
 - Changed: cards nest in the reading order. Inside a card, a row of side-by-side cards is
   read one card at a time; stacked or overlapping siblings are left to geometry (#153).
 - Style: the engine is `ruff format`ted, and CI checks it (#154).
