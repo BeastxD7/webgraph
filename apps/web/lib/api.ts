@@ -809,6 +809,10 @@ export interface DiscoveryEvent {
     found: number;
     /** Page URLs the sitemaps advertised, before scope and deduplication. */
     total_urls: number;
+    /** How many of those this crawl's scope admits. Distinct from `seeds`: a sitemap that
+     *  lists only the home page, already fetched, seeds nothing and is wholly in scope.
+     *  Absent from engines older than 19 Sep 2026. */
+    in_scope?: number;
   };
   /** Sitemap URLs the frontier accepted -- what `from_sitemap` on `frontier` reports. */
   seeds: number;
@@ -1030,7 +1034,7 @@ export interface DoneEvent {
    */
   stopped_by: StoppedBy;
   /** The limits this run ran under; 0 means none. */
-  limits: { max_pages: number; max_seconds: number; max_queue: number };
+  limits: { max_pages: number; max_seconds: number; max_queue: number; max_depth?: number };
   /** Addresses the queue cap turned away. */
   queue_refused: number;
   /** Every address turned away, by reason; `refused_urls` is the first 200 as evidence. */

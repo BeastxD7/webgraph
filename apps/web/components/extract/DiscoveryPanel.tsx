@@ -187,11 +187,13 @@ function RobotsRow({ robots }: { robots: DiscoveryEvent["robots"] }) {
 
 function SitemapsRow({ sitemaps, seeds }: { sitemaps: DiscoveryEvent["sitemaps"]; seeds: number }) {
   const [open, setOpen] = useState(false);
+  // What the scope admits, when the engine says; what was queued, from older engines.
+  const inScope = sitemaps.in_scope ?? seeds;
   const summary =
     sitemaps.found === 0
       ? "none published — discovery is by links only"
       : `${sitemaps.found === 1 ? "1 found" : `${sitemaps.found} found`} · ${n(sitemaps.total_urls)} URLs${
-          seeds !== sitemaps.total_urls ? ` · ${n(seeds)} in scope` : ""
+          inScope !== sitemaps.total_urls ? ` · ${n(inScope)} in scope` : ""
         }`;
 
   return (
@@ -462,7 +464,7 @@ export default function DiscoveryPanel({
           refused={refused}
           evidence={evidence}
           live={live}
-          sitemapOutOfScope={discovery.sitemaps.total_urls > 0 && discovery.seeds === 0}
+          sitemapOutOfScope={discovery.sitemaps.total_urls > 0 && (discovery.sitemaps.in_scope ?? discovery.seeds) === 0}
         />
       </ul>
     </section>
