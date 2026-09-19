@@ -437,3 +437,69 @@ class TestFloats:
         assert where == list(range(where[0], where[0] + 3)), names
         paras = [n for n in names if n.startswith("para")]
         assert paras == [f"para{i}" for i in range(4)]
+
+
+class TestNestedCards:
+    """allbirds.com's product page is a column of Shopify `section[*]`s -- each a card --
+    and its details section holds three `li[*]` slides side by side: picture, heading,
+    paragraph, with 10px between the columns and 25px between the rows. Cut by geometry
+    inside the section card, it read as three headings and then three paragraphs."""
+
+    SLIDES = (
+        ("THE DETAILS", "A true original."),
+        ("MATERIALLY BETTER", "Merino wool."),
+        ("WASH & CARE", "Machine approved."),
+    )
+
+    @staticmethod
+    def card(path: str, text: str, x: float, y: float, w: float, h: float, i: int) -> Block:
+        rect = Rect(x=x, y=y, width=w, height=h)
+        return Block(text=text, tag="p", xpath=path, dom_index=i, rect=rect)
+
+    def page(self, *, sections: int = 4) -> list[Block]:
+        blocks: list[Block] = []
+        # Enough sections, each small, for `section[*]` to be a card on the page.
+        for s in range(1, sections + 1):
+            stem = f"/html/body/main/section[{s}]"
+            if s != 2:
+                y = 100 + s * 600
+                blocks.append(self.card(f"{stem}/h2", f"Section {s}", 34, y, 900, 20, 0))
+                blocks.append(self.card(f"{stem}/p", f"Text {s}.", 34, y + 40, 900, 60, 0))
+                continue
+            for n, (head, body) in enumerate(self.SLIDES, start=1):
+                x = 34 + (n - 1) * 461
+                slide = f"{stem}/div/ul/li[{n}]"
+                blocks.append(self.card(f"{slide}/img", f"img{n}", x, 1169, 451, 451, 0))
+                blocks.append(self.card(f"{slide}/h3", head, x, 1645, 451, 16, 0))
+                blocks.append(self.card(f"{slide}/p", body, x, 1675, 419, 44, 0))
+        return [b.model_copy(update={"dom_index": i}) for i, b in enumerate(blocks)]
+
+    def test_slides_in_a_row_are_read_one_at_a_time(self) -> None:
+        ordered, method = order_blocks(self.page())
+        assert method is ReadingOrderMethod.GEOMETRIC_XY_CUT
+        wanted = [text for pair in self.SLIDES for text in pair]
+        assert [n for n in texts(ordered) if n in wanted] == wanted
+
+    def test_slides_that_overlap_are_not_a_row(self) -> None:
+        """supabase.com's customer stories: five 560px cards offset by 84px, drawn over one
+        another. Not a row -- geometry reads the row of logos before any story, as the
+        page shows -- and a column of stacked cards is not one either."""
+        from webgraph.dom.reading_order import _card_rows
+
+        def cards(xs: list[float], ys: list[float]) -> dict[str, list[Block]]:
+            return {
+                f"/html/body/div/div[{n}]": [
+                    self.card(f"/html/body/div/div[{n}]/h3", "h", x, y, 560, 20, n),
+                    self.card(f"/html/body/div/div[{n}]/p", "p", x, y + 30, 560, 40, n),
+                ]
+                for n, (x, y) in enumerate(zip(xs, ys, strict=True), start=1)
+            }
+
+        fanned = cards([958, 1042, 1126, 1210], [4450] * 4)
+        stacked = cards([34] * 4, [100, 200, 300, 400])
+        row = cards([34, 600, 1166, 1732], [100] * 4)
+        assert _card_rows(fanned, unit=16) == ({}, set(fanned))
+        assert _card_rows(stacked, unit=16) == ({}, set(stacked))
+        rows, loose = _card_rows(row, unit=16)
+        assert loose == set()
+        assert rows == {"/html/body/div/div[*]": list(row)}

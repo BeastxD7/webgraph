@@ -236,15 +236,25 @@ still count as a card. A page is not a card of itself."""
 _MIN_CARD_SIBLINGS: Final[int] = 3
 
 
-def _card_of(xpath: str, siblings: dict[str, set[str]], sizes: dict[str, int], limit: int) -> str | None:
+def _card_of(
+    xpath: str,
+    siblings: dict[str, set[str]],
+    sizes: dict[str, int],
+    limit: int,
+    *,
+    within: str = "",
+) -> str | None:
     """The outermost repeated container this block belongs to, or None.
 
     A card is `/main/ul/li[3]`: the ancestor whose template `/main/ul/li[*]` occurs with
     several distinct indices, each holding a bounded number of blocks. The outermost such
     ancestor, so that a card's inner `div[*]`s do not split it into pieces; bounded, so
     that `/html/body/div[*]` -- two halves of a page -- is not two cards.
+
+    `within` is the card already being read, when there is one: only the steps below it
+    count, so the cards nested inside it can be found in their turn.
     """
-    matches = list(_INDEXED_STEP.finditer(xpath))
+    matches = list(_INDEXED_STEP.finditer(xpath, len(within)))
     for match in matches:  # outermost first
         template = xpath[: match.start()] + "[*]"
         instance = xpath[: match.end()]
@@ -253,8 +263,58 @@ def _card_of(xpath: str, siblings: dict[str, set[str]], sizes: dict[str, int], l
     return None
 
 
+def _bounds(members: list[Block]) -> Rect:
+    rects = [m.rect for m in members if m.rect is not None]
+    x0, y0 = min(r.x for r in rects), min(r.y for r in rects)
+    x1, y1 = max(r.right for r in rects), max(r.bottom for r in rects)
+    return Rect(x=x0, y=y0, width=x1 - x0, height=y1 - y0)
+
+
+def _card_rows(
+    cards: dict[str, list[Block]], *, unit: float
+) -> tuple[dict[str, list[str]], set[str]]:
+    """The templates whose cards stand in one row, and the cards of every other template.
+
+    A row is what a geometric cut gets wrong: cards beside each other, closer together
+    than their own parts are, are read across instead of down. So a row is exactly the
+    case worth binding -- every card of the template sharing vertical extent with every
+    other and standing wholly to one side of it (within a line's tolerance: supabase.com's
+    product cards let a picture bleed 2px into the next column). Anything else is left to
+    geometry, which already reads it: a column of stacked rows, and a fan of slides drawn
+    over one another (supabase.com's customer stories -- five 560px cards offset by 84px,
+    where geometry rightly reads the row of logos before any story).
+    """
+    by_template: dict[str, list[str]] = {}
+    for key in cards:
+        by_template.setdefault(_INDEXED_STEP.sub("[*]", key), []).append(key)
+    rows: dict[str, list[str]] = {}
+    loose: set[str] = set()
+    for template, keys in by_template.items():
+        boxes = {k: _bounds(cards[k]) for k in keys}
+        in_a_row = len(keys) >= _MIN_CARD_SIBLINGS
+        for i, a in enumerate(keys):
+            for b in keys[i + 1 :]:
+                ra, rb = boxes[a], boxes[b]
+                shares_rows = ra.y < rb.bottom and rb.y < ra.bottom
+                to_a_side = ra.right <= rb.x + unit or rb.right <= ra.x + unit
+                if not (shares_rows and to_a_side):
+                    in_a_row = False
+        if in_a_row:
+            rows[template] = sorted(keys, key=lambda k: boxes[k].x)
+        else:
+            loose.update(keys)
+    return rows, loose
+
+
 def _cut_with_cards(
-    blocks: list[Block], *, rtl: bool, config: OrderingConfig, unit: float
+    blocks: list[Block],
+    *,
+    rtl: bool,
+    config: OrderingConfig,
+    unit: float,
+    within: str = "",
+    depth: int = 0,
+    limit: int | None = None,
 ) -> list[Block]:
     """XY-cut over the page with each repeated card treated as one block.
 
@@ -269,6 +329,15 @@ def _cut_with_cards(
     its members' rectangles, the cut runs over cards and loose blocks alike, and each card
     is then expanded by its own geometry -- image, name, colour, price, top to bottom --
     which no neighbouring card can interleave with any more.
+
+    Cards nest, and the rule applies inside a card as it does on the page. A Shopify
+    product page is a column of `section[*]`s, each one a card by this rule; its "details"
+    section holds three `li[*]` slides side by side -- picture, heading, paragraph -- with
+    10px between the columns and 25px between the rows. Read as one card and cut by
+    geometry inside, that section came out as three headings and then three paragraphs
+    (allbirds.com, "THE DETAILS / MATERIALLY BETTER / WASH & CARE" before any of their
+    text). `within` names the card being expanded, and the cards inside it are found
+    below it.
     """
     measured = [b for b in blocks if b.rect is not None]
     siblings: dict[str, set[str]] = {}
@@ -279,10 +348,14 @@ def _cut_with_cards(
             instance = b.xpath[: match.end()]
             siblings.setdefault(template, set()).add(match.group(0))
             sizes[instance] = sizes.get(instance, 0) + 1
-    limit = max(1, int(len(measured) * _MAX_CARD_SHARE))
+    # The bound is the page's, not the card's: three slides of three blocks are cards in a
+    # nine-block section as much as on the page.
+    if limit is None:
+        limit = max(1, int(len(measured) * _MAX_CARD_SHARE))
 
     cards: dict[str, list[Block]] = {}
     loose: list[Block] = []
+    row_order: dict[str, list[list[Block]]] = {}
     for b in blocks:
         if b.rect is None:
             card = None
@@ -294,7 +367,7 @@ def _cut_with_cards(
             # was dealt out one piece at a time between the lead's paragraphs.
             card = b.float_of
         else:
-            card = _card_of(b.xpath, siblings, sizes, limit)
+            card = _card_of(b.xpath, siblings, sizes, limit, within=within)
         if card is None:
             loose.append(b)
         else:
@@ -303,8 +376,26 @@ def _cut_with_cards(
     # Cards of one block are just blocks; only a card with several members changes anything.
     for key in [k for k, members in cards.items() if len(members) < 2]:
         loose.extend(cards.pop(key))
+    if within:
+        # Inside a card, only a *row* of cards is bound, and the row is one thing: its
+        # cards are read left to right (right to left on an RTL page) and each one top to
+        # bottom. Binding every nested sibling instead was measured on the reading-order
+        # board: supabase.com's front page 0.999 -> 0.985 against the axioms, from a
+        # fan of overlapping slides read one at a time and a row of cards whose bleeding
+        # pictures left the cut nothing to cut, so it fell back to an order that was
+        # neither. See `_card_rows`.
+        rows, unbound = _card_rows(cards, unit=unit)
+        for key in unbound:
+            loose.extend(cards.pop(key))
+        for template, keys in rows.items():
+            members = [m for k in keys for m in cards.pop(k)]
+            cards[template] = members
+            row_order[template] = [
+                [m for m in members if m.xpath.startswith(k + "/") or m.xpath == k]
+                for k in (reversed(keys) if rtl else keys)
+            ]
     if not cards:
-        return _cut(blocks, rtl=rtl, config=config, unit=unit, depth=0)
+        return _cut(blocks, rtl=rtl, config=config, unit=unit, depth=depth)
 
     proxies: dict[int, list[Block]] = {}
     stand_ins: list[Block] = []
@@ -321,7 +412,7 @@ def _cut_with_cards(
         proxies[id(proxy)] = members
         stand_ins.append(proxy)
 
-    ordered = _cut([*loose, *stand_ins], rtl=rtl, config=config, unit=unit, depth=0)
+    ordered = _cut([*loose, *stand_ins], rtl=rtl, config=config, unit=unit, depth=depth)
     out: list[Block] = []
     for b in ordered:
         inside = proxies.get(id(b))
@@ -331,8 +422,26 @@ def _cut_with_cards(
         # Inside the card, geometry again: a card is small enough that its own layout is
         # unambiguous, and a badge the author placed last in the markup but drew at the top
         # is read at the top. Source order was tried and measured 0.2 points worse on the
-        # stacked axiom for exactly that reason.
-        out.extend(_cut(inside, rtl=rtl, config=config, unit=unit, depth=1))
+        # stacked axiom for exactly that reason. And cards again, for the ones nested in
+        # this one; a float is the browser's grouping, not the markup's, and stays whole.
+        key = b.xpath
+        if key in row_order:
+            for card_members in row_order[key]:
+                out.extend(_cut(card_members, rtl=rtl, config=config, unit=unit, depth=depth + 1))
+        elif any(m.float_of == key for m in inside):
+            out.extend(_cut(inside, rtl=rtl, config=config, unit=unit, depth=depth + 1))
+        else:
+            out.extend(
+                _cut_with_cards(
+                    inside,
+                    rtl=rtl,
+                    config=config,
+                    unit=unit,
+                    within=key,
+                    depth=depth + 1,
+                    limit=limit,
+                )
+            )
     return out
 
 
