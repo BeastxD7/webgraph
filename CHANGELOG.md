@@ -20,6 +20,13 @@ All notable changes to this project are documented here. The format follows
   withdrawn the same day: on the 300-page random-web sample it cost a store that keeps its
   size chart, delivery and payment in slide-in panels 60% of its words. An off-canvas panel
   a button opens is a collapsed tray, not hidden matter (#160).
+- Added: `click_collapsed` (RenderOptions / `RenderConfig` / Settings, on by default): after
+  the page is measured, tabs, accordions and "show more" panels wired in JavaScript alone
+  are clicked open with the page's own `click()` and the page measured again, on the same
+  page -- a control that navigates, empties the page or opens a popup costs nothing but the
+  click, and everything opened is forced visible so a tab set ends with every panel showing.
+  Every measurement's marks are cleared before the next. w3schools' JS tabs open (+2
+  panels), amazon.com's review sections open (+1,240 words); fidelity board unchanged (#163).
 - Changed: `reveal_collapsed` (RenderOptions / `RenderConfig`) opens tab panels
   (`role="tab"` → `aria-controls`) and panels a control names (`data-bs-target`,
   `data-target`, `href="#id"`) as well as `<details>` and ARIA disclosures, never inside

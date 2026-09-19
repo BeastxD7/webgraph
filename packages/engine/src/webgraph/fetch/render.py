@@ -26,8 +26,10 @@ the contract between the two runtimes is written down exactly once, in `webgraph
 
 from __future__ import annotations
 
+import contextlib
 import re
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cache
 from importlib.resources import files
@@ -120,6 +122,12 @@ class RenderConfig:
     better. A click that navigates off-origin is reverted.
     """
 
+    click_collapsed: bool = config.RENDER_CLICK_COLLAPSED
+    """After the reveal, click open what it could not: tabs, accordions and "show more"
+    panels wired in JavaScript alone. Only when words are still hidden outside the chrome,
+    at most `config.CLICK_MAX_CANDIDATES` guarded clicks -- see `_open_panels` for the
+    fences -- and everything a click opened is forced visible before measuring."""
+
     reveal_collapsed: bool = config.RENDER_REVEAL_COLLAPSED
     """Open collapsed content before measuring: `<details>`, ARIA disclosures, tab panels,
     and panels a control names (`data-bs-target`, `href="#id"`), never inside site chrome.
@@ -211,6 +219,15 @@ class RenderResult:
 
     gate_note: str | None = None
 
+    clicked_open: int = 0
+    """Elements that a guarded click opened (`_open_panels`): tab panels, accordion
+    bodies, "show more" text. Zero when nothing was hidden, nothing looked like a control,
+    or no click changed anything."""
+
+    click_note: str | None = None
+    """What the click step saw, when it ran: how many words were hidden, which controls
+    were tried, what each opened. For the trace."""
+
     navigation_note: str | None = None
     """Set when navigation timed out and the document was read as it stood. The render is
     still `ok`: a page whose adverts never finished loading is a page, and reporting it as a
@@ -289,6 +306,118 @@ def _open_gate(page: Any) -> tuple[bool, str | None]:
         f"page looks gated ({text_before} chars, {links_before} internal links); "
         f"{len(candidates)} control(s) tried, none opened it"
     )
+
+
+def _without_fragment(url: str) -> str:
+    """The address without its `#fragment`: a click that only moved within the page did
+    not navigate."""
+    return url.split("#", 1)[0]
+
+
+def _open_panels(
+    page: Any, snapshot: Callable[[], dict[str, Any]]
+) -> tuple[int, str | None, dict[str, Any] | None]:
+    """Click open the collapsed content the attribute-only reveal could not reach.
+
+    Runs *after* the page was measured once (see `_measure`), so nothing a click does can
+    cost the render. `snapshot` measures the page again; it is taken after every click
+    that opened something, with everything opened so far forced visible, so that a later
+    control which turns out to navigate or empty the page loses nothing already gained.
+    Returns (elements opened, a note, the last snapshot or None). Never raises.
+
+    The fences, since this is the second place the engine clicks anything (the first is
+    `_open_gate`): the survey (`fetch/js/panel_probe.js`) only counts words hidden outside
+    `nav`/`header`/`footer`, a form or a dialog, and the step runs only when there are
+    `CLICK_MIN_HIDDEN_WORDS` of them and a control to try; a candidate is a visible control
+    outside those, never a link to somewhere else, never inside a form, never labelled as
+    a transaction, a sign-in, a filter or a menu; at most `CLICK_MAX_CANDIDATES` are
+    tried within `CLICK_BUDGET_MS`, by the page's own `click()` with a short settle, and
+    the step stops after `CLICK_MAX_FUTILE` clicks in a row that opened nothing; a click
+    counts only when something hidden became visible, and what appeared as a fixed layer
+    (a popup) is closed again and not counted. A click that navigated, destroyed the
+    document or emptied it ends the step with nothing opened. At the end everything the
+    clicks opened is forced visible, so a tab set whose panels replace one another ends
+    with all of them showing.
+    """
+    arguments = {**marker_arguments(), "limit": config.CLICK_MAX_CANDIDATES}
+    url_before = page.url
+    try:
+        survey = page.evaluate(_script("panel_probe"), {**arguments, "phase": "survey"})
+        text_before = int(page.evaluate("(document.body && document.body.innerText || '').length"))
+    except Exception:
+        return 0, None, None
+    hidden_words = int(survey.get("hiddenWords") or 0)
+    candidates = list(survey.get("candidates") or ())
+    if hidden_words < config.CLICK_MIN_HIDDEN_WORDS:
+        return 0, None, None
+    if not candidates:
+        return 0, f"{hidden_words} words hidden, no control found to open them", None
+
+    started = time.monotonic()
+    budget = config.CLICK_BUDGET_MS / 1000
+    opened = 0
+    clicks = 0
+    futile = 0
+    tried: list[str] = []
+    kept: dict[str, Any] | None = None
+
+    def abandoned(reason: str) -> tuple[int, str | None, dict[str, Any] | None]:
+        note = f"{hidden_words} words hidden; {reason}"
+        if opened:
+            note += f"; kept what {opened} earlier click(s) opened: " + "; ".join(tried)
+        return opened, note, kept
+
+    for candidate in candidates:
+        mark, label = str(candidate.get("mark")), candidate.get("label") or "?"
+        if time.monotonic() - started > budget:
+            tried.append("budget spent")
+            break
+        try:
+            clicked = page.evaluate(
+                _script("panel_probe"), {**arguments, "phase": "click", "mark": mark}
+            )
+        except Exception:
+            return abandoned(f"{label!r} left the page; clicks abandoned")
+        if not (clicked or {}).get("clicked"):
+            continue
+        clicks += 1
+        page.wait_for_timeout(config.CLICK_SETTLE_MS)
+        try:
+            record = page.evaluate(_script("panel_probe"), {**arguments, "phase": "record"})
+        except Exception:
+            # The execution context went away: the click navigated (esuals.nl's category
+            # tiles are <button>s that set `location`). What was measured stands.
+            return abandoned(f"{label!r} left the page; clicks abandoned")
+        if _without_fragment(page.url) != _without_fragment(url_before):
+            return abandoned(f"{label!r} left the page; clicks abandoned")
+        if int(record.get("textLength") or 0) < text_before // 2:
+            # The click emptied the page: a view transition, an overlay that hides the
+            # body. Not a panel, and not a page to measure.
+            return abandoned(
+                f"{label!r} left the page with {record.get('textLength')} of "
+                f"{text_before} characters; clicks abandoned"
+            )
+        gained = int(record.get("gained") or 0)
+        if gained:
+            opened += 1
+            futile = 0
+            tried.append(f"{label!r} opened {gained} words")
+            # Measure now, with everything opened so far showing, so that a later
+            # control that navigates loses nothing already gained.
+            with contextlib.suppress(Exception):
+                page.evaluate(_script("panel_probe"), {**arguments, "phase": "finish"})
+            try:
+                kept = snapshot()
+            except Exception:
+                return abandoned(f"the page could not be measured after {label!r}")
+        else:
+            futile += 1
+            if futile >= config.CLICK_MAX_FUTILE:
+                break
+    note = f"{hidden_words} words hidden; {clicks} of {len(candidates)} control(s) clicked; " + (
+        "; ".join(tried) if tried else "none opened anything"
+    )
+    return opened, note, kept
 
 
 class RenderDiagnosisError(Exception):
@@ -447,6 +576,28 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
                     page.wait_for_timeout(config.settle_ms or 500)
 
             payload = dict(page.evaluate(_script("collect"), marker_arguments()))
+
+            # Clicks come *after* the first measurement, on the same page: the page as
+            # first rendered is already in `payload`, so a click that navigates, empties
+            # the page or opens another view costs nothing -- the second measurement is
+            # simply not taken. Only when something opened, and the page still holds what
+            # it held, is the page measured again and that measurement kept.
+            clicked_open = 0
+            click_note: str | None = None
+            if config.click_collapsed:
+
+                def snapshot() -> dict[str, Any]:
+                    page.wait_for_timeout(150)
+                    return dict(page.evaluate(_script("collect"), marker_arguments()))
+
+                clicked_open, click_note, again = _open_panels(page, snapshot)
+                if clicked_open and again is not None:
+                    if len(again.get("html") or "") >= len(payload.get("html") or ""):
+                        payload = again
+                    else:
+                        clicked_open = 0
+                        click_note = (click_note or "") + "; the page after the clicks was not kept"
+
             # The address the browser *landed on*, not the one it was given. A short link
             # (amzn.in/d/...) redirects to the real host, and every relative link on the page
             # resolves against the real host. Reporting the requested address resolved them
@@ -458,6 +609,8 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             payload["status"] = response.status if response is not None else None
             payload["gate_dismissed"] = gate_dismissed
             payload["gate_note"] = gate_note
+            payload["clicked_open"] = clicked_open
+            payload["click_note"] = click_note
             payload["navigation_note"] = navigation_note
             payload["requests"] = requests
             # From the jar, not from the document's own `Set-Cookie`: a cookie written by a
@@ -525,6 +678,8 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             shadow_roots=int(payload.get("shadowRoots") or 0),
             gate_dismissed=bool(payload.get("gate_dismissed")),
             gate_note=payload.get("gate_note") or None,
+            clicked_open=int(payload.get("clicked_open") or 0),
+            click_note=payload.get("click_note") or None,
             navigation_note=payload.get("navigation_note") or None,
         )
 

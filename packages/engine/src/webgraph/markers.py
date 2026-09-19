@@ -21,6 +21,7 @@ __all__ = [
     "GATE_ATTRIBUTE",
     "HIDDEN_ATTRIBUTE",
     "MARKER_ATTRIBUTE",
+    "PANEL_ATTRIBUTE",
     "PATH_ATTRIBUTE",
     "REVEALED_ATTRIBUTE",
     "marker_arguments",
@@ -53,6 +54,11 @@ markup. Absent on a static fetch, where `flowed_text` then behaves exactly as `t
 did: a page nobody rendered gets no layout claims. Stamped by `fetch/js/collect.js`."""
 
 GATE_ATTRIBUTE: Final[str] = "data-wg-gate"
+
+PANEL_ATTRIBUTE: Final[str] = "data-wg-panel"
+"""Stamped by `fetch/js/panel_probe.js` on the controls that might open collapsed content
+by a click -- a tab, an accordion header, a "show more" -- so `render.py` can click each by
+selector. Cleared and re-stamped on every survey; never serialised into output."""
 
 REVEALED_ATTRIBUTE: Final[str] = "data-wg-revealed"
 """Stamped by `fetch/js/reveal.js` on a panel it opened -- a collapsed `<details>`, a
@@ -96,4 +102,5 @@ def marker_arguments() -> dict[str, str]:
         "hidden": HIDDEN_ATTRIBUTE,
         "float": FLOAT_ATTRIBUTE,
         "revealed": REVEALED_ATTRIBUTE,
+        "panel": PANEL_ATTRIBUTE,
     }
