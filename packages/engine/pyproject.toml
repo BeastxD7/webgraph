@@ -1,10 +1,35 @@
 [project]
 name = "webgraph"
 version = "0.1.0"
-description = "Universal web content extraction engine with provenance and reading-order preservation."
+description = "Web content extraction with provenance and recovered reading order: pages and whole sites as Markdown."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Shashank Devadiga", email = "shashankdevadiga2003@gmail.com" }]
+keywords = [
+    "web scraping",
+    "content extraction",
+    "html to markdown",
+    "reading order",
+    "crawler",
+    "boilerplate removal",
+    "main content",
+    "playwright",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Text Processing :: Markup :: HTML",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Typing :: Typed",
+]
 dependencies = [
     # `http2` pulls in h2. Not decoration: measured on 1,000 live URLs, a client that speaks
     # only HTTP/1.1 and refuses brotli is answered differently by several CDNs than one that
@@ -15,6 +40,13 @@ dependencies = [
     "pydantic>=2.10",
     "jsonschema>=4.23",
 ]
+
+[project.urls]
+Homepage = "https://github.com/BeastxD7/webgraph"
+Repository = "https://github.com/BeastxD7/webgraph"
+Documentation = "https://github.com/BeastxD7/webgraph/tree/main/docs"
+Changelog = "https://github.com/BeastxD7/webgraph/blob/main/CHANGELOG.md"
+Issues = "https://github.com/BeastxD7/webgraph/issues"
 
 [project.scripts]
 webgraph = "webgraph.cli:main"
