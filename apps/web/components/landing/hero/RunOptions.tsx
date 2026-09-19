@@ -228,16 +228,36 @@ export default function RunOptions({ mode }: { mode: Mode }) {
   // hero the prompt sits in a clipped, 3D-transformed frame, and an absolutely positioned
   // panel was cut off at the frame's edge (and `position: fixed` would be measured from the
   // transformed ancestor, not the viewport).
-  const [place, setPlace] = useState<{ left: number; top: number; width: number } | null>(null);
+  // Below the button when the viewport has room there, above it otherwise -- the prompt
+  // at the foot of the home page opened a panel the reader could not see the bottom of.
+  // Either way the panel is no taller than the space it has and scrolls inside.
+  const [place, setPlace] = useState<
+    { left: number; width: number; maxHeight: number } & ({ top: number } | { bottom: number })
+  >();
 
   useLayoutEffect(() => {
     if (!open) return;
     const measure = () => {
       const anchor = root.current?.getBoundingClientRect();
       if (!anchor) return;
-      const width = Math.min(480, window.innerWidth - 32);
-      const left = Math.max(16, Math.min(anchor.left, window.innerWidth - width - 16));
-      setPlace({ left, top: anchor.bottom + 8, width });
+      const margin = 16;
+      const gap = 8;
+      const width = Math.min(480, window.innerWidth - 2 * margin);
+      const left = Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin));
+      const below = window.innerHeight - anchor.bottom - gap - margin;
+      const above = anchor.top - gap - margin;
+      // The panel wants about 560px; take the side that has it, else the roomier side.
+      const wanted = 560;
+      if (below >= wanted || below >= above) {
+        setPlace({ left, width, top: anchor.bottom + gap, maxHeight: Math.max(160, below) });
+      } else {
+        setPlace({
+          left,
+          width,
+          bottom: window.innerHeight - anchor.top + gap,
+          maxHeight: Math.max(160, above),
+        });
+      }
     };
     measure();
     window.addEventListener("resize", measure);
@@ -308,7 +328,12 @@ export default function RunOptions({ mode }: { mode: Mode }) {
           id={panelId}
           role="dialog"
           aria-label="Options for this run"
-          style={{ left: place.left, top: place.top, width: place.width, maxHeight: `calc(100vh - ${place.top + 16}px)` }}
+          style={{
+            left: place.left,
+            width: place.width,
+            maxHeight: place.maxHeight,
+            ...("top" in place ? { top: place.top } : { bottom: place.bottom }),
+          }}
           className="fixed z-50 overflow-y-auto rounded-2xl border border-rule-strong bg-surface p-4 text-left shadow-[0_12px_40px_rgb(15_26_20/0.16)]"
         >
           <div className="flex items-center justify-between gap-3">

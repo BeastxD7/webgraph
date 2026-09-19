@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI (2026-09-19, PR #171)
+- Fixed: the Options panel opens above the button when the viewport has more room there
+  (the prompt at the foot of the home page opened a panel whose bottom was off-screen),
+  and is never taller than the space it has; it scrolls inside.
+
 ### Web UI (2026-09-19, PR #170)
 - Removed: the example-site chips (vtu.ac.in, docs.python.org, …) under the address box.
   Owner's request; the prompt is the address, the mode and the run's options.
