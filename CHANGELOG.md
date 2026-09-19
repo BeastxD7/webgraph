@@ -24,6 +24,13 @@ All notable changes to this project are documented here. The format follows
   host": the `discovery` event's `sitemaps.in_scope` counts what the scope admits,
   apart from what was queued (`seeds`).
 
+### Engine (2026-09-19, PR #167) -- a backdrop is not a column
+- Fixed: a textless block whose box holds three or more other blocks -- a decorative
+  background image laid under the first screen -- is taken out of the geometry before the
+  reading order is cut. lakshx.in/docs/* read the sidebar's lower entries between the
+  article's paragraphs on every page; reading-order board 0.9929 -> 0.9931 overall,
+  0.934 -> 0.939 on the pairs the two orderings disagree on.
+
 ### Engine (2026-09-19, PR #166) -- slides are not hidden menus; a 404 to the browser
 - Fixed: a hidden element with a *showing* twin under the same parent (same tag, same
   leading class, outside `nav`/`header`/`footer`) is a carousel slide, not hidden matter,

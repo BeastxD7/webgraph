@@ -429,6 +429,64 @@ class TestGutterRail:
         assert _line_unit([17.0, 17.0, 17.0, 17.0]) == 17.0
 
 
+class TestBackdrop:
+    """lakshx.in/docs/*: a decorative `<img>` with no alt text laid over the whole first
+    screen (1440 x 900 at the origin), the sidebar and the article drawn on top of it.
+    Measured, the one block touches every gutter on that screen, no column cut is
+    possible, and the sidebar's lower entries were read between the article's paragraphs."""
+
+    @staticmethod
+    def page(*, alt: str = "") -> list[Block]:
+        blocks = [
+            Block(
+                text=alt,
+                tag="img",
+                xpath="/html/body/img[1]",
+                dom_index=0,
+                rect=Rect(x=0, y=0, width=1440, height=900),
+            )
+        ]
+        for i in range(12):
+            blocks.append(block(f"side{i}", 24, 100 + i * 34, w=240, h=32, dom_index=1 + i))
+        for i in range(10):
+            blocks.append(block(f"para{i}", 344, 100 + i * 60, w=768, h=51, dom_index=13 + i))
+        return blocks
+
+    def test_the_backdrop_is_anchored_and_the_columns_are_cut(self) -> None:
+        ordered, method = order_blocks(self.page())
+        names = texts(ordered)
+        assert method is ReadingOrderMethod.GEOMETRIC_ANCHORED
+        assert names[1:13] == [f"side{i}" for i in range(12)]
+        assert names[-10:] == [f"para{i}" for i in range(10)]
+
+    def test_a_backdrop_with_alt_text_is_not_demoted(self) -> None:
+        """A picture with words is content, wherever it lies; only the textless box under
+        the page is furniture. (It then bridges the gutter, as before: this test pins
+        the boundary of the rule, not a preference for the interleaving.)"""
+        from webgraph.dom.reading_order import _demote_backdrops
+
+        demoted = _demote_backdrops(self.page(alt="A heron over the marsh"))
+        assert demoted[0].rect is not None
+
+    def test_a_hero_holding_two_blocks_keeps_its_box(self) -> None:
+        from webgraph.dom.reading_order import _demote_backdrops
+
+        blocks = [
+            Block(
+                text="",
+                tag="img",
+                xpath="/html/body/img[1]",
+                dom_index=0,
+                rect=Rect(x=0, y=0, width=1440, height=600),
+            ),
+            block("Headline", 100, 200, w=600, h=60, dom_index=1),
+            block("Tagline", 100, 280, w=600, h=24, dom_index=2),
+            block("Below the fold", 100, 700, w=600, h=24, dom_index=3),
+        ]
+        demoted = _demote_backdrops(blocks)
+        assert demoted[0].rect is not None, "two blocks over a hero do not make it a backdrop"
+
+
 class TestFloats:
     """en.wikipedia "Computer": a right-floated gallery -- five images and a caption list --
     beside the lead paragraphs. Geometry alone dealt its pieces out between the paragraphs;

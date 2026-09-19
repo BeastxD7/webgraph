@@ -167,7 +167,7 @@ def order_blocks(
     heights = [b.rect.height for b in measured if b.rect is not None and b.rect.height > 0]
     unit = _line_unit(heights)
 
-    blocks = _demote_rails(blocks, unit)
+    blocks = _demote_backdrops(_demote_rails(blocks, unit))
     measured = [b for b in blocks if b.rect is not None]
 
     if len(measured) == len(blocks):
@@ -227,6 +227,57 @@ def _demote_rails(blocks: list[Block], unit: float) -> list[Block]:
             block = block.model_copy(update={"rect": None})
         out.append(block)
     return out
+
+
+_MIN_BACKDROP_COVER: Final[int] = 3
+
+
+def _demote_backdrops(blocks: list[Block]) -> list[Block]:
+    """Strip the measurement from a backdrop: a block with no text whose box holds other
+    blocks.
+
+    lakshx.in/docs/* opens with a decorative `<img>` -- no alt text -- laid over the whole
+    first screen, 1440 x 900 at the page's origin, with the sidebar, the header and the
+    article's first paragraphs drawn on top of it. Measured, it is one block that touches
+    every gutter on that screen: no vertical band separates the sidebar from the article
+    while the image spans both, so the cut falls back to position order and the sidebar's
+    lower entries ("Code Graph", "Music", "Voice") are read between the article's
+    paragraphs, on every page of the docs. A text block is a leaf and never holds another;
+    a box that holds others is *under* them, not beside them, and has no place in the
+    order of what a reader reads. Unmeasured, the image is anchored where the DOM puts it
+    (the top of the page, which is also where it is) and the gutter is whole.
+
+    Only a textless block, and only one holding at least three others: a hero image with a
+    caption laid over it holds one, and stays where its box says.
+    """
+    measured = [b for b in blocks if b.rect is not None]
+    out: list[Block] = []
+    for block in blocks:
+        rect = block.rect
+        if rect is None or block.text.strip():
+            out.append(block)
+            continue
+        held = 0
+        for other in measured:
+            if other is block or other.rect is None:
+                continue
+            if _holds(rect, other.rect):
+                held += 1
+                if held >= _MIN_BACKDROP_COVER:
+                    block = block.model_copy(update={"rect": None})
+                    break
+        out.append(block)
+    return out
+
+
+def _holds(outer: Rect, inner: Rect) -> bool:
+    """Whether `inner` lies wholly within `outer`."""
+    return (
+        inner.x >= outer.x - _EPSILON
+        and inner.y >= outer.y - _EPSILON
+        and inner.x + inner.width <= outer.x + outer.width + _EPSILON
+        and inner.y + inner.height <= outer.y + outer.height + _EPSILON
+    )
 
 
 _INDEXED_STEP: Final[re.Pattern[str]] = re.compile(r"\[\d+\]")
