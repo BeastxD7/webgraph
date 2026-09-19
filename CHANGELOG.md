@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Engine (2026-09-19, PRs #152-#155)
+- Added: `from webgraph import resolve_page, build_document, to_markdown, select_content,
+  stream_site, read_metadata` is the package's stable surface; `webgraph.__version__`. The
+  engine builds as a wheel with its licence, README and data files, and
+  `.github/workflows/publish.yml` publishes a `v*` tag to PyPI by trusted publishing (#155).
+  The distribution name is still open: `webgraph` on PyPI belongs to another project.
+- Changed: a static-only block under a client-template directive (`v-if`, `x-show`,
+  `ng-if`, ...) that the browser did not build stays out of the union -- never built, not
+  lost (`Block.templated`). Hidden tables are matched cell-wise against the render's hidden
+  matter; a frame the browser gave no box, or hid, is a beacon; a `position: fixed` box
+  wholly outside the viewport is off-screen (#152).
+- Changed: cards nest in the reading order. Inside a card, a row of side-by-side cards is
+  read one card at a time; stacked or overlapping siblings are left to geometry (#153).
+- Style: the engine is `ruff format`ted, and CI checks it (#154).
+
 ### Changed (2026-09-17, PR #128) -- the brand displays as "WebGraph"
 - Asked directly to capitalize the site's own brand name, having earlier confirmed the
   lowercase "webgraph" style was a deliberate, consistent choice (site title/metadata,

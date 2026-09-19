@@ -57,7 +57,11 @@ class TestFlag:
                 ("get", f"/api/graph?url={ROOT}", None),
                 ("post", "/api/graph/build", {"url": ROOT, "provider": FAKE}),
                 ("post", "/api/graph/query", {"url": ROOT, "question": "q"}),
-                ("post", "/api/graph/sync/neo4j", {"url": ROOT, "uri": "bolt://x", "user": "u", "password": "p"}),
+                (
+                    "post",
+                    "/api/graph/sync/neo4j",
+                    {"url": ROOT, "uri": "bolt://x", "user": "u", "password": "p"},
+                ),
             ):
                 response = client.get(path) if method == "get" else client.post(path, json=body)
                 assert response.status_code == 404, path
@@ -80,17 +84,30 @@ class TestBuildAndQuery:
         assert not done["truncated"]
 
     def test_build_needs_a_crawled_graph(self, client: TestClient) -> None:
-        response = client.post("/api/graph/build", json={"url": "https://never-crawled.test/", "provider": FAKE})
+        response = client.post(
+            "/api/graph/build", json={"url": "https://never-crawled.test/", "provider": FAKE}
+        )
         assert response.status_code == 404 and "site/stream" in response.json()["detail"]
 
     def test_build_needs_a_model(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("WEBGRAPH_LLM_MODEL", raising=False)
-        response = client.post("/api/graph/build", json={"url": ROOT, "provider": {"provider": "ollama"}})
+        response = client.post(
+            "/api/graph/build", json={"url": ROOT, "provider": {"provider": "ollama"}}
+        )
         assert response.status_code == 422 and "provider.model" in response.json()["detail"]
 
-    def test_api_key_env_cannot_point_at_an_arbitrary_server_variable(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_api_key_env_cannot_point_at_an_arbitrary_server_variable(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "AKIA-not-for-you")
-        body = {"url": ROOT, "provider": {"model": "m", "base_url": "https://collector.example/v1", "api_key_env": "AWS_SECRET_ACCESS_KEY"}}
+        body = {
+            "url": ROOT,
+            "provider": {
+                "model": "m",
+                "base_url": "https://collector.example/v1",
+                "api_key_env": "AWS_SECRET_ACCESS_KEY",
+            },
+        }
         response = client.post("/api/graph/build", json=body)
         assert response.status_code == 422
         assert "api_key_env may name one of" in response.json()["detail"]
@@ -98,36 +115,67 @@ class TestBuildAndQuery:
 
     def test_a_422_never_echoes_the_key(self, client: TestClient) -> None:
         # A missing field makes FastAPI echo the whole body as `input`, key included.
-        response = client.post("/api/graph/build", json={"provider": {"model": "m", "api_key": "sk-very-secret"}})
+        response = client.post(
+            "/api/graph/build", json={"provider": {"model": "m", "api_key": "sk-very-secret"}}
+        )
         assert response.status_code == 422
         assert "sk-very-secret" not in response.text
         assert "[redacted]" in response.text
 
     def test_budget_cap_is_honoured(self, client: TestClient) -> None:
-        events = _events(client.post("/api/graph/build", json={"url": ROOT, "provider": FAKE, "budget": {"max_input_tokens": 1500}}))
+        events = _events(
+            client.post(
+                "/api/graph/build",
+                json={"url": ROOT, "provider": FAKE, "budget": {"max_input_tokens": 1500}},
+            )
+        )
         assert any(e["type"] == "budget" and e["reason"] == "max_input_tokens" for e in events)
         assert events[-1]["truncated"] is True
 
     def test_query_streams_the_path_then_a_cited_answer(self, client: TestClient) -> None:
         _events(client.post("/api/graph/build", json={"url": ROOT, "provider": FAKE}))
-        events = _events(client.post("/api/graph/query", json={"url": ROOT, "question": "What is the tuition fee for B.E. Computer Science?", "provider": FAKE}))
+        events = _events(
+            client.post(
+                "/api/graph/query",
+                json={
+                    "url": ROOT,
+                    "question": "What is the tuition fee for B.E. Computer Science?",
+                    "provider": FAKE,
+                },
+            )
+        )
         kinds = [e["type"] for e in events]
-        assert kinds[0] == "seeds" and "hop" in kinds and "evidence" in kinds and kinds[-1] == "answer"
+        assert (
+            kinds[0] == "seeds" and "hop" in kinds and "evidence" in kinds and kinds[-1] == "answer"
+        )
         assert kinds.index("evidence") < kinds.index("answer_delta") < kinds.index("answer")
         answer = events[-1]
         assert "₹1,20,000" in answer["text"]
         assert answer["citations"] and all("#/html/" in c["anchor"] for c in answer["citations"])
         assert answer["unsupported"] == 0 and answer["path"]["seeds"]
 
-    def test_query_without_a_model_is_extractive(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_query_without_a_model_is_extractive(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.delenv("WEBGRAPH_LLM_MODEL", raising=False)
         _events(client.post("/api/graph/build", json={"url": ROOT, "provider": FAKE}))
-        events = _events(client.post("/api/graph/query", json={"url": ROOT, "question": "TechFest 2026"}))
-        assert events[-1]["type"] == "answer" and events[-1]["usage"]["model"] == "none" and events[-1]["citations"]
+        events = _events(
+            client.post("/api/graph/query", json={"url": ROOT, "question": "TechFest 2026"})
+        )
+        assert (
+            events[-1]["type"] == "answer"
+            and events[-1]["usage"]["model"] == "none"
+            and events[-1]["citations"]
+        )
 
     def test_no_model_wins_over_a_configured_model(self, client: TestClient) -> None:
         _events(client.post("/api/graph/build", json={"url": ROOT, "provider": FAKE}))
-        events = _events(client.post("/api/graph/query", json={"url": ROOT, "question": "TechFest 2026", "provider": FAKE, "no_model": True}))
+        events = _events(
+            client.post(
+                "/api/graph/query",
+                json={"url": ROOT, "question": "TechFest 2026", "provider": FAKE, "no_model": True},
+            )
+        )
         assert events[-1]["type"] == "answer" and events[-1]["usage"]["model"] == "none"
 
     def test_query_before_build_is_404(self, client: TestClient) -> None:
@@ -142,11 +190,17 @@ class TestInspectExportSync:
 
     def test_stats_and_nodes(self, client: TestClient) -> None:
         stats = client.get("/api/graph/stats", params={"url": ROOT}).json()
-        assert stats["counts"]["entities"] > 10 and stats["fts"] is True and stats["last_run"]["model"] == "fake-1"
+        assert (
+            stats["counts"]["entities"] > 10
+            and stats["fts"] is True
+            and stats["last_run"]["model"] == "fake-1"
+        )
         graph = client.get("/api/graph", params={"url": ROOT, "limit": 50}).json()
         assert len(graph["nodes"]) == min(50, stats["counts"]["entities"])
         node_ids = {n["id"] for n in graph["nodes"]}
-        assert graph["edges"] and all(e["source"] in node_ids and e["target"] in node_ids for e in graph["edges"])
+        assert graph["edges"] and all(
+            e["source"] in node_ids and e["target"] in node_ids for e in graph["edges"]
+        )
         assert {"id", "type", "name", "evidence", "degree"} <= set(graph["nodes"][0])
 
     def test_entity_detail_carries_quotes_and_anchors(self, client: TestClient) -> None:
@@ -155,8 +209,13 @@ class TestInspectExportSync:
         detail = client.get("/api/graph/entity", params={"url": ROOT, "id": rao["id"]}).json()
         assert detail["type"] == "Person" and detail["mentions"]
         mention = detail["mentions"][0]
-        assert mention["anchor"] == f"{mention['url']}#{mention['block_xpath']}" and mention["quote"]
-        assert client.get("/api/graph/entity", params={"url": ROOT, "id": "ent_nope"}).status_code == 404
+        assert (
+            mention["anchor"] == f"{mention['url']}#{mention['block_xpath']}" and mention["quote"]
+        )
+        assert (
+            client.get("/api/graph/entity", params={"url": ROOT, "id": "ent_nope"}).status_code
+            == 404
+        )
 
     def test_exports_parse(self, client: TestClient) -> None:
         jsonl = client.get("/api/graph/export", params={"url": ROOT, "fmt": "jsonl"})
@@ -167,13 +226,29 @@ class TestInspectExportSync:
         assert "MERGE (e:Entity" in cypher and "RELATED {predicate:" in cypher
         jsonld = client.get("/api/graph/export", params={"url": ROOT, "fmt": "jsonld"}).json()
         assert jsonld["@context"]["prov"] and jsonld["@graph"]
-        assert client.get("/api/graph/export", params={"url": ROOT, "fmt": "xml"}).status_code == 422
+        assert (
+            client.get("/api/graph/export", params={"url": ROOT, "fmt": "xml"}).status_code == 422
+        )
 
     def test_sync_without_the_driver_reports_the_extra(self, client: TestClient) -> None:
-        events = _events(client.post("/api/graph/sync/neo4j", json={"url": ROOT, "uri": "bolt://127.0.0.1:1", "user": "neo4j", "password": "hunter2"}))
+        events = _events(
+            client.post(
+                "/api/graph/sync/neo4j",
+                json={
+                    "url": ROOT,
+                    "uri": "bolt://127.0.0.1:1",
+                    "user": "neo4j",
+                    "password": "hunter2",
+                },
+            )
+        )
         assert events[-1]["type"] in {"error", "done"}
         if events[-1]["type"] == "error":
-            assert "kg-neo4j" in events[-1]["message"] or "bolt" in events[-1]["message"].lower() or "connect" in events[-1]["message"].lower()
+            assert (
+                "kg-neo4j" in events[-1]["message"]
+                or "bolt" in events[-1]["message"].lower()
+                or "connect" in events[-1]["message"].lower()
+            )
         assert "hunter2" not in json.dumps(events)
 
     def test_delete_drops_the_file(self, client: TestClient) -> None:
@@ -196,14 +271,24 @@ class TestValidationHandler:
 
         from webgraph_api.main import _validation_error
 
-        exc = RequestValidationError([
-            {"type": "value_error", "loc": ("body", "provider"), "msg": "bad", "input": {"api_key": "sk-secret"}, "ctx": {"error": ValueError("boom")}}
-        ])
+        exc = RequestValidationError(
+            [
+                {
+                    "type": "value_error",
+                    "loc": ("body", "provider"),
+                    "msg": "bad",
+                    "input": {"api_key": "sk-secret"},
+                    "ctx": {"error": ValueError("boom")},
+                }
+            ]
+        )
         # On a fresh thread: Playwright's sync API leaves this thread's event loop marked
         # running once a shared browser has been started (the engine's render tests do), and
         # `asyncio.run` refuses a thread in that state.
         results: list[Any] = []
-        worker = threading.Thread(target=lambda: results.append(asyncio.run(_validation_error(None, exc))))  # type: ignore[arg-type]
+        worker = threading.Thread(
+            target=lambda: results.append(asyncio.run(_validation_error(None, exc)))
+        )  # type: ignore[arg-type]
         worker.start()
         worker.join()
         response = results[0]

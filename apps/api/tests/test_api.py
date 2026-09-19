@@ -143,8 +143,14 @@ class TestText:
         """The router labels the page; it does not change what is extracted from it."""
         body = client.post("/api/text", json={"url": f"{server}/ecommerce_jsonld.html"}).json()
         assert body["page_type"] in {
-            "article", "documentation", "service", "forum",
-            "collection", "listing", "product", "unknown",
+            "article",
+            "documentation",
+            "service",
+            "forum",
+            "collection",
+            "listing",
+            "product",
+            "unknown",
         }
         assert 0.0 <= body["page_type_confidence"] <= 1.0
 
@@ -154,7 +160,9 @@ class TestText:
         """The swatch labels a screen reader announces are not in the default text; a
         caller who wants every string in the DOM asks with `include_hidden_text`."""
         default = client.post("/api/text", json={"url": f"{server}/hidden_labels.html"}).json()
-        assert "Option: BILLY" not in default["text"] and "Skip to main content" not in default["text"]
+        assert (
+            "Option: BILLY" not in default["text"] and "Skip to main content" not in default["text"]
+        )
         assert "BILLY bookcase, white" in default["text"]
         full = client.post(
             "/api/text", json={"url": f"{server}/hidden_labels.html", "include_hidden_text": True}
@@ -170,7 +178,9 @@ class TestText:
         body = client.post("/api/text", json={"url": f"{server}/article_with_comments.html"}).json()
         assert "Reply 0:" not in body["content_markdown"]
         assert "Paragraph 7 of the story" in body["content_markdown"]
-        assert body["comments_markdown"].index("Reply 0:") < body["comments_markdown"].index("Reply 5:")
+        assert body["comments_markdown"].index("Reply 0:") < body["comments_markdown"].index(
+            "Reply 5:"
+        )
         assert "Paragraph 7" not in body["comments_markdown"]
 
     def test_content_selection_names_the_step_that_drew_the_line(
@@ -219,9 +229,7 @@ class TestAutoSchema:
     """
 
     def test_no_schema_means_the_engine_chooses_one(self, client: TestClient, server: str) -> None:
-        body = client.post(
-            "/api/extract", json={"url": f"{server}/ecommerce_jsonld.html"}
-        ).json()
+        body = client.post("/api/extract", json={"url": f"{server}/ecommerce_jsonld.html"}).json()
         choice = body["schema_choice"]
         assert choice is not None
         assert choice["page_type"]
@@ -296,7 +304,9 @@ class TestTextStream:
         assert "Configuring retries" in done["text"]
         assert done["markdown"]
 
-    def test_a_missing_page_arrives_as_an_error_event(self, client: TestClient, server: str) -> None:
+    def test_a_missing_page_arrives_as_an_error_event(
+        self, client: TestClient, server: str
+    ) -> None:
         got = self.events(client, f"{server}/absent.html")
         assert got[-1]["type"] == "error"
         assert got[-1]["message"]
@@ -469,7 +479,9 @@ class TestRefusedAddresses:
         # The CORS header is the whole point: without it the browser hides the status.
         assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
 
-    def test_the_plain_endpoint_agrees(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_plain_endpoint_agrees(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.fetch import guard
 
         monkeypatch.setattr(guard, "_blocked", True)
@@ -519,7 +531,9 @@ class TestPerRequestOptions:
         assert header["max_depth"] == 2
         assert header["strict_domain"] is False
 
-    def test_an_out_of_range_option_is_rejected_before_anything_runs(self, client: TestClient, server: str) -> None:
+    def test_an_out_of_range_option_is_rejected_before_anything_runs(
+        self, client: TestClient, server: str
+    ) -> None:
         response = client.post(
             "/api/text/stream",
             json={"url": f"{server}/docs_static.html", "renderOptions": {"timeout_ms": 5}},
@@ -529,7 +543,11 @@ class TestPerRequestOptions:
     def test_an_unknown_option_is_ignored_not_fatal(self, client: TestClient, server: str) -> None:
         """A newer client sending a field this server does not know should still be served."""
         response = client.post(
-            "/api/text", json={"url": f"{server}/docs_static.html", "fetch": {"timeout_seconds": 5, "colour": "red"}}
+            "/api/text",
+            json={
+                "url": f"{server}/docs_static.html",
+                "fetch": {"timeout_seconds": 5, "colour": "red"},
+            },
         )
         assert response.status_code == 200
 
@@ -675,7 +693,9 @@ class TestSuppliedHtml:
         assert response.status_code == 422
 
     def test_the_url_must_still_be_http(self, client: TestClient) -> None:
-        response = client.post("/api/text", json={"url": "file:///etc/passwd", "html": SUPPLIED_PAGE})
+        response = client.post(
+            "/api/text", json={"url": "file:///etc/passwd", "html": SUPPLIED_PAGE}
+        )
         assert response.status_code == 422
         response = client.post("/api/text/stream", json={"url": "ftp://x/", "html": SUPPLIED_PAGE})
         assert response.status_code == 422
@@ -693,6 +713,8 @@ class TestSuppliedHtml:
         assert "over the 1,000-byte limit" in detail
         # No fetch happened, and the detail must not claim one did.
         assert detail.startswith("could not read the supplied HTML")
+
+
 ROBOTS_CLOSED = "User-agent: *\nDisallow: /\n"
 PLAIN_PAGE = (
     "<html><body><h1>An article</h1><p>Enough words here to be a real page of its own, "
@@ -733,9 +755,7 @@ class TestRobotsOnASinglePage:
         assert "Disallow: /" in detail
         assert "supply the HTML" in detail
 
-    def test_the_caller_can_decline_the_check(
-        self, client: TestClient, closed_server: str
-    ) -> None:
+    def test_the_caller_can_decline_the_check(self, client: TestClient, closed_server: str) -> None:
         from webgraph.fetch import robots
 
         robots.forget()
@@ -826,7 +846,10 @@ class TestSiteReport:
         # `measured_weight` already said which case this is.
         assert root["rendered_words"] > 0 or body["score"]["measured_weight"] == 75
         assert "casino" not in root["title"]
-        assert [p["requested_url"] for p in body["pages"]] == [f"{report_server}/", f"{report_server}/about.html"]
+        assert [p["requested_url"] for p in body["pages"]] == [
+            f"{report_server}/",
+            f"{report_server}/about.html",
+        ]
         assert [d["status"] for d in root["dead_links"]] == [404]
 
         kinds = [f["kind"] for f in body["findings"]]
@@ -841,18 +864,37 @@ class TestSiteReport:
         # the Content-Signal line, the llms.txt (its one link checked), the security.txt,
         # and the well-known files that are not there.
         signals = {s["key"]: s for s in body["signals"]["signals"]}
-        assert [g["key"] for g in body["signals"]["groups"]] == ["ai", "discovery", "agents", "metadata", "trust"]
+        assert [g["key"] for g in body["signals"]["groups"]] == [
+            "ai",
+            "discovery",
+            "agents",
+            "metadata",
+            "trust",
+        ]
         assert signals["content_signal"]["present"] is True
-        assert signals["content_signal"]["detail"].startswith("search=yes, ai-input=yes, ai-train=no (under User-agent: *)")
-        assert signals["content_signal"]["meaning"].startswith("Your robots.txt tells AI systems they may")
-        assert signals["llms_txt"]["present"] is True and "1 of 1 sampled links answer" in signals["llms_txt"]["detail"]
-        assert signals["security_txt"]["present"] is True and "Expires: 2027-01-01" in signals["security_txt"]["detail"]
+        assert signals["content_signal"]["detail"].startswith(
+            "search=yes, ai-input=yes, ai-train=no (under User-agent: *)"
+        )
+        assert signals["content_signal"]["meaning"].startswith(
+            "Your robots.txt tells AI systems they may"
+        )
+        assert (
+            signals["llms_txt"]["present"] is True
+            and "1 of 1 sampled links answer" in signals["llms_txt"]["detail"]
+        )
+        assert (
+            signals["security_txt"]["present"] is True
+            and "Expires: 2027-01-01" in signals["security_txt"]["detail"]
+        )
         assert signals["agent_card"]["present"] is False and signals["agent_card"]["status"] == 404
         assert signals["rsl"]["present"] is False and signals["tdm"]["present"] is False
         assert signals["indexnow"]["present"] is None
         assert body["signals"]["requests"] >= 10
         assert body["suggested_security_txt"] is None
-        assert "The file already declares: search=yes, ai-input=yes, ai-train=no" in body["suggested_robots_txt"]
+        assert (
+            "The file already declares: search=yes, ai-input=yes, ai-train=no"
+            in body["suggested_robots_txt"]
+        )
 
     def test_a_root_disallowed_for_this_client_is_a_report_with_a_refusal(
         self, client: TestClient, closed_server: str, monkeypatch: pytest.MonkeyPatch
@@ -869,7 +911,9 @@ class TestSiteReport:
         assert "robots.txt disallows /article.html for this client" in body["refusal"]
 
     def test_pages_is_bounded(self, client: TestClient) -> None:
-        response = client.post("/api/site/report", json={"url": "https://example.com/", "pages": 500})
+        response = client.post(
+            "/api/site/report", json={"url": "https://example.com/", "pages": 500}
+        )
         assert response.status_code == 422
 
 
@@ -1075,7 +1119,11 @@ class TestWatch:
     """`/api/watch`: create, run (SSE with `change` events), changes, feed."""
 
     WATCH_CONFIG: ClassVar[dict[str, object]] = {
-        "complete": False, "concurrency": 1, "delay_seconds": 0, "host_interval_seconds": 0, "max_pages": 10,
+        "complete": False,
+        "concurrency": 1,
+        "delay_seconds": 0,
+        "host_interval_seconds": 0,
+        "max_pages": 10,
     }
 
     @staticmethod
@@ -1091,9 +1139,13 @@ class TestWatch:
                 if line.startswith("data: ")
             ]
 
-    def test_create_lists_and_refuses_bad_input(self, client: TestClient, watched_site: tuple[str, Path]) -> None:
+    def test_create_lists_and_refuses_bad_input(
+        self, client: TestClient, watched_site: tuple[str, Path]
+    ) -> None:
         root, _ = watched_site
-        created = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG, "schedule_seconds": 3600})
+        created = client.post(
+            "/api/watch", json={"url": root, "config": self.WATCH_CONFIG, "schedule_seconds": 3600}
+        )
         assert created.status_code == 200, created.text
         body = created.json()
         assert body["root"] == root and len(body["id"]) == 12
@@ -1101,7 +1153,12 @@ class TestWatch:
         assert client.get(f"/api/watch/{body['id']}").json()["id"] == body["id"]
         assert [w["id"] for w in client.get("/api/watch").json()] == [body["id"]]
         assert client.post("/api/watch", json={"url": "ftp://x"}).status_code == 422
-        assert client.post("/api/watch", json={"url": root, "config": {"strategy": "guess"}}).status_code == 422
+        assert (
+            client.post(
+                "/api/watch", json={"url": root, "config": {"strategy": "guess"}}
+            ).status_code
+            == 422
+        )
         assert client.get("/api/watch/nope").status_code == 404
         assert client.post("/api/watch/nope/run").status_code == 404
 
@@ -1109,10 +1166,16 @@ class TestWatch:
         self, client: TestClient, watched_site: tuple[str, Path]
     ) -> None:
         root, directory = watched_site
-        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+        watch_id = client.post(
+            "/api/watch", json={"url": root, "config": self.WATCH_CONFIG}
+        ).json()["id"]
 
         first = self.run(client, watch_id)
-        assert first[0]["type"] == "run" and first[0]["mode"] == "watch" and first[0]["watch_id"] == watch_id
+        assert (
+            first[0]["type"] == "run"
+            and first[0]["mode"] == "watch"
+            and first[0]["watch_id"] == watch_id
+        )
         assert first[1]["type"] == "watch" and first[1]["baseline"] is True
         assert first[-1]["type"] == "done" and first[-1]["baseline"] is True
         assert first[-1]["pages_ok"] == 2
@@ -1135,8 +1198,16 @@ class TestWatch:
         listed = client.get(f"/api/watch/{watch_id}/changes").json()
         assert listed["watch"]["runs"] == 2 and listed["watch"]["changes"] == 1
         assert [c["url"] for c in listed["changes"]] == [f"{root}notices.html"]
-        assert client.get(f"/api/watch/{watch_id}/changes", params={"since": "2099-01-01"}).json()["changes"] == []
-        assert client.get(f"/api/watch/{watch_id}/changes", params={"since": "yesterday"}).status_code == 422
+        assert (
+            client.get(f"/api/watch/{watch_id}/changes", params={"since": "2099-01-01"}).json()[
+                "changes"
+            ]
+            == []
+        )
+        assert (
+            client.get(f"/api/watch/{watch_id}/changes", params={"since": "yesterday"}).status_code
+            == 422
+        )
 
     def test_the_feed_is_rss_or_atom_and_well_formed(
         self, client: TestClient, watched_site: tuple[str, Path]
@@ -1144,7 +1215,9 @@ class TestWatch:
         from xml.etree import ElementTree as ET
 
         root, directory = watched_site
-        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+        watch_id = client.post(
+            "/api/watch", json={"url": root, "config": self.WATCH_CONFIG}
+        ).json()["id"]
         self.run(client, watch_id)
         for name, html in WATCH_V2.items():
             (directory / name).write_text(html, encoding="utf-8")
@@ -1165,7 +1238,10 @@ class TestWatch:
         feed = ET.fromstring(atom.text)
         assert feed.find("a:link[@rel='self']", ns) is not None
         assert len(feed.findall("a:entry", ns)) == 1
-        assert client.get(f"/api/watch/{watch_id}/feed.xml", params={"format": "pdf"}).status_code == 422
+        assert (
+            client.get(f"/api/watch/{watch_id}/feed.xml", params={"format": "pdf"}).status_code
+            == 422
+        )
 
     def test_the_hosts_page_cap_applies_to_a_watch(
         self, client: TestClient, watched_site: tuple[str, Path], monkeypatch: pytest.MonkeyPatch
@@ -1174,7 +1250,9 @@ class TestWatch:
 
         root, _ = watched_site
         monkeypatch.setattr(api, "PAGE_CAP", 1)
-        watch_id = client.post("/api/watch", json={"url": root, "config": self.WATCH_CONFIG}).json()["id"]
+        watch_id = client.post(
+            "/api/watch", json={"url": root, "config": self.WATCH_CONFIG}
+        ).json()["id"]
         events = self.run(client, watch_id)
         assert events[0]["max_pages"] == 1
         assert events[-1]["pages_total"] == 1

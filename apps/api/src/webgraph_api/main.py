@@ -84,7 +84,6 @@ from webgraph_api import kg_routes
 SETTINGS = Settings.from_env()
 
 
-
 def _origins_from_env(settings: Settings | None = None) -> list[str]:
     """Browser origins allowed to call this API: `WEBGRAPH_ALLOWED_ORIGINS`, or the dev
     frontend when nothing is configured. Never `*`: this service fetches arbitrary URLs on
@@ -167,6 +166,8 @@ def _persist_graph(root: str, builder: GraphBuilder) -> None:
         _store.prune()
     except Exception as exc:
         print(f"could not persist graph for {root}: {type(exc).__name__}: {exc}")
+
+
 _crawl_slots = asyncio.Semaphore(MAX_CONCURRENT_CRAWLS)
 _crawl_pool = ThreadPoolExecutor(
     max_workers=MAX_CONCURRENT_CRAWLS, thread_name_prefix="webgraph-crawl"
@@ -262,6 +263,7 @@ class CrawlOptions(BaseModel):
         if value is not None:
             scope_patterns(value)
         return value
+
     delay_seconds: float | None = Field(default=None, ge=0, le=10)
     verify_inventory: bool | None = None
     follow_links: bool | None = None
@@ -344,9 +346,7 @@ class FactOut(BaseModel):
 class PageInfo(BaseModel):
     url: str
     content_hash: str
-    reading_order: Literal[
-        "geometric-xy-cut", "geometric-anchored", "dom-fallback", "single-block"
-    ]
+    reading_order: Literal["geometric-xy-cut", "geometric-anchored", "dom-fallback", "single-block"]
     reading_order_measured: bool = Field(
         description="False means order was assumed from source, not measured from layout. "
         "`geometric-anchored` counts as measured: most blocks were, and the rest -- collapsed "
@@ -544,7 +544,9 @@ _SECRET_FIELDS: Final[frozenset[str]] = frozenset({"api_key", "password"})
 
 def _redact(value: Any) -> Any:
     if isinstance(value, dict):
-        return {k: ("[redacted]" if k in _SECRET_FIELDS and v else _redact(v)) for k, v in value.items()}
+        return {
+            k: ("[redacted]" if k in _SECRET_FIELDS and v else _redact(v)) for k, v in value.items()
+        }
     if isinstance(value, list):
         return [_redact(v) for v in value]
     return value
@@ -561,7 +563,9 @@ async def _validation_error(_request: Request, exc: RequestValidationError) -> J
     """
     # `jsonable_encoder` first: a validator that raised puts the exception object itself in
     # `ctx`, and a bare `JSONResponse` would turn that 422 into a 500.
-    return JSONResponse(status_code=422, content={"detail": _redact(jsonable_encoder(exc.errors()))})
+    return JSONResponse(
+        status_code=422, content={"detail": _redact(jsonable_encoder(exc.errors()))}
+    )
 
 
 def _measured(resolved: ResolvedPage) -> bool:
@@ -799,9 +803,7 @@ async def extract(request: ExtractRequest) -> ExtractResponse:
 
     choice: SchemaChoice | None = None
     if request.schema_ is not None:
-        merged = merge_facts(
-            extract_facts(list(document.structured_data), request.schema_, url)
-        )
+        merged = merge_facts(extract_facts(list(document.structured_data), request.schema_, url))
     else:
         # No router means no page type, which means no schema to choose. Degrading to a
         # default schema would be picking a vocabulary at random.
@@ -909,9 +911,7 @@ async def site_context(request: ContextRequest) -> ContextResponse:
 
     graph = builder.graph
     if not graph.sections:
-        raise HTTPException(
-            status_code=409, detail="The crawl has not produced any content yet."
-        )
+        raise HTTPException(status_code=409, detail="The crawl has not produced any content yet.")
 
     # Derived on demand rather than during the crawl: it needs the whole link graph to know
     # what other pages call a page, and it is idempotent, so asking twice costs nothing.
@@ -942,9 +942,7 @@ async def site_context(request: ContextRequest) -> ContextResponse:
         text=assembled.text,
         sources=[source(item, "full") for item in assembled.sections_full]
         + [source(item, "opening") for item in assembled.sections_opening],
-        pages_mapped=[
-            graph.pages[key].url for key in assembled.pages_mapped if key in graph.pages
-        ],
+        pages_mapped=[graph.pages[key].url for key in assembled.pages_mapped if key in graph.pages],
         stats={k: round(v, 4) for k, v in assembled.stats.items()},
         graph=graph.describe(),
     )
@@ -1008,13 +1006,11 @@ async def site_graph_summary(url: str, limit: int = 24) -> GraphSummary:
                 type=entity.type,
                 name=entity.name or entity.key,
                 aliases=[str(a) for a in (entity.data.get("aliases") or [])][:4],
-                pages=[
-                    graph.pages[key].url for key in entity.pages if key in graph.pages
-                ][:4],
+                pages=[graph.pages[key].url for key in entity.pages if key in graph.pages][:4],
             )
-            for entity in sorted(
-                graph.entities.values(), key=lambda e: (-e.page_count, e.name)
-            )[:limit]
+            for entity in sorted(graph.entities.values(), key=lambda e: (-e.page_count, e.name))[
+                :limit
+            ]
         ],
         hubs=[
             GraphHub(
@@ -1029,9 +1025,7 @@ async def site_graph_summary(url: str, limit: int = 24) -> GraphSummary:
         ],
         deepest=[
             graph.pages[key].url
-            for key in sorted(
-                graph.pages, key=lambda k: -graph.pages[k].depth
-            )[:8]
+            for key in sorted(graph.pages, key=lambda k: -graph.pages[k].depth)[:8]
         ],
     )
 
@@ -1605,7 +1599,9 @@ async def watch_changes(
     """Changes newest first. `since` is epoch seconds or an ISO datetime, exclusive."""
     store = _watches()
     out = _watch_out(store, watch_id)
-    changes = list_changes(watch_id, _since_param(since), store=store, limit=max(1, min(limit, 2000)))
+    changes = list_changes(
+        watch_id, _since_param(since), store=store, limit=max(1, min(limit, 2000))
+    )
     return {"watch": out.model_dump(), "changes": [c.as_dict() for c in changes]}
 
 
