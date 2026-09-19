@@ -1,0 +1,209 @@
+---
+title: Pages
+description: resolve_page and its strategies, FetchConfig and RenderConfig with every default, what a ResolvedPage tells you, HTML you already have, and the four ways a page is refused.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## `resolve_page`
+
+```python
+from webgraph import resolve_page
+
+page = resolve_page(
+    url,
+    strategy=None,              # Strategy | None
+    fetch_config=None,          # FetchConfig | None
+    render_config=None,         # RenderConfig | None
+    include_hidden_text=False,  # bool
+    rtl=None,                   # bool | None
+)
+```
+
+Reads one page as completely as the strategy allows and returns a
+[`ResolvedPage`](#resolvedpage). With no arguments it fetches the page twice, plainly and in
+a headless browser, and merges the two so that nothing either fetch had is lost.
+
+| Parameter | Type | Default | What it does |
+|---|---|---|---|
+| `url` | `str` | — | The page to read. Redirects are followed (`FetchConfig.max_redirects`) and links resolve against where the page landed |
+| `strategy` | `Strategy \| None` | `None` = `Strategy.UNION` | How to fetch, see [strategies](#strategies) |
+| `fetch_config` | `FetchConfig \| None` | `None` = `FetchConfig()` | The plain HTTP fetch, see [`FetchConfig`](#fetchconfig) |
+| `render_config` | `RenderConfig \| None` | `None` = `RenderConfig()` | The browser, see [`RenderConfig`](#renderconfig) |
+| `include_hidden_text` | `bool` | `False` | Keep text a browser holds but a sighted reader never sees: screen-reader-only labels, skip links, wiki edit controls. Off, they are stripped as labels for controls, not content |
+| `rtl` | `bool \| None` | `None` = detect | Reading direction. `None` reads it from `dir` and `lang`; `True`/`False` forces it. Matters for column order on a multi-column page |
+
+### Strategies
+
+```python
+from webgraph import Strategy
+
+resolve_page(url, strategy=Strategy.STATIC_ONLY)
+```
+
+| `Strategy` | Fetches | When to use it | You get |
+|---|---|---|---|
+| `UNION` (default) | plain HTTP, then the browser; merged | Always, unless you have a reason. It is the completeness path: measured on real sites, which fetch loses content cannot be predicted from the static HTML | `reading_order_method` measured (`geometric-xy-cut` or `geometric-anchored`), blocks from both sides, `blocks_only_in_static` / `blocks_only_in_rendered` saying what each contributed |
+| `STATIC_ONLY` | plain HTTP only | A page you know is server-rendered, or a budget that cannot afford a browser. About ten times faster (0.2 s against 2–3 s on docs.python.org) | `reading_order_method: dom-fallback` (source order, no geometry). A JavaScript shell — markup with no readable text until a browser runs it — raises `PageShellError` rather than returning an empty page |
+| `RENDERED_ONLY` | the browser only, falling back to plain HTTP if the render fails | A site whose static HTML is a decoy: a consent interstitial served to anything that is not a browser | The browser's document alone, measured |
+| `SUPPLIED` | nothing | Not a value `resolve_page` accepts. It is what [`resolve_supplied`](#html-you-already-have) reports | — |
+
+A render that fails or times out never fails the call. The result degrades to the static
+document, `strategy` still says what was attempted, and `render_error` says what happened
+(`"rendering not available"` when Playwright is not installed).
+
+<Callout type="info">
+Under `UNION` a block only the static page had is kept if the render *lost* it, and dropped
+if the render *hid* it (`display: none`, off-screen), or never built it (a Vue `v-if`
+branch shipped in the HTML). [What the browser hides](/docs/how-it-reads-a-page/what-the-browser-hides)
+has the rules; `include_hidden_text` is the only one you can turn.
+</Callout>
+
+## `FetchConfig`
+
+```python
+from webgraph import FetchConfig
+
+resolve_page(url, fetch_config=FetchConfig(timeout_seconds=45, retries=2, respect_robots=False))
+```
+
+A frozen dataclass; build one with keyword arguments, or `dataclasses.replace()` an existing
+one. The plain fetch speaks HTTP the way a browser does — HTTP/2, brotli, the `Sec-Fetch-*`
+navigation headers — under a User-Agent that still names `webgraph` and carries a contact
+URL. Measured on 1,000 live URLs, several CDNs answer a client that speaks only HTTP/1.1
+differently from one that negotiates what a browser negotiates.
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `timeout_seconds` | `float` | `20.0` | Seconds to wait for a response |
+| `max_redirects` | `int` | `5` | Redirects followed before giving up |
+| `max_bytes` | `int` | `33554432` (32 MB) | Bytes read from the body, at most; the rest is dropped. Also the cap on a gzip member |
+| `user_agent` | `str` | a Chrome UA ending `webgraph/0.1 (+https://github.com/webgraph/webgraph)` | Sent on every request. Changing it to hide the engine's name is your decision; the default identifies the software honestly |
+| `extra_headers` | `dict[str, str]` | `{}` | Added to every request, after the defaults |
+| `http2` | `bool` | `True` | Negotiate HTTP/2 when offered; falls back to HTTP/1.1 |
+| `retries` | `int` | `1` | Extra attempts after a `429`/`503` (honouring `Retry-After` up to 5 s) or a transport error. A definite answer — `403`, `404` — is never retried |
+| `respect_robots` | `bool` | `True` | Ask the host's `robots.txt` first and raise [`PageDisallowedError`](#when-a-page-is-refused) if it disallows this client, quoting the rule. `False` is your explicit choice; the crawl has its own switch in `SiteConfig` |
+| `contact` | `str` | `WEBGRAPH_CONTACT` from the environment, else `""` | Who runs this client, `Name contact@example.com`, for the sites that ask automated clients to say so. Empty means there is nothing to declare and nothing is |
+
+## `RenderConfig`
+
+```python
+from webgraph import RenderConfig
+
+resolve_page(url, render_config=RenderConfig(viewport_width=390, viewport_height=844, settle_ms=2000))
+```
+
+Only matters when a render runs (`UNION` or `RENDERED_ONLY` with Playwright installed).
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `timeout_ms` | `int` | `30000` | Milliseconds a navigation may take. On timeout the page is read as it stands, or refused if it holds fewer than 200 characters |
+| `wait_until` | `"commit" \| "domcontentloaded" \| "load" \| "networkidle"` | `"load"` | When the navigation counts as finished. `networkidle` never fires on sites with analytics beacons or polling; measured, it timed out on 5 of 24 real sites |
+| `viewport_width` | `int` | `1440` | CSS pixels. Width decides reading order: a narrow viewport collapses columns into one, so a phone-width render reads the page as a phone shows it |
+| `viewport_height` | `int` | `900` | CSS pixels |
+| `settle_ms` | `int` | `900` | Pause after load for hydration and layout to settle before geometry is measured |
+| `dismiss_gates` | `bool` | `True` | Click through a first-run interstitial (persona picker, age gate) that blocks the page from mounting: one guarded click, kept only if the text grows 1.5× |
+| `reveal_collapsed` | `bool` | `False` | Open `<details>` and ARIA disclosure panels before measuring, without clicking anything else |
+| `user_agent` | `str \| None` | `None` = the browser's own | Override the browser's User-Agent |
+| `headless` | `bool` | `True` | Run the browser without a window. `False` is for watching a page render while debugging |
+| `reuse_browser` | `bool` | `True` | Reuse the calling thread's browser across pages instead of launching one per page (a launch costs about a second and 150 MB) |
+| `block_resources` | `tuple[str, ...]` | `("image", "media", "font")` | Playwright resource types never downloaded. Fonts shift metrics by a pixel or two, not enough to change column structure |
+
+## `ResolvedPage`
+
+What `resolve_page` and `resolve_supplied` return. Frozen; the document inside is a
+[`Document`](/docs/sdk/types#document).
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | `str` | The address read |
+| `document` | `Document` | The page: blocks in reading order, title, structured data, content hash |
+| `strategy` | `Strategy` | What was actually done — `UNION` may report `STATIC_ONLY` when the render failed and there was nothing to merge |
+| `static_chars`, `rendered_chars`, `union_chars` | `int` | Characters of text each representation held. `rendered_chars` well above `static_chars` says the page needs JavaScript; the reverse says the render lost something (a wall, a lazy section) and the union kept it |
+| `static_words`, `rendered_words`, `union_words` | `int` | The same in words, for a reader |
+| `blocks_only_in_static`, `blocks_only_in_rendered` | `int` | How many blocks each side contributed that the other lacked. Both `0` on docs.python.org; hundreds on a page that hydrates a shell |
+| `render_error` | `str \| None` | Why the browser contributed nothing, when it did not: `"rendering not available"`, a timeout, a wall served to the browser |
+| `static_error` | `str \| None` | Why the plain fetch contributed nothing: an HTTP error, a wall served to non-browsers, a body that was not a page |
+| `identity_declared` | `bool` | The site asked automated clients to say who runs them, and this fetch did (`FetchConfig.contact` was set) |
+| `runtime` | `RuntimeEvidence` | What the browser saw at run time: JavaScript globals and their versions, for technology detection |
+
+```python
+page = resolve_page("https://docs.python.org/3/tutorial/introduction.html")
+page.strategy                       # union
+page.document.reading_order_method  # geometric-anchored
+page.static_words, page.rendered_words, page.union_words   # 3070 3124 3124
+page.blocks_only_in_static, page.blocks_only_in_rendered   # 0 0
+```
+
+## HTML you already have
+
+```python
+from webgraph import resolve_supplied
+
+page = resolve_supplied(html, "https://example.com/the/page", include_hidden_text=False, rtl=None)
+page.strategy   # supplied
+```
+
+Reads a page from HTML you hand over — your own signed-in browser's document, a browser
+extension's copy, a saved file — and **fetches nothing**, not the page and not anything it
+names. `url` is the page's address for making links and images absolute and for the wall
+check, nothing more. This is the engine's answer to sites that refuse every automated
+fetch: it will not disguise itself to get past a challenge, but it will read what you bring.
+The document has no geometry, so the reading order is `dom-fallback`.
+
+## `build_document`
+
+```python
+from webgraph import build_document
+
+doc = build_document(
+    html, url,
+    geometry=None,          # dict[str, Rect] | None -- XPath -> box, from a rendered fetch
+    rtl=None,               # bool | None
+    ordering=None,          # OrderingConfig | None -- the XY-cut's thresholds
+    min_block_chars=1,      # int -- drop text blocks shorter than this
+    headers=None,           # dict[str, str] | None -- response headers, for the profile
+    runtime=None,           # RuntimeEvidence | None -- browser globals, for the profile
+    include_hidden_text=False,
+)
+```
+
+The parser alone: HTML in, [`Document`](/docs/sdk/types#document) out, no network. This is
+what both fetches feed. Without `geometry` the blocks are in source order and the document
+says `dom-fallback`; with it (the map `resolve_page` gets from the browser) they are ordered
+by the XY-cut. Useful for tests, for corpora of saved pages, and for the
+[benchmarks](/docs/benchmarks), which all go through it.
+
+```python
+doc = build_document("<html><body><main><h1>Hi</h1><p>A paragraph.</p></main></body></html>", "https://x.test/")
+[(b.kind, b.text) for b in doc.blocks]   # [(heading, 'Hi'), (paragraph, 'A paragraph.')]
+```
+
+## When a page is refused
+
+`resolve_page` raises rather than returning something that is not the page. Four
+exceptions, all importable from `webgraph`:
+
+| Exception | Raised when | Example message |
+|---|---|---|
+| `PageMissingError` | The URL does not exist: HTTP 404 or 410 | `HTTP 404: page does not exist` |
+| `PageDisallowedError` (a `ValueError`) | `robots.txt` disallows this page for this client and `respect_robots` is on. The message quotes the rule and names what the site offers instead | `https://www.google.com/robots.txt disallows /search for this client (User-agent: * / Disallow: /search)` |
+| `PageBlockedError` (a `ValueError`) | The server answered with a wall instead of the page: a Cloudflare or Akamai challenge, a "verify you are human" page, a login redirect — on both fetches | `the site answered with a Cloudflare challenge ...` (stackoverflow.com) |
+| `PageShellError` (a `ValueError`) | The page has no readable text: a JavaScript shell that was not rendered (`STATIC_ONLY`), or a page the browser rendered and that still says nothing — a silent bot check. Carries `.document`, whose hydration payload may still be complete | `the page is a JavaScript shell with no readable text until a browser runs it (41,203 bytes of markup); rendering was not used for this request` |
+
+```python
+from webgraph import resolve_page, PageMissingError, PageDisallowedError, PageBlockedError
+
+try:
+    page = resolve_page(url)
+except PageMissingError:
+    ...   # gone; do not retry
+except PageDisallowedError as e:
+    ...   # the site asked not to; e says which rule
+except PageBlockedError as e:
+    ...   # a wall; bring your own HTML with resolve_supplied, or leave it
+```
+
+A wall on *one* side is not an error: the other fetch's page is returned and
+`static_error` / `render_error` names the wall. Transport failures on both sides raise
+`ValueError` with both reasons.

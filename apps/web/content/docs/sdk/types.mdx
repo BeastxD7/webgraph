@@ -1,0 +1,149 @@
+---
+title: Types
+description: Document and Block field by field, the enums, ResolvedPage, PageMetadata and read_metadata - the data every function returns.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+All of these are importable from `webgraph`. `Document`, `Block`, `Rect` and
+`StructuredPayload` are frozen Pydantic models: `model_dump()`, `model_validate()`,
+`model_copy(update=...)` all work, and they cannot be mutated in place.
+
+## `Document`
+
+One page, read. Returned inside a [`ResolvedPage`](/docs/sdk/pages#resolvedpage) by
+`resolve_page`, and directly by `build_document`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | `str` | The page's final address, after redirects. Links and images in the blocks are absolute against it |
+| `html` | `str` | The markup the blocks were parsed from — the merged page for a `union`. Usually the largest thing here; `model_dump(exclude={"html"})` to leave it out |
+| `blocks` | `tuple[Block, ...]` | The page's content units in reading order. The whole point |
+| `title` | `str` | The `<title>` |
+| `description` | `str` | The `<meta name="description">` |
+| `reading_order_method` | `ReadingOrderMethod` | How `blocks` were ordered — measured, partly measured, or source order. See [below](#readingordermethod) |
+| `profile` | `StackProfile` | What the page is built with: `technologies` (each a dict with `name`, `category`, `version`, `confidence`, `evidence`), `frameworks`, `requires_render` and the `signals` behind it, `has_json_ld`, `has_next_data`, … |
+| `structured_data` | `tuple[StructuredPayload, ...]` | Machine-readable data the page handed over before any parsing: each with `source` (`json-ld`, `microdata`, `open-graph`, `next-data`, `rsc-flight`, `nuxt`, `initial-state`), `data` and the `xpath` it came from |
+| `markup` | `MarkupStats` | Counts over the markup for the page-type router: `elements`, `tag_counts`, class-name hits per vocabulary (`docs`, `product`, `forum`, …), `rel_next`, `itemprop_count`, `generator`, `body_classes` |
+| `content_hash` | `str` | SHA-256 of `text`. Computed over the extracted text, never the HTML, so two fetches of an unchanged page hash the same despite build hashes and CSRF tokens |
+| `gated` | `str \| None` | Set on a `union` document when the browser was shown a gate that hid the page (a country picker, a consent dialog with the body hidden behind it) and the plain fetch's page was kept whole. The sentence says how much was behind it |
+| `fetched_at` | `datetime` | When, UTC |
+| `text` | `str` (property) | The blocks' text joined by blank lines |
+
+```python
+doc = page.document
+doc.title                       # '3. An Informal Introduction to Python — Python 3.14.7 documentation'
+doc.reading_order_method        # geometric-anchored
+len(doc.blocks)                 # 164
+doc.profile.technologies[:2]    # [{'name': 'nginx', 'category': 'Web servers', ...}, {'name': 'Fastly', 'category': 'CDN', ...}]
+[p.source for p in doc.structured_data]   # [open-graph]
+doc.content_hash[:12]           # 'ec1a08f6a2fd'
+```
+
+## `Block`
+
+One unit of content — a paragraph, a heading, a list item, a table, an image — with where it
+came from and, on a rendered page, where it was drawn.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `text` | `str` | The plain text. For a table, rows joined with ` \| ` and newlines; for an image, its `alt`; for a media placeholder, the engine's note |
+| `rich_text` | `str \| None` | The same with inline Markdown — links, emphasis, inline code — when the block has any. Kept apart from `text` so that hashes and deduplication key on words alone |
+| `kind` | `BlockKind` | What it is; [below](#blockkind) |
+| `level` | `int` | Heading level 1–6, or a list item's nesting depth (1 for a top-level item). `0` when not applicable |
+| `tag` | `str` | The source element's tag, lowercased: `p`, `h2`, `li`, `td`, `img`, `pre` |
+| `xpath` | `str` | Absolute XPath of the source element: the provenance anchor, and the key a selector cache is built on |
+| `dom_index` | `int` | Position in source order, kept so that DOM order stays recoverable after geometric reordering |
+| `rect` | `Rect \| None` | The measured box in CSS pixels, page-relative (`x`, `y`, `width`, `height`, plus `right` and `bottom`). `None` on a static parse, and for a block the browser laid out without a box |
+| `depth` | `int` | Nesting depth of the source element |
+| `href` | `str \| None` | An image's source, or a standalone link's target, absolute |
+| `alt` | `str \| None` | An image's alt text |
+| `link` | `str \| None` | For an image that is the whole content of a link, the link's target |
+| `ordered` | `bool` | A numbered list's item |
+| `rows` | `tuple[tuple[str, ...], ...]` | A table's cells, first row the header |
+| `rich_rows` | `tuple[tuple[str, ...], ...]` | The same cells as inline Markdown, when any cell has some; empty for a plain grid |
+| `table_html` | `str \| None` | A table's own cleaned markup, only when it merges cells or nests a table — the cases a pipe table cannot express |
+| `language` | `str \| None` | A code block's declared language |
+| `region` | `str \| None` | The innermost landmark the block sits in, by tag or ARIA role: `main`, `nav`, `header`, `footer`, `aside`. `None` outside any |
+| `in_main` | `bool` | Whether any ancestor is a `main` landmark — a `<nav>` inside `<main>` is both, and the two questions differ |
+| `widget` | `str \| None` | The interactive panel the block sits in, when the markup names one: `filter`, `consent`, `rail`, `post-furniture`, `comments` |
+| `quoted` | `int` | How many `<blockquote>`s the block is inside |
+| `body_of` | `str \| None` | XPath of the outermost ancestor that declares itself the article body (`itemprop="articleBody"`, `entry-content`, …) |
+| `float_of` | `str \| None` | XPath of the outermost floated ancestor the renderer measured, so a float's pieces are read together |
+| `templated` | `str \| None` | The client-template directive the block sits under (`v-if`, `x-show`, `ng-if`, …). A branch the browser did not build is never put back by the union |
+
+```python
+for b in page.document.blocks[:3]:
+    print(b.kind, b.region, b.in_main, b.rect is not None, repr(b.text[:40]))
+# image nav False True 'Python logo'
+# list-item nav False True 'Python »'
+# list-item nav False True '3.14.7 Documentation »'
+```
+
+<Callout type="info">
+`Block.with_text(text)` returns a copy with new text and everything else kept. Because
+blocks are frozen, that is how a transformation is written.
+</Callout>
+
+## `BlockKind`
+
+A string enum: `paragraph`, `heading`, `list-item`, `table`, `image`, `code`, `quote`,
+`figure-caption`, `media` (an `<iframe>`, `<video>` or `<audio>`, as a placeholder that says
+where it was and that it was not transcribed), `rule` (an `<hr>`).
+
+## `ReadingOrderMethod`
+
+| Value | Meaning |
+|---|---|
+| `geometric-xy-cut` | Every block was measured by the browser, and the order is the recursive XY-cut over their boxes: columns read down, rows across, cards one at a time |
+| `geometric-anchored` | Most blocks were measured; the unmeasured ones (collapsed, hidden until hover, or only in the static page) were slotted after their nearest measured neighbour. A weaker claim than the first, and named so |
+| `dom-fallback` | Source order: no geometry (a static fetch, supplied HTML), or too little to lead with (under 30% of blocks measured) |
+| `single-block` | One block; there is nothing to order |
+
+## `Strategy`
+
+`static-only`, `rendered-only`, `union`, `supplied` — see [Pages](/docs/sdk/pages#strategies).
+
+## `PageType` and `Routing`
+
+`PageType`: `article`, `documentation`, `service`, `forum`, `collection`, `listing`,
+`product`, `unknown`. `Routing` is what the router returns: `page_type`, `confidence`,
+`probabilities` (every type), `runner_up`, and `reasons` when asked with `explain=True`.
+See [Content selection](/docs/sdk/content#page-types).
+
+## `PageMetadata`
+
+What a page declares about itself in `<head>`, read once, every address made absolute,
+every text value folded to one line and capped at 300 characters.
+
+```python
+from webgraph import read_metadata
+
+meta = read_metadata(page.document.html, page.url, structured_data=page.document.structured_data)
+meta.title          # '3. An Informal Introduction to Python — Python 3.14.7 documentation'
+meta.canonical      # 'https://docs.python.org/3/tutorial/introduction.html'
+meta.language       # 'en'
+meta.theme_color    # '#3776ab'
+meta.open_graph     # {'og:title': ..., 'og:type': ..., 'og:url': ..., 'og:site_name': ..., 'og:description': ...}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | `str` | The page |
+| `title`, `description` | `str` | `<title>`, `<meta name="description">` |
+| `canonical` | `str` | `<link rel="canonical">`, absolute |
+| `language`, `charset` | `str` | `<html lang>`, the declared charset |
+| `robots` | `str` | `<meta name="robots">` |
+| `generator`, `author`, `keywords` | `str` | The `<meta>` of those names |
+| `theme_color`, `viewport` | `str` | Likewise |
+| `icons` | `tuple[str, ...]` | Every `<link rel="icon">`-family address |
+| `manifest` | `str` | The web-app manifest address |
+| `open_graph` | `dict[str, str]` | Every `og:*` and `article:*` property |
+| `twitter` | `dict[str, str]` | Every `twitter:*` |
+| `alternates` | `dict[str, str]` | `hreflang` → `href`, capped at 24; `alternate_count` is the whole number |
+| `feeds` | `tuple[str, ...]` | RSS and Atom addresses |
+| `schema_types` | `tuple[str, ...]` | The `@type`s of the page's JSON-LD and microdata, when `structured_data` was passed |
+| `declared_elsewhere` | `tuple[str, ...]` | Declarations that name a different site from the one that served the page, as `"canonical -> https://old-host.example"`. Empty is normal; a site that moved domains and kept its old metadata base fills it |
+
+`read_metadata(html, url, structured_data=())` — the arguments are the resolved page's
+`document.html`, its `url`, and its `document.structured_data` for `schema_types`.

@@ -26,10 +26,23 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from webgraph.content import ContentSelection, select_content
+from webgraph.fetch.render import RenderConfig
+from webgraph.fetch.static import FetchConfig
+from webgraph.main_content import MainContentConfig
 from webgraph.metadata import PageMetadata, read_metadata
+from webgraph.pagetype import PageType, Routing, default_router, policy_for
 from webgraph.pipeline import build_document
 from webgraph.render_markdown import MarkdownOptions, to_markdown
-from webgraph.resolve import ResolvedPage, Strategy, resolve_page
+from webgraph.resolve import (
+    PageBlockedError,
+    PageDisallowedError,
+    PageMissingError,
+    PageShellError,
+    ResolvedPage,
+    Strategy,
+    resolve_page,
+    resolve_supplied,
+)
 from webgraph.site import SiteConfig, stream_site
 from webgraph.types import Block, BlockKind, Document, ReadingOrderMethod, Rect
 
@@ -43,17 +56,29 @@ __all__ = [
     "BlockKind",
     "ContentSelection",
     "Document",
+    "FetchConfig",
+    "MainContentConfig",
     "MarkdownOptions",
+    "PageBlockedError",
+    "PageDisallowedError",
     "PageMetadata",
+    "PageMissingError",
+    "PageShellError",
+    "PageType",
     "ReadingOrderMethod",
     "Rect",
+    "RenderConfig",
     "ResolvedPage",
+    "Routing",
     "SiteConfig",
     "Strategy",
     "__version__",
     "build_document",
+    "default_router",
+    "policy_for",
     "read_metadata",
     "resolve_page",
+    "resolve_supplied",
     "select_content",
     "stream_site",
     "to_markdown",

@@ -1,0 +1,208 @@
+---
+title: Content selection
+description: select_content and what it returns, the page types and the policy each one measured best with, cross-page chrome, the optional block model, and every knob on MainContentConfig with its default.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Accordions, Accordion } from 'fumadocs-ui/components/accordion';
+
+A resolved page is the *whole* page: navigation, header, footer, cookie banner, related
+links, the article. `select_content` reduces it to the page's own content and reports what
+each step removed. It is the same function the crawl uses for `content_markdown` and the
+API for `/api/text`'s `content_markdown`.
+
+## `select_content`
+
+```python
+from webgraph import select_content
+
+selection = select_content(
+    page.document.blocks,
+    chrome=None,          # SiteChrome | None -- a crawl's cross-page profile
+    main_content=True,    # bool -- draw the boundary, or stop after the structural steps
+    config=None,          # MainContentConfig | None -- the boundary's settings
+    model=None,           # None (boundary), SHIPPED_MODEL, or a BlockModel
+    title="",             # str -- the page's title, so its block is never cut
+)
+```
+
+| Parameter | Type | Default | What it does |
+|---|---|---|---|
+| `blocks` | `Sequence[Block]` | — | The document's blocks, in order. Usually `page.document.blocks` |
+| `chrome` | `SiteChrome \| None` | `None` | What repeats across the site, from `webgraph.boilerplate.detect_site_chrome` over several pages of it. `None` for a page seen alone: nothing cross-page is removed |
+| `main_content` | `bool` | `True` | Run the last step, the contiguous main-content boundary. `False` stops after the structural steps — for a sitemap or an index whose content *is* the list of links |
+| `config` | `MainContentConfig \| None` | `None` = `policy_for(None)` | Settings for the boundary step. Get one from [`policy_for(page_type)`](#page-types) or build your own. Passing both `config` and `model` raises `ValueError` |
+| `model` | `None \| SHIPPED_MODEL \| BlockModel` | `None` | How the last step decides. `None` is the boundary; `webgraph.content.SHIPPED_MODEL` is the trained per-block classifier, see [the block model](#the-block-model) |
+| `title` | `str` | `""` | The page's `<title>`. When given, the block carrying it is never cut by the boundary — on a Hacker News thread the title line is a link followed by "143 points by …", the least prose-like thing on the page, and the boundary used to start at the first comment |
+
+Never returns nothing for a non-empty input: each step falls open to what it was given when
+it would remove everything, and the boundary refuses to return a fragment
+(`min_run_share`).
+
+### The steps, in order
+
+1. **Landmarks** — `<nav>`, `<header>`, `<footer>`, `<aside>` and their ARIA roles are
+   removed, except an `<aside>` that carries the page's own title (a product page's buy
+   box). Method name `landmarks`.
+2. **Comments** — the comment thread under an article (`Block.widget == "comments"`) is
+   taken out and returned separately as `selection.comments`. Skipped by policy on forums,
+   where the comments are the content, unless they hold more than half the page.
+3. **Scope to the article** — when one `<article>` dominates the page, or an element
+   declares itself the body (`itemprop="articleBody"`, `entry-content`), everything outside
+   it goes. `main-landmark`, `article-element`, `article-body`. Off by policy for forums, listings,
+   collections and products, where the repeated items are `<article>`s themselves.
+4. **Site chrome** — with `chrome`, blocks the site repeats on most pages. `site-chrome`.
+5. **Main content** — the contiguous run of blocks with the best prose-density score
+   (a maximum-subarray over per-block values), or the block model's per-block verdict.
+   `main-content` or `block-model`.
+6. **Title back** — if the boundary cut the title block, it is restored with the lead that
+   sat between it and the first kept paragraph.
+
+## `ContentSelection`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `blocks` | `list[Block]` | What was kept, in document order. Render with `to_markdown(document.model_copy(update={"blocks": tuple(selection.blocks)}))` |
+| `kept` | `int` | `len(blocks)` |
+| `total` | `int` | Blocks given |
+| `changed` | `bool` | Whether any step removed anything. `False` means the content *is* the page — the API's `content_markdown` is empty then, rather than a copy |
+| `methods` | `tuple[str, ...]` | The steps that removed something, in order: any of `landmarks`, `main-landmark`, `article-element`, `article-body`, `site-chrome`, `main-content`, `block-model`. Stable names; the API reports them |
+| `landmarks_removed`, `main_scoped_removed`, `article_scoped_removed`, `body_scoped_removed`, `chrome_removed`, `main_content_removed`, `block_model_removed` | `int` | How many blocks each step removed |
+| `title_restored` | `bool` | Step 6 fired |
+| `comments` | `tuple[Block, ...]` | The comment thread, when one was taken out; empty otherwise |
+
+```python
+selection = select_content(page.document.blocks, title=page.document.title)
+selection.kept, selection.total     # 116, 164   (docs.python.org, the tutorial's introduction)
+selection.methods                   # ('landmarks', 'main-content')
+selection.landmarks_removed         # 47
+selection.title_restored            # True
+```
+
+## Page types
+
+The boundary's best settings differ by what kind of page it is, and the engine ships a
+router that says which kind. Measured on WCXB dev, routing lifts listings by +0.09 F1 and
+services by +0.02 while leaving articles alone.
+
+```python
+from webgraph import default_router, policy_for, select_content
+
+router = default_router()                 # parsed once per process; None if no model ships
+routing = router.route(page.document)
+routing.page_type                         # PageType.DOCUMENTATION
+routing.confidence                        # 0.999
+routing.runner_up                         # ('service', 0.0006)
+
+selection = select_content(page.document.blocks, config=policy_for(routing.page_type), title=page.document.title)
+```
+
+`PageType` is a string enum: `article`, `documentation`, `service`, `forum`, `collection`,
+`listing`, `product`, `unknown`. Below the router's confidence floor it answers `unknown`,
+and `policy_for("unknown")` is the default policy. `router.route(document, explain=True)`
+fills `routing.reasons` with the strongest features, phrased.
+
+`policy_for` returns a `MainContentConfig` that differs from the default only where a type
+measured better with the change:
+
+| Page type | What differs from the default | Why |
+|---|---|---|
+| `article`, `unknown` | nothing | The default was tuned on articles |
+| `documentation`, `service` | `group_repeats="all"` | Repeated sibling items (a parameter table's rows, a list of services) score as one unit |
+| `listing` | `group_repeats="all"`, `scope_article=False` | The rows are the content; the items are often `<article>`s themselves |
+| `collection` | `group_repeats="all"`, `scope_article=False`, `min_run_share=0.25` | A grid of cards is the page; never return less than a quarter of it |
+| `forum` | `scope_article=False`, `comments_max_share=0.5` | The thread is the content: comments are kept when they hold more than half the page |
+| `product` | `product_sheet=True`, `scope_article=False`, `strip_comments=False`, `min_run_share=0.25` | Related-product grids and review lists are pruned by their shape, specification lines and tables are kept however short, reviews stay |
+
+<Callout type="info">
+The API and the crawl route every page this way automatically. Calling the library, you
+choose: no `config` is the article-tuned default, `policy_for(routing.page_type)` is what
+the API does, and a hand-built `MainContentConfig` is yours.
+</Callout>
+
+## Cross-page chrome
+
+A page seen alone cannot know that "Better things in a better way" appears on every page
+of the site. A set of pages can:
+
+```python
+from webgraph import resolve_page, select_content
+from webgraph.boilerplate import detect_site_chrome
+
+pages = [resolve_page(u) for u in urls]              # six or more pages of one site
+chrome = detect_site_chrome([p.document.blocks for p in pages])
+chrome.active, chrome.page_count                     # True once there are enough pages
+
+for p in pages:
+    s = select_content(p.document.blocks, chrome=chrome, title=p.document.title)
+    s.chrome_removed                                 # repeated blocks the landmarks step had not already taken
+```
+
+On docs.python.org the profile is active after seven pages and holds 22 repeated lines,
+and `chrome_removed` is still 0 — every one of them sits in a `<nav>` or `<footer>` and the
+landmarks step took it first. Chrome earns its keep on sites whose furniture is in plain
+`<div>`s.
+
+Chrome is a block seen on 90% of pages, judged once six pages exist, never removing more
+than half of any page; a template slot that always holds the same value counts even when
+the words move. [`stream_site`](/docs/sdk/sites) builds this profile as it goes and applies
+it from the point it can say anything.
+
+## The block model
+
+```python
+from webgraph.content import SHIPPED_MODEL
+
+selection = select_content(page.document.blocks, model=SHIPPED_MODEL, title=page.document.title)
+selection.methods    # ('landmarks', 'block-model')
+```
+
+A gradient-boosted per-block classifier trained on WCXB dev, shipped as JSON. Out of fold
+it scores +0.029 word-F1 over the boundary on WCXB and holds on Zyte — and on
+WebMainBench, which scores Markdown by edit distance, it is worse (0.622 → 0.586): it drops
+most of some long documents and keeps comment furniture the boundary's contiguity excludes.
+So it is offered, not defaulted. `benchmark/train/README.md` has both sides.
+
+## `MainContentConfig`
+
+The boundary step's settings. Every default was swept on a benchmark, not chosen; the
+docstrings in `webgraph.main_content` carry the sweeps. Build one with keyword arguments,
+or `dataclasses.replace(policy_for(page_type), ...)` to start from a policy.
+
+```python
+import dataclasses
+from webgraph import MainContentConfig, policy_for
+
+config = MainContentConfig(group_repeats="main", min_run_share=0.1)
+config = dataclasses.replace(policy_for("product"), product_keep_all=True)
+```
+
+<Accordions>
+<Accordion title="Every field, with its default">
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `adaptive_cost` | `bool` | `True` | Scale the per-block cost to the page's own mean block length (`clamp(cost_ratio × mean words, cost_floor, cost_ceiling)`) instead of a constant. Measured: 0.686 → 0.721 on WCXB with a constant that suited articles and hurt everything else |
+| `cost_ratio` | `float` | `0.6` | The multiple of mean block words used as the cost when adaptive |
+| `cost_floor` | `float` | `5.0` | Lowest adaptive cost |
+| `cost_ceiling` | `float` | `18.0` | Highest adaptive cost |
+| `cost_block_cap` | `int` | `400` | A block longer than this counts as this many words in the mean, so one enormous block cannot set the cost for the page |
+| `block_cost` | `float` | `13.0` | The fixed per-block cost when `adaptive_cost=False`: words a block must be worth to pay for its place in the run. Without a cost the whole page is the best run |
+| `heading_bonus` | `float` | `4.0` | Credit for a heading, which is short and is content |
+| `structural_credit` | `float` | `0.5` | Share of a table's or code block's words credited even when link-dense |
+| `bridge` | `float` | `0.0` | Accumulated cost a run may absorb before restarting, in block costs. Zero: measured, bridging made every corpus worse |
+| `trust_main_links` | `bool` | `True` | Inside a `main` landmark, linked words count as content rather than chrome. Link density is the primary chrome signal, and on a page whose content is a list of links it is structurally wrong |
+| `group_repeats` | `"off" \| "main" \| "all"` | `"off"` | Score repeated sibling items — cards, rows, posts — as one unit paying the cost once. `"main"` only inside a `main` landmark |
+| `min_group_size` | `int` | `3` | Fewer repeated siblings than this is not a grid |
+| `group_min_share` | `float` | `0.3` | A group is one unit only when it holds this share of the page's words; a related-posts rail beside an article does not |
+| `product_sheet` | `bool` | `False` | Prune related-product grids and review lists by shape before the boundary; keep spec lines and tables inside `main` however short |
+| `product_keep_all` | `bool` | `False` | With `product_sheet`: after pruning, keep everything rather than choosing a run |
+| `prune_rivers` | `bool` | `True` | Drop the river of other stories under an article by its heading ("More from World", "Trending") |
+| `drop_repeated_quotes` | `bool` | `True` | Drop a blockquote that repeats text already above it |
+| `scope_article` | `bool` | `True` | Steps 3: scope to the dominant `<article>` and declared body |
+| `strip_comments` | `bool` | `True` | Step 2 |
+| `comments_max_share` | `float` | `1.0` | With `strip_comments`: leave the comments alone when they hold more than this share of the page's words |
+| `min_run_share` | `float` | `0.02` | Refuse to return less than this share of the page's words; return the whole page instead. A sitemap has no main content, and saying so beats inventing one |
+
+</Accordion>
+</Accordions>
