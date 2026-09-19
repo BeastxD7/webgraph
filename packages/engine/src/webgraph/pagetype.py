@@ -86,49 +86,189 @@ TYPES: Final[tuple[PageType, ...]] = (
 
 # URL path vocabularies. Generic words only; a token that names one site is a leak.
 _URL_VOCAB: Final[dict[str, frozenset[str]]] = {
-    "url_article": frozenset({
-        "blog", "news", "article", "articles", "post", "posts", "story", "stories", "guide",
-        "guides", "how", "tips", "best", "top", "review", "reviews", "why", "what", "vs",
-        "insights", "resources", "learn", "magazine", "journal", "opinion", "press",
-    }),
-    "url_product": frozenset({
-        "product", "products", "p", "item", "items", "itm", "dp", "sku", "buy", "pd", "prod",
-    }),
-    "url_collection": frozenset({
-        "collections", "collection", "category", "categories", "c", "cat", "catalog",
-        "catalogue", "shop", "store", "brand", "brands", "sale", "new", "all",
-    }),
-    "url_forum": frozenset({
-        "threads", "thread", "topic", "topics", "t", "forum", "forums", "questions",
-        "question", "discussion", "discussions", "community", "board", "viewtopic", "showthread",
-        "comments", "answers", "q", "talk",
-    }),
-    "url_docs": frozenset({
-        "docs", "doc", "documentation", "reference", "api", "manual", "tutorial", "tutorials",
-        "latest", "stable", "en", "wiki", "handbook", "kb", "help", "developer", "developers",
-        "sdk", "cli", "spec",
-    }),
-    "url_service": frozenset({
-        "services", "service", "solutions", "solution", "consulting", "pricing", "features",
-        "platform", "product-tour", "company", "about", "industries", "capabilities", "why",
-    }),
-    "url_listing": frozenset({
-        "list", "lists", "listing", "listings", "jobs", "job", "search", "tag", "tags",
-        "archive", "archives", "page", "directory", "events", "recipes", "results", "browse",
-    }),
+    "url_article": frozenset(
+        {
+            "blog",
+            "news",
+            "article",
+            "articles",
+            "post",
+            "posts",
+            "story",
+            "stories",
+            "guide",
+            "guides",
+            "how",
+            "tips",
+            "best",
+            "top",
+            "review",
+            "reviews",
+            "why",
+            "what",
+            "vs",
+            "insights",
+            "resources",
+            "learn",
+            "magazine",
+            "journal",
+            "opinion",
+            "press",
+        }
+    ),
+    "url_product": frozenset(
+        {
+            "product",
+            "products",
+            "p",
+            "item",
+            "items",
+            "itm",
+            "dp",
+            "sku",
+            "buy",
+            "pd",
+            "prod",
+        }
+    ),
+    "url_collection": frozenset(
+        {
+            "collections",
+            "collection",
+            "category",
+            "categories",
+            "c",
+            "cat",
+            "catalog",
+            "catalogue",
+            "shop",
+            "store",
+            "brand",
+            "brands",
+            "sale",
+            "new",
+            "all",
+        }
+    ),
+    "url_forum": frozenset(
+        {
+            "threads",
+            "thread",
+            "topic",
+            "topics",
+            "t",
+            "forum",
+            "forums",
+            "questions",
+            "question",
+            "discussion",
+            "discussions",
+            "community",
+            "board",
+            "viewtopic",
+            "showthread",
+            "comments",
+            "answers",
+            "q",
+            "talk",
+        }
+    ),
+    "url_docs": frozenset(
+        {
+            "docs",
+            "doc",
+            "documentation",
+            "reference",
+            "api",
+            "manual",
+            "tutorial",
+            "tutorials",
+            "latest",
+            "stable",
+            "en",
+            "wiki",
+            "handbook",
+            "kb",
+            "help",
+            "developer",
+            "developers",
+            "sdk",
+            "cli",
+            "spec",
+        }
+    ),
+    "url_service": frozenset(
+        {
+            "services",
+            "service",
+            "solutions",
+            "solution",
+            "consulting",
+            "pricing",
+            "features",
+            "platform",
+            "product-tour",
+            "company",
+            "about",
+            "industries",
+            "capabilities",
+            "why",
+        }
+    ),
+    "url_listing": frozenset(
+        {
+            "list",
+            "lists",
+            "listing",
+            "listings",
+            "jobs",
+            "job",
+            "search",
+            "tag",
+            "tags",
+            "archive",
+            "archives",
+            "page",
+            "directory",
+            "events",
+            "recipes",
+            "results",
+            "browse",
+        }
+    ),
 }
 
 _LD_VOCAB: Final[dict[str, frozenset[str]]] = {
-    "ld_article": frozenset({"Article", "NewsArticle", "BlogPosting", "TechArticle", "Report",
-                             "ScholarlyArticle", "Review", "HowTo", "Recipe"}),
+    "ld_article": frozenset(
+        {
+            "Article",
+            "NewsArticle",
+            "BlogPosting",
+            "TechArticle",
+            "Report",
+            "ScholarlyArticle",
+            "Review",
+            "HowTo",
+            "Recipe",
+        }
+    ),
     "ld_product": frozenset({"Product", "Offer", "AggregateOffer", "AggregateRating", "Brand"}),
-    "ld_forum": frozenset({"DiscussionForumPosting", "QAPage", "Question", "Answer", "Comment",
-                           "SocialMediaPosting", "InteractionCounter"}),
-    "ld_collection": frozenset({"CollectionPage", "ItemList", "ProductCollection",
-                                "OfferCatalog"}),
+    "ld_forum": frozenset(
+        {
+            "DiscussionForumPosting",
+            "QAPage",
+            "Question",
+            "Answer",
+            "Comment",
+            "SocialMediaPosting",
+            "InteractionCounter",
+        }
+    ),
+    "ld_collection": frozenset({"CollectionPage", "ItemList", "ProductCollection", "OfferCatalog"}),
     "ld_faq": frozenset({"FAQPage"}),
-    "ld_org_only": frozenset({"Organization", "LocalBusiness", "Corporation", "Service",
-                              "ProfessionalService"}),
+    "ld_org_only": frozenset(
+        {"Organization", "LocalBusiness", "Corporation", "Service", "ProfessionalService"}
+    ),
     "ld_job": frozenset({"JobPosting"}),
     "ld_software": frozenset({"SoftwareApplication", "SoftwareSourceCode", "APIReference"}),
     "ld_webpage": frozenset({"WebPage", "WebSite"}),
@@ -136,8 +276,15 @@ _LD_VOCAB: Final[dict[str, frozenset[str]]] = {
     "ld_person": frozenset({"Person"}),
 }
 
-_OG_TYPES: Final[tuple[str, ...]] = ("article", "website", "product", "product.group", "blog",
-                                     "book", "profile")
+_OG_TYPES: Final[tuple[str, ...]] = (
+    "article",
+    "website",
+    "product",
+    "product.group",
+    "blog",
+    "book",
+    "profile",
+)
 
 _PRICE: Final[re.Pattern[str]] = re.compile(
     r"(?:[$€£¥₹]\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*(?:\.\d+)?\s?(?:USD|EUR|GBP|INR|CAD|AUD))"
@@ -171,24 +318,52 @@ _DOC_WORDS: Final[re.Pattern[str]] = re.compile(
 
 _FACET_WORDS: Final[re.Pattern[str]] = re.compile(
     r"\b(filter|filters|sort by|sorting|refine|narrow by|price range|in stock|availability"
-    r"|clear all|apply filters)\b", re.I)
+    r"|clear all|apply filters)\b",
+    re.I,
+)
 _PAGING_WORDS: Final[re.Pattern[str]] = re.compile(
     r"\b(next page|previous page|load more|show more|showing \d+|\d+ results|results found"
-    r"|page \d+|view all)\b", re.I)
+    r"|page \d+|view all)\b",
+    re.I,
+)
 _PLAN_WORDS: Final[re.Pattern[str]] = re.compile(
     r"\b(pricing|per month|per user|free trial|book a demo|get started|contact sales"
-    r"|testimonial|trusted by|case study|our team|why choose|we help|our services)\b", re.I)
+    r"|testimonial|trusted by|case study|our team|why choose|we help|our services)\b",
+    re.I,
+)
 _QA_WORDS: Final[re.Pattern[str]] = re.compile(
-    r"\b(replies|reply|posted by|quote|thread|upvote|answered|asked|comments?)\b", re.I)
+    r"\b(replies|reply|posted by|quote|thread|upvote|answered|asked|comments?)\b", re.I
+)
 
 _HEAD_BUCKETS: Final[dict[str, re.Pattern[str]]] = {
-    "head_product": re.compile(r"\b(buy|shop|price|sale|order|cart|review|reviews|specs|specifications|sku|in stock)\b", re.I),
-    "head_forum": re.compile(r"\b(forum|forums|thread|discussion|community|reply|replies|answers?|question|asked|topic)\b", re.I),
-    "head_docs": re.compile(r"\b(docs|documentation|api|reference|guide|tutorial|manual|install|installation|configure|configuration|getting started|sdk|cli|readme|changelog)\b", re.I),
-    "head_article": re.compile(r"\b(blog|news|opinion|how to|why|what is|tips|analysis|story|column|editorial|published|min read)\b", re.I),
-    "head_service": re.compile(r"\b(services?|solutions?|agency|pricing|plans?|platform|software|company|about us|your business|trusted|enterprise|demo|consulting)\b", re.I),
-    "head_collection": re.compile(r"\b(collections?|category|categories|shop all|all products|browse|catalog|catalogue|women|men|kids)\b", re.I),
-    "head_listing": re.compile(r"\b(best|top \d+|\d+ best|list|lists|listings|directory|results|search|archive|archives|courses|jobs|events|index|recipes|rankings|standings|page \d+)\b", re.I),
+    "head_product": re.compile(
+        r"\b(buy|shop|price|sale|order|cart|review|reviews|specs|specifications|sku|in stock)\b",
+        re.I,
+    ),
+    "head_forum": re.compile(
+        r"\b(forum|forums|thread|discussion|community|reply|replies|answers?|question|asked|topic)\b",
+        re.I,
+    ),
+    "head_docs": re.compile(
+        r"\b(docs|documentation|api|reference|guide|tutorial|manual|install|installation|configure|configuration|getting started|sdk|cli|readme|changelog)\b",
+        re.I,
+    ),
+    "head_article": re.compile(
+        r"\b(blog|news|opinion|how to|why|what is|tips|analysis|story|column|editorial|published|min read)\b",
+        re.I,
+    ),
+    "head_service": re.compile(
+        r"\b(services?|solutions?|agency|pricing|plans?|platform|software|company|about us|your business|trusted|enterprise|demo|consulting)\b",
+        re.I,
+    ),
+    "head_collection": re.compile(
+        r"\b(collections?|category|categories|shop all|all products|browse|catalog|catalogue|women|men|kids)\b",
+        re.I,
+    ),
+    "head_listing": re.compile(
+        r"\b(best|top \d+|\d+ best|list|lists|listings|directory|results|search|archive|archives|courses|jobs|events|index|recipes|rankings|standings|page \d+)\b",
+        re.I,
+    ),
 }
 """What a page says about itself in its `<title>`, meta description and first heading.
 
@@ -198,7 +373,14 @@ hear it. Hand-picked buckets rather than a learned vocabulary -- see `dom/markup
 for why -- and the site's own name is stripped first, so that "| Hacker News" is not a
 forum signal on every page of a site."""
 
-_SITE_SEPARATORS: Final[tuple[str, ...]] = (" | ", " - ", " \u2013 ", " \u2014 ", " :: ", " \u00b7 ")
+_SITE_SEPARATORS: Final[tuple[str, ...]] = (
+    " | ",
+    " - ",
+    " \u2013 ",
+    " \u2014 ",
+    " :: ",
+    " \u00b7 ",
+)
 
 
 def _without_site(text: str, site: str) -> str:
@@ -209,7 +391,7 @@ def _without_site(text: str, site: str) -> str:
         if text.endswith(separator + site):
             return text[: -len(separator + site)]
         if text.startswith(site + separator):
-            return text[len(site + separator):]
+            return text[len(site + separator) :]
     return text
 
 
@@ -223,41 +405,87 @@ def _ancestor(xpath: str, tag: str) -> str | None:
 
 
 _BLOCK_KINDS: Final[tuple[BlockKind, ...]] = (
-    BlockKind.PARAGRAPH, BlockKind.HEADING, BlockKind.LIST_ITEM, BlockKind.TABLE,
-    BlockKind.IMAGE, BlockKind.CODE, BlockKind.QUOTE,
+    BlockKind.PARAGRAPH,
+    BlockKind.HEADING,
+    BlockKind.LIST_ITEM,
+    BlockKind.TABLE,
+    BlockKind.IMAGE,
+    BlockKind.CODE,
+    BlockKind.QUOTE,
 )
 
 FEATURE_NAMES: Final[tuple[str, ...]] = (
     # URL
     *tuple(_URL_VOCAB),
-    "url_depth", "url_html_ext", "url_has_query", "url_numeric_segment", "url_is_root",
+    "url_depth",
+    "url_html_ext",
+    "url_has_query",
+    "url_numeric_segment",
+    "url_is_root",
     "url_slug_words",
     # payloads
     *tuple(_LD_VOCAB),
     *tuple(f"og_{t.replace('.', '_')}" for t in _OG_TYPES),
     "og_none",
     # structure
-    "log_blocks", "log_words", "mean_words", "link_density", "share_in_main",
+    "log_blocks",
+    "log_words",
+    "mean_words",
+    "link_density",
+    "share_in_main",
     *tuple(f"share_{k.value}" for k in _BLOCK_KINDS),
-    "share_short_blocks", "share_linked_blocks", "h1_count", "heading_count",
-    "max_group_share", "max_group_size", "groups_over_5", "table_count", "code_count",
-    "image_count", "price_hits_per_100w", "date_hits_per_100w", "forum_hits_per_100w",
-    "commerce_hits_per_100w", "cta_hits_per_100w", "doc_hits_per_100w",
-    "longest_block_share", "share_words_first_half",
+    "share_short_blocks",
+    "share_linked_blocks",
+    "h1_count",
+    "heading_count",
+    "max_group_share",
+    "max_group_size",
+    "groups_over_5",
+    "table_count",
+    "code_count",
+    "image_count",
+    "price_hits_per_100w",
+    "date_hits_per_100w",
+    "forum_hits_per_100w",
+    "commerce_hits_per_100w",
+    "cta_hits_per_100w",
+    "doc_hits_per_100w",
+    "longest_block_share",
+    "share_words_first_half",
     # Listing signals, added after the router's listing recall measured 0.343 -- the weakest
     # class by a wide margin, with 33 of 99 listings called articles. Appended rather than
     # inserted: the exported model is keyed on this order.
-    "linked_heading_share", "log_distinct_links", "group_count", "dated_group_share",
-    "median_block_words", "group_to_longest_ratio",
+    "linked_heading_share",
+    "log_distinct_links",
+    "group_count",
+    "dated_group_share",
+    "median_block_words",
+    "group_to_longest_ratio",
     # arrangement, from block xpaths
-    "log_sections", "section_words_share", "sections_over_5pct", "log_article_elements",
-    "article_words_share", "log_forms", "containers_over_5pct", "largest_container_share",
-    "facet_hits_per_100w", "paging_hits_per_100w", "plan_hits_per_100w", "qa_hits_per_100w",
-    "share_li_blocks", "mean_xpath_depth", "heading_word_mean", "link_targets_per_block",
+    "log_sections",
+    "section_words_share",
+    "sections_over_5pct",
+    "log_article_elements",
+    "article_words_share",
+    "log_forms",
+    "containers_over_5pct",
+    "largest_container_share",
+    "facet_hits_per_100w",
+    "paging_hits_per_100w",
+    "plan_hits_per_100w",
+    "qa_hits_per_100w",
+    "share_li_blocks",
+    "mean_xpath_depth",
+    "heading_word_mean",
+    "link_targets_per_block",
     # markup, counted at build time
     *tuple(f"cls_{name}" for name in CLASS_BUCKETS),
     *tuple(f"n_{tag}" for tag in COUNTED_TAGS),
-    "log_elements", "a_per_element", "distinct_class_tokens", "rel_next", "itemprop_count",
+    "log_elements",
+    "a_per_element",
+    "distinct_class_tokens",
+    "rel_next",
+    "itemprop_count",
     "data_attr_share",
     # the page's own words about itself
     *tuple(_HEAD_BUCKETS),
@@ -300,14 +528,16 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
     features: list[float] = []
     for vocab in _URL_VOCAB.values():
         features.append(float(bool(tokens & vocab)))
-    features.extend([
-        float(len(segments)),
-        float(path.endswith((".html", ".htm", ".php", ".aspx"))),
-        float(bool(urlsplit(url).query)),
-        float(any(s.isdigit() for s in segments)),
-        float(not segments),
-        float(sum(1 for t in last if t.isalpha())),
-    ])
+    features.extend(
+        [
+            float(len(segments)),
+            float(path.endswith((".html", ".htm", ".php", ".aspx"))),
+            float(bool(urlsplit(url).query)),
+            float(any(s.isdigit() for s in segments)),
+            float(not segments),
+            float(sum(1 for t in last if t.isalpha())),
+        ]
+    )
 
     types, og = _payload_types(document)
     for vocab in _LD_VOCAB.values():
@@ -333,32 +563,34 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
             group_words[gid] = group_words.get(gid, 0) + w
             group_sizes[gid] = group_sizes.get(gid, 0) + 1
     first_half = sum(words[: max(1, len(words) // 2)])
-    features.extend([
-        math.log1p(len(blocks)),
-        math.log1p(total),
-        total / n,
-        linked_words / total,
-        sum(w for w, b in zip(words, blocks, strict=True) if b.in_main) / total,
-        *[sum(1 for b in blocks if b.kind is k) / n for k in _BLOCK_KINDS],
-        sum(1 for w in words if w <= 4) / n,
-        sum(1 for b in blocks if link_density(b) >= 0.8) / n,
-        float(sum(1 for b in blocks if b.kind is BlockKind.HEADING and b.level == 1)),
-        float(sum(1 for b in blocks if b.kind is BlockKind.HEADING)),
-        (max(group_words.values()) / total) if group_words else 0.0,
-        float(max(group_sizes.values())) if group_sizes else 0.0,
-        float(sum(1 for s in group_sizes.values() if s > 5)),
-        float(sum(1 for b in blocks if b.kind is BlockKind.TABLE)),
-        float(sum(1 for b in blocks if b.kind is BlockKind.CODE)),
-        float(sum(1 for b in blocks if b.kind is BlockKind.IMAGE)),
-        len(_PRICE.findall(text)) * per_100w,
-        len(_DATE_LIKE.findall(text)) * per_100w,
-        len(_FORUM_WORDS.findall(text)) * per_100w,
-        len(_COMMERCE_WORDS.findall(text)) * per_100w,
-        len(_CTA_WORDS.findall(text)) * per_100w,
-        len(_DOC_WORDS.findall(text)) * per_100w,
-        (max(words) / total) if words else 0.0,
-        first_half / total,
-    ])
+    features.extend(
+        [
+            math.log1p(len(blocks)),
+            math.log1p(total),
+            total / n,
+            linked_words / total,
+            sum(w for w, b in zip(words, blocks, strict=True) if b.in_main) / total,
+            *[sum(1 for b in blocks if b.kind is k) / n for k in _BLOCK_KINDS],
+            sum(1 for w in words if w <= 4) / n,
+            sum(1 for b in blocks if link_density(b) >= 0.8) / n,
+            float(sum(1 for b in blocks if b.kind is BlockKind.HEADING and b.level == 1)),
+            float(sum(1 for b in blocks if b.kind is BlockKind.HEADING)),
+            (max(group_words.values()) / total) if group_words else 0.0,
+            float(max(group_sizes.values())) if group_sizes else 0.0,
+            float(sum(1 for s in group_sizes.values() if s > 5)),
+            float(sum(1 for b in blocks if b.kind is BlockKind.TABLE)),
+            float(sum(1 for b in blocks if b.kind is BlockKind.CODE)),
+            float(sum(1 for b in blocks if b.kind is BlockKind.IMAGE)),
+            len(_PRICE.findall(text)) * per_100w,
+            len(_DATE_LIKE.findall(text)) * per_100w,
+            len(_FORUM_WORDS.findall(text)) * per_100w,
+            len(_COMMERCE_WORDS.findall(text)) * per_100w,
+            len(_CTA_WORDS.findall(text)) * per_100w,
+            len(_DOC_WORDS.findall(text)) * per_100w,
+            (max(words) / total) if words else 0.0,
+            first_half / total,
+        ]
+    )
 
     # -- listing signals ---------------------------------------------------------------
     #
@@ -372,25 +604,25 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
     largest_group = max(group_words, key=lambda g: group_words[g], default=None)
     dated = 0
     if largest_group is not None:
-        member_text = [
-            b.text for b, g in zip(blocks, groups, strict=True) if g == largest_group
-        ]
+        member_text = [b.text for b, g in zip(blocks, groups, strict=True) if g == largest_group]
         dated = sum(1 for t in member_text if _DATE_LIKE.search(t))
     ordered = sorted(words)
     median_words = float(ordered[len(ordered) // 2]) if ordered else 0.0
-    features.extend([
-        # A listing's item titles *are* links; an article's headings are not.
-        (linked_headings / len(headings)) if headings else 0.0,
-        # How many places the page sends you. A listing is a directory of siblings.
-        math.log1p(len(targets)),
-        float(len(group_sizes)),
-        # A news listing carries a timestamp per card. An article carries one, at the top.
-        (dated / group_sizes[largest_group]) if largest_group is not None else 0.0,
-        median_words,
-        # The contrast that names the difference: a listing's repeated group holds more of
-        # the page than its single longest block does; an article is the other way round.
-        (max(group_words.values()) / max(words)) if group_words and max(words) else 0.0,
-    ])
+    features.extend(
+        [
+            # A listing's item titles *are* links; an article's headings are not.
+            (linked_headings / len(headings)) if headings else 0.0,
+            # How many places the page sends you. A listing is a directory of siblings.
+            math.log1p(len(targets)),
+            float(len(group_sizes)),
+            # A news listing carries a timestamp per card. An article carries one, at the top.
+            (dated / group_sizes[largest_group]) if largest_group is not None else 0.0,
+            median_words,
+            # The contrast that names the difference: a listing's repeated group holds more of
+            # the page than its single longest block does; an article is the other way round.
+            (max(group_words.values()) / max(words)) if group_words and max(words) else 0.0,
+        ]
+    )
     # -- arrangement, from block xpaths ---------------------------------------------------
     #
     # Where the words sit in the tree. A marketing page spreads its text across many
@@ -412,38 +644,42 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
         container_words[top] = container_words.get(top, 0) + w
         depth_total += b.xpath.count("/")
     heading_words = [word_count(b.text) for b in headings]
-    features.extend([
-        math.log1p(len(section_words)),
-        sum(section_words.values()) / total,
-        float(sum(1 for w in section_words.values() if w >= 0.05 * total)),
-        math.log1p(len(article_words)),
-        sum(article_words.values()) / total,
-        math.log1p(len(forms)),
-        float(sum(1 for w in container_words.values() if w >= 0.05 * total)),
-        (max(container_words.values()) / total) if container_words else 0.0,
-        len(_FACET_WORDS.findall(text)) * per_100w,
-        len(_PAGING_WORDS.findall(text)) * per_100w,
-        len(_PLAN_WORDS.findall(text)) * per_100w,
-        len(_QA_WORDS.findall(text)) * per_100w,
-        sum(1 for b in blocks if b.tag == "li") / n,
-        depth_total / n,
-        (sum(heading_words) / len(heading_words)) if heading_words else 0.0,
-        len({b.href for b in blocks if b.href}) / n,
-    ])
+    features.extend(
+        [
+            math.log1p(len(section_words)),
+            sum(section_words.values()) / total,
+            float(sum(1 for w in section_words.values() if w >= 0.05 * total)),
+            math.log1p(len(article_words)),
+            sum(article_words.values()) / total,
+            math.log1p(len(forms)),
+            float(sum(1 for w in container_words.values() if w >= 0.05 * total)),
+            (max(container_words.values()) / total) if container_words else 0.0,
+            len(_FACET_WORDS.findall(text)) * per_100w,
+            len(_PAGING_WORDS.findall(text)) * per_100w,
+            len(_PLAN_WORDS.findall(text)) * per_100w,
+            len(_QA_WORDS.findall(text)) * per_100w,
+            sum(1 for b in blocks if b.tag == "li") / n,
+            depth_total / n,
+            (sum(heading_words) / len(heading_words)) if heading_words else 0.0,
+            len({b.href for b in blocks if b.href}) / n,
+        ]
+    )
 
     # -- markup, counted at build time ----------------------------------------------------
     markup = document.markup
     per_element = 100.0 / max(1, markup.elements)
     features.extend(markup.class_hits.get(name, 0.0) for name in CLASS_BUCKETS)
     features.extend(math.log1p(markup.tag_counts.get(tag, 0)) for tag in COUNTED_TAGS)
-    features.extend([
-        math.log1p(markup.elements),
-        markup.tag_counts.get("a", 0) * per_element,
-        math.log1p(markup.class_tokens),
-        float(markup.rel_next),
-        math.log1p(markup.itemprop_count),
-        markup.data_attr_share,
-    ])
+    features.extend(
+        [
+            math.log1p(markup.elements),
+            markup.tag_counts.get("a", 0) * per_element,
+            math.log1p(markup.class_tokens),
+            float(markup.rel_next),
+            math.log1p(markup.itemprop_count),
+            markup.data_attr_share,
+        ]
+    )
 
     # -- the page's own words about itself -------------------------------------------------
     og_title = ""
@@ -455,12 +691,14 @@ def page_features(document: Document, url: str | None = None) -> list[float]:
             break
     first_h1 = next((b.text for b in headings if b.level == 1), "")
     head = " ".join(
-        part for part in (
+        part
+        for part in (
             _without_site(document.title, site_name),
             _without_site(og_title, site_name),
             document.description,
             first_h1,
-        ) if part
+        )
+        if part
     )
     head_words = max(1, len(head.split()))
     features.extend(len(rx.findall(head)) / head_words * 10 for rx in _HEAD_BUCKETS.values())
@@ -587,7 +825,7 @@ _PHRASING: Final[dict[str, str]] = {
     "log_elements": "how many elements the page has",
     "a_per_element": "how much of the markup is links",
     "distinct_class_tokens": "how varied the class names are",
-    "rel_next": "a rel=\"next\" link to a following page",
+    "rel_next": 'a rel="next" link to a following page',
     "itemprop_count": "how much microdata it carries",
     "data_attr_share": "how much of the markup carries data-* attributes",
     # the page's own words
@@ -704,7 +942,9 @@ class PageTypeRouter:
         weights.sort(key=lambda r: -r.weight)
         return tuple(weights[:limit])
 
-    def route(self, document: Document, url: str | None = None, *, explain: bool = False) -> Routing:
+    def route(
+        self, document: Document, url: str | None = None, *, explain: bool = False
+    ) -> Routing:
         features = page_features(document, url)
         probabilities = self._probabilities(features)
         best = max(probabilities, key=lambda c: probabilities[c])
@@ -727,7 +967,9 @@ class PageTypeRouter:
             probabilities=probabilities,
             # Explained against what it actually chose. On an `unknown` the reasons would be
             # for a type it declined to commit to, which is worse than none.
-            reasons=self.explain(features, best) if explain and page_type is not PageType.UNKNOWN else (),
+            reasons=self.explain(features, best)
+            if explain and page_type is not PageType.UNKNOWN
+            else (),
         )
 
 
@@ -804,7 +1046,9 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     """
     kind = PageType(page_type) if page_type else PageType.UNKNOWN
     if kind is PageType.COLLECTION:
-        return MainContentConfig(group_repeats="all", group_min_share=0.3, min_run_share=0.25, scope_article=False)
+        return MainContentConfig(
+            group_repeats="all", group_min_share=0.3, min_run_share=0.25, scope_article=False
+        )
     if kind is PageType.LISTING:
         return MainContentConfig(group_repeats="all", group_min_share=0.3, scope_article=False)
     if kind in (PageType.SERVICE, PageType.DOCUMENTATION):
@@ -812,7 +1056,9 @@ def policy_for(page_type: PageType | str | None) -> MainContentConfig:
     if kind is PageType.PRODUCT:
         # Comments are left to the product prune: eBay's seller feedback and a training
         # course's testimonials are named "comments" and were annotated as content.
-        return MainContentConfig(product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False)
+        return MainContentConfig(
+            product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False
+        )
     if kind is PageType.FORUM:
         # A forum's "comments" are the thread on Reddit, Lemmy and Vanilla and the asides
         # under the answers on Stack Exchange. The share of the page they hold tells the

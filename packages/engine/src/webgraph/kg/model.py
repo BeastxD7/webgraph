@@ -281,7 +281,11 @@ class Sentence:
     dropped: a reader should see what the model said and that nothing on the site backs it."""
 
     def as_dict(self) -> dict[str, Any]:
-        return {"text": self.text, "citations": list(self.citations), "unsupported": self.unsupported}
+        return {
+            "text": self.text,
+            "citations": list(self.citations),
+            "unsupported": self.unsupported,
+        }
 
 
 @dataclass(slots=True)

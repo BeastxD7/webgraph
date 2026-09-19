@@ -53,15 +53,20 @@ def page(unique: str) -> list[Block]:
         ),
         # Varies per page so the cross-page chrome detector cannot claim it; it is the
         # selector's to remove, which is what the method-order test relies on.
-        block(f"Share Tweet Email {unique}", xpath="/html/body/div/p[1]", index=1,
-              rich=f"[Share](/s) [Tweet](/t) [Email](/e) {unique}"),
+        block(
+            f"Share Tweet Email {unique}",
+            xpath="/html/body/div/p[1]",
+            index=1,
+            rich=f"[Share](/s) [Tweet](/t) [Email](/e) {unique}",
+        ),
         *[
             block(f"{PROSE} {unique} {i}.", xpath=f"/html/body/div/section/p[{i}]", index=2 + i)
             for i in range(1, 6)
         ],
         block("Copyright Example Corp. All rights reserved.", xpath="/html/body/div/p[9]", index=9),
-        block("Terms Privacy", xpath="/html/body/footer/p", index=10,
-              rich="[Terms](/t) [Privacy](/p)"),
+        block(
+            "Terms Privacy", xpath="/html/body/footer/p", index=10, rich="[Terms](/t) [Privacy](/p)"
+        ),
     ]
 
 
@@ -105,10 +110,14 @@ class TestComposition:
         pages = [page(str(i)) for i in range(MIN_PAGES)]
         chrome = detect_site_chrome(pages)
         assert select_content(pages[0], chrome=chrome).methods == (
-            "landmarks", "site-chrome", "main-content",
+            "landmarks",
+            "site-chrome",
+            "main-content",
         )
         assert select_content(pages[0], chrome=chrome, model=SHIPPED_MODEL).methods == (
-            "landmarks", "site-chrome", "block-model",
+            "landmarks",
+            "site-chrome",
+            "block-model",
         )
 
     def test_a_config_selects_the_boundary_step_it_configures(self) -> None:
@@ -149,8 +158,12 @@ class TestFailsOpen:
     @staticmethod
     def _all_navigation() -> list[Block]:
         return [
-            block(f"Section {i}", xpath=f"/html/body/div/a[{i}]", index=i,
-                  rich=f"[Section {i}](/s{i})")
+            block(
+                f"Section {i}",
+                xpath=f"/html/body/div/a[{i}]",
+                index=i,
+                rich=f"[Section {i}](/s{i})",
+            )
             for i in range(20)
         ]
 
@@ -272,11 +285,18 @@ class TestTitleBlockChoice:
         blocks = [
             Block(text="BREAKING NEWS", tag="p", xpath="/html/body/p[1]", dom_index=0),
             Block(
-                text="Son of former German president stabbed to death in Berlin", tag="h1",
-                xpath="/html/body/h1[1]", dom_index=1, kind=BlockKind.HEADING, level=1,
+                text="Son of former German president stabbed to death in Berlin",
+                tag="h1",
+                xpath="/html/body/h1[1]",
+                dom_index=1,
+                kind=BlockKind.HEADING,
+                level=1,
             ),
         ]
-        chosen = _title_block(blocks, "Son of former German president stabbed to death in Berlin - Breaking News - The Jerusalem Post")
+        chosen = _title_block(
+            blocks,
+            "Son of former German president stabbed to death in Berlin - Breaking News - The Jerusalem Post",
+        )
         assert chosen is not None and chosen.kind is BlockKind.HEADING
 
 
@@ -288,13 +308,52 @@ class TestLeadRestoration:
     def test_the_prose_between_title_and_body_comes_back_with_the_title(self) -> None:
         title = "functools — Higher-order functions and operations on callable objects"
         blocks = [
-            Block(text=title, tag="h1", xpath="/html/body/main/h1", dom_index=0, kind=BlockKind.HEADING, level=1, in_main=True, region="main"),
-            Block(text="Source code: Lib/functools.py", tag="p", xpath="/html/body/main/p[1]", dom_index=1, in_main=True, region="main"),
-            Block(text="The functools module is for higher-order functions: functions that act on or return other functions.", tag="p", xpath="/html/body/main/p[2]", dom_index=2, in_main=True, region="main"),
-            Block(text="@functools.cache(user_function)", tag="p", xpath="/html/body/main/p[3]", dom_index=3, in_main=True, region="main"),
+            Block(
+                text=title,
+                tag="h1",
+                xpath="/html/body/main/h1",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=1,
+                in_main=True,
+                region="main",
+            ),
+            Block(
+                text="Source code: Lib/functools.py",
+                tag="p",
+                xpath="/html/body/main/p[1]",
+                dom_index=1,
+                in_main=True,
+                region="main",
+            ),
+            Block(
+                text="The functools module is for higher-order functions: functions that act on or return other functions.",
+                tag="p",
+                xpath="/html/body/main/p[2]",
+                dom_index=2,
+                in_main=True,
+                region="main",
+            ),
+            Block(
+                text="@functools.cache(user_function)",
+                tag="p",
+                xpath="/html/body/main/p[3]",
+                dom_index=3,
+                in_main=True,
+                region="main",
+            ),
         ]
         for i in range(4, 12):
-            blocks.append(Block(text=f"{PROSE} Paragraph {i}.", tag="p", xpath=f"/html/body/main/p[{i}]", dom_index=i, in_main=True, region="main"))
+            blocks.append(
+                Block(
+                    text=f"{PROSE} Paragraph {i}.",
+                    tag="p",
+                    xpath=f"/html/body/main/p[{i}]",
+                    dom_index=i,
+                    in_main=True,
+                    region="main",
+                )
+            )
         result = select_content(blocks, title=f"{title} — Python 3.14 documentation")
         texts = [b.text for b in result.blocks]
         assert texts[0] == title
@@ -303,9 +362,35 @@ class TestLeadRestoration:
 
     def test_a_menu_under_the_title_is_not_a_lead(self) -> None:
         title = "Guide to shelving units"
-        blocks = [Block(text=title, tag="h1", xpath="/html/body/h1", dom_index=0, kind=BlockKind.HEADING, level=1)]
-        blocks += [Block(text=f"Menu item {i}", tag="li", xpath=f"/html/body/ul/li[{i}]", dom_index=i, kind=BlockKind.LIST_ITEM) for i in range(1, 9)]
-        blocks += [Block(text=f"{PROSE} Paragraph {i}.", tag="p", xpath=f"/html/body/p[{i}]", dom_index=10 + i) for i in range(6)]
+        blocks = [
+            Block(
+                text=title,
+                tag="h1",
+                xpath="/html/body/h1",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=1,
+            )
+        ]
+        blocks += [
+            Block(
+                text=f"Menu item {i}",
+                tag="li",
+                xpath=f"/html/body/ul/li[{i}]",
+                dom_index=i,
+                kind=BlockKind.LIST_ITEM,
+            )
+            for i in range(1, 9)
+        ]
+        blocks += [
+            Block(
+                text=f"{PROSE} Paragraph {i}.",
+                tag="p",
+                xpath=f"/html/body/p[{i}]",
+                dom_index=10 + i,
+            )
+            for i in range(6)
+        ]
         result = select_content(blocks, title=title)
         texts = [b.text for b in result.blocks]
         assert texts[0] == title
@@ -318,12 +403,37 @@ class TestArticleScope:
 
     @staticmethod
     def news() -> list[Block]:
-        blocks = [Block(text="Share this Tweet Email", tag="p", xpath="/html/body/div/p[1]", dom_index=0)]
+        blocks = [
+            Block(text="Share this Tweet Email", tag="p", xpath="/html/body/div/p[1]", dom_index=0)
+        ]
         for i in range(1, 9):
-            blocks.append(Block(text=f"{PROSE} Story paragraph {i}.", tag="p", xpath=f"/html/body/div/article/p[{i}]", dom_index=i))
+            blocks.append(
+                Block(
+                    text=f"{PROSE} Story paragraph {i}.",
+                    tag="p",
+                    xpath=f"/html/body/div/article/p[{i}]",
+                    dom_index=i,
+                )
+            )
         for j in range(1, 7):
-            blocks.append(Block(text=f"Teaser headline {j}", tag="h3", xpath=f"/html/body/div/section/article[{j}]/h3", dom_index=20 + 2 * j, kind=BlockKind.HEADING, level=3))
-            blocks.append(Block(text=f"A one-sentence blurb about teaser {j} that reads exactly like news copy does.", tag="p", xpath=f"/html/body/div/section/article[{j}]/p", dom_index=21 + 2 * j))
+            blocks.append(
+                Block(
+                    text=f"Teaser headline {j}",
+                    tag="h3",
+                    xpath=f"/html/body/div/section/article[{j}]/h3",
+                    dom_index=20 + 2 * j,
+                    kind=BlockKind.HEADING,
+                    level=3,
+                )
+            )
+            blocks.append(
+                Block(
+                    text=f"A one-sentence blurb about teaser {j} that reads exactly like news copy does.",
+                    tag="p",
+                    xpath=f"/html/body/div/section/article[{j}]/p",
+                    dom_index=21 + 2 * j,
+                )
+            )
         return blocks
 
     def test_dominant_article_scopes_the_page(self) -> None:
@@ -339,7 +449,15 @@ class TestArticleScope:
     def test_a_thread_of_equal_posts_is_not_scoped(self) -> None:
         from webgraph.boilerplate import scope_to_article
 
-        posts = [Block(text=f"{PROSE} Post {i}.", tag="p", xpath=f"/html/body/main/article[{i}]/p", dom_index=i) for i in range(1, 6)]
+        posts = [
+            Block(
+                text=f"{PROSE} Post {i}.",
+                tag="p",
+                xpath=f"/html/body/main/article[{i}]/p",
+                dom_index=i,
+            )
+            for i in range(1, 6)
+        ]
         assert scope_to_article(posts) == posts
 
     def test_forum_policy_leaves_it_off(self) -> None:
@@ -392,7 +510,9 @@ class TestArticleBodyScope:
     def test_itemprop_article_body_is_a_body(self) -> None:
         from webgraph.pipeline import build_document
 
-        blocks = build_document(self.page('itemprop="articleBody"'), "https://news.test/story").blocks
+        blocks = build_document(
+            self.page('itemprop="articleBody"'), "https://news.test/story"
+        ).blocks
         assert all(b.body_of for b in blocks if "Story paragraph" in b.text)
 
     def test_two_bodies_of_equal_weight_do_not_scope(self) -> None:
@@ -402,8 +522,12 @@ class TestArticleBodyScope:
         from webgraph.pipeline import build_document
 
         posts = "".join(
-            "<div class='entry-content'>" + "".join(f"<p>{PROSE} Post {i} paragraph {k}.</p>" for k in range(3)) + "</div>"
+            "<div class='entry-content'>"
+            + "".join(f"<p>{PROSE} Post {i} paragraph {k}.</p>" for k in range(3))
+            + "</div>"
             for i in range(4)
         )
-        blocks = list(build_document(f"<html><body>{posts}</body></html>", "https://blog.test/").blocks)
+        blocks = list(
+            build_document(f"<html><body>{posts}</body></html>", "https://blog.test/").blocks
+        )
         assert scope_to_article_body(blocks) == blocks

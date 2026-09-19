@@ -101,7 +101,9 @@ class TestTheHappyPath:
         from webgraph.content import select_content
         from webgraph.pipeline import build_document
 
-        blocks = build_document("<html><body><p>Only this.</p></body></html>", "https://x.test/").blocks
+        blocks = build_document(
+            "<html><body><p>Only this.</p></body></html>", "https://x.test/"
+        ).blocks
         assert not select_content(blocks).changed
 
 

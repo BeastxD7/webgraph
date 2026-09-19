@@ -71,7 +71,14 @@ class TestRowReverseColumns:
     def test_header_columns_footer(self) -> None:
         geometric, dom = render_fixture("two_column")
         assert firsts(geometric) == [
-            "HEADER", "LEFT", "LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT", "FOOTER",
+            "HEADER",
+            "LEFT",
+            "LEFT",
+            "LEFT",
+            "RIGHT",
+            "RIGHT",
+            "RIGHT",
+            "FOOTER",
         ]
         assert firsts(dom)[1] == "RIGHT", "fixture no longer discriminates"
 
@@ -247,7 +254,11 @@ class TestHiddenBoxes:
     def test_collapsed_trays_follow_their_headings(self) -> None:
         geometric, _ = render_fixture("hidden_boxes")
         texts = [b.text for b in geometric.blocks]
-        assert texts.index("Item two") < texts.index("Tray two is collapsed; this paragraph has a box under item three.") < texts.index("Item three")
+        assert (
+            texts.index("Item two")
+            < texts.index("Tray two is collapsed; this paragraph has a box under item three.")
+            < texts.index("Item three")
+        )
         assert texts.index("Item three") < texts.index("Tray three is collapsed as well.")
 
     def test_a_faded_hero_is_measured_where_it_sits(self) -> None:
@@ -264,4 +275,6 @@ class TestHiddenBoxes:
 
     def test_a_clipped_copy_of_a_heading_is_dropped(self) -> None:
         geometric, _ = render_fixture("hidden_boxes")
-        assert [b.text for b in geometric.blocks if b.text.startswith("Significant")] == ["Significant others"]
+        assert [b.text for b in geometric.blocks if b.text.startswith("Significant")] == [
+            "Significant others"
+        ]

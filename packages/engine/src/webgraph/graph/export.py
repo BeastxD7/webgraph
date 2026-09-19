@@ -110,15 +110,11 @@ def to_jsonl(graph: SiteGraph) -> Iterator[str]:
 
     for section_id_, entity_keys in graph.mentions.items():
         for entity_key in sorted(entity_keys):
-            yield json.dumps(
-                {"kind": "mention", "section": section_id_, "entity": entity_key}
-            )
+            yield json.dumps({"kind": "mention", "section": section_id_, "entity": entity_key})
 
     for section_id_, targets in graph.section_links.items():
         for target in sorted(targets):
-            yield json.dumps(
-                {"kind": "section_link", "section": section_id_, "target": target}
-            )
+            yield json.dumps({"kind": "section_link", "section": section_id_, "target": target})
 
 
 def write_jsonl(graph: SiteGraph, path: str | Path) -> int:

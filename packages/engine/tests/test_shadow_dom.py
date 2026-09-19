@@ -296,7 +296,9 @@ class TestSlotsEndToEnd:
     def test_the_browser_serialisation_composes_the_same_way(self, tmp_path: Path) -> None:
         target = tmp_path / "slots.html"
         target.write_text(_SLOT_PAGE, encoding="utf-8")
-        result = render_page(target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False))
+        result = render_page(
+            target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False)
+        )
         assert result.ok and result.shadow_roots == 1
         document = build_document(result.html, target.as_uri())
         texts = [b.text for b in document.blocks]
@@ -331,7 +333,9 @@ class TestOffscreenEndToEnd:
     def test_offscreen_text_is_not_on_the_page(self, tmp_path: Path) -> None:
         target = tmp_path / "offscreen.html"
         target.write_text(_OFFSCREEN_PAGE, encoding="utf-8")
-        result = render_page(target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False))
+        result = render_page(
+            target.as_uri(), config=RenderConfig(settle_ms=300, dismiss_gates=False)
+        )
         assert result.ok
         assert result.html.count('data-wg-hidden="offscreen"') >= 2  # the div and its anchor, twice
         document = build_document(result.html, target.as_uri())

@@ -19,7 +19,9 @@ import pytest
 
 from webgraph.fetch.static import FetchConfig, FetchResult
 
-PAGE = "<html><body><h1>The page</h1><p>Enough words to be a page of its own here.</p></body></html>"
+PAGE = (
+    "<html><body><h1>The page</h1><p>Enough words to be a page of its own here.</p></body></html>"
+)
 
 
 def _result(url: str, html: str, status: int = 200) -> FetchResult:
@@ -55,7 +57,9 @@ def serve(monkeypatch: pytest.MonkeyPatch, robots: str | None, page: str = PAGE)
 
 
 class TestASinglePageHonoursRobots:
-    def test_a_disallowed_page_is_refused_with_the_rule(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_disallowed_page_is_refused_with_the_rule(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.resolve import PageDisallowedError, Strategy, resolve_page
 
         fetched = serve(monkeypatch, "User-agent: *\nDisallow: /\n")
@@ -66,7 +70,9 @@ class TestASinglePageHonoursRobots:
         assert "Disallow: /" in message and "User-agent: *" in message
         assert "api.stackexchange.com" in message, "the sanctioned path is named"
         assert "html" in message.lower(), "and so is supplying the HTML"
-        assert fetched == ["https://stackoverflow.com/robots.txt"], "the page itself was never fetched"
+        assert fetched == ["https://stackoverflow.com/robots.txt"], (
+            "the page itself was never fetched"
+        )
 
     def test_an_allowed_page_reads(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from webgraph.resolve import Strategy, resolve_page
@@ -105,7 +111,9 @@ class TestASinglePageHonoursRobots:
         assert "The page" in resolved.document.text
         assert "https://example.com/robots.txt" not in fetched
 
-    def test_the_rule_for_this_client_by_name_applies(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_rule_for_this_client_by_name_applies(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """`User-agent: webgraph` must match this client. Its User-Agent starts with
         `Mozilla/5.0`, which `urllib.robotparser` reads as the client's name."""
         from webgraph.resolve import PageDisallowedError, Strategy, resolve_page
@@ -115,7 +123,9 @@ class TestASinglePageHonoursRobots:
             resolve_page("https://example.com/page", strategy=Strategy.STATIC_ONLY)
         assert "User-agent: webgraph" in str(caught.value)
 
-    def test_a_rule_for_another_client_does_not_apply(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_rule_for_another_client_does_not_apply(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.resolve import Strategy, resolve_page
 
         serve(monkeypatch, "User-agent: GPTBot\nDisallow: /\n\nUser-agent: *\nAllow: /\n")

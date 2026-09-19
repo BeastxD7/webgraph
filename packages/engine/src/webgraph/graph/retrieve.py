@@ -72,6 +72,8 @@ __all__ = [
 _WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9'_-]*")
 
 K1: Final[float] = 1.5
+
+
 def tokenize(text: str) -> list[str]:
     return [m.group(0).lower() for m in _WORD.finditer(text)]
 
@@ -201,8 +203,8 @@ class ContextAssembler:
                 freq = counts.get(term, 0)
                 if not freq:
                     continue
-                total += weight * (freq * (K1 + 1)) / (
-                    freq + K1 * (1 - B + B * length / self._avg_len)
+                total += (
+                    weight * (freq * (K1 + 1)) / (freq + K1 * (1 - B + B * length / self._avg_len))
                 )
             if total > 0:
                 scored.append((total, section_id_))
@@ -376,7 +378,9 @@ class ContextAssembler:
                             section=candidate,
                             score=total[candidate.id],
                             hops=existing.hops if existing is not None else hop,
-                            reason=existing.reason if existing is not None and existing.hops == 0 else reason,
+                            reason=existing.reason
+                            if existing is not None and existing.hops == 0
+                            else reason,
                         )
                         best[candidate.id] = entry
                         if previous == 0.0:
@@ -449,11 +453,19 @@ class ContextAssembler:
                 continue
 
             if hit:
-                label = f'link anchored on {", ".join(sorted(hit))}'
+                label = f"link anchored on {', '.join(sorted(hit))}"
             elif here:
-                label = f'linked from this section as "{anchors[:60]}"' if anchors else "linked from this section"
+                label = (
+                    f'linked from this section as "{anchors[:60]}"'
+                    if anchors
+                    else "linked from this section"
+                )
             else:
-                label = f'linked from this page as "{anchors[:60]}"' if anchors else "linked from this page"
+                label = (
+                    f'linked from this page as "{anchors[:60]}"'
+                    if anchors
+                    else "linked from this page"
+                )
 
             for section in graph.sections_of(target)[:per_page]:
                 out.append((section, label, weight))
@@ -723,10 +735,7 @@ class ContextAssembler:
         url = page.url if page else item.section.page_key
         title = page.title if page else item.section.page_key
         heading = item.section.heading or "(opening)"
-        return (
-            f"### {heading}\n"
-            f"*{title} — <{url}> · {item.reason} · {item.hops} hop(s)*\n"
-        )
+        return f"### {heading}\n*{title} — <{url}> · {item.reason} · {item.hops} hop(s)*\n"
 
 
 def index_sections_by_page(sections: list[Section]) -> dict[str, list[Section]]:

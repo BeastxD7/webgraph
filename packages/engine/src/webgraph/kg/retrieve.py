@@ -43,7 +43,9 @@ from webgraph.kg.store import KGStore
 __all__ = ["KGRetriever", "RetrievalConfig", "parse_answer"]
 
 _CITE: Final[re.Pattern[str]] = re.compile(r"\[(\d+)\]")
-_ABSTAIN: Final[re.Pattern[str]] = re.compile(r"not stated on (?:this|the) (?:site|page|website)", re.IGNORECASE)
+_ABSTAIN: Final[re.Pattern[str]] = re.compile(
+    r"not stated on (?:this|the) (?:site|page|website)", re.IGNORECASE
+)
 _BOUNDARY: Final[re.Pattern[str]] = re.compile(r"(?<=[.!?])(?:\s*\[\d+\])*\s+(?=[A-Z0-9\"“(\[])")
 _SECTION_QUOTE_CHARS: Final[int] = 320
 
@@ -89,7 +91,9 @@ class KGRetriever:
 
     # -- the walk -----------------------------------------------------------------------
 
-    def retrieve(self, question: str, *, sink: list[_Candidate] | None = None) -> Iterator[dict[str, Any]]:
+    def retrieve(
+        self, question: str, *, sink: list[_Candidate] | None = None
+    ) -> Iterator[dict[str, Any]]:
         """Seeds, hops and evidence -- no model call. `ask` adds the answer.
 
         `sink`, when given, receives the chosen candidates so `ask` can cite them without
@@ -118,22 +122,34 @@ class KGRetriever:
         if self._assembler is not None:
             for item in self._assembler.score_sections(question, limit=cfg.seed_sections):
                 seed_sections.append((item.section.id, item.score))
-            for section_id, entity_ids in self.store.entities_in_sections([sid for sid, _ in seed_sections]).items():
+            for section_id, entity_ids in self.store.entities_in_sections(
+                [sid for sid, _ in seed_sections]
+            ).items():
                 section_score = dict(seed_sections).get(section_id, 0.0)
                 for entity_id in entity_ids:
                     scores[entity_id] += section_score * 0.25
-        top_seeds = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))[: cfg.max_entities // 2]
+        top_seeds = sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))[
+            : cfg.max_entities // 2
+        ]
         scores = defaultdict(float, dict(top_seeds))
         path.seeds = [entity_id for entity_id, _ in top_seeds]
         seed_entities = self.store.entities(path.seeds)
         yield {
             "type": "seeds",
             "entities": [
-                {"id": eid, "name": seed_entities[eid].name, "type": seed_entities[eid].type, "score": round(score, 4)}
+                {
+                    "id": eid,
+                    "name": seed_entities[eid].name,
+                    "type": seed_entities[eid].type,
+                    "score": round(score, 4),
+                }
                 for eid, score in top_seeds
                 if eid in seed_entities
             ],
-            "sections": [{"id": sid, "heading": self._headings.get(sid, ""), "score": round(score, 4)} for sid, score in seed_sections],
+            "sections": [
+                {"id": sid, "heading": self._headings.get(sid, ""), "score": round(score, 4)}
+                for sid, score in seed_sections
+            ],
         }
 
         # 2. expand
@@ -155,7 +171,9 @@ class KGRetriever:
                     relation = relations.get(rid)
                     if relation is None:
                         continue
-                    overlap = len(question_terms & set(tokenize(relation.fact))) / (len(question_terms) or 1)
+                    overlap = len(question_terms & set(tokenize(relation.fact))) / (
+                        len(question_terms) or 1
+                    )
                     weighted.append((neighbour, rid, weight * (1.0 + overlap)))
                 mass = sum(w for _, _, w in weighted) or 1.0
                 for neighbour, rid, w in weighted:
@@ -165,12 +183,25 @@ class KGRetriever:
                     fresh = neighbour not in scores
                     scores[neighbour] += contribution
                     relation_scores[rid] += contribution
-                    edges.append(Hop(from_id=node, to_id=neighbour, relation_id=rid, hop=hop, score=contribution))
+                    edges.append(
+                        Hop(
+                            from_id=node,
+                            to_id=neighbour,
+                            relation_id=rid,
+                            hop=hop,
+                            score=contribution,
+                        )
+                    )
                     if fresh:
                         reached_by_graph.add(neighbour)
                         next_frontier.append(neighbour)
             if len(scores) > cfg.max_entities:
-                keep = {eid for eid, _ in sorted(scores.items(), key=lambda p: (-p[1], p[0]))[: cfg.max_entities]}
+                keep = {
+                    eid
+                    for eid, _ in sorted(scores.items(), key=lambda p: (-p[1], p[0]))[
+                        : cfg.max_entities
+                    ]
+                }
                 edges = [e for e in edges if e.to_id in keep and e.from_id in keep]
                 next_frontier = [n for n in next_frontier if n in keep]
                 scores = defaultdict(float, {eid: s for eid, s in scores.items() if eid in keep})
@@ -188,7 +219,9 @@ class KGRetriever:
                         "to_name": hop_entities[e.to_id].name if e.to_id in hop_entities else "",
                         "to_type": hop_entities[e.to_id].type if e.to_id in hop_entities else "",
                         "relation_id": e.relation_id,
-                        "predicate": hop_relations[e.relation_id].predicate if e.relation_id in hop_relations else "",
+                        "predicate": hop_relations[e.relation_id].predicate
+                        if e.relation_id in hop_relations
+                        else "",
                         "score": round(e.score, 4),
                     }
                     for e in sorted(edges, key=lambda e: -e.score)
@@ -232,7 +265,10 @@ class KGRetriever:
                 path_dict = event["path"]
                 path = QueryPath(
                     seeds=list(path_dict["seeds"]),
-                    hops=[Hop(h["from_id"], h["to_id"], h["relation_id"], h["hop"], h["score"]) for h in path_dict["hops"]],
+                    hops=[
+                        Hop(h["from_id"], h["to_id"], h["relation_id"], h["hop"], h["score"])
+                        for h in path_dict["hops"]
+                    ],
                     evidence=[c.evidence for c in chosen],
                 )
             yield event
@@ -246,8 +282,13 @@ class KGRetriever:
         if self.provider is None:
             # One quoted sentence per row, so the sentence splitter sees a boundary between
             # quotes that begin mid-sentence in lowercase.
-            text = "Not stated on this site." if not chosen else " ".join(
-                f"\u201c{c.evidence.quote.rstrip('.')}\u201d [{n}]." for n, c in enumerate(chosen[:3], start=1)
+            text = (
+                "Not stated on this site."
+                if not chosen
+                else " ".join(
+                    f"\u201c{c.evidence.quote.rstrip('.')}\u201d [{n}]."
+                    for n, c in enumerate(chosen[:3], start=1)
+                )
             )
             model = "none"
         else:
@@ -288,19 +329,32 @@ class KGRetriever:
             if ev.id in seen:
                 return
             seen.add(ev.id)
-            out.append(_Candidate(ev, self._headings.get(ev.section_id, ""), entity_ids, score, source))
+            out.append(
+                _Candidate(ev, self._headings.get(ev.section_id, ""), entity_ids, score, source)
+            )
 
-        top_relations = sorted(relation_scores.items(), key=lambda p: (-p[1], p[0]))[: self.config.max_relations]
+        top_relations = sorted(relation_scores.items(), key=lambda p: (-p[1], p[0]))[
+            : self.config.max_relations
+        ]
         relations: dict[str, Relation] = self.store.relations([rid for rid, _ in top_relations])
         for rid, score in top_relations:
             relation = relations.get(rid)
             if relation is None:
                 continue
-            source = "graph" if (relation.subject_id in reached_by_graph or relation.object_id in reached_by_graph) else "seed"
+            source = (
+                "graph"
+                if (
+                    relation.subject_id in reached_by_graph
+                    or relation.object_id in reached_by_graph
+                )
+                else "seed"
+            )
             for ev in relation.evidence[:2]:
                 add(ev, (relation.subject_id, relation.object_id), score, source)
 
-        top_entities = sorted(scores.items(), key=lambda p: (-p[1], p[0]))[: self.config.max_entities]
+        top_entities = sorted(scores.items(), key=lambda p: (-p[1], p[0]))[
+            : self.config.max_entities
+        ]
         entities: dict[str, Entity] = self.store.entities([eid for eid, _ in top_entities])
         for eid, score in top_entities:
             entity = entities.get(eid)
@@ -324,7 +378,15 @@ class KGRetriever:
                     if not text.strip() or ref.kind in {"code", "image"}:
                         continue
                     quote = text[:_SECTION_QUOTE_CHARS]
-                    ev = Evidence(page.key, page.url, section.id, ref.xpath, (0, len(quote)), quote, page.content_hash)
+                    ev = Evidence(
+                        page.key,
+                        page.url,
+                        section.id,
+                        ref.xpath,
+                        (0, len(quote)),
+                        quote,
+                        page.content_hash,
+                    )
                     add(ev, (), score * 0.5, "section")
         return out
 
@@ -375,7 +437,9 @@ def parse_answer(text: str, citations: list[Citation], path: QueryPath) -> Answe
         numbers = tuple(dict.fromkeys(int(n) for n in _CITE.findall(piece) if int(n) in valid))
         used.update(numbers)
         is_claim = len(_CITE.sub("", piece).split()) >= 3 and not _ABSTAIN.search(piece)
-        sentences.append(Sentence(text=piece, citations=numbers, unsupported=is_claim and not numbers))
+        sentences.append(
+            Sentence(text=piece, citations=numbers, unsupported=is_claim and not numbers)
+        )
     cited = [c for c in citations if c.n in used]
     answer_nodes = list(dict.fromkeys(eid for c in cited for eid in c.entity_ids))
     path.answer_nodes = answer_nodes

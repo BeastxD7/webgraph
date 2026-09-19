@@ -68,9 +68,7 @@ def load_corpus(directory: Path) -> list[GoldCase]:
 
         geometry = None
         if raw.get("geometry"):
-            geometry = {
-                path: Rect(**box) for path, box in raw["geometry"].items()
-            }
+            geometry = {path: Rect(**box) for path, box in raw["geometry"].items()}
 
         cases.append(
             GoldCase(

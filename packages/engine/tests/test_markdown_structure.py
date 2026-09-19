@@ -200,7 +200,7 @@ class TestPreservedTableMarkup:
             "</table></body></html>"
         ).xpath("//table")[0]
         assert preserved_table_html(table, BASE) == (
-            "<table><tr><th colspan=\"2\">Head</th></tr>"
+            '<table><tr><th colspan="2">Head</th></tr>'
             "<tr><td>Revision 3.10<br>21 May 2014</td>"
             "<td>New section.<br>URL fixes.<br>one<br>two</td></tr></table>"
         )
@@ -212,9 +212,9 @@ class TestPreservedTableMarkup:
             "<td><a href='/x'>link</a></td></tr></table></body></html>"
         ).xpath("//table")[0]
         assert preserved_table_html(table, BASE) == (
-            "<table><tr><th colspan=\"2\">Head</th></tr>"
-            "<tr><td><img src=\"https://example.com/pic.png\" alt=\"A picture\"></td>"
-            "<td><a href=\"https://example.com/x\">link</a></td></tr></table>"
+            '<table><tr><th colspan="2">Head</th></tr>'
+            '<tr><td><img src="https://example.com/pic.png" alt="A picture"></td>'
+            '<td><a href="https://example.com/x">link</a></td></tr></table>'
         )
 
     def test_images_and_links_in_cells_follow_the_rendering_switches(self) -> None:
@@ -234,7 +234,7 @@ class TestPreservedTableMarkup:
             "<tr><td>Revision 3.10</td><td>21 May 2014</td><td>esr</td></tr>"
             "<tr><td colspan='3'><p>New section</p><p>on Stack Overflow.</p></td></tr></table>"
         )
-        assert "<td colspan=\"3\">New section<br>on Stack Overflow.</td>" in out
+        assert '<td colspan="3">New section<br>on Stack Overflow.</td>' in out
 
 
 class TestScriptedFormulas:
@@ -280,20 +280,26 @@ class TestScriptedFormulas:
     def test_a_balanced_reaction_equation_survives_whole(self) -> None:
         """Every part of a real equation at once: two formulas, an arrow, a coefficient --
         the shape a page actually uses, not one isolated tag."""
-        out = md(f"<p>{PROSE}The equation is 2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O overall.</p>")
+        out = md(
+            f"<p>{PROSE}The equation is 2H<sub>2</sub> + O<sub>2</sub> → 2H<sub>2</sub>O overall.</p>"
+        )
         assert "2H₂ + O₂ → 2H₂O" in out
 
     def test_a_formula_in_an_ordinary_table_cell_survives(self) -> None:
-        out = md("<table><tr><th>Compound</th><th>Formula</th></tr>"
-                  "<tr><td>Water</td><td>H<sub>2</sub>O</td></tr>"
-                  "<tr><td>Carbon dioxide</td><td>CO<sub>2</sub></td></tr></table>")
+        out = md(
+            "<table><tr><th>Compound</th><th>Formula</th></tr>"
+            "<tr><td>Water</td><td>H<sub>2</sub>O</td></tr>"
+            "<tr><td>Carbon dioxide</td><td>CO<sub>2</sub></td></tr></table>"
+        )
         assert "H₂O" in out
         assert "CO₂" in out
 
     def test_a_polyatomic_formula_with_three_separate_subscripts_survives(self) -> None:
         """Aluminium sulfate, Al₂(SO₄)₃: three independent subscripts in one run of text,
         none of them nested in the others -- the ordinary case for an inorganic formula."""
-        out = md(f"<p>{PROSE}Aluminium sulfate is Al<sub>2</sub>(SO<sub>4</sub>)<sub>3</sub>, a salt.</p>")
+        out = md(
+            f"<p>{PROSE}Aluminium sulfate is Al<sub>2</sub>(SO<sub>4</sub>)<sub>3</sub>, a salt.</p>"
+        )
         assert "Al₂(SO₄)₃" in out
 
     def test_a_footnote_superscript_keeps_its_link(self) -> None:
@@ -340,7 +346,10 @@ class TestInlineSvg:
 
     def test_two_labels_are_a_diagram(self) -> None:
         """sqlite's smallest railroad diagram: `sql-stmt` and `;`."""
-        assert md("<div><svg><text>sql-stmt</text><path/><text>;</text></svg></div>") == "sql-stmt · ;\n"
+        assert (
+            md("<div><svg><text>sql-stmt</text><path/><text>;</text></svg></div>")
+            == "sql-stmt · ;\n"
+        )
 
     def test_an_icon_emits_nothing(self) -> None:
         assert md("<button><svg><title>Menu</title><path d='M0 0'/></svg></button>") == "\n"
@@ -355,5 +364,5 @@ class TestInlineSvg:
         assert out == "Diagram:\n\nEXPLAIN · QUERY · PLAN · alter-table-stmt\n\nas above.\n"
 
     def test_a_hidden_diagram_is_not_read(self) -> None:
-        hidden = self.DIAGRAM.replace("<svg ", "<svg data-wg-hidden=\"display\" ")
+        hidden = self.DIAGRAM.replace("<svg ", '<svg data-wg-hidden="display" ')
         assert md("<p>Text.</p>" + hidden) == "Text.\n"

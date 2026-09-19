@@ -182,7 +182,8 @@ def stream_page(
         "page_type": str(routing.page_type) if routing else "unknown",
         "confidence": round(routing.confidence, 4) if routing else 0.0,
         "reasons": [
-            {"says": r.says, "weight": round(r.weight, 4)} for r in (routing.reasons if routing else ())
+            {"says": r.says, "weight": round(r.weight, 4)}
+            for r in (routing.reasons if routing else ())
         ],
         "runner_up": (
             {"type": routing.runner_up[0], "confidence": round(routing.runner_up[1], 4)}

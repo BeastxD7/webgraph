@@ -106,9 +106,7 @@ class TestBuildDocumentDetects:
         that detection happens and the document builds -- not the column flip, which is
         covered below where there are rectangles to flip.
         """
-        document = build_document(
-            self._COLUMNS.format(attrs='lang="ar"'), "http://example.test/"
-        )
+        document = build_document(self._COLUMNS.format(attrs='lang="ar"'), "http://example.test/")
         assert next(b.text for b in document.blocks) == "alpha one"
 
     def test_explicit_false_overrides_detection(self) -> None:

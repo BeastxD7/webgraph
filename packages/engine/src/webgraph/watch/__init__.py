@@ -222,9 +222,7 @@ def _record_from_event(event: dict[str, Any]) -> PageRecord:
         fetched_at=time.time(),
         strategy=event.get("strategy"),
         error=event.get("error"),
-        sections=tuple(
-            {"heading": s.heading, "level": s.level, "text": s.text} for s in sections
-        ),
+        sections=tuple({"heading": s.heading, "level": s.level, "text": s.text} for s in sections),
     )
 
 
@@ -377,7 +375,9 @@ def stream_watch(
             if kind == "page":
                 record = _record_from_event(event)
                 key = canonical_key(record.url)
-                forwarded = {k: v for k, v in event.items() if k not in {"markdown", "content_markdown"}}
+                forwarded = {
+                    k: v for k, v in event.items() if k not in {"markdown", "content_markdown"}
+                }
                 forwarded["content_hash"] = record.content_hash
                 yield forwarded
                 if key in seen_keys:
@@ -488,9 +488,7 @@ def run_watch(
     summary = last["summary"]
     return RunSummary(
         **{k: v for k, v in summary.items() if k != "changes"},
-        changes=tuple(
-            list_changes(watch_id, store=store, run_id=int(summary["run_id"]))
-        ),
+        changes=tuple(list_changes(watch_id, store=store, run_id=int(summary["run_id"]))),
     )
 
 

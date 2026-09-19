@@ -182,9 +182,7 @@ def select_content(
     total = len(blocks)
     # The page's own title block is found before anything is stripped: an `<aside>` that
     # holds it is the page's subject and survives the landmarks step (see there).
-    kept = strip_landmarks(
-        list(blocks), title_block=_title_block(blocks, title) if title else None
-    )
+    kept = strip_landmarks(list(blocks), title_block=_title_block(blocks, title) if title else None)
     landmarks_removed = total - len(kept)
 
     comments: tuple[Block, ...] = ()

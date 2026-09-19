@@ -37,6 +37,7 @@ heading, and leaving it in puts `Testimonials¶` in front of the reader and a ju
 the index.
 """
 
+
 def sections_from_document(document: Document, *, page_key: str = "") -> list[Section]:
     """Cut a document into heading-scoped sections, in reading order.
 
@@ -251,9 +252,7 @@ class GraphBuilder:
         self._add_entities(document, sections, page_key=key)
         return sections
 
-    def _add_entities(
-        self, document: Document, sections: list[Section], *, page_key: str
-    ) -> None:
+    def _add_entities(self, document: Document, sections: list[Section], *, page_key: str) -> None:
         """Attach entities the page published, and link them to the sections that name them.
 
         Mentions are matched on the entity's name appearing in the section text. That is a
@@ -305,8 +304,7 @@ def _page_title(document: Document) -> str:
     `<h1>` is the page title by convention, so it wins when there is one.
     """
     headings = [
-        block for block in document.blocks
-        if block.kind is BlockKind.HEADING and block.text.strip()
+        block for block in document.blocks if block.kind is BlockKind.HEADING and block.text.strip()
     ]
     for block in headings:
         if block.level == 1:

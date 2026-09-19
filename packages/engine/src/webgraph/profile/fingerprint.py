@@ -50,7 +50,9 @@ def _rule(name: str, pattern: str, hint: str) -> Rule:
 
 
 FRAMEWORK_RULES: Final[tuple[Rule, ...]] = (
-    _rule("next.js", r'id="__NEXT_DATA__"|/_next/static|self\.__next_f', "next payload or asset path"),
+    _rule(
+        "next.js", r'id="__NEXT_DATA__"|/_next/static|self\.__next_f', "next payload or asset path"
+    ),
     _rule("nuxt", r"window\.__NUXT__|/_nuxt/", "nuxt payload or asset path"),
     _rule("gatsby", r"___gatsby|window\.___chunkMapping", "gatsby runtime marker"),
     _rule("sveltekit", r"__sveltekit_|data-sveltekit", "sveltekit marker"),
@@ -67,7 +69,11 @@ FRAMEWORK_RULES: Final[tuple[Rule, ...]] = (
     _rule("bigcommerce", r"cdn\d*\.bigcommerce\.com", "bigcommerce cdn"),
     _rule("webflow", r"data-wf-page|data-wf-site|webflow\.js", "webflow attributes"),
     _rule("wix", r"static\.wixstatic\.com|_wixCssImports", "wix static host"),
-    _rule("squarespace", r"static1\.squarespace\.com|Static\.SQUARESPACE_CONTEXT", "squarespace context"),
+    _rule(
+        "squarespace",
+        r"static1\.squarespace\.com|Static\.SQUARESPACE_CONTEXT",
+        "squarespace context",
+    ),
     _rule("hugo", r'content="Hugo [\d.]+"', "hugo generator meta"),
     _rule("jekyll", r'content="Jekyll', "jekyll generator meta"),
     _rule("eleventy", r'content="Eleventy', "eleventy generator meta"),
@@ -153,10 +159,13 @@ def profile_page(
     )
     # The framework list stays the short client-side view; `technologies` is the full picture.
     for tech in technologies:
-        if tech.category in {"JavaScript frameworks", "CMS", "Ecommerce", "Website builders",
-                             "Static site generators"} and tech.name.lower() not in {
-            f.lower() for f in frameworks
-        }:
+        if tech.category in {
+            "JavaScript frameworks",
+            "CMS",
+            "Ecommerce",
+            "Website builders",
+            "Static site generators",
+        } and tech.name.lower() not in {f.lower() for f in frameworks}:
             frameworks.append(tech.name)
 
     return StackProfile(

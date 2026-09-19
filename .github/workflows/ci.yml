@@ -20,6 +20,7 @@ jobs:
         run: |
           cd packages/engine
           uv run ruff check .
+          uv run ruff format --check .
           uv run mypy
       - name: Test
         run: cd packages/engine && uv run pytest tests -q

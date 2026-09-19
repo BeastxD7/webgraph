@@ -32,15 +32,11 @@ class TestPageLevel:
         assert result.unchanged == 2
 
     def test_a_new_page_is_added(self) -> None:
-        result = diff_graphs(
-            graph_of({BASE: HOME}), graph_of({BASE: HOME, f"{BASE}p": PRICING})
-        )
+        result = diff_graphs(graph_of({BASE: HOME}), graph_of({BASE: HOME, f"{BASE}p": PRICING}))
         assert [page.url for page in result.added] == [f"{BASE}p"]
 
     def test_a_missing_page_is_removed(self) -> None:
-        result = diff_graphs(
-            graph_of({BASE: HOME, f"{BASE}p": PRICING}), graph_of({BASE: HOME})
-        )
+        result = diff_graphs(graph_of({BASE: HOME, f"{BASE}p": PRICING}), graph_of({BASE: HOME}))
         assert [page.url for page in result.removed] == [f"{BASE}p"]
 
     def test_a_trailing_slash_is_not_a_change(self) -> None:

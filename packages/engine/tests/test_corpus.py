@@ -111,7 +111,7 @@ class TestSharedEntities:
         assert len(shared["Organization:https://acme.test/#org"]) == 2
 
     def test_a_generic_name_does_not_establish_identity(self) -> None:
-        """"API" appearing on two sites says nothing about them being the same API."""
+        """ "API" appearing on two sites says nothing about them being the same API."""
         corpus = two_sites()
         for root in (A, B):
             corpus.sites[root].add_entity(

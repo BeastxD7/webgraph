@@ -46,9 +46,12 @@ __all__ = [
     "policy_from",
 ]
 
-_SITEMAP_LINE: Final[re.Pattern[str]] = re.compile(r"^\s*sitemap:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
+_SITEMAP_LINE: Final[re.Pattern[str]] = re.compile(
+    r"^\s*sitemap:\s*(\S+)", re.IGNORECASE | re.MULTILINE
+)
 _LOC: Final[re.Pattern[str]] = re.compile(r"<loc>\s*([^<]+?)\s*</loc>", re.IGNORECASE)
 _SITEMAP_INDEX: Final[re.Pattern[str]] = re.compile(r"<sitemapindex", re.IGNORECASE)
+
 
 @dataclass(frozen=True, slots=True)
 class RobotsGroup:
@@ -382,7 +385,9 @@ def discover_sitemaps(
     parts = urlsplit(root)
     origin = f"{parts.scheme}://{parts.netloc}"
 
-    candidates: list[tuple[str, str]] = [(url, "robots") for url in policy.sitemaps] if policy else []
+    candidates: list[tuple[str, str]] = (
+        [(url, "robots") for url in policy.sitemaps] if policy else []
+    )
     for conventional in ("/sitemap.xml", "/sitemap_index.xml"):
         candidate = urljoin(origin, conventional)
         if candidate not in {url for url, _ in candidates}:
@@ -404,28 +409,33 @@ def discover_sitemaps(
         documents += 1
         if not result.ok or "<loc" not in result.html.lower():
             attempts.append(
-                SitemapAttempt(sitemap_url, result.status, ok=False, urls=0, index=False, source=source)
+                SitemapAttempt(
+                    sitemap_url, result.status, ok=False, urls=0, index=False, source=source
+                )
             )
             continue
 
         # Sitemaps often advertise a scheme the site no longer serves. Reconcile against
         # the root, which was just fetched successfully.
-        locations = [
-            reconcile_scheme(match.group(1), root) for match in _LOC.finditer(result.html)
-        ]
+        locations = [reconcile_scheme(match.group(1), root) for match in _LOC.finditer(result.html)]
         if _SITEMAP_INDEX.search(result.html):
             # An index lists sitemaps, not pages.
-            queue.extend(
-                (location, "index") for location in locations if location not in visited
-            )
+            queue.extend((location, "index") for location in locations if location not in visited)
             attempts.append(
-                SitemapAttempt(sitemap_url, result.status, ok=True, urls=0, index=True, source=source)
+                SitemapAttempt(
+                    sitemap_url, result.status, ok=True, urls=0, index=True, source=source
+                )
             )
         else:
             found.extend(locations)
             attempts.append(
                 SitemapAttempt(
-                    sitemap_url, result.status, ok=True, urls=len(locations), index=False, source=source
+                    sitemap_url,
+                    result.status,
+                    ok=True,
+                    urls=len(locations),
+                    index=False,
+                    source=source,
                 )
             )
 

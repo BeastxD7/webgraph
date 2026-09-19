@@ -100,9 +100,7 @@ class TestBlockRefs:
 
     def test_text_is_unchanged_by_recording_refs(self) -> None:
         """The join is exactly what it was: stripped block texts, two newlines between."""
-        doc = document(
-            "<h1>A</h1><p>" + "alpha " * 20 + "</p><p>" + "beta " * 20 + "</p>"
-        )
+        doc = document("<h1>A</h1><p>" + "alpha " * 20 + "</p><p>" + "beta " * 20 + "</p>")
         [section] = sections_from_document(doc)
         expected = "\n\n".join(
             (b.rich_text or b.text).strip() for b in doc.blocks if b.kind.value != "heading"
@@ -143,8 +141,28 @@ class TestBlockRefs:
 
         lines = [
             json.dumps({"kind": "site", "root": BASE}),
-            json.dumps({"kind": "page", "key": "example.com", "url": BASE, "title": "t", "depth": 0, "chars": 5, "sections": ["example.com#s0"]}),
-            json.dumps({"kind": "section", "id": "example.com#s0", "page_key": "example.com", "order": 0, "heading": "A", "level": 1, "text": "hello"}),
+            json.dumps(
+                {
+                    "kind": "page",
+                    "key": "example.com",
+                    "url": BASE,
+                    "title": "t",
+                    "depth": 0,
+                    "chars": 5,
+                    "sections": ["example.com#s0"],
+                }
+            ),
+            json.dumps(
+                {
+                    "kind": "section",
+                    "id": "example.com#s0",
+                    "page_key": "example.com",
+                    "order": 0,
+                    "heading": "A",
+                    "level": 1,
+                    "text": "hello",
+                }
+            ),
         ]
         from webgraph.graph.export import load_jsonl
 
@@ -161,7 +179,7 @@ class TestGraphEdges:
         inferred graph would pay a model to invent."""
         builder = GraphBuilder(BASE)
         builder.add(
-            document('<h1>Home</h1><p>' + "text " * 30 + '<a href="/pricing">See pricing</a></p>'),
+            document("<h1>Home</h1><p>" + "text " * 30 + '<a href="/pricing">See pricing</a></p>'),
             anchored_links=[("/pricing", "See pricing")],
         )
         link = next(iter(builder.graph.links.values()))
@@ -185,9 +203,15 @@ class TestGraphEdges:
 
         for index in range(10):
             key = f"example.com/p{index}"
-            graph.add_page(PageNode(key=key, url=f"{BASE}p{index}", title=f"P{index}", depth=1, chars=100))
-        graph.add_page(PageNode(key="example.com/nav", url=f"{BASE}nav", title="Nav", depth=1, chars=100))
-        graph.add_page(PageNode(key="example.com/topic", url=f"{BASE}topic", title="Topic", depth=1, chars=100))
+            graph.add_page(
+                PageNode(key=key, url=f"{BASE}p{index}", title=f"P{index}", depth=1, chars=100)
+            )
+        graph.add_page(
+            PageNode(key="example.com/nav", url=f"{BASE}nav", title="Nav", depth=1, chars=100)
+        )
+        graph.add_page(
+            PageNode(key="example.com/topic", url=f"{BASE}topic", title="Topic", depth=1, chars=100)
+        )
 
         for index in range(10):
             graph.add_link(f"example.com/p{index}", "example.com/nav")
@@ -203,8 +227,7 @@ class TestGraphEdges:
         builder = GraphBuilder(BASE)
         sections = builder.add(
             document(
-                "<h1>Guide</h1><p>" + "words " * 30
-                + '<a href="/deploy">deployment guide</a></p>'
+                "<h1>Guide</h1><p>" + "words " * 30 + '<a href="/deploy">deployment guide</a></p>'
             ),
             anchored_links=[("/deploy", "deployment guide")],
         )
@@ -216,7 +239,8 @@ class TestAssembly:
         builder = GraphBuilder(BASE)
         builder.add(
             document(
-                "<h1>Widgets</h1><p>" + "The widget is a fastener. " * 12
+                "<h1>Widgets</h1><p>"
+                + "The widget is a fastener. " * 12
                 + '<a href="/pricing">what it costs</a></p>',
                 url=BASE,
             ),
@@ -368,18 +392,20 @@ class TestScoringChoices:
             anchored_links=[("/t", "t")],
         )
         builder.add(
-            document("<h1>B</h1><p>" + "alpha topic here. " * 15 + '<a href="/t">t</a></p>',
-                     url=f"{BASE}b"),
+            document(
+                "<h1>B</h1><p>" + "alpha topic here. " * 15 + '<a href="/t">t</a></p>',
+                url=f"{BASE}b",
+            ),
             anchored_links=[("/t", "t")],
         )
-        builder.add(document("<h1>T</h1><p>" + "unrelated words entirely. " * 15 + "</p>",
-                             url=f"{BASE}t"))
+        builder.add(
+            document("<h1>T</h1><p>" + "unrelated words entirely. " * 15 + "</p>", url=f"{BASE}t")
+        )
         assembler = ContextAssembler(builder.graph)
         seeds = assembler.score_sections("alpha topic")
         summed = {s.section.id: s.score for s in assembler.expand(seeds, "alpha topic")}
         maxed = {
-            s.section.id: s.score
-            for s in assembler.expand(seeds, "alpha topic", accumulate=False)
+            s.section.id: s.score for s in assembler.expand(seeds, "alpha topic", accumulate=False)
         }
         target = next(i for i in summed if "/t#" in i or i.startswith("example.com/t"))
         assert summed[target] >= maxed[target]

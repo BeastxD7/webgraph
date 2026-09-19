@@ -55,8 +55,26 @@ label is meant to be unseen, and a collapsed tray opens."""
 
 _SKIP_SCHEMES: Final[tuple[str, ...]] = ("mailto:", "tel:", "javascript:", "data:", "#")
 _NOT_PAGES: Final[tuple[str, ...]] = (
-    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".svg", ".webp", ".zip", ".doc", ".docx",
-    ".xls", ".xlsx", ".ppt", ".pptx", ".mp4", ".mp3", ".css", ".js", ".xml", ".ico",
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".zip",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".mp4",
+    ".mp3",
+    ".css",
+    ".js",
+    ".xml",
+    ".ico",
 )
 
 
@@ -65,9 +83,26 @@ def site_host(url: str) -> str:
     return (urlsplit(url).hostname or "").lower().removeprefix("www.")
 
 
-_SECOND_LEVEL: Final[frozenset[str]] = frozenset({
-    "ac", "co", "com", "edu", "gov", "net", "org", "nic", "res", "or", "ne", "gob", "mil", "ltd", "plc", "sch",
-})
+_SECOND_LEVEL: Final[frozenset[str]] = frozenset(
+    {
+        "ac",
+        "co",
+        "com",
+        "edu",
+        "gov",
+        "net",
+        "org",
+        "nic",
+        "res",
+        "or",
+        "ne",
+        "gob",
+        "mil",
+        "ltd",
+        "plc",
+        "sch",
+    }
+)
 
 
 def registrable(host: str) -> str:
@@ -94,7 +129,12 @@ class HiddenHost:
     """Registered under another domain than the site (`registrable`)."""
 
     def as_dict(self) -> dict[str, Any]:
-        return {"host": self.host, "links": self.links, "offscreen": self.offscreen, "external": self.external}
+        return {
+            "host": self.host,
+            "links": self.links,
+            "offscreen": self.offscreen,
+            "external": self.external,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,7 +214,10 @@ class PageReport:
 
     @property
     def has_schema(self) -> bool:
-        return any(s in (PayloadSource.JSON_LD.value, PayloadSource.MICRODATA.value) for s in self.structured_data)
+        return any(
+            s in (PayloadSource.JSON_LD.value, PayloadSource.MICRODATA.value)
+            for s in self.structured_data
+        )
 
     @property
     def has_open_graph(self) -> bool:
@@ -290,8 +333,16 @@ def _hidden_links(root: Any, page_url: str, host: str) -> tuple[int, int, tuple[
             offscreen_by_host[name] += 1
             offscreen += 1
     hosts = tuple(
-        HiddenHost(host=name, links=count, offscreen=offscreen_by_host.get(name, 0), external=registrable(name) != own)
-        for name, count in sorted(by_host.items(), key=lambda item: (-offscreen_by_host.get(item[0], 0), -item[1], item[0]))
+        HiddenHost(
+            host=name,
+            links=count,
+            offscreen=offscreen_by_host.get(name, 0),
+            external=registrable(name) != own,
+        )
+        for name, count in sorted(
+            by_host.items(),
+            key=lambda item: (-offscreen_by_host.get(item[0], 0), -item[1], item[0]),
+        )
     )
     return total, offscreen, hosts
 

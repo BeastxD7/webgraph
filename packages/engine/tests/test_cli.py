@@ -29,13 +29,15 @@ def page(tmp_path: Path) -> Path:
 def schema(tmp_path: Path) -> Path:
     path = tmp_path / "schema.json"
     path.write_text(
-        json.dumps({
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "offers": {"type": "object", "properties": {"price": {"type": "number"}}},
-            },
-        }),
+        json.dumps(
+            {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "offers": {"type": "object", "properties": {"price": {"type": "number"}}},
+                },
+            }
+        ),
         encoding="utf-8",
     )
     return path
@@ -76,9 +78,7 @@ class TestExtractCommand:
         assert payload["facts"]["name"]["extractor"] == "structured-data"
         assert 0.0 < payload["facts"]["name"]["confidence"] <= 1.0
 
-    def test_returns_nonzero_when_nothing_extracted(
-        self, tmp_path: Path, schema: Path
-    ) -> None:
+    def test_returns_nonzero_when_nothing_extracted(self, tmp_path: Path, schema: Path) -> None:
         empty = tmp_path / "empty.html"
         empty.write_text("<html><body><p>no structured data</p></body></html>", encoding="utf-8")
         assert main(["-q", "extract", str(empty), "--schema", str(schema)]) == 1
@@ -124,9 +124,7 @@ class TestGraphCommands:
 
         parser = build_parser()
         actions = [
-            action
-            for action in parser._subparsers._group_actions
-            if hasattr(action, "choices")
+            action for action in parser._subparsers._group_actions if hasattr(action, "choices")
         ]
         names = set()
         for action in actions:

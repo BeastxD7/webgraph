@@ -85,7 +85,9 @@ class TestAskCommand:
         context = capsys.readouterr().out
         assert "dedicated engineer" in context
 
-    def test_the_context_names_the_pages_it_left_out(self, site: str, tmp_path: Path, capsys) -> None:
+    def test_the_context_names_the_pages_it_left_out(
+        self, site: str, tmp_path: Path, capsys
+    ) -> None:
         """A truncated context must not lie by omission."""
         out = tmp_path / "site.jsonl"
         main(["graph", site, "--max-pages", "10", "--out", str(out)])
@@ -95,8 +97,10 @@ class TestAskCommand:
         context = capsys.readouterr().out
         assert "Other pages on this site" in context
 
-    def test_expansion_reaches_a_page_the_words_do_not(self, site: str, tmp_path: Path, capsys) -> None:
-        """"tungsten fasteners" appears only on the home page, which links to pricing as
+    def test_expansion_reaches_a_page_the_words_do_not(
+        self, site: str, tmp_path: Path, capsys
+    ) -> None:
+        """ "tungsten fasteners" appears only on the home page, which links to pricing as
         "what a widget costs". Nothing in the query resembles the pricing page."""
         out = tmp_path / "site.jsonl"
         main(["graph", site, "--max-pages", "10", "--out", str(out)])

@@ -183,9 +183,7 @@ class TestIdenticalContentWarning:
             verify_inventory=False,
         )
         warnings = [
-            event
-            for event in stream_site(gated, config=config)
-            if event["type"] == "warning"
+            event for event in stream_site(gated, config=config) if event["type"] == "warning"
         ]
         # Every URL on this server returns the identical body, so the crawl cannot escape it.
         # Whether it queues enough URLs to trip the threshold depends on link discovery, so

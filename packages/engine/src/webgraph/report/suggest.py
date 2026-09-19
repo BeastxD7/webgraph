@@ -158,18 +158,21 @@ def suggest_security_txt(*, origin: str, today: date | None = None) -> str:
         expires = when.replace(year=when.year + 1)
     except ValueError:  # 29 February
         expires = when.replace(year=when.year + 1, day=28)
-    return "\n".join(
-        [
-            "# security.txt (RFC 9116) -- publish at /.well-known/security.txt",
-            "# Fill the <...> values. Contact and Expires are required by the RFC.",
-            "Contact: mailto:<security@your-domain>",
-            f"Expires: {expires.isoformat()}T00:00:00.000Z",
-            "Preferred-Languages: en",
-            f"Canonical: {origin.rstrip('/')}/.well-known/security.txt",
-            "# Policy: <https://your-domain/security-policy>",
-            "# Hiring: <https://your-domain/careers>",
-        ]
-    ) + "\n"
+    return (
+        "\n".join(
+            [
+                "# security.txt (RFC 9116) -- publish at /.well-known/security.txt",
+                "# Fill the <...> values. Contact and Expires are required by the RFC.",
+                "Contact: mailto:<security@your-domain>",
+                f"Expires: {expires.isoformat()}T00:00:00.000Z",
+                "Preferred-Languages: en",
+                f"Canonical: {origin.rstrip('/')}/.well-known/security.txt",
+                "# Policy: <https://your-domain/security-policy>",
+                "# Hiring: <https://your-domain/careers>",
+            ]
+        )
+        + "\n"
+    )
 
 
 _GENERIC_PARTS = frozenset({"home", "homepage", "home page", "welcome", "index", "main"})
@@ -218,14 +221,20 @@ def suggest_llms_txt(pages: Iterable[PageReport], *, host: str) -> str:
     root = next((p for p in read if p.section == "/"), None)
     name = _site_name(read, host)
     lines: list[str] = [f"# {name}", ""]
-    summary = (root.description.strip() if root else "") or f"Pages of {host}, as sampled by the webgraph site report."
+    summary = (
+        root.description.strip() if root else ""
+    ) or f"Pages of {host}, as sampled by the webgraph site report."
     lines += [f"> {summary}", ""]
 
     by_section: dict[str, list[PageReport]] = {}
     for page in read:
         by_section.setdefault(page.section, []).append(page)
     for section, members in by_section.items():
-        heading = "Pages" if section == "/" else section.replace("-", " ").replace("_", " ").strip().capitalize()
+        heading = (
+            "Pages"
+            if section == "/"
+            else section.replace("-", " ").replace("_", " ").strip().capitalize()
+        )
         lines.append(f"## {heading}")
         lines.append("")
         for page in members:

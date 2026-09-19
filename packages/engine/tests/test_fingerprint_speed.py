@@ -105,9 +105,7 @@ class TestRequiredLiterals:
         assert required_literals(r"_nghost-|_ngcontent-") == (("_ngcontent-", "_nghost-"),)
 
     def test_literal_alternation_in_a_run_is_a_product(self) -> None:
-        assert required_literals(r"(?:sm|md|lg|xl|2xl):") == (
-            ("2xl:", "lg:", "md:", "sm:", "xl:"),
-        )
+        assert required_literals(r"(?:sm|md|lg|xl|2xl):") == (("2xl:", "lg:", "md:", "sm:", "xl:"),)
 
     def test_literal_class_in_a_run_is_a_product(self) -> None:
         assert required_literals(r"jquery[.-]\d") == (("jquery-", "jquery."),)
@@ -248,9 +246,26 @@ class TestSpeed:
     @staticmethod
     def _prose(kilobytes: int) -> str:
         words = [
-            "the", "quick", "brown", "fox", "jumps", "over", "a", "lazy", "dog", "while",
-            "reading", "about", "history", "geography", "science", "and", "literature",
-            "in", "the", "library",
+            "the",
+            "quick",
+            "brown",
+            "fox",
+            "jumps",
+            "over",
+            "a",
+            "lazy",
+            "dog",
+            "while",
+            "reading",
+            "about",
+            "history",
+            "geography",
+            "science",
+            "and",
+            "literature",
+            "in",
+            "the",
+            "library",
         ]
         rng = random.Random(1)
         body = " ".join(rng.choice(words) for _ in range(kilobytes * 180))

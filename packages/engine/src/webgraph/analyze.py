@@ -140,7 +140,9 @@ class SiteAnalysis:
         if not self.render_required and not self.render_loses_content:
             lines.append("    -> Static HTML is complete for this page")
         if self.static_chars == 0 and self.rendered_chars > 0:
-            lines.append("    -> Static fetch returned NOTHING (bot challenge or pure client render)")
+            lines.append(
+                "    -> Static fetch returned NOTHING (bot challenge or pure client render)"
+            )
         lines.append(f"    Strategy          {self.recommended_strategy.value}")
 
         lines.append("")
@@ -153,8 +155,10 @@ class SiteAnalysis:
         lines.append(f"    Sitemaps          {len(self.sitemap_urls)}")
         for attempt in self.sitemap_attempts:
             outcome = (
-                "index" if attempt["index"] else f"{attempt['urls']} URLs"
-            ) if attempt["ok"] else "not a sitemap"
+                ("index" if attempt["index"] else f"{attempt['urls']} URLs")
+                if attempt["ok"]
+                else "not a sitemap"
+            )
             lines.append(f"      {attempt['status']:>3}  {attempt['url']}  ({outcome})")
         if self.public_page_count is None:
             lines.append("    Public pages      unknown (no sitemap; discoverable by crawling)")

@@ -88,7 +88,5 @@ class TestLocation:
     def test_it_defaults_under_the_cache_directory(self, monkeypatch) -> None:
         monkeypatch.delenv("WEBGRAPH_GRAPH_DIR", raising=False)
         monkeypatch.setenv("XDG_CACHE_HOME", "/tmp/cache-test")
-        assert default_graph_dir() == __import__("pathlib").Path(
-            "/tmp/cache-test/webgraph/graphs"
-        )
+        assert default_graph_dir() == __import__("pathlib").Path("/tmp/cache-test/webgraph/graphs")
         assert os.sep in str(default_graph_dir())

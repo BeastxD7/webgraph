@@ -51,9 +51,15 @@ MAX_QUOTE_CHARS: Final[int] = 400
 _MD_LINK: Final[re.Pattern[str]] = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _MD_IMAGE: Final[re.Pattern[str]] = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
 _QUOTES: Final[dict[str, str]] = {
-    "\u201c": '"', "\u201d": '"', "\u201e": '"',  # curly double quotes
-    "\u2018": "'", "\u2019": "'", "\u201a": "'",  # curly single quotes
-    "\u2013": "-", "\u2014": "-", "\u2010": "-",  # dashes
+    "\u201c": '"',
+    "\u201d": '"',
+    "\u201e": '"',  # curly double quotes
+    "\u2018": "'",
+    "\u2019": "'",
+    "\u201a": "'",  # curly single quotes
+    "\u2013": "-",
+    "\u2014": "-",
+    "\u2010": "-",  # dashes
     "\u00a0": " ",  # no-break space
 }
 _SYNTAX: Final[frozenset[str]] = frozenset("*_`")
@@ -121,7 +127,9 @@ class Extracted:
         return sum(self.rejected.values())
 
 
-def prepare(section: Section, page: PageNode, known: list[tuple[str, str]], *, heading_path: str = "") -> Prepared:
+def prepare(
+    section: Section, page: PageNode, known: list[tuple[str, str]], *, heading_path: str = ""
+) -> Prepared:
     """Render the section for the model, with a marker per block."""
     blocks: list[tuple[str, str, BlockRef]] = []
     for index, ref in enumerate(section.blocks):
@@ -138,16 +146,22 @@ def prepare(section: Section, page: PageNode, known: list[tuple[str, str]], *, h
     return Prepared(section=section, page=page, blocks=blocks, prompt=prompt, known=known)
 
 
-def extract_section(provider: Provider, prepared: Prepared, *, model: str | None = None) -> tuple[Extracted, str]:
+def extract_section(
+    provider: Provider, prepared: Prepared, *, model: str | None = None
+) -> tuple[Extracted, str]:
     """Call the model once (twice on a schema violation), verify, and return the result with
     the raw response text so the caller can cache it."""
     usage = Usage()
     raw_text = ""
     last_error = ""
     for attempt in range(2):
-        user = prepared.prompt if not last_error else (
-            f"{prepared.prompt}\n\nYour previous reply was rejected: {last_error[:300]}. "
-            "Return only the JSON object."
+        user = (
+            prepared.prompt
+            if not last_error
+            else (
+                f"{prepared.prompt}\n\nYour previous reply was rejected: {last_error[:300]}. "
+                "Return only the JSON object."
+            )
         )
         try:
             result = provider.complete_json(EXTRACT_SYSTEM, user, EXTRACT_SCHEMA, model=model)
@@ -170,7 +184,9 @@ def extract_section(provider: Provider, prepared: Prepared, *, model: str | None
         extracted = verify(payload, prepared)
         extracted.usage = usage
         return extracted, raw_text
-    rejected: Counter[str] = Counter({"invalid_json" if "JSON" in last_error else "schema_violation": 1})
+    rejected: Counter[str] = Counter(
+        {"invalid_json" if "JSON" in last_error else "schema_violation": 1}
+    )
     return Extracted(rejected=rejected, usage=usage), raw_text
 
 
@@ -230,7 +246,9 @@ def verify(payload: dict[str, Any], prepared: Prepared) -> Extracted:
         for mention in raw.get("mentions") or []:
             ev = evidence_for(mention)
             if ev is not None:
-                entity.mentions.append(ExtractedMention(surface=str(mention.get("quote") or name)[:200], evidence=ev))
+                entity.mentions.append(
+                    ExtractedMention(surface=str(mention.get("quote") or name)[:200], evidence=ev)
+                )
         for attribute in raw.get("attributes") or []:
             if not isinstance(attribute, dict):
                 continue
@@ -241,7 +259,14 @@ def verify(payload: dict[str, Any], prepared: Prepared) -> Extracted:
                 continue
             ev = evidence_for(attribute)
             if ev is not None:
-                entity.attributes.append(Attribute(key=key, value=value[:200], unit=str(attribute.get("unit") or "")[:40], evidence=ev))
+                entity.attributes.append(
+                    Attribute(
+                        key=key,
+                        value=value[:200],
+                        unit=str(attribute.get("unit") or "")[:40],
+                        evidence=ev,
+                    )
+                )
         if entity.mentions or entity.attributes:
             names[name] = entity
         else:
@@ -266,12 +291,21 @@ def verify(payload: dict[str, Any], prepared: Prepared) -> Extracted:
             # inventing entities for it: those would be rows with no mention evidence.
             out.rejected["unknown_entity_in_relation"] += 1
             continue
-        evidence = [ev for ev in (evidence_for(e) for e in raw.get("evidence") or []) if ev is not None]
+        evidence = [
+            ev for ev in (evidence_for(e) for e in raw.get("evidence") or []) if ev is not None
+        ]
         if not evidence:
             out.rejected["relation_without_evidence"] += 1
             continue
-        fact = " ".join(str(raw.get("fact") or "").split())[:200] or f"{subject} {predicate.replace('_', ' ')} {obj}"
-        out.relations.append(ExtractedRelation(subject=subject, predicate=predicate, object=obj, fact=fact, evidence=evidence))
+        fact = (
+            " ".join(str(raw.get("fact") or "").split())[:200]
+            or f"{subject} {predicate.replace('_', ' ')} {obj}"
+        )
+        out.relations.append(
+            ExtractedRelation(
+                subject=subject, predicate=predicate, object=obj, fact=fact, evidence=evidence
+            )
+        )
 
     out.entities = list(names.values())
     return out

@@ -99,7 +99,9 @@ class TestRobotsIsKept:
         assert policy.sitemaps == ("https://x.test/from-robots.xml",)
 
     def test_a_group_naming_this_client_wins_over_the_wildcard(self) -> None:
-        group = group_for_client("User-agent: *\nDisallow: /\n\nUser-agent: webgraph\nAllow: /docs\n")
+        group = group_for_client(
+            "User-agent: *\nDisallow: /\n\nUser-agent: webgraph\nAllow: /docs\n"
+        )
         assert group is not None
         assert group.label == "webgraph"
         assert group.lines == ("Allow: /docs",)
@@ -115,7 +117,9 @@ class TestRobotsIsKept:
         assert policy.text == "" and policy.rules == () and policy.group is None
         assert policy.allows(f"{ROOT}anything")
 
-    def test_the_single_page_path_keeps_the_same_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_single_page_path_keeps_the_same_text(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """`fetch.robots.policy_for` builds its policy with the same function, so the page
         refusal and the crawl report never disagree about what the file said."""
         from webgraph.fetch import robots as robots_module
@@ -138,8 +142,22 @@ class TestSitemapAttemptsAreRecorded:
         urls, attempts = discover_sitemaps(ROOT)
         assert urls == []
         assert [a.as_dict() for a in attempts] == [
-            {"url": f"{ROOT}sitemap.xml", "status": 404, "ok": False, "urls": 0, "index": False, "source": "conventional"},
-            {"url": f"{ROOT}sitemap_index.xml", "status": 404, "ok": False, "urls": 0, "index": False, "source": "conventional"},
+            {
+                "url": f"{ROOT}sitemap.xml",
+                "status": 404,
+                "ok": False,
+                "urls": 0,
+                "index": False,
+                "source": "conventional",
+            },
+            {
+                "url": f"{ROOT}sitemap_index.xml",
+                "status": 404,
+                "ok": False,
+                "urls": 0,
+                "index": False,
+                "source": "conventional",
+            },
         ]
 
     def test_robots_advertised_first_then_conventional_with_counts(
@@ -314,8 +332,22 @@ class TestTheStreamReportsIt:
                 ),
                 sitemap_pages=(),
                 sitemap_attempts=(
-                    SitemapAttempt(f"{root}sitemap.xml", 404, ok=False, urls=0, index=False, source="conventional"),
-                    SitemapAttempt(f"{root}sitemap_index.xml", 404, ok=False, urls=0, index=False, source="conventional"),
+                    SitemapAttempt(
+                        f"{root}sitemap.xml",
+                        404,
+                        ok=False,
+                        urls=0,
+                        index=False,
+                        source="conventional",
+                    ),
+                    SitemapAttempt(
+                        f"{root}sitemap_index.xml",
+                        404,
+                        ok=False,
+                        urls=0,
+                        index=False,
+                        source="conventional",
+                    ),
                 ),
             )
 
@@ -326,7 +358,12 @@ class TestTheStreamReportsIt:
         from webgraph.site import SiteConfig, stream_site
 
         return list(
-            stream_site(ROOT, config=SiteConfig(max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0))
+            stream_site(
+                ROOT,
+                config=SiteConfig(
+                    max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0
+                ),
+            )
         )
 
     def test_a_discovery_event_follows_the_analysis(self) -> None:
@@ -383,7 +420,10 @@ class TestTheAnalysisCarriesItToo:
         from webgraph.pipeline import build_document
         from webgraph.resolve import ResolvedPage, Strategy
 
-        serve(monkeypatch, {f"{ROOT}robots.txt": (ROBOTS, 200), f"{ROOT}part-1.xml": (SITEMAP_PART, 200)})
+        serve(
+            monkeypatch,
+            {f"{ROOT}robots.txt": (ROBOTS, 200), f"{ROOT}part-1.xml": (SITEMAP_PART, 200)},
+        )
         html = "<html><head><title>R</title></head><body><main><p>Some words for a root page.</p></main></body></html>"
 
         def fake_resolve(url: str, **_: Any) -> ResolvedPage:

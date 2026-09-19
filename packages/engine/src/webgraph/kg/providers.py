@@ -57,18 +57,66 @@ ProviderName = Literal["openai-compatible", "anthropic", "gemini", "fake"]
 JsonMode = Literal["json_schema", "json_object", "prompt"]
 
 PRESETS: Final[dict[str, dict[str, str]]] = {
-    "openai": {"provider": "openai-compatible", "base_url": "https://api.openai.com/v1", "api_key_env": "OPENAI_API_KEY"},
-    "groq": {"provider": "openai-compatible", "base_url": "https://api.groq.com/openai/v1", "api_key_env": "GROQ_API_KEY"},
-    "together": {"provider": "openai-compatible", "base_url": "https://api.together.xyz/v1", "api_key_env": "TOGETHER_API_KEY"},
-    "openrouter": {"provider": "openai-compatible", "base_url": "https://openrouter.ai/api/v1", "api_key_env": "OPENROUTER_API_KEY"},
-    "deepseek": {"provider": "openai-compatible", "base_url": "https://api.deepseek.com/v1", "api_key_env": "DEEPSEEK_API_KEY"},
-    "mistral": {"provider": "openai-compatible", "base_url": "https://api.mistral.ai/v1", "api_key_env": "MISTRAL_API_KEY"},
-    "xai": {"provider": "openai-compatible", "base_url": "https://api.x.ai/v1", "api_key_env": "XAI_API_KEY"},
-    "ollama": {"provider": "openai-compatible", "base_url": "http://localhost:11434/v1", "api_key_env": ""},
-    "lmstudio": {"provider": "openai-compatible", "base_url": "http://localhost:1234/v1", "api_key_env": ""},
-    "vllm": {"provider": "openai-compatible", "base_url": "http://localhost:8000/v1", "api_key_env": ""},
-    "anthropic": {"provider": "anthropic", "base_url": "https://api.anthropic.com", "api_key_env": "ANTHROPIC_API_KEY"},
-    "gemini": {"provider": "gemini", "base_url": "https://generativelanguage.googleapis.com/v1beta", "api_key_env": "GEMINI_API_KEY"},
+    "openai": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+    },
+    "groq": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key_env": "GROQ_API_KEY",
+    },
+    "together": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.together.xyz/v1",
+        "api_key_env": "TOGETHER_API_KEY",
+    },
+    "openrouter": {
+        "provider": "openai-compatible",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key_env": "OPENROUTER_API_KEY",
+    },
+    "deepseek": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key_env": "DEEPSEEK_API_KEY",
+    },
+    "mistral": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.mistral.ai/v1",
+        "api_key_env": "MISTRAL_API_KEY",
+    },
+    "xai": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.x.ai/v1",
+        "api_key_env": "XAI_API_KEY",
+    },
+    "ollama": {
+        "provider": "openai-compatible",
+        "base_url": "http://localhost:11434/v1",
+        "api_key_env": "",
+    },
+    "lmstudio": {
+        "provider": "openai-compatible",
+        "base_url": "http://localhost:1234/v1",
+        "api_key_env": "",
+    },
+    "vllm": {
+        "provider": "openai-compatible",
+        "base_url": "http://localhost:8000/v1",
+        "api_key_env": "",
+    },
+    "anthropic": {
+        "provider": "anthropic",
+        "base_url": "https://api.anthropic.com",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    },
+    "gemini": {
+        "provider": "gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "api_key_env": "GEMINI_API_KEY",
+    },
 }
 """A preset is a `base_url` and the conventional key variable, nothing more."""
 
@@ -91,7 +139,9 @@ class Usage:
     output_tokens: int = 0
 
     def __add__(self, other: Usage) -> Usage:
-        return Usage(self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens)
+        return Usage(
+            self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,7 +190,8 @@ class ProviderConfig:
             "model": self.model,
             "answer_model": self.answer_model,
             "json_mode": self.json_mode,
-            "has_key": bool(self.api_key) or bool(self.api_key_env and os.environ.get(self.api_key_env)),
+            "has_key": bool(self.api_key)
+            or bool(self.api_key_env and os.environ.get(self.api_key_env)),
         }
 
     def usd(self, usage: Usage) -> float | None:
@@ -168,11 +219,15 @@ class ProviderConfig:
 
         return cls(
             provider=provider,  # type: ignore[arg-type]
-            base_url=env.get("WEBGRAPH_LLM_BASE_URL", "").strip() or preset.get("base_url") or "https://api.openai.com/v1",
+            base_url=env.get("WEBGRAPH_LLM_BASE_URL", "").strip()
+            or preset.get("base_url")
+            or "https://api.openai.com/v1",
             model=env.get("WEBGRAPH_LLM_MODEL", "").strip(),
             answer_model=env.get("WEBGRAPH_LLM_ANSWER_MODEL", "").strip() or None,
             api_key=env.get("WEBGRAPH_LLM_API_KEY", "").strip() or None,
-            api_key_env=env.get("WEBGRAPH_LLM_API_KEY_ENV", "").strip() or preset.get("api_key_env") or None,
+            api_key_env=env.get("WEBGRAPH_LLM_API_KEY_ENV", "").strip()
+            or preset.get("api_key_env")
+            or None,
             json_mode=_json_mode(env.get("WEBGRAPH_LLM_JSON_MODE", "")),
             max_concurrency=int(env.get("WEBGRAPH_LLM_CONCURRENCY", "") or _config.KG_CONCURRENCY),
             price_per_m_in=price("WEBGRAPH_LLM_PRICE_IN"),
@@ -188,7 +243,12 @@ class ProviderConfig:
         `api_key_env` may only name a variable in `KEY_ENVS_A_CALLER_MAY_NAME`."""
         current = base or cls.from_env()
         named_env = data.get("api_key_env")
-        if not trusted and isinstance(named_env, str) and named_env.strip() and named_env.strip() not in KEY_ENVS_A_CALLER_MAY_NAME:
+        if (
+            not trusted
+            and isinstance(named_env, str)
+            and named_env.strip()
+            and named_env.strip() not in KEY_ENVS_A_CALLER_MAY_NAME
+        ):
             raise ValueError(
                 f"api_key_env may name one of {', '.join(sorted(KEY_ENVS_A_CALLER_MAY_NAME))}; send api_key instead"
             )
@@ -238,7 +298,8 @@ def _preset_key_env(base_url: str) -> str | None:
 
 
 KEY_ENVS_A_CALLER_MAY_NAME: frozenset[str] = frozenset(
-    {preset["api_key_env"] for preset in PRESETS.values() if preset["api_key_env"]} | {"WEBGRAPH_LLM_API_KEY"}
+    {preset["api_key_env"] for preset in PRESETS.values() if preset["api_key_env"]}
+    | {"WEBGRAPH_LLM_API_KEY"}
 )
 """The environment variables a request over the API may point `api_key_env` at. Anything
 else -- `AWS_SECRET_ACCESS_KEY`, `DATABASE_URL` -- would be read off the server and sent as
@@ -251,7 +312,9 @@ class Provider(Protocol):
 
     config: ProviderConfig
 
-    def complete_json(self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None) -> LLMResult: ...
+    def complete_json(
+        self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None
+    ) -> LLMResult: ...
 
     def complete_text(self, system: str, user: str, *, model: str | None = None) -> LLMResult: ...
 
@@ -281,7 +344,9 @@ def _schema_in_prompt(user: str, schema: dict[str, Any]) -> str:
 class _HttpProvider:
     """Shared retry loop. Subclasses build the request and read the response."""
 
-    def __init__(self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None
+    ) -> None:
         self.config = config
         self._client = httpx.Client(timeout=config.timeout_s, transport=transport)
 
@@ -299,7 +364,9 @@ class _HttpProvider:
                 if response.status_code < 300:
                     payload = response.json()
                     if not isinstance(payload, dict):
-                        raise LLMError("provider returned a non-object response", status=response.status_code)
+                        raise LLMError(
+                            "provider returned a non-object response", status=response.status_code
+                        )
                     return payload
                 # Never echo the response body wholesale: some providers repeat the
                 # request, and the request may quote page text, but never the key --
@@ -326,7 +393,9 @@ class OpenAICompatProvider(_HttpProvider):
     rung steps down and remembers, so a build pays the failed call once.
     """
 
-    def __init__(self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None
+    ) -> None:
         super().__init__(config, transport=transport)
         self._mode: JsonMode = config.json_mode
 
@@ -337,12 +406,17 @@ class OpenAICompatProvider(_HttpProvider):
             headers["authorization"] = f"Bearer {key}"
         return headers
 
-    def complete_json(self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None) -> LLMResult:
+    def complete_json(
+        self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None
+    ) -> LLMResult:
         url = f"{self.config.base_url.rstrip('/')}/chat/completions"
         while True:
             body: dict[str, Any] = {
                 "model": model or self.config.model,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
                 "temperature": 0,
                 "max_tokens": self.config.max_output_tokens,
             }
@@ -397,7 +471,9 @@ class AnthropicProvider(_HttpProvider):
 
     VERSION: Final[str] = "2023-06-01"
 
-    def __init__(self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self, config: ProviderConfig, *, transport: httpx.BaseTransport | None = None
+    ) -> None:
         super().__init__(config, transport=transport)
         self._structured = config.json_mode == "json_schema"
 
@@ -412,13 +488,20 @@ class AnthropicProvider(_HttpProvider):
         base = self.config.base_url.rstrip("/")
         return base if base.endswith("/v1/messages") else f"{base.removesuffix('/v1')}/v1/messages"
 
-    def complete_json(self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None) -> LLMResult:
+    def complete_json(
+        self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None
+    ) -> LLMResult:
         while True:
             body: dict[str, Any] = {
                 "model": model or self.config.model,
                 "max_tokens": self.config.max_output_tokens,
                 "system": system,
-                "messages": [{"role": "user", "content": user if self._structured else _schema_in_prompt(user, schema)}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user if self._structured else _schema_in_prompt(user, schema),
+                    }
+                ],
             }
             if self._structured:
                 body["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
@@ -443,7 +526,9 @@ class AnthropicProvider(_HttpProvider):
 
 def _anthropic_result(payload: dict[str, Any], model: str) -> LLMResult:
     blocks = payload.get("content") or []
-    text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+    text = "".join(
+        b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
+    )
     usage = payload.get("usage") or {}
     return LLMResult(
         text=text,
@@ -465,7 +550,9 @@ class GeminiProvider(_HttpProvider):
     def _url(self, model: str) -> str:
         return f"{self.config.base_url.rstrip('/')}/models/{model}:generateContent"
 
-    def complete_json(self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None) -> LLMResult:
+    def complete_json(
+        self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None
+    ) -> LLMResult:
         chosen = model or self.config.model
         body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system}]},
@@ -492,7 +579,10 @@ class GeminiProvider(_HttpProvider):
         body = {
             "systemInstruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {"temperature": 0, "maxOutputTokens": self.config.max_output_tokens},
+            "generationConfig": {
+                "temperature": 0,
+                "maxOutputTokens": self.config.max_output_tokens,
+            },
         }
         return _gemini_result(self._post(self._url(chosen), self._headers(), body), chosen)
 
@@ -506,7 +596,9 @@ def _gemini_result(payload: dict[str, Any], model: str) -> LLMResult:
     usage = payload.get("usageMetadata") or {}
     return LLMResult(
         text=text,
-        usage=Usage(int(usage.get("promptTokenCount") or 0), int(usage.get("candidatesTokenCount") or 0)),
+        usage=Usage(
+            int(usage.get("promptTokenCount") or 0), int(usage.get("candidatesTokenCount") or 0)
+        ),
         model=model,
     )
 
@@ -521,12 +613,66 @@ _TRAILING_CONNECTOR: Final[re.Pattern[str]] = re.compile(r"(?:[ \t]+(?:of|and|fo
 _SENTENCE_END: Final[re.Pattern[str]] = re.compile(r"(?<=\w{5})\.\s")
 _TRAILING_PERIOD: Final[re.Pattern[str]] = re.compile(r"(?<=\w{4})\.$")
 """A period after a word of five or more letters ends a sentence; `Dr.` and `B.E.` do not."""
-_MONEY: Final[re.Pattern[str]] = re.compile(r"(?:₹|Rs\.?|INR|USD|\$|€|£)\s?[\d,]+(?:\.\d+)?(?:\s?(?:per|/)\s?(?:year|month|semester|annum))?", re.IGNORECASE)
-_DATE: Final[re.Pattern[str]] = re.compile(r"\b(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}?,?\s*\d{4}\b|\b\d{4}-\d{2}-\d{2}\b")
+_MONEY: Final[re.Pattern[str]] = re.compile(
+    r"(?:₹|Rs\.?|INR|USD|\$|€|£)\s?[\d,]+(?:\.\d+)?(?:\s?(?:per|/)\s?(?:year|month|semester|annum))?",
+    re.IGNORECASE,
+)
+_DATE: Final[re.Pattern[str]] = re.compile(
+    r"\b(?:\d{1,2}\s+)?(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}?,?\s*\d{4}\b|\b\d{4}-\d{2}-\d{2}\b"
+)
 _EMAIL: Final[re.Pattern[str]] = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
 _PHONE: Final[re.Pattern[str]] = re.compile(r"\+?\d[\d\s-]{8,}\d")
-_QUESTION_STOP: Final[frozenset[str]] = frozenset({"what", "which", "who", "whom", "when", "where", "how", "does", "the", "for", "and", "are", "is", "of", "in", "on", "to", "do", "much", "many", "there"})
-_STOP: Final[frozenset[str]] = frozenset({"The", "This", "These", "Those", "Our", "Your", "Their", "It", "In", "On", "At", "For", "From", "With", "By", "About", "Contact", "Read", "Learn", "More", "Click", "Here"})
+_QUESTION_STOP: Final[frozenset[str]] = frozenset(
+    {
+        "what",
+        "which",
+        "who",
+        "whom",
+        "when",
+        "where",
+        "how",
+        "does",
+        "the",
+        "for",
+        "and",
+        "are",
+        "is",
+        "of",
+        "in",
+        "on",
+        "to",
+        "do",
+        "much",
+        "many",
+        "there",
+    }
+)
+_STOP: Final[frozenset[str]] = frozenset(
+    {
+        "The",
+        "This",
+        "These",
+        "Those",
+        "Our",
+        "Your",
+        "Their",
+        "It",
+        "In",
+        "On",
+        "At",
+        "For",
+        "From",
+        "With",
+        "By",
+        "About",
+        "Contact",
+        "Read",
+        "Learn",
+        "More",
+        "Click",
+        "Here",
+    }
+)
 
 
 class FakeProvider:
@@ -543,7 +689,13 @@ class FakeProvider:
     proves the second build made none.
     """
 
-    def __init__(self, config: ProviderConfig | None = None, *, scripted: list[str] | None = None, fabricate: bool = False) -> None:
+    def __init__(
+        self,
+        config: ProviderConfig | None = None,
+        *,
+        scripted: list[str] | None = None,
+        fabricate: bool = False,
+    ) -> None:
         self.config = config or ProviderConfig(provider="fake", base_url="fake://", model="fake-1")
         self.scripted = list(scripted or [])
         self.fabricate = fabricate
@@ -551,13 +703,24 @@ class FakeProvider:
         self.prompts: list[str] = []
         self.on_call: Callable[[str], None] | None = None
 
-    def complete_json(self, system: str, user: str, schema: dict[str, Any], *, model: str | None = None) -> LLMResult:  # noqa: ARG002
+    def complete_json(
+        self,
+        system: str,
+        user: str,
+        schema: dict[str, Any],  # noqa: ARG002
+        *,
+        model: str | None = None,
+    ) -> LLMResult:
         self.calls += 1
         self.prompts.append(user)
         if self.on_call:
             self.on_call(user)
         text = self.scripted.pop(0) if self.scripted else json.dumps(self._extract(user))
-        return LLMResult(text=text, usage=Usage(len(system + user) // 4, len(text) // 4), model=model or self.config.model)
+        return LLMResult(
+            text=text,
+            usage=Usage(len(system + user) // 4, len(text) // 4),
+            model=model or self.config.model,
+        )
 
     def complete_text(self, system: str, user: str, *, model: str | None = None) -> LLMResult:
         self.calls += 1
@@ -565,7 +728,11 @@ class FakeProvider:
         if self.on_call:
             self.on_call(user)
         text = self.scripted.pop(0) if self.scripted else self._answer(user)
-        return LLMResult(text=text, usage=Usage(len(system + user) // 4, len(text) // 4), model=model or self.config.model)
+        return LLMResult(
+            text=text,
+            usage=Usage(len(system + user) // 4, len(text) // 4),
+            model=model or self.config.model,
+        )
 
     # -- extraction ---------------------------------------------------------------------
 
@@ -581,22 +748,40 @@ class FakeProvider:
         for marker, text in blocks:
             names: list[str] = []
             found = [
-                _TRAILING_PERIOD.sub("", _TRAILING_CONNECTOR.sub("", _SENTENCE_END.split(m.group(0))[0]).strip(",;:"))
+                _TRAILING_PERIOD.sub(
+                    "", _TRAILING_CONNECTOR.sub("", _SENTENCE_END.split(m.group(0))[0]).strip(",;:")
+                )
                 for m in _PROPER.finditer(text)
             ]
             for candidate in list(known_names) + found:
-                if candidate in text and candidate.split()[0] not in _STOP and candidate not in names and len(candidate) > 3:
+                if (
+                    candidate in text
+                    and candidate.split()[0] not in _STOP
+                    and candidate not in names
+                    and len(candidate) > 3
+                ):
                     names.append(candidate)
             for name in names:
                 quote = _window(text, name)
                 entry = entities.setdefault(
                     name,
-                    {"name": name, "type": _guess_type(name, known), "aliases": [], "attributes": [], "mentions": []},
+                    {
+                        "name": name,
+                        "type": _guess_type(name, known),
+                        "aliases": [],
+                        "attributes": [],
+                        "mentions": [],
+                    },
                 )
                 entry["mentions"].append({"block": marker, "quote": quote})
             if names:
                 owner = names[0]
-                for key, pattern in (("price", _MONEY), ("date", _DATE), ("email", _EMAIL), ("phone", _PHONE)):
+                for key, pattern in (
+                    ("price", _MONEY),
+                    ("date", _DATE),
+                    ("email", _EMAIL),
+                    ("phone", _PHONE),
+                ):
                     for m in pattern.finditer(text):
                         value = m.group(0).strip().rstrip(".,;:")
                         if len(value) < 4:
@@ -604,15 +789,25 @@ class FakeProvider:
                         quote = _window(text, value)
                         if self.fabricate:
                             quote = "this sentence is not on the page"
-                        entities[owner]["attributes"].append({"key": key, "value": value, "unit": _unit(key, value), "block": marker, "quote": quote})
+                        entities[owner]["attributes"].append(
+                            {
+                                "key": key,
+                                "value": value,
+                                "unit": _unit(key, value),
+                                "block": marker,
+                                "quote": quote,
+                            }
+                        )
             if len(names) >= 2:
-                relations.append({
-                    "subject": names[0],
-                    "predicate": "mentioned_with",
-                    "object": names[1],
-                    "fact": f"{names[0]} is mentioned with {names[1]}.",
-                    "evidence": [{"block": marker, "quote": _window(text, names[1])}],
-                })
+                relations.append(
+                    {
+                        "subject": names[0],
+                        "predicate": "mentioned_with",
+                        "object": names[1],
+                        "fact": f"{names[0]} is mentioned with {names[1]}.",
+                        "evidence": [{"block": marker, "quote": _window(text, names[1])}],
+                    }
+                )
         return {"entities": list(entities.values()), "relations": relations}
 
     # -- answering ----------------------------------------------------------------------
@@ -621,7 +816,11 @@ class FakeProvider:
         """An extractive answer: the evidence lines that share the most words with the
         question, each cited. Deterministic, so the benchmark's CI run is repeatable."""
         question = user.split("\n", 1)[0].removeprefix("Question:").strip()
-        terms = {w.lower() for w in re.findall(r"[A-Za-z0-9][\w.'-]*", question) if len(w) > 2 and w.lower() not in _QUESTION_STOP}
+        terms = {
+            w.lower()
+            for w in re.findall(r"[A-Za-z0-9][\w.'-]*", question)
+            if len(w) > 2 and w.lower() not in _QUESTION_STOP
+        }
         lines = re.findall(r"^\[(\d+)\] .*?\"(.*?)\"\s*$", user, re.MULTILINE)
         if not lines:
             return "Not stated on this site."
@@ -636,7 +835,9 @@ class FakeProvider:
         best = [(n, q) for neg, n, q in scored[:2] if neg < 0]
         # One sentence per citation: a stop inside the quote becomes a semicolon, so the
         # `[n]` at the end covers the whole of what was quoted.
-        return " ".join(f"{re.sub(r'(?<=\w{5})[.!?]\s+', '; ', quote).rstrip('.')} [{n}]." for n, quote in best)
+        return " ".join(
+            f"{re.sub(r'(?<=\w{5})[.!?]\s+', '; ', quote).rstrip('.')} [{n}]." for n, quote in best
+        )
 
 
 def _window(text: str, needle: str, *, words: int = 6) -> str:
@@ -659,9 +860,25 @@ def _guess_type(name: str, known: list[tuple[str, str]]) -> str:
         if known_name == name:
             return known_type
     lowered = name.lower()
-    if any(w in lowered for w in ("college", "institute", "university", "school", "ltd", "inc", "company", "trust", "department")):
+    if any(
+        w in lowered
+        for w in (
+            "college",
+            "institute",
+            "university",
+            "school",
+            "ltd",
+            "inc",
+            "company",
+            "trust",
+            "department",
+        )
+    ):
         return "Organization"
-    if any(w in lowered for w in ("course", "programme", "program", "b.e", "m.tech", "diploma", "bsc", "msc")):
+    if any(
+        w in lowered
+        for w in ("course", "programme", "program", "b.e", "m.tech", "diploma", "bsc", "msc")
+    ):
         return "Course"
     if lowered.startswith(("dr.", "dr ", "prof", "mr", "ms", "mrs", "shri", "smt")):
         return "Person"
@@ -681,7 +898,9 @@ def _unit(key: str, value: str) -> str:
     return ""
 
 
-def make_provider(config: ProviderConfig, *, transport: httpx.BaseTransport | None = None) -> Provider:
+def make_provider(
+    config: ProviderConfig, *, transport: httpx.BaseTransport | None = None
+) -> Provider:
     if config.provider == "fake":
         return FakeProvider(config)
     if config.provider == "anthropic":

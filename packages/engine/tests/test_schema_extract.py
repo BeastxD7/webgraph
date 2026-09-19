@@ -53,12 +53,14 @@ class TestScalarMatching:
 
     def test_exact_keys(self) -> None:
         assert values(self.SCHEMA, {"name": "Widget", "price": 49.0}) == {
-            "name": "Widget", "price": 49.0,
+            "name": "Widget",
+            "price": 49.0,
         }
 
     def test_normalized_keys(self) -> None:
         assert values(self.SCHEMA, {"Name": "Widget", "PRICE": 49}) == {
-            "name": "Widget", "price": 49.0,
+            "name": "Widget",
+            "price": 49.0,
         }
 
     def test_known_alias(self) -> None:
@@ -83,7 +85,8 @@ class TestScalarMatching:
 
 class TestCoercion:
     SCHEMA: ClassVar[dict[str, Any]] = {
-        "type": "object", "properties": {"price": {"type": "number"}},
+        "type": "object",
+        "properties": {"price": {"type": "number"}},
     }
 
     @pytest.mark.parametrize(
@@ -191,7 +194,8 @@ class TestArrays:
 
 class TestProvenanceAndMerging:
     SCHEMA: ClassVar[dict[str, Any]] = {
-        "type": "object", "properties": {"name": {"type": "string"}},
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
     }
 
     def test_provenance_records_source_and_extractor(self) -> None:
@@ -219,9 +223,7 @@ class TestProvenanceAndMerging:
         assert merge_facts(facts)["name"].value == "Canonical name"
 
     def test_merge_keeps_one_fact_per_path(self) -> None:
-        facts = extract_facts(
-            [payload({"name": "A"}), payload({"name": "B"})], self.SCHEMA, URL
-        )
+        facts = extract_facts([payload({"name": "A"}), payload({"name": "B"})], self.SCHEMA, URL)
         assert len(facts) == 2
         assert len(merge_facts(facts)) == 1
 
@@ -283,7 +285,8 @@ class TestDecimalSeparators:
     """
 
     SCHEMA: ClassVar[dict[str, Any]] = {
-        "type": "object", "properties": {"price": {"type": "number"}},
+        "type": "object",
+        "properties": {"price": {"type": "number"}},
     }
 
     @pytest.mark.parametrize(

@@ -121,9 +121,7 @@ def diff_graphs(before: SiteGraph, after: SiteGraph) -> SiteDiff:
     return result
 
 
-def diff_sections(
-    before: list[Section], after: list[Section]
-) -> list[SectionChange]:
+def diff_sections(before: list[Section], after: list[Section]) -> list[SectionChange]:
     """Match sections across crawls by heading, falling back to position.
 
     Public since the watch (`webgraph.watch`) diffs the same way over sections it cut from
@@ -147,9 +145,7 @@ def diff_sections(
             # Unheaded sections have no name to match on, so position is all there is.
             previous = before[index]
         else:
-            changes.append(
-                SectionChange(kind="added", heading=section.heading, after=section.text)
-            )
+            changes.append(SectionChange(kind="added", heading=section.heading, after=section.text))
             continue
 
         matched.add(id(previous))
@@ -168,9 +164,7 @@ def diff_sections(
             continue
         if any(_key(section) == _key(other) for other in after):
             continue
-        changes.append(
-            SectionChange(kind="removed", heading=section.heading, before=section.text)
-        )
+        changes.append(SectionChange(kind="removed", heading=section.heading, before=section.text))
 
     return changes[:MAX_SECTION_DETAIL]
 

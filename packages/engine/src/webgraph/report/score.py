@@ -132,7 +132,10 @@ def _readable(pages: list[PageReport]) -> SubScore:
     measured = [p for p in pages if p.error is None and p.rendered_chars > 0 and p.union_chars > 0]
     if not measured:
         return SubScore(
-            key="readable_without_js", label=label, weight=weight, score=None,
+            key="readable_without_js",
+            label=label,
+            weight=weight,
+            score=None,
             evidence="No page could be rendered, so what the plain fetch misses is unmeasured.",
         )
     mean = sum(p.static_coverage for p in measured) / len(measured)
@@ -154,8 +157,13 @@ def _readable(pages: list[PageReport]) -> SubScore:
             "in the HTML the server sends."
         )
     return SubScore(
-        key="readable_without_js", label=label, weight=weight, score=weight * mean,
-        evidence=evidence, recommendation=recommendation, source=worst.url,
+        key="readable_without_js",
+        label=label,
+        weight=weight,
+        score=weight * mean,
+        evidence=evidence,
+        recommendation=recommendation,
+        source=worst.url,
     )
 
 
@@ -172,12 +180,18 @@ def _robots(bots: Iterable[BotPolicy], found: bool) -> SubScore:
     blocked = [b for b in policies if b.access == "blocked"]
     share = 1 - len(blocked) / len(policies) if policies else 1.0
     if not found:
-        evidence = "No robots.txt: every bot is allowed everywhere, by the convention crawlers follow."
+        evidence = (
+            "No robots.txt: every bot is allowed everywhere, by the convention crawlers follow."
+        )
     else:
         named = [b for b in policies if b.via == "named"]
         wildcard = [b for b in policies if b.via == "wildcard"]
         parts: list[str] = []
-        for verdict, word in (("blocked", "blocked"), ("partly", "partly restricted"), ("allowed", "allowed")):
+        for verdict, word in (
+            ("blocked", "blocked"),
+            ("partly", "partly restricted"),
+            ("allowed", "allowed"),
+        ):
             these = [b for b in named if b.access == verdict]
             if these:
                 detail = f" ({_paths(these[0])})" if verdict == "partly" else ""
@@ -200,7 +214,11 @@ def _robots(bots: Iterable[BotPolicy], found: bool) -> SubScore:
         unmentioned = [b for b in policies if b.via == "none"]
         if unmentioned and not wildcard:
             parts.append(f"{len(unmentioned)} not mentioned, so allowed")
-        evidence = f"robots.txt names {len(named)} of the {len(policies)} well-known bots; " + "; ".join(parts) + "."
+        evidence = (
+            f"robots.txt names {len(named)} of the {len(policies)} well-known bots; "
+            + "; ".join(parts)
+            + "."
+        )
     recommendation = None
     if blocked:
         recommendation = (
@@ -210,8 +228,12 @@ def _robots(bots: Iterable[BotPolicy], found: bool) -> SubScore:
             "robots.txt below has that variant; the other allows all."
         )
     return SubScore(
-        key="robots_ai_bots", label=label, weight=weight, score=weight * share,
-        evidence=evidence, recommendation=recommendation,
+        key="robots_ai_bots",
+        label=label,
+        weight=weight,
+        score=weight * share,
+        evidence=evidence,
+        recommendation=recommendation,
     )
 
 
@@ -219,15 +241,20 @@ def _walls(pages: list[PageReport]) -> SubScore:
     weight = WEIGHTS["no_walls"]
     label = "No walls to identified crawlers"
     if not pages:
-        return SubScore(key="no_walls", label=label, weight=weight, score=None, evidence="No page sampled.")
+        return SubScore(
+            key="no_walls", label=label, weight=weight, score=None, evidence="No page sampled."
+        )
     walled = [p for p in pages if p.wall is not None]
     share = 1 - len(walled) / len(pages)
     if not walled:
-        evidence = f"All {len(pages)} sampled pages were served to both the plain fetch and the browser."
+        evidence = (
+            f"All {len(pages)} sampled pages were served to both the plain fetch and the browser."
+        )
         recommendation = None
     else:
         named = "; ".join(
-            f"{_path(p)}: {p.wall} -- " + (p.static_error or p.render_error or p.error or "").split(";")[0]
+            f"{_path(p)}: {p.wall} -- "
+            + (p.static_error or p.render_error or p.error or "").split(";")[0]
             for p in walled
         )
         evidence = f"{len(walled)} of {len(pages)} pages walled one side. {named}."
@@ -237,8 +264,13 @@ def _walls(pages: list[PageReport]) -> SubScore:
             "rules for the side that was refused."
         )
     return SubScore(
-        key="no_walls", label=label, weight=weight, score=weight * share,
-        evidence=evidence, recommendation=recommendation, source=walled[0].url if walled else None,
+        key="no_walls",
+        label=label,
+        weight=weight,
+        score=weight * share,
+        evidence=evidence,
+        recommendation=recommendation,
+        source=walled[0].url if walled else None,
     )
 
 
@@ -247,7 +279,10 @@ def _sitemap(pages: list[PageReport], sitemap_found: bool, sitemap_urls: int) ->
     label = "Sitemap exists and lists the sampled pages"
     if not sitemap_found:
         return SubScore(
-            key="sitemap", label=label, weight=weight, score=0.0,
+            key="sitemap",
+            label=label,
+            weight=weight,
+            score=0.0,
             evidence="No sitemap: robots.txt names none and /sitemap.xml, /sitemap_index.xml did not parse as one.",
             recommendation="Publish a sitemap.xml and name it in robots.txt (`Sitemap: https://…/sitemap.xml`); crawlers and agents take the page list from it instead of guessing.",
         )
@@ -258,12 +293,21 @@ def _sitemap(pages: list[PageReport], sitemap_found: bool, sitemap_urls: int) ->
     score = 6 + 4 * coverage
     evidence = f"Sitemap found with {sitemap_urls:,} URLs; {len(listed)} of {len(known)} sampled pages are listed."
     if unknown:
-        evidence += f" {len(unknown)} could not be checked: only the first {sitemap_urls:,} URLs were read."
+        evidence += (
+            f" {len(unknown)} could not be checked: only the first {sitemap_urls:,} URLs were read."
+        )
     recommendation = None
     if coverage < 1:
         missing = ", ".join(_path(p) for p in known if not p.in_sitemap)
         recommendation = f"Add the pages the site links to but the sitemap omits: {missing}."
-    return SubScore(key="sitemap", label=label, weight=weight, score=score, evidence=evidence, recommendation=recommendation)
+    return SubScore(
+        key="sitemap",
+        label=label,
+        weight=weight,
+        score=score,
+        evidence=evidence,
+        recommendation=recommendation,
+    )
 
 
 def _structured(pages: list[PageReport]) -> SubScore:
@@ -271,7 +315,9 @@ def _structured(pages: list[PageReport]) -> SubScore:
     label = "Structured data and page metadata"
     read = [p for p in pages if p.error is None]
     if not read:
-        return SubScore(key="structured_data", label=label, weight=weight, score=None, evidence="No page read.")
+        return SubScore(
+            key="structured_data", label=label, weight=weight, score=None, evidence="No page read."
+        )
     with_schema = [p for p in read if p.has_schema]
     schema_share = len(with_schema) / len(read)
     # Four page-fields, not three: OpenGraph joined title, description and lang (PR #99)
@@ -280,7 +326,8 @@ def _structured(pages: list[PageReport]) -> SubScore:
     # unchanged; a page with the three older fields and no og:* earns 3/4 of the 4 points.
     fields = ("title", "description", "lang", "og")
     meta = [
-        (bool(p.title) + bool(p.description) + bool(p.lang) + bool(p.has_open_graph)) / len(fields) for p in read
+        (bool(p.title) + bool(p.description) + bool(p.lang) + bool(p.has_open_graph)) / len(fields)
+        for p in read
     ]
     meta_share = sum(meta) / len(meta)
     score = 6 * schema_share + 4 * meta_share
@@ -288,7 +335,12 @@ def _structured(pages: list[PageReport]) -> SubScore:
     for p in read:
         gaps = [
             name
-            for name, ok in (("title", p.title), ("description", p.description), ("lang", p.lang), ("og", p.has_open_graph))
+            for name, ok in (
+                ("title", p.title),
+                ("description", p.description),
+                ("lang", p.lang),
+                ("og", p.has_open_graph),
+            )
             if not ok
         ]
         if gaps:
@@ -305,7 +357,14 @@ def _structured(pages: list[PageReport]) -> SubScore:
             "title, meta description, `<html lang>` and og:title/og:description/og:image to "
             "every page; agents read these before they read the prose."
         )
-    return SubScore(key="structured_data", label=label, weight=weight, score=score, evidence=evidence, recommendation=recommendation)
+    return SubScore(
+        key="structured_data",
+        label=label,
+        weight=weight,
+        score=score,
+        evidence=evidence,
+        recommendation=recommendation,
+    )
 
 
 def _hidden(pages: list[PageReport]) -> SubScore:
@@ -313,7 +372,13 @@ def _hidden(pages: list[PageReport]) -> SubScore:
     label = "No hidden or injected content"
     read = [p for p in pages if p.error is None]
     if not read:
-        return SubScore(key="no_hidden_content", label=label, weight=weight, score=None, evidence="No page read.")
+        return SubScore(
+            key="no_hidden_content",
+            label=label,
+            weight=weight,
+            score=None,
+            evidence="No page read.",
+        )
     spam = [p for p in read if p.offscreen_external_hosts >= config.REPORT_SPAM_MIN_HOSTS]
     offscreen = [p for p in read if 0 < p.offscreen_external_hosts < config.REPORT_SPAM_MIN_HOSTS]
     hidden_total = sum(sum(p.hidden_words.values()) for p in read)
@@ -321,7 +386,10 @@ def _hidden(pages: list[PageReport]) -> SubScore:
     if spam:
         worst = max(spam, key=lambda p: p.offscreen_external_hosts)
         return SubScore(
-            key="no_hidden_content", label=label, weight=weight, score=0.0,
+            key="no_hidden_content",
+            label=label,
+            weight=weight,
+            score=0.0,
             evidence=(
                 f"{_path(worst)} links to {worst.offscreen_external_hosts} foreign hosts from "
                 f"elements parked off the page ({worst.offscreen_links} off-screen links in all)."
@@ -336,11 +404,15 @@ def _hidden(pages: list[PageReport]) -> SubScore:
     if offscreen:
         worst = max(offscreen, key=lambda p: p.offscreen_external_hosts)
         return SubScore(
-            key="no_hidden_content", label=label, weight=weight, score=5.0,
+            key="no_hidden_content",
+            label=label,
+            weight=weight,
+            score=5.0,
             evidence=(
                 f"{_path(worst)} links to {worst.offscreen_external_hosts} foreign host"
                 f"{'s' if worst.offscreen_external_hosts != 1 else ''} from elements parked off "
-                "the page: " + ", ".join(h.host for h in worst.hidden_hosts if h.external and h.offscreen)
+                "the page: "
+                + ", ".join(h.host for h in worst.hidden_hosts if h.external and h.offscreen)
             ),
             recommendation="Check that every off-screen link to another host is one the site meant to publish.",
             source=worst.url,
@@ -350,11 +422,16 @@ def _hidden(pages: list[PageReport]) -> SubScore:
     # what is parked where no reader can scroll.
     menu_note = (
         f" Hidden menus link to up to {menus} foreign hosts per page (`display: none`), which is a dropdown, not a verdict."
-        if menus else " No hidden links to foreign hosts."
+        if menus
+        else " No hidden links to foreign hosts."
     )
     return SubScore(
-        key="no_hidden_content", label=label, weight=weight, score=float(weight),
-        evidence=f"Nothing parked off the page on any sampled page; {hidden_total:,} hidden words in all." + menu_note,
+        key="no_hidden_content",
+        label=label,
+        weight=weight,
+        score=float(weight),
+        evidence=f"Nothing parked off the page on any sampled page; {hidden_total:,} hidden words in all."
+        + menu_note,
     )
 
 
@@ -362,7 +439,9 @@ def _llms(found: bool, full_found: bool) -> SubScore:
     weight = WEIGHTS["llms_txt"]
     label = "llms.txt present"
     if found:
-        evidence = "/llms.txt is present" + (" and so is /llms-full.txt" if full_found else "") + "."
+        evidence = (
+            "/llms.txt is present" + (" and so is /llms-full.txt" if full_found else "") + "."
+        )
     else:
         evidence = "No /llms.txt."
     rationale = (
@@ -372,8 +451,12 @@ def _llms(found: bool, full_found: bool) -> SubScore:
         "nothing to publish, and the draft below is built from the pages sampled."
     )
     return SubScore(
-        key="llms_txt", label=label, weight=weight, score=float(weight) if found else 0.0,
-        evidence=evidence, recommendation=None if found else rationale,
+        key="llms_txt",
+        label=label,
+        weight=weight,
+        score=float(weight) if found else 0.0,
+        evidence=evidence,
+        recommendation=None if found else rationale,
     )
 
 
@@ -383,16 +466,27 @@ def _dead(pages: list[PageReport]) -> SubScore:
     checked = sum(p.links_checked for p in pages)
     dead = sum(p.dead_count for p in pages)
     if checked == 0:
-        return SubScore(key="dead_links", label=label, weight=weight, score=None, evidence="No internal link was checked.")
+        return SubScore(
+            key="dead_links",
+            label=label,
+            weight=weight,
+            score=None,
+            evidence="No internal link was checked.",
+        )
     rate = dead / checked
     evidence = f"{dead} of {checked} internal links checked answered 4xx/5xx."
     sample = [d for p in pages for d in p.dead_links][:3]
     if sample:
         evidence += " " + "; ".join(f"{d.url} -> {d.status}" for d in sample) + "."
     return SubScore(
-        key="dead_links", label=label, weight=weight, score=weight * (1 - rate),
+        key="dead_links",
+        label=label,
+        weight=weight,
+        score=weight * (1 - rate),
         evidence=evidence,
-        recommendation="Fix or remove the links above; an agent following them reads an error page." if dead else None,
+        recommendation="Fix or remove the links above; an agent following them reads an error page."
+        if dead
+        else None,
     )
 
 
@@ -445,15 +539,15 @@ def integrity_findings(
     # search engines fold the page into the declared address, and a crawl that resolved
     # links against it left the site. bhavyadhanwani.dev kept its previous Vercel host as
     # the canonical of every page, and the same host in its sitemap, after moving domains.
-    elsewhere = [
-        p for p in read if p.canonical and not same_site(p.canonical, p.url)
-    ]
+    elsewhere = [p for p in read if p.canonical and not same_site(p.canonical, p.url)]
     if elsewhere:
         hosts: dict[str, int] = {}
         for p in elsewhere:
             host = urlsplit(p.canonical or "").hostname or "?"
             hosts[host] = hosts.get(host, 0) + 1
-        named = ", ".join(f"{host} ({count})" for host, count in sorted(hosts.items(), key=lambda i: -i[1]))
+        named = ", ".join(
+            f"{host} ({count})" for host, count in sorted(hosts.items(), key=lambda i: -i[1])
+        )
         findings.append(
             Finding(
                 severity="high",
@@ -515,7 +609,11 @@ def integrity_findings(
         return dict(sorted(totals.items(), key=lambda item: (-item[1], item[0])))
 
     spam = [p for p in read if p.offscreen_external_hosts >= config.REPORT_SPAM_MIN_HOSTS]
-    offscreen = [p for p in read if 0 < p.offscreen_external_hosts < config.REPORT_SPAM_MIN_HOSTS and p not in spam]
+    offscreen = [
+        p
+        for p in read
+        if 0 < p.offscreen_external_hosts < config.REPORT_SPAM_MIN_HOSTS and p not in spam
+    ]
     if spam:
         hosts = hosts_across(spam)
         listed = ", ".join(f"{host} ({count})" for host, count in list(hosts.items())[:12])
@@ -531,7 +629,8 @@ def integrity_findings(
                     f"{len(spam)} of {len(read)} sampled pages, to {len(hosts)} foreign hosts: {listed}{more}. "
                     "A site's own off-canvas menu links to its own host; dozens of foreign hosts "
                     "positioned where no reader can scroll is the shape of an injection. Pages: "
-                    + ", ".join(_path(p) for p in spam) + "."
+                    + ", ".join(_path(p) for p in spam)
+                    + "."
                 ),
                 page=spam[0].url,
             )
@@ -548,7 +647,8 @@ def integrity_findings(
                     + ", ".join(hosts)
                     + f" from elements parked off the page, on {len(offscreen)} of {len(read)} sampled pages. "
                     f"Below the {config.REPORT_SPAM_MIN_HOSTS}-host threshold for a spam verdict; check they are meant. Pages: "
-                    + ", ".join(_path(p) for p in offscreen) + "."
+                    + ", ".join(_path(p) for p in offscreen)
+                    + "."
                 ),
                 page=offscreen[0].url,
             )

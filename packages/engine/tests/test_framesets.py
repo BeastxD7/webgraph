@@ -53,7 +53,11 @@ class Server(http.server.BaseHTTPRequestHandler):
 
 @pytest.fixture
 def server() -> Iterator[str]:
-    Server.routes = {"/rgs/alice-table.html": TOP, "/rgs/alice-finfo.html": INFO, "/rgs/alice-ftitle.html": TITLE}
+    Server.routes = {
+        "/rgs/alice-table.html": TOP,
+        "/rgs/alice-finfo.html": INFO,
+        "/rgs/alice-ftitle.html": TITLE,
+    }
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Server)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -70,9 +74,16 @@ class TestFramesets:
         resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
         texts = [b.text for b in resolved.document.blocks]
         assert texts[0].startswith("Contents")  # the top frame first
-        assert "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do." in texts
-        assert texts.index("Alice's Adventures in Wonderland") < texts.index("Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do.")
-        assert not any(t.startswith("NOTE: This is a hypertext") for t in texts)  # noframes not shown
+        assert (
+            "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do."
+            in texts
+        )
+        assert texts.index("Alice's Adventures in Wonderland") < texts.index(
+            "Alice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do."
+        )
+        assert not any(
+            t.startswith("NOTE: This is a hypertext") for t in texts
+        )  # noframes not shown
         assert resolved.render_error and resolved.render_error.startswith("frameset")
 
     def test_noframes_stands_in_when_no_frame_can_be_fetched(self, server: str) -> None:
@@ -80,13 +91,21 @@ class TestFramesets:
         try:
             resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
         finally:
-            Server.routes = {"/rgs/alice-table.html": TOP, "/rgs/alice-finfo.html": INFO, "/rgs/alice-ftitle.html": TITLE}
+            Server.routes = {
+                "/rgs/alice-table.html": TOP,
+                "/rgs/alice-finfo.html": INFO,
+                "/rgs/alice-ftitle.html": TITLE,
+            }
         texts = [b.text for b in resolved.document.blocks]
         assert any(t.startswith("NOTE: This is a hypertext") for t in texts)
 
     def test_frame_links_resolve_against_the_frame(self, server: str) -> None:
         resolved = resolve_page(f"{server}/rgs/alice-table.html", strategy=Strategy.STATIC_ONLY)
         hrefs = [b.href for b in resolved.document.blocks if b.href]
-        links = [b.rich_text for b in resolved.document.blocks if b.rich_text and "alice-I.html" in b.rich_text]
+        links = [
+            b.rich_text
+            for b in resolved.document.blocks
+            if b.rich_text and "alice-I.html" in b.rich_text
+        ]
         assert links and f"{server}/rgs/alice-I.html" in links[0]
         assert not any(h and h.startswith("alice-") for h in hrefs)

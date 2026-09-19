@@ -63,17 +63,29 @@ def article_page() -> list[Block]:
             index=0,
             rich="[Home](/) [Products](/p) [About](/a) [Contact](/c) [Blog](/b) [Careers](/j)",
         ),
-        block("Why foxes run", xpath="/html/body/div[2]/article/h1", index=1,
-              kind=BlockKind.HEADING, tag="h1", level=1),
-        block("Share Tweet Email", xpath="/html/body/div[2]/article/div/p", index=2,
-              rich="[Share](/s) [Tweet](/t) [Email](/e)"),
+        block(
+            "Why foxes run",
+            xpath="/html/body/div[2]/article/h1",
+            index=1,
+            kind=BlockKind.HEADING,
+            tag="h1",
+            level=1,
+        ),
+        block(
+            "Share Tweet Email",
+            xpath="/html/body/div[2]/article/div/p",
+            index=2,
+            rich="[Share](/s) [Tweet](/t) [Email](/e)",
+        ),
         *[
-            block(f"{PROSE} Paragraph {i} adds one more sentence.",
-                  xpath=f"/html/body/div[2]/article/p[{i}]", index=2 + i)
+            block(
+                f"{PROSE} Paragraph {i} adds one more sentence.",
+                xpath=f"/html/body/div[2]/article/p[{i}]",
+                index=2 + i,
+            )
             for i in range(1, 6)
         ],
-        block("Copyright Example Corp. All rights reserved.",
-              xpath="/html/body/div[3]/p", index=9),
+        block("Copyright Example Corp. All rights reserved.", xpath="/html/body/div[3]/p", index=9),
     ]
     return blocks
 
@@ -157,8 +169,14 @@ class TestPredictor:
 
     def test_rejects_other_feature_sets(self) -> None:
         with pytest.raises(ValueError, match="feature set"):
-            BlockModel.from_dict({"format": "webgraph-block-gbdt/1", "features": ["words"],
-                                  "baseline": 0.0, "trees": []})
+            BlockModel.from_dict(
+                {
+                    "format": "webgraph-block-gbdt/1",
+                    "features": ["words"],
+                    "baseline": 0.0,
+                    "trees": [],
+                }
+            )
 
 
 class TestSelection:

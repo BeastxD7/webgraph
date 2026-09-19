@@ -404,9 +404,7 @@ def _emit(
         out.append(_fact(path, coerced, match, payload, url))
 
 
-def _fact(
-    path: str, value: Any, match: _Match, payload: StructuredPayload, url: str
-) -> Fact:
+def _fact(path: str, value: Any, match: _Match, payload: StructuredPayload, url: str) -> Fact:
     base = _CONFIDENCE.get(match.how, 0.7)
     weight = _SOURCE_WEIGHT.get(payload.source, 0.85)
     # Each level of descent is a weaker claim that this key means what we think it means.

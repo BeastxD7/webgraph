@@ -1081,7 +1081,8 @@ def stream_site(
             discover_common_crawl,
             normalized_root,
             config=replace(
-                config.fetch, timeout_seconds=min(config.fetch.timeout_seconds, COMMON_CRAWL_TIMEOUT)
+                config.fetch,
+                timeout_seconds=min(config.fetch.timeout_seconds, COMMON_CRAWL_TIMEOUT),
             ),
         )
         if config.common_crawl

@@ -32,7 +32,13 @@ from typing import Final
 
 from lxml.html import HtmlElement
 
-__all__ = ["MATHML_NAMESPACE", "latex_from_math", "math_elements", "mathjax_source_latex", "render_math"]
+__all__ = [
+    "MATHML_NAMESPACE",
+    "latex_from_math",
+    "math_elements",
+    "mathjax_source_latex",
+    "render_math",
+]
 
 MATHML_NAMESPACE: Final[str] = "http://www.w3.org/1998/Math/MathML"
 
@@ -42,30 +48,68 @@ _TEX_ANNOTATION: Final[str] = (
 )
 
 _OPERATORS: Final[dict[str, str]] = {
-    "−": "-", "×": r"\times", "÷": r"\div", "±": r"\pm",
-    "≤": r"\leq", "≥": r"\geq", "≠": r"\neq", "≈": r"\approx",
-    "∞": r"\infty", "∑": r"\sum", "∏": r"\prod", "∫": r"\int",
-    "∂": r"\partial", "√": r"\sqrt", "→": r"\to", "⇒": r"\Rightarrow",
-    "∈": r"\in", "∉": r"\notin", "⊆": r"\subseteq", "∪": r"\cup",
-    "∩": r"\cap", "⋅": r"\cdot", "′": "'",
+    "−": "-",
+    "×": r"\times",
+    "÷": r"\div",
+    "±": r"\pm",
+    "≤": r"\leq",
+    "≥": r"\geq",
+    "≠": r"\neq",
+    "≈": r"\approx",
+    "∞": r"\infty",
+    "∑": r"\sum",
+    "∏": r"\prod",
+    "∫": r"\int",
+    "∂": r"\partial",
+    "√": r"\sqrt",
+    "→": r"\to",
+    "⇒": r"\Rightarrow",
+    "∈": r"\in",
+    "∉": r"\notin",
+    "⊆": r"\subseteq",
+    "∪": r"\cup",
+    "∩": r"\cap",
+    "⋅": r"\cdot",
+    "′": "'",
 }
 """Unicode operators to their LaTeX spellings. A `<mo>` not listed is passed through, which
 is right for `+`, `=`, brackets and anything this table has not met yet."""
 
-_GREEK: Final[frozenset[str]] = frozenset(
-    "αβγδεζηθικλμνξ"
-    "πρστυφχψω"
-    "ΓΔΘΛΞΠΣΦΨΩ"
-)
+_GREEK: Final[frozenset[str]] = frozenset("αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩ")
 _GREEK_NAMES: Final[dict[str, str]] = {
-    "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta",
-    "ε": "epsilon", "ζ": "zeta", "η": "eta", "θ": "theta",
-    "ι": "iota", "κ": "kappa", "λ": "lambda", "μ": "mu",
-    "ν": "nu", "ξ": "xi", "π": "pi", "ρ": "rho", "σ": "sigma",
-    "τ": "tau", "υ": "upsilon", "φ": "phi", "χ": "chi",
-    "ψ": "psi", "ω": "omega", "Γ": "Gamma", "Δ": "Delta",
-    "Θ": "Theta", "Λ": "Lambda", "Ξ": "Xi", "Π": "Pi",
-    "Σ": "Sigma", "Φ": "Phi", "Ψ": "Psi", "Ω": "Omega",
+    "α": "alpha",
+    "β": "beta",
+    "γ": "gamma",
+    "δ": "delta",
+    "ε": "epsilon",
+    "ζ": "zeta",
+    "η": "eta",
+    "θ": "theta",
+    "ι": "iota",
+    "κ": "kappa",
+    "λ": "lambda",
+    "μ": "mu",
+    "ν": "nu",
+    "ξ": "xi",
+    "π": "pi",
+    "ρ": "rho",
+    "σ": "sigma",
+    "τ": "tau",
+    "υ": "upsilon",
+    "φ": "phi",
+    "χ": "chi",
+    "ψ": "psi",
+    "ω": "omega",
+    "Γ": "Gamma",
+    "Δ": "Delta",
+    "Θ": "Theta",
+    "Λ": "Lambda",
+    "Ξ": "Xi",
+    "Π": "Pi",
+    "Σ": "Sigma",
+    "Φ": "Phi",
+    "Ψ": "Psi",
+    "Ω": "Omega",
 }
 
 _WHITESPACE: Final[re.Pattern[str]] = re.compile(r"\s+")
@@ -262,7 +306,7 @@ def _duplicate_visual_container(element: HtmlElement) -> HtmlElement | None:
         if node is None:
             return None
         name = _local(node)
-        classes = (node.get("class") or '').split()
+        classes = (node.get("class") or "").split()
         if name in _ASSISTIVE_WRAPPERS or "katex-mathml" in classes:
             assistive = True
             continue

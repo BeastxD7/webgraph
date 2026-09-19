@@ -79,12 +79,12 @@ _WORD: Final[re.Pattern[str]] = re.compile(r"\S+")
 
 _SCRIPTIO_CONTINUA: Final[re.Pattern[str]] = re.compile(
     "["
-    "\u3040-\u30ff"    # hiragana, katakana
-    "\u3400-\u4dbf"    # CJK unified ideographs extension A
-    "\u4e00-\u9fff"    # CJK unified ideographs
-    "\uf900-\ufaff"    # CJK compatibility ideographs
-    "\uac00-\ud7af"    # hangul syllables
-    "\u0e00-\u0e7f"    # thai
+    "\u3040-\u30ff"  # hiragana, katakana
+    "\u3400-\u4dbf"  # CJK unified ideographs extension A
+    "\u4e00-\u9fff"  # CJK unified ideographs
+    "\uf900-\ufaff"  # CJK compatibility ideographs
+    "\uac00-\ud7af"  # hangul syllables
+    "\u0e00-\u0e7f"  # thai
     "]"
 )
 """Scripts written without spaces between words.
@@ -100,7 +100,6 @@ This is the same class of failure as the reading direction defaulting to left-to
 assumption about English that is silently catastrophic elsewhere, and invisible to an
 English corpus.
 """
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,15 +377,16 @@ class MainContentConfig:
     navigation -- a sitemap, an index -- has no main content to find, and saying so by
     returning everything is better than inventing an answer."""
 
+
 def word_count(text: str) -> int:
-    '''Words, counting each character of a space-less script as one.
+    """Words, counting each character of a space-less script as one.
 
     One CJK character carries roughly the information of one short English word, so counting
     them individually puts a Chinese paragraph on the same scale as an English one and lets a
     single `block_cost` serve both. Mixed text is handled by removing the space-less
     characters and splitting what remains, so a Japanese sentence quoting an English product
     name is counted correctly on both halves.
-    '''
+    """
     dense = len(_SCRIPTIO_CONTINUA.findall(text))
     spaced = len(_WORD.findall(_SCRIPTIO_CONTINUA.sub(" ", text)))
     return dense + spaced
@@ -605,9 +605,7 @@ def select_main_content(
     # dozen captions paid the block cost a dozen times along the article and Kadane cut
     # the run before its last commands: WebMainBench 0ed88efa (hrace009.com's LAMP guide)
     # code_edit 1.000 → 0.874 the moment those captions were read at all (PR #86).
-    values = [
-        max(v, 0.0) if _introduces_code(blocks, i) else v for i, v in enumerate(values)
-    ]
+    values = [max(v, 0.0) if _introduces_code(blocks, i) else v for i, v in enumerate(values)]
     if config.product_sheet:
         values = [
             max(v, _SPEC_VALUE) if _is_spec(block) else v
@@ -631,9 +629,7 @@ def select_main_content(
             # The members keep their own scores -- link density still says what it says --
             # and the unit pays the block cost once instead of once per card.
             members = end - index
-            units.append(
-                (index, end, sum(values[index:end]) + (members - 1) * config.block_cost)
-            )
+            units.append((index, end, sum(values[index:end]) + (members - 1) * config.block_cost))
         index = end
 
     # Kadane, tracking the winning bounds. Ties keep the earlier, longer run: an article

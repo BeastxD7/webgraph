@@ -86,9 +86,7 @@ class TestAggregation:
 
     def test_source_pages_recorded(self) -> None:
         pages = [page("https://e.com/1", ORG), page("https://e.com/2", ORG)]
-        organizations = [
-            e for e in _aggregate_entities(pages) if e.entity_type == "Organization"
-        ]
+        organizations = [e for e in _aggregate_entities(pages) if e.entity_type == "Organization"]
         assert set(organizations[0].source_pages) == {"https://e.com/1", "https://e.com/2"}
 
     def test_sorted_by_prevalence(self) -> None:
@@ -168,14 +166,19 @@ class TestPageTitleFallback:
             '<meta property="og:site_name" content="Reliance Digital"></head>'
             "<body><p>Text.</p></body></html>"
         )
-        assert _page_title(build_document(html, "https://x.test/privacy-policy")) == "Privacy Policy"
+        assert (
+            _page_title(build_document(html, "https://x.test/privacy-policy")) == "Privacy Policy"
+        )
 
     def test_without_a_declared_site_name_the_title_is_kept_whole(self) -> None:
         from webgraph.pipeline import build_document
         from webgraph.site import _page_title
 
         html = "<html><head><title>Rust | what the borrow checker does</title></head><body><p>x</p></body></html>"
-        assert _page_title(build_document(html, "https://x.test/p")) == "Rust | what the borrow checker does"
+        assert (
+            _page_title(build_document(html, "https://x.test/p"))
+            == "Rust | what the borrow checker does"
+        )
 
 
 class TestEntityAggregation:

@@ -86,7 +86,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS entity_fts USING fts5(id UNINDEXED, name, ali
 CREATE VIRTUAL TABLE IF NOT EXISTS relation_fts USING fts5(id UNINDEXED, fact, predicate, tokenize='unicode61');
 """
 
-_GRAPH_TABLES: Final[tuple[str, ...]] = ("mentions", "attributes", "relation_evidence", "relations", "evidence", "entities")
+_GRAPH_TABLES: Final[tuple[str, ...]] = (
+    "mentions",
+    "attributes",
+    "relation_evidence",
+    "relations",
+    "evidence",
+    "entities",
+)
 
 
 def default_kg_dir() -> Path:
@@ -171,7 +178,10 @@ class _Connection:
         return self
 
     def __exit__(
-        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
     ) -> None:
         try:
             self._raw.__exit__(exc_type, exc, tb)
@@ -214,7 +224,9 @@ class KGStore:
             # Recreate rather than migrate: the file is a cache of a build, and the LLM
             # responses it holds are keyed by prompt version, so they are worth dropping
             # too when the schema they fed has changed.
-            for row in self._conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%'").fetchall():
+            for row in self._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%'"
+            ).fetchall():
                 self._conn.execute(f"DROP TABLE IF EXISTS {row[0]}")
         self._conn.executescript(_SCHEMA)
         try:
@@ -259,15 +271,28 @@ class KGStore:
                 conn.execute(
                     "INSERT INTO entities VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (
-                        entity.id, entity.type, entity.name, json.dumps(list(entity.aliases)), entity.description,
-                        entity.extractor.value, int(entity.generic), entity.first_seen, entity.last_seen,
-                        entity.evidence_count, len(entity.pages),
+                        entity.id,
+                        entity.type,
+                        entity.name,
+                        json.dumps(list(entity.aliases)),
+                        entity.description,
+                        entity.extractor.value,
+                        int(entity.generic),
+                        entity.first_seen,
+                        entity.last_seen,
+                        entity.evidence_count,
+                        len(entity.pages),
                     ),
                 )
                 if self.has_fts:
                     conn.execute(
                         "INSERT INTO entity_fts VALUES (?,?,?,?)",
-                        (entity.id, entity.name, " ".join(entity.aliases), entity.description or ""),
+                        (
+                            entity.id,
+                            entity.name,
+                            " ".join(entity.aliases),
+                            entity.description or "",
+                        ),
                     )
                 for mention in entity.mentions:
                     evidence[mention.evidence.id] = mention.evidence
@@ -286,9 +311,18 @@ class KGStore:
                 conn.execute(
                     "INSERT INTO relations VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
-                        relation.id, relation.subject_id, relation.predicate, relation.object_id, relation.fact,
-                        relation.confidence, relation.weight, relation.valid_from, relation.valid_to,
-                        relation.first_seen, relation.last_seen, relation.retired_at,
+                        relation.id,
+                        relation.subject_id,
+                        relation.predicate,
+                        relation.object_id,
+                        relation.fact,
+                        relation.confidence,
+                        relation.weight,
+                        relation.valid_from,
+                        relation.valid_to,
+                        relation.first_seen,
+                        relation.last_seen,
+                        relation.retired_at,
                     ),
                 )
                 if self.has_fts:
@@ -298,13 +332,23 @@ class KGStore:
                     )
                 for ev in relation.evidence:
                     evidence[ev.id] = ev
-                    conn.execute("INSERT OR IGNORE INTO relation_evidence VALUES (?,?)", (relation.id, ev.id))
+                    conn.execute(
+                        "INSERT OR IGNORE INTO relation_evidence VALUES (?,?)", (relation.id, ev.id)
+                    )
             for ev in evidence.values():
                 conn.execute(
                     "INSERT OR REPLACE INTO evidence VALUES (?,?,?,?,?,?,?,?,?,?)",
                     (
-                        ev.id, ev.page_key, ev.url, ev.section_id, ev.block_xpath, ev.span[0], ev.span[1],
-                        ev.quote, ev.content_hash, ev.crawled_at,
+                        ev.id,
+                        ev.page_key,
+                        ev.url,
+                        ev.section_id,
+                        ev.block_xpath,
+                        ev.span[0],
+                        ev.span[1],
+                        ev.quote,
+                        ev.content_hash,
+                        ev.crawled_at,
                     ),
                 )
         self._adjacency = None
@@ -312,10 +356,16 @@ class KGStore:
     # -- the LLM cache ----------------------------------------------------------------------
 
     def cache_get(self, key: str) -> tuple[str, Usage, str] | None:
-        row = self._conn.execute("SELECT response, input_tokens, output_tokens, model FROM llm_cache WHERE key=?", (key,)).fetchone()
+        row = self._conn.execute(
+            "SELECT response, input_tokens, output_tokens, model FROM llm_cache WHERE key=?", (key,)
+        ).fetchone()
         if row is None:
             return None
-        return str(row["response"]), Usage(int(row["input_tokens"]), int(row["output_tokens"])), str(row["model"])
+        return (
+            str(row["response"]),
+            Usage(int(row["input_tokens"]), int(row["output_tokens"])),
+            str(row["model"]),
+        )
 
     def cache_put(self, key: str, response: str, usage: Usage, model: str) -> None:
         self._conn.execute(
@@ -341,7 +391,13 @@ class KGStore:
         row = self._conn.execute("SELECT * FROM build_runs ORDER BY id DESC LIMIT 1").fetchone()
         if row is None:
             return None
-        return {"id": row["id"], "started": row["started"], "finished": row["finished"], "model": row["model"], **json.loads(row["stats"])}
+        return {
+            "id": row["id"],
+            "started": row["started"],
+            "finished": row["finished"],
+            "model": row["model"],
+            **json.loads(row["stats"]),
+        }
 
     # -- reading ----------------------------------------------------------------------------
 
@@ -368,17 +424,27 @@ class KGStore:
             marks = ",".join("?" * len(chunk))
             for row in self._conn.execute(f"SELECT * FROM entities WHERE id IN ({marks})", chunk):
                 out[row["id"]] = _entity(row)
-            mention_rows += self._conn.execute(f"SELECT * FROM mentions WHERE entity_id IN ({marks})", chunk).fetchall()
-            attribute_rows += self._conn.execute(f"SELECT * FROM attributes WHERE entity_id IN ({marks})", chunk).fetchall()
-        evidence = self._evidence_rows([r["evidence_id"] for r in mention_rows] + [r["evidence_id"] for r in attribute_rows])
+            mention_rows += self._conn.execute(
+                f"SELECT * FROM mentions WHERE entity_id IN ({marks})", chunk
+            ).fetchall()
+            attribute_rows += self._conn.execute(
+                f"SELECT * FROM attributes WHERE entity_id IN ({marks})", chunk
+            ).fetchall()
+        evidence = self._evidence_rows(
+            [r["evidence_id"] for r in mention_rows] + [r["evidence_id"] for r in attribute_rows]
+        )
         for row in mention_rows:
             ev = evidence.get(row["evidence_id"])
             if ev is not None and row["entity_id"] in out:
-                out[row["entity_id"]].mentions.append(Mention(row["entity_id"], row["surface"], ev, float(row["confidence"])))
+                out[row["entity_id"]].mentions.append(
+                    Mention(row["entity_id"], row["surface"], ev, float(row["confidence"]))
+                )
         for row in attribute_rows:
             ev = evidence.get(row["evidence_id"])
             if ev is not None and row["entity_id"] in out:
-                out[row["entity_id"]].attributes.setdefault(row["key"], []).append(Attribute(row["key"], row["value"], row["unit"], ev))
+                out[row["entity_id"]].attributes.setdefault(row["key"], []).append(
+                    Attribute(row["key"], row["value"], row["unit"], ev)
+                )
         return out
 
     def relations(self, ids: Iterable[str]) -> dict[str, Relation]:
@@ -389,8 +455,12 @@ class KGStore:
         links: list[sqlite3.Row] = []
         for chunk in _chunks(wanted, 500):
             marks = ",".join("?" * len(chunk))
-            rows += self._conn.execute(f"SELECT * FROM relations WHERE id IN ({marks})", chunk).fetchall()
-            links += self._conn.execute(f"SELECT * FROM relation_evidence WHERE relation_id IN ({marks})", chunk).fetchall()
+            rows += self._conn.execute(
+                f"SELECT * FROM relations WHERE id IN ({marks})", chunk
+            ).fetchall()
+            links += self._conn.execute(
+                f"SELECT * FROM relation_evidence WHERE relation_id IN ({marks})", chunk
+            ).fetchall()
         evidence = self._evidence_rows(r["evidence_id"] for r in links)
         by_relation: dict[str, list[Evidence]] = defaultdict(list)
         for link in links:
@@ -405,7 +475,12 @@ class KGStore:
         return out
 
     def iter_entities(self) -> Iterator[Entity]:
-        ids = [row[0] for row in self._conn.execute("SELECT id FROM entities ORDER BY evidence_count DESC, name").fetchall()]
+        ids = [
+            row[0]
+            for row in self._conn.execute(
+                "SELECT id FROM entities ORDER BY evidence_count DESC, name"
+            ).fetchall()
+        ]
         for chunk in _chunks(ids, 500):
             loaded = self.entities(chunk)
             for entity_id in chunk:
@@ -414,7 +489,12 @@ class KGStore:
 
     def iter_relations(self, *, include_retired: bool = False) -> Iterator[Relation]:
         clause = "" if include_retired else "WHERE retired_at IS NULL"
-        ids = [row[0] for row in self._conn.execute(f"SELECT id FROM relations {clause} ORDER BY weight DESC, id").fetchall()]
+        ids = [
+            row[0]
+            for row in self._conn.execute(
+                f"SELECT id FROM relations {clause} ORDER BY weight DESC, id"
+            ).fetchall()
+        ]
         for chunk in _chunks(ids, 500):
             loaded = self.relations(chunk)
             for relation_id in chunk:
@@ -422,13 +502,17 @@ class KGStore:
                     yield loaded[relation_id]
 
     def iter_evidence(self) -> Iterator[Evidence]:
-        for row in self._conn.execute("SELECT * FROM evidence ORDER BY page_key, block_xpath, span_start"):
+        for row in self._conn.execute(
+            "SELECT * FROM evidence ORDER BY page_key, block_xpath, span_start"
+        ):
             yield _evidence(row)
 
     def entity_summaries(self, *, limit: int = 5000, min_evidence: int = 1) -> list[dict[str, Any]]:
         """Lightweight rows for a graph view: id, type, name, evidence count, degree."""
         degree: Counter[str] = Counter()
-        for row in self._conn.execute("SELECT subject_id, object_id FROM relations WHERE retired_at IS NULL"):
+        for row in self._conn.execute(
+            "SELECT subject_id, object_id FROM relations WHERE retired_at IS NULL"
+        ):
             degree[row[0]] += 1
             degree[row[1]] += 1
         rows = self._conn.execute(
@@ -436,15 +520,31 @@ class KGStore:
             (min_evidence, limit),
         ).fetchall()
         return [
-            {"id": r["id"], "type": r["type"], "name": r["name"], "evidence": int(r["evidence_count"]), "degree": degree[r["id"]], "generic": bool(r["generic"])}
+            {
+                "id": r["id"],
+                "type": r["type"],
+                "name": r["name"],
+                "evidence": int(r["evidence_count"]),
+                "degree": degree[r["id"]],
+                "generic": bool(r["generic"]),
+            }
             for r in rows
         ]
 
     def relation_summaries(self, entity_ids: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        rows = self._conn.execute("SELECT id, subject_id, predicate, object_id, weight, fact FROM relations WHERE retired_at IS NULL").fetchall()
+        rows = self._conn.execute(
+            "SELECT id, subject_id, predicate, object_id, weight, fact FROM relations WHERE retired_at IS NULL"
+        ).fetchall()
         allowed = set(entity_ids) if entity_ids is not None else None
         return [
-            {"id": r["id"], "source": r["subject_id"], "target": r["object_id"], "predicate": r["predicate"], "weight": int(r["weight"]), "fact": r["fact"]}
+            {
+                "id": r["id"],
+                "source": r["subject_id"],
+                "target": r["object_id"],
+                "predicate": r["predicate"],
+                "weight": int(r["weight"]),
+                "fact": r["fact"],
+            }
             for r in rows
             if allowed is None or (r["subject_id"] in allowed and r["object_id"] in allowed)
         ]
@@ -467,9 +567,15 @@ class KGStore:
         """entity id -> [(neighbour id, relation id, weight)], both directions, cached."""
         if self._adjacency is None:
             adjacency: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
-            for row in self._conn.execute("SELECT id, subject_id, object_id, weight FROM relations WHERE retired_at IS NULL"):
-                adjacency[row["subject_id"]].append((row["object_id"], row["id"], int(row["weight"])))
-                adjacency[row["object_id"]].append((row["subject_id"], row["id"], int(row["weight"])))
+            for row in self._conn.execute(
+                "SELECT id, subject_id, object_id, weight FROM relations WHERE retired_at IS NULL"
+            ):
+                adjacency[row["subject_id"]].append(
+                    (row["object_id"], row["id"], int(row["weight"]))
+                )
+                adjacency[row["object_id"]].append(
+                    (row["subject_id"], row["id"], int(row["weight"]))
+                )
             self._adjacency = dict(adjacency)
         return self._adjacency
 
@@ -490,7 +596,9 @@ class KGStore:
                 rows = []
             # FTS5's bm25() is negative and lower is better; negate for a score.
             return [(r["id"], -float(r["rank"])) for r in rows]
-        return self._scan("SELECT id, name || ' ' || aliases AS text FROM entities", question, limit)
+        return self._scan(
+            "SELECT id, name || ' ' || aliases AS text FROM entities", question, limit
+        )
 
     def search_facts(self, question: str, *, limit: int = 30) -> list[tuple[str, float]]:
         if self.has_fts:
@@ -505,7 +613,11 @@ class KGStore:
             except sqlite3.OperationalError:
                 rows = []
             return [(r["id"], -float(r["rank"])) for r in rows]
-        return self._scan("SELECT id, fact || ' ' || predicate AS text FROM relations WHERE retired_at IS NULL", question, limit)
+        return self._scan(
+            "SELECT id, fact || ' ' || predicate AS text FROM relations WHERE retired_at IS NULL",
+            question,
+            limit,
+        )
 
     def _scan(self, sql: str, question: str, limit: int) -> list[tuple[str, float]]:
         """No FTS5: a term-overlap score over every row. Slow, correct, and rarely needed."""
@@ -527,9 +639,21 @@ class KGStore:
         conn = self._conn
         counts = {
             table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").scalar() or 0)
-            for table in ("entities", "relations", "evidence", "mentions", "attributes", "llm_cache")
+            for table in (
+                "entities",
+                "relations",
+                "evidence",
+                "mentions",
+                "attributes",
+                "llm_cache",
+            )
         }
-        types = Counter({row[0]: int(row[1]) for row in conn.execute("SELECT type, COUNT(*) FROM entities GROUP BY type")})
+        types = Counter(
+            {
+                row[0]: int(row[1])
+                for row in conn.execute("SELECT type, COUNT(*) FROM entities GROUP BY type")
+            }
+        )
         from webgraph.kg.prompts import CORE_TYPES
 
         core = set(CORE_TYPES)
@@ -537,10 +661,25 @@ class KGStore:
             "counts": counts,
             "types": dict(types.most_common()),
             "open_types": {t: n for t, n in types.most_common() if t not in core},
-            "predicates": {row[0]: int(row[1]) for row in conn.execute("SELECT predicate, COUNT(*) FROM relations GROUP BY predicate ORDER BY 2 DESC LIMIT 40")},
-            "pages": int(conn.execute("SELECT COUNT(DISTINCT page_key) FROM evidence").scalar() or 0),
-            "generic_entities": int(conn.execute("SELECT COUNT(*) FROM entities WHERE generic=1").scalar() or 0),
-            "structured_entities": int(conn.execute("SELECT COUNT(*) FROM entities WHERE extractor=?", (Extractor.STRUCTURED_DATA.value,)).scalar() or 0),
+            "predicates": {
+                row[0]: int(row[1])
+                for row in conn.execute(
+                    "SELECT predicate, COUNT(*) FROM relations GROUP BY predicate ORDER BY 2 DESC LIMIT 40"
+                )
+            },
+            "pages": int(
+                conn.execute("SELECT COUNT(DISTINCT page_key) FROM evidence").scalar() or 0
+            ),
+            "generic_entities": int(
+                conn.execute("SELECT COUNT(*) FROM entities WHERE generic=1").scalar() or 0
+            ),
+            "structured_entities": int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM entities WHERE extractor=?",
+                    (Extractor.STRUCTURED_DATA.value,),
+                ).scalar()
+                or 0
+            ),
             "fts": self.has_fts,
             "last_run": self.last_run(),
             "path": str(self.path),

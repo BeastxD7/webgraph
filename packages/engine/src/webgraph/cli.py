@@ -193,12 +193,18 @@ def format_site_report(report: Any) -> list[str]:
     lines += [rule, f"SITE REPORT  {report.url}", rule]
     if not report.reachable:
         lines += ["", "  NO REPORT: " + (report.refusal or "the root could not be read"), ""]
-        lines.append("  The engine does not disguise itself to get past a refusal; see the message above.")
+        lines.append(
+            "  The engine does not disguise itself to get past a refusal; see the message above."
+        )
         return lines
     score = report.score
-    lines += ["", f"  AI-READINESS  {score.total}/100" + (
-        f"  (of {score.measured_weight} measured points)" if score.measured_weight < 100 else ""
-    )]
+    lines += [
+        "",
+        f"  AI-READINESS  {score.total}/100"
+        + (
+            f"  (of {score.measured_weight} measured points)" if score.measured_weight < 100 else ""
+        ),
+    ]
     for sub in score.subscores:
         earned = "unmeasured" if sub.score is None else f"{sub.score:>4.1f}/{sub.weight}"
         lines.append(f"    {earned:>12}  {sub.label}")
@@ -216,12 +222,19 @@ def format_site_report(report: Any) -> list[str]:
     lines += ["", "  STACK"]
     if report.stack:
         for entry in report.stack:
-            when = f"  released {entry.released.isoformat()}, {entry.age_years:g} years ago" if entry.released else ""
+            when = (
+                f"  released {entry.released.isoformat()}, {entry.age_years:g} years ago"
+                if entry.released
+                else ""
+            )
             version = f" {entry.version}" if entry.version else ""
             lines.append(f"    {entry.name}{version}{when}")
     else:
         lines.append("    none detected")
-    lines += ["", "  PAGES  (static words / rendered words / union; wall; hidden links; dead links; consent)"]
+    lines += [
+        "",
+        "  PAGES  (static words / rendered words / union; wall; hidden links; dead links; consent)",
+    ]
     for page in report.pages:
         if page.error:
             lines.append(f"    {page.requested_url}")
@@ -240,7 +253,9 @@ def format_site_report(report: Any) -> list[str]:
     for bot in robots.bots:
         via = {"named": "named", "wildcard": "via *", "none": "not mentioned"}[bot.via]
         delay = f", crawl-delay {bot.crawl_delay:g}s" if bot.crawl_delay else ""
-        word = {"allowed": "allowed", "partly": "partly restricted", "blocked": "blocked"}[bot.access]
+        word = {"allowed": "allowed", "partly": "partly restricted", "blocked": "blocked"}[
+            bot.access
+        ]
         paths = ""
         if bot.content_paths:
             paths = f"; {len(bot.content_paths)} content paths: " + ", ".join(bot.content_paths[:2])
@@ -267,7 +282,9 @@ def format_site_report(report: Any) -> list[str]:
                 mark = {True: "yes", False: "no ", None: "?  "}[signal.present]
                 lines.append(f"      [{mark}] {signal.label:<28} {signal.detail}")
                 lines.append(f"            {signal.meaning}")
-                lines.append(f"            honoured by: {signal.who_honours}  spec: {signal.spec_url}")
+                lines.append(
+                    f"            honoured by: {signal.who_honours}  spec: {signal.spec_url}"
+                )
     how = report.measured
     lines += [
         "",
@@ -316,9 +333,7 @@ def _cmd_site(args: argparse.Namespace) -> int:
     return 0
 
 
-def _crawl_graph(
-    urls: list[str], *, max_pages: int, concurrency: int, complete: bool
-) -> SiteGraph:
+def _crawl_graph(urls: list[str], *, max_pages: int, concurrency: int, complete: bool) -> SiteGraph:
     """Crawl one or more sites and return one graph over all of them.
 
     Several roots produce a corpus, merged into a single graph. Off-site links between the
@@ -523,7 +538,9 @@ def _kg_graph(args: argparse.Namespace, *, crawl: bool) -> SiteGraph | None:
     if stored is not None or not crawl:
         return stored
     print(f"no stored crawl of {args.site}; crawling {args.max_pages} pages", file=sys.stderr)
-    graph = _crawl_graph([args.site], max_pages=args.max_pages, concurrency=args.concurrency, complete=False)
+    graph = _crawl_graph(
+        [args.site], max_pages=args.max_pages, concurrency=args.concurrency, complete=False
+    )
     store.save(graph, args.site)
     return graph
 
@@ -564,14 +581,20 @@ def _cmd_kg_build(args: argparse.Namespace) -> int:
             elif kind == "section":
                 mark = "cache" if event.get("cached") else "model"
                 if "error" in event:
-                    print(f"  [{event['done']:>4}/{event['total']}] error: {event['error'][:80]}", file=sys.stderr)
+                    print(
+                        f"  [{event['done']:>4}/{event['total']}] error: {event['error'][:80]}",
+                        file=sys.stderr,
+                    )
                 else:
                     print(
                         f"  [{event['done']:>4}/{event['total']}] {mark:5} +{event['accepted']:<3} -{event['rejected']:<2} {event['heading'][:50]}",
                         file=sys.stderr,
                     )
             elif kind == "budget":
-                print(f"cap reached: {event['reason']} ({event['remaining_sections']} sections left)", file=sys.stderr)
+                print(
+                    f"cap reached: {event['reason']} ({event['remaining_sections']} sections left)",
+                    file=sys.stderr,
+                )
             elif kind == "done":
                 stats = event["stats"]
                 print(
@@ -593,7 +616,10 @@ def _cmd_kg_ask(args: argparse.Namespace) -> int:
     from webgraph.kg.store import KGStore
 
     if not KGStore.exists_for(args.site, args.kg_dir):
-        print(f"no knowledge graph for {args.site}; run `webgraph kg build {args.site}` first", file=sys.stderr)
+        print(
+            f"no knowledge graph for {args.site}; run `webgraph kg build {args.site}` first",
+            file=sys.stderr,
+        )
         return 1
     provider = None if args.no_model else _kg_provider(args)
     graph = _kg_graph(args, crawl=False)
@@ -604,7 +630,9 @@ def _cmd_kg_ask(args: argparse.Namespace) -> int:
             if args.json:
                 print(json.dumps(event, default=str))
             elif event["type"] == "seeds":
-                print("seeds: " + ", ".join(e["name"] for e in event["entities"][:6]), file=sys.stderr)
+                print(
+                    "seeds: " + ", ".join(e["name"] for e in event["entities"][:6]), file=sys.stderr
+                )
             elif event["type"] == "hop":
                 print(f"hop {event['hop']}: {len(event['edges'])} edges", file=sys.stderr)
             elif event["type"] == "evidence":
@@ -619,9 +647,14 @@ def _cmd_kg_ask(args: argparse.Namespace) -> int:
             print(answer["text"])
             print()
             for citation in answer["citations"]:
-                print(f"  [{citation['n']}] {citation['anchor']}\n      \u201c{citation['quote'][:160]}\u201d")
+                print(
+                    f"  [{citation['n']}] {citation['anchor']}\n      \u201c{citation['quote'][:160]}\u201d"
+                )
             if answer["unsupported"]:
-                print(f"\n  {answer['unsupported']} sentence(s) cite nothing on the site and are flagged.", file=sys.stderr)
+                print(
+                    f"\n  {answer['unsupported']} sentence(s) cite nothing on the site and are flagged.",
+                    file=sys.stderr,
+                )
     finally:
         store.close()
     return 0
@@ -666,11 +699,18 @@ def _cmd_kg_sync_neo4j(args: argparse.Namespace) -> int:
         return 1
     password = os.environ.get(args.password_env, "")
     if not password:
-        raise SystemExit(f"set {args.password_env} to the database password (never pass it on the command line)")
+        raise SystemExit(
+            f"set {args.password_env} to the database password (never pass it on the command line)"
+        )
     store = KGStore.for_site(args.site, args.kg_dir)
     try:
         for event in sync_to_neo4j(
-            store, uri=args.uri, user=args.user, password=password, database=args.database, typed_edges=args.typed_edges
+            store,
+            uri=args.uri,
+            user=args.user,
+            password=password,
+            database=args.database,
+            typed_edges=args.typed_edges,
         ):
             if event["type"] == "batch":
                 print(f"  {event['label']:<15} {event['rows']:>6} rows", file=sys.stderr)
@@ -720,9 +760,7 @@ def _cmd_watch_create(args: argparse.Namespace) -> int:
         options["noise"] = False
     if args.config:
         options.update(json.loads(Path(args.config).read_text(encoding="utf-8")))
-    watch = create_watch(
-        args.url, options, schedule_seconds=args.schedule_seconds, store=args.db
-    )
+    watch = create_watch(args.url, options, schedule_seconds=args.schedule_seconds, store=args.db)
     if args.json:
         print(json.dumps(watch.as_dict(), indent=2))
     else:
@@ -833,14 +871,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_page_args(text)
     text.add_argument("--json", action="store_true", help="emit JSON with diagnostics")
     text.add_argument(
-        "--markdown", "-m", action="store_true",
+        "--markdown",
+        "-m",
+        action="store_true",
         help="emit Markdown with headings, images, links and tables preserved",
     )
     text.add_argument(
         "--front-matter", action="store_true", help="prepend YAML front matter (with --markdown)"
     )
     text.add_argument(
-        "--content", "-c", action="store_true",
+        "--content",
+        "-c",
+        action="store_true",
         help="keep only the page's content: navigation, footers and boilerplate removed",
     )
     text.set_defaults(func=_cmd_text)
@@ -869,18 +911,14 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--json", action="store_true", help="emit the whole report as JSON")
     report.set_defaults(func=_cmd_report)
 
-    site = subparsers.add_parser(
-        "site", help="analyse, enumerate and extract an entire site"
-    )
+    site = subparsers.add_parser("site", help="analyse, enumerate and extract an entire site")
     site.add_argument("url", help="site root URL")
     site.add_argument("--schema", help="optional JSON Schema file to extract against")
     site.add_argument("--max-pages", type=int, default=40)
     site.add_argument("--concurrency", type=int, default=4)
     site.set_defaults(func=_cmd_site)
 
-    graph = subparsers.add_parser(
-        "graph", help="crawl one or more sites and export the graph"
-    )
+    graph = subparsers.add_parser("graph", help="crawl one or more sites and export the graph")
     graph.add_argument("urls", nargs="+", help="site roots; several are merged into one graph")
     graph.add_argument("--max-pages", type=int, default=40, help="0 for unlimited")
     graph.add_argument("--concurrency", type=int, default=6)
@@ -898,9 +936,7 @@ def build_parser() -> argparse.ArgumentParser:
     graph.add_argument("--out", help="write here instead of stdout")
     graph.set_defaults(func=_cmd_graph)
 
-    ask = subparsers.add_parser(
-        "ask", help="assemble a bounded context about a question"
-    )
+    ask = subparsers.add_parser("ask", help="assemble a bounded context about a question")
     ask.add_argument("query", help="what the context should be about")
     ask.add_argument("urls", nargs="*", help="site roots to crawl first")
     ask.add_argument("--graph", help="use a graph written by `webgraph graph` instead")
@@ -910,9 +946,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--complete", action="store_true")
     ask.set_defaults(func=_cmd_ask)
 
-    diff = subparsers.add_parser(
-        "diff", help="report what changed since the last crawl of a site"
-    )
+    diff = subparsers.add_parser("diff", help="report what changed since the last crawl of a site")
     diff.add_argument("url", help="site root URL")
     diff.add_argument("--store", help="graph directory (default: the shared cache)")
     diff.add_argument("--max-pages", type=int, default=40, help="0 for unlimited")
@@ -920,9 +954,7 @@ def build_parser() -> argparse.ArgumentParser:
     diff.add_argument("--complete", action="store_true")
     diff.add_argument("--detail", type=int, default=8, help="sections listed per page")
     diff.add_argument("--show-text", action="store_true", help="print before and after")
-    diff.add_argument(
-        "--dry-run", action="store_true", help="do not update the stored baseline"
-    )
+    diff.add_argument("--dry-run", action="store_true", help="do not update the stored baseline")
     diff.add_argument(
         "--save-only", action="store_true", help="record a baseline without comparing"
     )
@@ -939,28 +971,53 @@ def build_parser() -> argparse.ArgumentParser:
     kg_sub = kg.add_subparsers(dest="kg_command", required=True)
 
     def add_provider_args(sub: argparse.ArgumentParser, *, answer: bool = False) -> None:
-        sub.add_argument("--provider", help="openai-compatible | anthropic | gemini, or a preset: openai, groq, ollama, ...")
+        sub.add_argument(
+            "--provider",
+            help="openai-compatible | anthropic | gemini, or a preset: openai, groq, ollama, ...",
+        )
         sub.add_argument("--base-url", help="API base URL (Ollama: http://localhost:11434/v1)")
         sub.add_argument("--model", help="model name; default WEBGRAPH_LLM_MODEL")
         if answer:
-            sub.add_argument("--answer-model", help="a stronger model for answers; default the extraction model")
-        sub.add_argument("--api-key-env", help="environment variable holding the key (never the key itself)")
-        sub.add_argument("--kg-dir", help="where knowledge graphs are kept (default WEBGRAPH_KG_DIR or ~/.cache/webgraph/kg)")
+            sub.add_argument(
+                "--answer-model", help="a stronger model for answers; default the extraction model"
+            )
+        sub.add_argument(
+            "--api-key-env", help="environment variable holding the key (never the key itself)"
+        )
+        sub.add_argument(
+            "--kg-dir",
+            help="where knowledge graphs are kept (default WEBGRAPH_KG_DIR or ~/.cache/webgraph/kg)",
+        )
 
     def add_graph_source_args(sub: argparse.ArgumentParser) -> None:
         sub.add_argument("--graph", help="a JSONL graph written by `webgraph graph`")
-        sub.add_argument("--pages", help="a directory of saved HTML pages, mapped onto the site root")
+        sub.add_argument(
+            "--pages", help="a directory of saved HTML pages, mapped onto the site root"
+        )
 
-    kg_build = kg_sub.add_parser("build", help="read every section with the model and write the graph")
+    kg_build = kg_sub.add_parser(
+        "build", help="read every section with the model and write the graph"
+    )
     kg_build.add_argument("site", help="site root URL (crawled before, or crawled now)")
     add_graph_source_args(kg_build)
     add_provider_args(kg_build)
-    kg_build.add_argument("--max-pages", type=int, default=40, help="pages to crawl when no crawl is stored")
-    kg_build.add_argument("--concurrency", type=int, default=6, help="crawl concurrency when crawling")
-    kg_build.add_argument("--max-pages-kg", type=int, default=0, help="cap on pages read by the model; 0 = all")
+    kg_build.add_argument(
+        "--max-pages", type=int, default=40, help="pages to crawl when no crawl is stored"
+    )
+    kg_build.add_argument(
+        "--concurrency", type=int, default=6, help="crawl concurrency when crawling"
+    )
+    kg_build.add_argument(
+        "--max-pages-kg", type=int, default=0, help="cap on pages read by the model; 0 = all"
+    )
     kg_build.add_argument("--max-sections", type=int, default=0, help="cap on sections; 0 = all")
     kg_build.add_argument("--max-input-tokens", type=int, default=2_000_000)
-    kg_build.add_argument("--max-usd", type=float, default=0.0, help="stop at this spend (needs WEBGRAPH_LLM_PRICE_IN/OUT)")
+    kg_build.add_argument(
+        "--max-usd",
+        type=float,
+        default=0.0,
+        help="stop at this spend (needs WEBGRAPH_LLM_PRICE_IN/OUT)",
+    )
     kg_build.add_argument("--rebuild", action="store_true", help="ignore the model cache")
     kg_build.add_argument("--json", action="store_true", help="emit every event as a JSON line")
     kg_build.set_defaults(func=_cmd_kg_build)
@@ -970,23 +1027,31 @@ def build_parser() -> argparse.ArgumentParser:
     kg_ask.add_argument("question")
     add_graph_source_args(kg_ask)
     add_provider_args(kg_ask, answer=True)
-    kg_ask.add_argument("--no-model", action="store_true", help="extractive answer: the best-matching quotes, cited")
+    kg_ask.add_argument(
+        "--no-model", action="store_true", help="extractive answer: the best-matching quotes, cited"
+    )
     kg_ask.add_argument("--json", action="store_true", help="emit every event as a JSON line")
     kg_ask.set_defaults(func=_cmd_kg_ask)
 
     kg_export = kg_sub.add_parser("export", help="write the graph as JSONL, Cypher or JSON-LD")
     kg_export.add_argument("site")
     kg_export.add_argument("--format", choices=("jsonl", "cypher", "jsonld"), default="jsonl")
-    kg_export.add_argument("--typed-edges", action="store_true", help="cypher: also emit -[:PREDICATE]-> edges")
+    kg_export.add_argument(
+        "--typed-edges", action="store_true", help="cypher: also emit -[:PREDICATE]-> edges"
+    )
     kg_export.add_argument("--out", help="write here instead of stdout")
     kg_export.add_argument("--kg-dir")
     kg_export.set_defaults(func=_cmd_kg_export)
 
-    kg_sync = kg_sub.add_parser("sync-neo4j", help="push the graph into Neo4j over bolt (extra: kg-neo4j)")
+    kg_sync = kg_sub.add_parser(
+        "sync-neo4j", help="push the graph into Neo4j over bolt (extra: kg-neo4j)"
+    )
     kg_sync.add_argument("site")
     kg_sync.add_argument("--uri", default="bolt://localhost:7687")
     kg_sync.add_argument("--user", default="neo4j")
-    kg_sync.add_argument("--password-env", default="NEO4J_PASSWORD", help="variable holding the password")
+    kg_sync.add_argument(
+        "--password-env", default="NEO4J_PASSWORD", help="variable holding the password"
+    )
     kg_sync.add_argument("--database")
     kg_sync.add_argument("--typed-edges", action="store_true")
     kg_sync.add_argument("--kg-dir")
@@ -998,7 +1063,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     def db_flag(sub: argparse.ArgumentParser) -> None:
         sub.add_argument(
-            "--db", help="SQLite file (default: ~/.cache/webgraph/watch.sqlite3 or WEBGRAPH_WATCH_DB)"
+            "--db",
+            help="SQLite file (default: ~/.cache/webgraph/watch.sqlite3 or WEBGRAPH_WATCH_DB)",
         )
         sub.add_argument("--json", action="store_true", help="emit JSON")
 
@@ -1032,9 +1098,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     changes = watch_sub.add_parser("changes", help="print recorded changes")
     changes.add_argument("id", help="watch id")
-    changes.add_argument(
-        "--since", help="epoch seconds, an ISO date, or a span such as 12h or 7d"
-    )
+    changes.add_argument("--since", help="epoch seconds, an ISO date, or a span such as 12h or 7d")
     changes.add_argument("--format", choices=("json", "md", "rss", "atom"), default="md")
     db_flag(changes)
     changes.set_defaults(func=_cmd_watch_changes)
