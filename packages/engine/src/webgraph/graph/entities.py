@@ -81,10 +81,34 @@ _SYMBOLIC: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-
 
 _COMMON_ANCHORS: Final[frozenset[str]] = frozenset(
     {
-        "here", "this", "link", "more", "read more", "learn more", "docs",
-        "documentation", "home", "back", "next", "previous", "index", "source",
-        "github", "edit", "click here", "see", "see also", "reference", "guide",
-        "api", "overview", "changelog", "download", "contents", "top", "page",
+        "here",
+        "this",
+        "link",
+        "more",
+        "read more",
+        "learn more",
+        "docs",
+        "documentation",
+        "home",
+        "back",
+        "next",
+        "previous",
+        "index",
+        "source",
+        "github",
+        "edit",
+        "click here",
+        "see",
+        "see also",
+        "reference",
+        "guide",
+        "api",
+        "overview",
+        "changelog",
+        "download",
+        "contents",
+        "top",
+        "page",
     }
 )
 """Anchor texts that name the act of linking rather than the thing linked to."""

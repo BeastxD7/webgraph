@@ -95,12 +95,19 @@ def fetches(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     return counts
 
 
-CONFIG = SiteConfig(max_pages=3, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False)
+CONFIG = SiteConfig(
+    max_pages=3, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False
+)
 
 # `extract_site` enumerates before it fetches, and link-following enumeration is a network
 # walk this fixture does not fake. The sitemap the fake probe reports is enough.
 BATCH_CONFIG = SiteConfig(
-    max_pages=3, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False, follow_links=False
+    max_pages=3,
+    concurrency=1,
+    delay_seconds=0.0,
+    host_interval_seconds=0.0,
+    verify_inventory=False,
+    follow_links=False,
 )
 
 
@@ -143,7 +150,13 @@ class TestRootIsFetchedOnce:
         assert ROOT not in fetches
 
     def test_budget_of_one_is_the_root_alone(self, fetches: dict[str, int]) -> None:
-        config = SiteConfig(max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False)
+        config = SiteConfig(
+            max_pages=1,
+            concurrency=1,
+            delay_seconds=0.0,
+            host_interval_seconds=0.0,
+            verify_inventory=False,
+        )
         pages = [e for e in stream_site(ROOT, config=config) if e["type"] == "page"]
         assert [p["url"] for p in pages] == [ROOT]
         assert not any(url in fetches for url in PAGES)
@@ -186,7 +199,11 @@ class TestContentIsSelected:
 
     def test_main_content_can_be_switched_off(self) -> None:
         config = SiteConfig(
-            max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False,
+            max_pages=1,
+            concurrency=1,
+            delay_seconds=0.0,
+            host_interval_seconds=0.0,
+            verify_inventory=False,
             main_content=False,
         )
         first = next(e for e in stream_site(ROOT, config=config) if e["type"] == "page")
@@ -194,7 +211,11 @@ class TestContentIsSelected:
 
     def test_remove_chrome_off_means_no_content_view(self) -> None:
         config = SiteConfig(
-            max_pages=1, concurrency=1, delay_seconds=0.0, host_interval_seconds=0.0, verify_inventory=False,
+            max_pages=1,
+            concurrency=1,
+            delay_seconds=0.0,
+            host_interval_seconds=0.0,
+            verify_inventory=False,
             remove_chrome=False,
         )
         first = next(e for e in stream_site(ROOT, config=config) if e["type"] == "page")

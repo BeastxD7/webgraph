@@ -231,7 +231,10 @@ class TestDuplicateResolution:
         # Repeated text stays deduplicated on an unmeasured page: measured on WCXB and
         # Zyte, hidden copies of prose outnumber deliberate repeats by far (see
         # `_substantial`); a rendered page keeps both through their rectangles.
-        assert texts.count("A sentence the author repeats on purpose, for effect, twice on the page.") == 1
+        assert (
+            texts.count("A sentence the author repeats on purpose, for effect, twice on the page.")
+            == 1
+        )
         assert texts.count("Every word counts") == 1
 
     def test_a_repeated_run_is_a_hidden_layout_and_goes(self) -> None:
@@ -239,7 +242,9 @@ class TestDuplicateResolution:
         first block for block, and is a twin, not the page repeating itself."""
         from webgraph.pipeline import build_document
 
-        table = "<table><tr><th>Plan</th><th>Price</th></tr><tr><td>Pro</td><td>49</td></tr></table>"
+        table = (
+            "<table><tr><th>Plan</th><th>Price</th></tr><tr><td>Pro</td><td>49</td></tr></table>"
+        )
         cards = f"<p>Card one: the first product on the shelf.</p>{table}<p>Card two: the second product.</p>"
         html = f"<html><body><h1>Shelf</h1><div class='desktop'>{cards}</div><div class='mobile'>{cards}</div></body></html>"
         texts = [b.text for b in build_document(html, "https://x.test/").blocks]

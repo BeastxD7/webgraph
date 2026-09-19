@@ -64,9 +64,15 @@ class TestMarkupSignals:
             ('<script src="/js/jquery.min.js">', "jQuery"),
             ('<link href="/css/bootstrap.min.css">', "Bootstrap"),
             ('<script src="https://static.hotjar.com/c/hotjar.js">', "Hotjar"),
-            ('<script src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC">', "Google Tag Manager"),
+            (
+                '<script src="https://www.googletagmanager.com/gtm.js?id=GTM-ABC">',
+                "Google Tag Manager",
+            ),
             ('<link href="https://fonts.googleapis.com/css?family=Inter">', "Google Font API"),
-            ('<script src="https://www.googletagmanager.com/gtag/js?id=UA-123">', "Google Analytics"),
+            (
+                '<script src="https://www.googletagmanager.com/gtag/js?id=UA-123">',
+                "Google Analytics",
+            ),
             ('<script src="/js/tailwind.min.css">', "Tailwind CSS"),
             ('<div id="__NEXT_DATA__">', "Next.js"),
         ],
@@ -194,7 +200,9 @@ class TestFalsePositives:
 
     def test_actually_loaded_script_is_still_detected(self) -> None:
         """The guard must not suppress genuine usage."""
-        html = '<script src="https://cdn.segment.com/analytics.js/v1/abc/analytics.min.js"></script>'
+        html = (
+            '<script src="https://cdn.segment.com/analytics.js/v1/abc/analytics.min.js"></script>'
+        )
         assert "Segment" in names(detect_technologies(html))
 
 
@@ -237,7 +245,7 @@ class TestComponentLibraryRules:
         assert "Lucide" not in mentioned
 
     def test_radix_needs_its_data_attribute(self) -> None:
-        names = {t.name for t in detect_technologies('<div data-radix-popper-content-wrapper>')}
+        names = {t.name for t in detect_technologies("<div data-radix-popper-content-wrapper>")}
         assert "Radix UI" in names
 
     def test_open_graph_and_pwa_are_read_from_link_and_meta(self) -> None:
@@ -280,7 +288,9 @@ class TestRuntimeSignals:
 
     def test_bundle_source_identifies_a_component_library(self) -> None:
         """Radix mounts its attributes only when a component opens; the bundle always names it."""
-        names = {t.name for t in detect_technologies("", bundle_source='import "@radix-ui/react-dialog"')}
+        names = {
+            t.name for t in detect_technologies("", bundle_source='import "@radix-ui/react-dialog"')
+        }
         assert "Radix UI" in names
 
     def test_absent_signals_produce_nothing(self) -> None:
@@ -389,8 +399,11 @@ class TestOutboundLinksAreNotEvidence:
         assert "Drupal" not in names(detect_technologies(html))
 
     def test_drupals_own_settings_attribute_needs_no_anchoring(self) -> None:
-        assert "Drupal" in names(detect_technologies('<script type="application/json" '
-                                                     'data-drupal-settings-json>{}</script>'))
+        assert "Drupal" in names(
+            detect_technologies(
+                '<script type="application/json" data-drupal-settings-json>{}</script>'
+            )
+        )
 
 
 class TestSameOriginAssets:

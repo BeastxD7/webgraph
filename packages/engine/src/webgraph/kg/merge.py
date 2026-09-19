@@ -86,7 +86,9 @@ _MINHASH_K: Final[int] = 64
 _BANDS: Final[int] = 16
 _PRIME: Final[int] = (1 << 61) - 1
 _RNG = random.Random(20260916)
-_HASHES: Final[list[tuple[int, int]]] = [(_RNG.randrange(1, _PRIME), _RNG.randrange(0, _PRIME)) for _ in range(_MINHASH_K)]
+_HASHES: Final[list[tuple[int, int]]] = [
+    (_RNG.randrange(1, _PRIME), _RNG.randrange(0, _PRIME)) for _ in range(_MINHASH_K)
+]
 
 
 def shingles(name: str, n: int = 3) -> frozenset[str]:
@@ -105,7 +107,10 @@ def jaccard(a: frozenset[str], b: frozenset[str]) -> float:
 def _minhash(shingle_set: frozenset[str]) -> list[int]:
     # A stable hash, not `hash()`: string hashing is salted per process, and the merge
     # must produce the same graph from one run to the next.
-    values = [int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=6).digest(), "big") for s in sorted(shingle_set)]
+    values = [
+        int.from_bytes(hashlib.blake2b(s.encode("utf-8"), digest_size=6).digest(), "big")
+        for s in sorted(shingle_set)
+    ]
     return [min((a * v + b) % _PRIME for v in values) for a, b in _HASHES]
 
 
@@ -160,7 +165,11 @@ class Merger:
     def add_structured(self, graph: SiteGraph) -> None:
         """JSON-LD / microdata entities, located in the page text so they carry evidence."""
         for observed in sorted(graph.entities.values(), key=lambda e: (e.type, e.name, e.key)):
-            if observed.type in {"Subject", "Symbol"} or not observed.name or len(observed.name) < 3:
+            if (
+                observed.type in {"Subject", "Symbol"}
+                or not observed.name
+                or len(observed.name) < 3
+            ):
                 continue
             draft = self._locate_structured(graph, observed)
             if draft is None:
@@ -190,14 +199,34 @@ class Merger:
                     text = ref.slice(section.text)
                     span = locate_quote(text, observed.name)
                     if span is not None:
-                        ev = Evidence(page.key, page.url, section.id, ref.xpath, span, text[span[0] : span[1]], page.content_hash)
-                        draft.mentions.append(Mention(entity_id="", surface=observed.name, evidence=ev))
+                        ev = Evidence(
+                            page.key,
+                            page.url,
+                            section.id,
+                            ref.xpath,
+                            span,
+                            text[span[0] : span[1]],
+                            page.content_hash,
+                        )
+                        draft.mentions.append(
+                            Mention(entity_id="", surface=observed.name, evidence=ev)
+                        )
                     for key, value in list(wanted.items()):
                         vspan = locate_quote(text, value)
                         if vspan is not None:
-                            ev = Evidence(page.key, page.url, section.id, ref.xpath, vspan, text[vspan[0] : vspan[1]], page.content_hash)
+                            ev = Evidence(
+                                page.key,
+                                page.url,
+                                section.id,
+                                ref.xpath,
+                                vspan,
+                                text[vspan[0] : vspan[1]],
+                                page.content_hash,
+                            )
                             unit = currency if key == "price" else ""
-                            draft.attributes.append(Attribute(key=snake_case(key), value=value, unit=unit, evidence=ev))
+                            draft.attributes.append(
+                                Attribute(key=snake_case(key), value=value, unit=unit, evidence=ev)
+                            )
                             del wanted[key]
         return draft if draft.mentions else None
 
@@ -208,11 +237,22 @@ class Merger:
                 name=entity.name,
                 aliases=list(entity.aliases),
                 attributes=list(entity.attributes),
-                mentions=[Mention(entity_id="", surface=m.surface, evidence=m.evidence) for m in entity.mentions],
+                mentions=[
+                    Mention(entity_id="", surface=m.surface, evidence=m.evidence)
+                    for m in entity.mentions
+                ],
             )
             self._absorb(draft)
         for relation in extracted.relations:
-            self._relations.append((relation.subject, relation.predicate, relation.object, relation.fact, list(relation.evidence)))
+            self._relations.append(
+                (
+                    relation.subject,
+                    relation.predicate,
+                    relation.object,
+                    relation.fact,
+                    list(relation.evidence),
+                )
+            )
 
     # -- merging ------------------------------------------------------------------------
 
@@ -251,10 +291,17 @@ class Merger:
         return None
 
     def _merge_into(self, target: _Draft, draft: _Draft) -> None:
-        if draft.extractor is Extractor.STRUCTURED_DATA and target.extractor is not Extractor.STRUCTURED_DATA:
+        if (
+            draft.extractor is Extractor.STRUCTURED_DATA
+            and target.extractor is not Extractor.STRUCTURED_DATA
+        ):
             # Structured wins: its type and its name, the model's rows underneath.
             del self._drafts[target.key]
-            target.type, target.name, target.extractor = draft.type, draft.name, Extractor.STRUCTURED_DATA
+            target.type, target.name, target.extractor = (
+                draft.type,
+                draft.name,
+                Extractor.STRUCTURED_DATA,
+            )
             self._drafts[target.key] = target
         elif target.type != draft.type and target.type not in _CORE and draft.type in _CORE:
             del self._drafts[target.key]
@@ -298,7 +345,11 @@ class Merger:
                     da, db = self._drafts[a_key], self._drafts[b_key]
                     if jaccard(shingles(da.name), shingles(db.name)) < self.jaccard_threshold:
                         continue
-                    keep, drop = (da, db) if (da.evidence_count, -da.order) >= (db.evidence_count, -db.order) else (db, da)
+                    keep, drop = (
+                        (da, db)
+                        if (da.evidence_count, -da.order) >= (db.evidence_count, -db.order)
+                        else (db, da)
+                    )
                     del self._drafts[drop.key]
                     merged_into[drop.key] = keep.key
                     self._merge_into(keep, drop)
@@ -325,7 +376,9 @@ class Merger:
             for mention in draft.mentions:
                 if mention.evidence.id not in seen_mentions:
                     seen_mentions.add(mention.evidence.id)
-                    mentions.append(Mention(eid, mention.surface, mention.evidence, mention.confidence))
+                    mentions.append(
+                        Mention(eid, mention.surface, mention.evidence, mention.confidence)
+                    )
             entity = Entity(
                 id=eid,
                 type=draft.type,
@@ -337,7 +390,11 @@ class Merger:
                 first_seen=self.seen_at,
                 last_seen=self.seen_at,
             )
-            if self.total_pages and len(entity.pages) > self.total_pages * self.generic_page_share and self.total_pages >= 3:
+            if (
+                self.total_pages
+                and len(entity.pages) > self.total_pages * self.generic_page_share
+                and self.total_pages >= 3
+            ):
                 entity.generic = True
                 self.stats["generic_entities"] += 1
             entities[eid] = entity
@@ -386,7 +443,9 @@ def _dedupe(evidence: Iterable[Evidence]) -> Iterable[Evidence]:
             yield ev
 
 
-def _resolve(mapping: dict[tuple[str, str], tuple[str, str]], key: tuple[str, str]) -> tuple[str, str]:
+def _resolve(
+    mapping: dict[tuple[str, str], tuple[str, str]], key: tuple[str, str]
+) -> tuple[str, str]:
     while key in mapping:
         key = mapping[key]
     return key
@@ -394,7 +453,9 @@ def _resolve(mapping: dict[tuple[str, str], tuple[str, str]], key: tuple[str, st
 
 def _compatible(existing: str, incoming: str) -> bool:
     """An open type may join a core type of the same name; two core types may not."""
-    return (existing in _CORE) != (incoming in _CORE) or (existing not in _CORE and incoming not in _CORE)
+    return (existing in _CORE) != (incoming in _CORE) or (
+        existing not in _CORE and incoming not in _CORE
+    )
 
 
 def _scalar(value: Any) -> str:

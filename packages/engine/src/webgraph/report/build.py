@@ -235,7 +235,9 @@ def engine_build() -> tuple[str, str]:
     return installed, commit or "unknown"
 
 
-def choose_sample(html: str, root_url: str, *, count: int, policy: RobotsPolicy | None = None) -> list[str]:
+def choose_sample(
+    html: str, root_url: str, *, count: int, policy: RobotsPolicy | None = None
+) -> list[str]:
     """Up to `count` internal links from the root page to sample: one per path section
     first (`/admissions/…`, `/about`, `/blog/…`), in the order the page links to them, then
     the next links until the count is met. Links robots.txt disallows for this client are
@@ -347,7 +349,10 @@ def build_site_report(
         sitemap_index=any(a.ok and a.index for a in probe.sitemap_attempts),
     )
     notes.extend(signals.notes)
-    llms: dict[str, LlmsFile] = {"/llms.txt": signals.llms_txt, "/llms-full.txt": signals.llms_full_txt}
+    llms: dict[str, LlmsFile] = {
+        "/llms.txt": signals.llms_txt,
+        "/llms-full.txt": signals.llms_full_txt,
+    }
 
     checker = LinkChecker(fetch_config=fetch_config, policy=policy, pacer=pacer)
     reports: list[PageReport] = [measure_page(root, requested_url=url, host=host, checker=checker)]
@@ -359,10 +364,25 @@ def build_site_report(
                 candidate, strategy=strategy, fetch_config=fetch_config, render_config=render_config
             )
         except PageBlockedError as exc:
-            reports.append(PageReport(requested_url=candidate, url=candidate, section=section_of(candidate), wall="both", error=str(exc)))
+            reports.append(
+                PageReport(
+                    requested_url=candidate,
+                    url=candidate,
+                    section=section_of(candidate),
+                    wall="both",
+                    error=str(exc),
+                )
+            )
             continue
         except (PageMissingError, PageDisallowedError, ValueError) as exc:
-            reports.append(PageReport(requested_url=candidate, url=candidate, section=section_of(candidate), error=str(exc)))
+            reports.append(
+                PageReport(
+                    requested_url=candidate,
+                    url=candidate,
+                    section=section_of(candidate),
+                    error=str(exc),
+                )
+            )
             continue
         reports.append(measure_page(resolved, requested_url=candidate, host=host, checker=checker))
 

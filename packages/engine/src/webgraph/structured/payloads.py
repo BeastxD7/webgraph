@@ -262,9 +262,7 @@ def extract_initial_state(html: str) -> list[StructuredPayload]:
         if parsed is None:
             continue
         source = PayloadSource.NUXT if name == "__NUXT__" else PayloadSource.INITIAL_STATE
-        payloads.append(
-            StructuredPayload(source=source, data=parsed, note=f"window.{name}")
-        )
+        payloads.append(StructuredPayload(source=source, data=parsed, note=f"window.{name}"))
     return payloads
 
 

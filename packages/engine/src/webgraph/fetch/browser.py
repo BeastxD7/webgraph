@@ -36,9 +36,7 @@ __all__ = ["LAUNCH_ARGS", "MAX_BROWSERS", "close_thread_browser", "shared_browse
 MAX_BROWSERS: Final[int] = SETTINGS.max_browsers
 """Live browsers across the whole process. See `Settings.max_browsers` for the reasoning."""
 
-LAUNCH_ARGS: Final[tuple[str, ...]] = tuple(
-    shlex.split(SETTINGS.chromium_args)
-)
+LAUNCH_ARGS: Final[tuple[str, ...]] = tuple(shlex.split(SETTINGS.chromium_args))
 """Extra Chromium flags, from `WEBGRAPH_CHROMIUM_ARGS`.
 
 Empty by default: on a developer machine Chromium's sandbox works and disabling it
@@ -107,9 +105,7 @@ def close_thread_browser() -> None:
         pass
     finally:
         with _registry_lock:
-            _registry[:] = [
-                entry for entry in _registry if entry[1] is not browser
-            ]
+            _registry[:] = [entry for entry in _registry if entry[1] is not browser]
         _forget_local()
         _slots.release()
 

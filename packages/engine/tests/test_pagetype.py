@@ -26,14 +26,15 @@ PROSE = "Ordinary prose in a paragraph with enough words to look like an article
 
 def article() -> str:
     body = "".join(f"<p>{PROSE}{i}.</p>" for i in range(12))
-    ld = ('<script type="application/ld+json">{"@type":"BlogPosting","headline":"x"}</script>')
+    ld = '<script type="application/ld+json">{"@type":"BlogPosting","headline":"x"}</script>'
     og = '<meta property="og:type" content="article">'
     return f"<html><head>{ld}{og}</head><body><main><article><h1>Title</h1>{body}</article></main></body></html>"
 
 
 def grid() -> str:
     cards = "".join(
-        f"<li><a href='/p/{i}'><h3>Widget {i}</h3></a><span>$ {10 + i}.00</span></li>" for i in range(30)
+        f"<li><a href='/p/{i}'><h3>Widget {i}</h3></a><span>$ {10 + i}.00</span></li>"
+        for i in range(30)
     )
     return f"<html><body><main><h1>Widgets</h1><ul>{cards}</ul></main></body></html>"
 
@@ -70,11 +71,18 @@ class TestFeatures:
 
 class TestPolicy:
     def test_grid_types_group_and_prose_types_do_not(self) -> None:
-        for kind in (PageType.LISTING, PageType.COLLECTION, PageType.SERVICE, PageType.DOCUMENTATION):
+        for kind in (
+            PageType.LISTING,
+            PageType.COLLECTION,
+            PageType.SERVICE,
+            PageType.DOCUMENTATION,
+        ):
             assert policy_for(kind).group_repeats == "all"
         for kind in (PageType.ARTICLE, PageType.UNKNOWN, None):
             assert policy_for(kind) == MainContentConfig()
-        assert policy_for(PageType.FORUM) == MainContentConfig(comments_max_share=0.5, scope_article=False)
+        assert policy_for(PageType.FORUM) == MainContentConfig(
+            comments_max_share=0.5, scope_article=False
+        )
         assert policy_for(PageType.PRODUCT) == MainContentConfig(
             product_sheet=True, min_run_share=0.25, strip_comments=False, scope_article=False
         )
@@ -110,10 +118,20 @@ class TestRouter:
             "classes": ["article", "product"],
             "features": list(FEATURE_NAMES),
             "baseline": [0.0, 0.0],
-            "trees": [[
-                [[float(idx), 0.5, 1.0, 2.0, 0.0, 0.0], [-1.0, 0.0, -1.0, -1.0, 2.0, 0.0], [-1.0, 0.0, -1.0, -1.0, -2.0, 0.0]],
-                [[float(idx), 0.5, 1.0, 2.0, 0.0, 0.0], [-1.0, 0.0, -1.0, -1.0, -2.0, 0.0], [-1.0, 0.0, -1.0, -1.0, 2.0, 0.0]],
-            ]],
+            "trees": [
+                [
+                    [
+                        [float(idx), 0.5, 1.0, 2.0, 0.0, 0.0],
+                        [-1.0, 0.0, -1.0, -1.0, 2.0, 0.0],
+                        [-1.0, 0.0, -1.0, -1.0, -2.0, 0.0],
+                    ],
+                    [
+                        [float(idx), 0.5, 1.0, 2.0, 0.0, 0.0],
+                        [-1.0, 0.0, -1.0, -1.0, -2.0, 0.0],
+                        [-1.0, 0.0, -1.0, -1.0, 2.0, 0.0],
+                    ],
+                ]
+            ],
         }
         router = PageTypeRouter(model)
         x = [0.0] * n
@@ -144,7 +162,9 @@ class TestConfidenceFloor:
         from webgraph.pipeline import build_document
 
         router = PageTypeRouter(self.flat_model())
-        routing = router.route(build_document("<html><body><p>x</p></body></html>", "https://x.test/"))
+        routing = router.route(
+            build_document("<html><body><p>x</p></body></html>", "https://x.test/")
+        )
         assert routing.confidence == 0.5
         assert routing.page_type is PageType.UNKNOWN or routing.confidence >= router.min_confidence
 
@@ -158,7 +178,9 @@ class TestConfidenceFloor:
         from webgraph.pipeline import build_document
 
         router = PageTypeRouter(self.flat_model(), min_confidence=0.0)
-        routing = router.route(build_document("<html><body><p>x</p></body></html>", "https://x.test/"))
+        routing = router.route(
+            build_document("<html><body><p>x</p></body></html>", "https://x.test/")
+        )
         assert routing.page_type is not PageType.UNKNOWN
 
 

@@ -106,7 +106,11 @@ class PageScore:
     @property
     def perfect(self) -> bool:
         """Every expected field correct. This is what page-level success counts."""
-        return self.error is None and self.expected_count > 0 and self.correct_count == self.expected_count
+        return (
+            self.error is None
+            and self.expected_count > 0
+            and self.correct_count == self.expected_count
+        )
 
 
 @dataclass(frozen=True, slots=True)

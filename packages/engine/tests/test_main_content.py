@@ -167,7 +167,12 @@ class TestCodeCaptions:
         line before a paragraph is judged as it always was."""
         from webgraph.main_content import _introduces_code
 
-        blocks = [block("Then", index=0), block(PROSE, index=1), block("Then", index=2), block("x = 1", kind=BlockKind.CODE, index=3)]
+        blocks = [
+            block("Then", index=0),
+            block(PROSE, index=1),
+            block("Then", index=2),
+            block("x = 1", kind=BlockKind.CODE, index=3),
+        ]
         assert _introduces_code(blocks, 0) is False
         assert _introduces_code(blocks, 2) is True
 
@@ -177,7 +182,11 @@ class TestCodeCaptions:
         from webgraph.main_content import _introduces_code
 
         blocks = [
-            block("« Previous Paper Next Paper »", rich="« [Previous Paper](/p) [Next Paper](/n) »", index=0),
+            block(
+                "« Previous Paper Next Paper »",
+                rich="« [Previous Paper](/p) [Next Paper](/n) »",
+                index=0,
+            ),
             block("x = 1", kind=BlockKind.CODE, index=1),
         ]
         assert _introduces_code(blocks, 0) is False
@@ -195,9 +204,7 @@ class TestGuards:
     def test_an_all_navigation_page_is_returned_whole(self) -> None:
         """A sitemap or index page is legitimately almost all navigation. It has no main
         content to find, and saying so by returning everything beats inventing an answer."""
-        blocks = [
-            block(f"Section {i}", rich=f"[Section {i}](/s{i})", index=i) for i in range(20)
-        ]
+        blocks = [block(f"Section {i}", rich=f"[Section {i}](/s{i})", index=i) for i in range(20)]
         assert len(select_main_content(blocks)) == len(blocks)
 
     def test_a_single_block_is_returned_unchanged(self) -> None:
@@ -339,7 +346,11 @@ class TestRepeatedGroups:
 
         blocks = self._grid(3)
         groups = _repeat_groups(blocks, MainContentConfig(group_repeats="all"))
-        card_groups = {g for b, g in zip(blocks, groups, strict=True) if "Vent Light" in b.text or "$" in b.text}
+        card_groups = {
+            g
+            for b, g in zip(blocks, groups, strict=True)
+            if "Vent Light" in b.text or "$" in b.text
+        }
         assert len(card_groups) == 1
 
     def test_fewer_than_three_is_not_a_grid(self) -> None:
@@ -356,10 +367,23 @@ class TestProductSheet:
 
     @staticmethod
     def page() -> list[Block]:
-        def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0, xpath: str | None = None) -> Block:
+        def b(
+            text: str,
+            i: int,
+            *,
+            kind: BlockKind = BlockKind.PARAGRAPH,
+            level: int = 0,
+            xpath: str | None = None,
+        ) -> Block:
             return Block(
-                text=text, tag="p", xpath=xpath or f"/html/body/main/div/p[{i + 1}]", dom_index=i,
-                kind=kind, level=level, in_main=True, region="main",
+                text=text,
+                tag="p",
+                xpath=xpath or f"/html/body/main/div/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+                in_main=True,
+                region="main",
             )
 
         blocks = [
@@ -374,21 +398,35 @@ class TestProductSheet:
             b("Customer Reviews", 8, kind=BlockKind.HEADING, level=2),
         ]
         for i in range(3):
-            blocks.append(b(f"{PROSE} Review number {i}. 5 out of 5 stars, verified buyer.", 9 + i,
-                            xpath=f"/html/body/main/div/section/div[{i + 1}]/p"))
+            blocks.append(
+                b(
+                    f"{PROSE} Review number {i}. 5 out of 5 stars, verified buyer.",
+                    9 + i,
+                    xpath=f"/html/body/main/div/section/div[{i + 1}]/p",
+                )
+            )
         blocks.append(b("You may also like", 12, kind=BlockKind.HEADING, level=2))
         for i in range(4):
-            blocks.append(Block(
-                text="Fender Player II Strat HSS $899.00", tag="p",
-                xpath=f"/html/body/main/div/ul/li[{i + 1}]/p", dom_index=13 + i,
-                href="https://shop.test/p", in_main=True, region="main",
-            ))
+            blocks.append(
+                Block(
+                    text="Fender Player II Strat HSS $899.00",
+                    tag="p",
+                    xpath=f"/html/body/main/div/ul/li[{i + 1}]/p",
+                    dom_index=13 + i,
+                    href="https://shop.test/p",
+                    in_main=True,
+                    region="main",
+                )
+            )
         return blocks
 
     def test_specs_kept_reviews_and_related_dropped(self) -> None:
         kept = select_main_content(self.page(), config=MainContentConfig(product_sheet=True))
         texts = [b.text for b in kept]
-        assert "Body: Alder" in texts and "Pickups: 3 Player Series Alnico 5 Strat single coils" in texts
+        assert (
+            "Body: Alder" in texts
+            and "Pickups: 3 Player Series Alnico 5 Strat single coils" in texts
+        )
         assert not any("Review number" in t for t in texts)
         assert not any("$899.00" in t for t in texts)
         assert "Customer Reviews" not in texts and "You may also like" not in texts
@@ -401,28 +439,75 @@ class TestProductSheet:
         from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
         blocks = [
-            Block(text="Write a Review", tag="h3", xpath="/html/body/h3[1]", dom_index=0, kind=BlockKind.HEADING, level=3),
+            Block(
+                text="Write a Review",
+                tag="h3",
+                xpath="/html/body/h3[1]",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=3,
+            ),
             Block(text=PROSE, tag="p", xpath="/html/body/p[1]", dom_index=1),
         ]
-        assert [b.text for b in _prune_other_sections(blocks, _OTHER_SECTION)] == ["Write a Review", PROSE]
+        assert [b.text for b in _prune_other_sections(blocks, _OTHER_SECTION)] == [
+            "Write a Review",
+            PROSE,
+        ]
 
     def test_a_long_review_section_is_dropped_whole(self) -> None:
         """rei.com: ninety blocks of reviews under one "Customer Reviews" heading. The old
         60-block bound left them all in place."""
         from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
-        blocks = [Block(text="Customer Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
-        blocks += [Block(text=f"{PROSE} Review {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(90)]
-        blocks.append(Block(text="Specifications", tag="h2", xpath="/html/body/h2[2]", dom_index=100, kind=BlockKind.HEADING, level=2))
-        blocks.append(Block(text="Weight: 1 lb. 13 oz.", tag="p", xpath="/html/body/p[200]", dom_index=101))
+        blocks = [
+            Block(
+                text="Customer Reviews",
+                tag="h2",
+                xpath="/html/body/h2[1]",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=2,
+            )
+        ]
+        blocks += [
+            Block(
+                text=f"{PROSE} Review {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1
+            )
+            for i in range(90)
+        ]
+        blocks.append(
+            Block(
+                text="Specifications",
+                tag="h2",
+                xpath="/html/body/h2[2]",
+                dom_index=100,
+                kind=BlockKind.HEADING,
+                level=2,
+            )
+        )
+        blocks.append(
+            Block(text="Weight: 1 lb. 13 oz.", tag="p", xpath="/html/body/p[200]", dom_index=101)
+        )
         pruned = _prune_other_sections(blocks, _OTHER_SECTION)
         assert [b.text for b in pruned] == ["Specifications", "Weight: 1 lb. 13 oz."]
 
     def test_an_unbounded_tail_is_not_dropped(self) -> None:
         from webgraph.main_content import _OTHER_SECTION, _prune_other_sections
 
-        blocks = [Block(text="Reviews", tag="h2", xpath="/html/body/h2[1]", dom_index=0, kind=BlockKind.HEADING, level=2)]
-        blocks += [Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1) for i in range(300)]
+        blocks = [
+            Block(
+                text="Reviews",
+                tag="h2",
+                xpath="/html/body/h2[1]",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=2,
+            )
+        ]
+        blocks += [
+            Block(text=f"{PROSE} {i}", tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i + 1)
+            for i in range(300)
+        ]
         assert len(_prune_other_sections(blocks, _OTHER_SECTION)) == 301
 
 
@@ -437,11 +522,23 @@ class TestMarketplaceSections:
     @staticmethod
     def listing() -> list[Block]:
         def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
-            return Block(text=text, tag="p", xpath=f"/html/body/main/div/p[{i + 1}]", dom_index=i, kind=kind, level=level, in_main=True, region="main")
+            return Block(
+                text=text,
+                tag="p",
+                xpath=f"/html/body/main/div/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+                in_main=True,
+                region="main",
+            )
 
         blocks = [
             b("What\u2019s wrong with this listing?", 0, kind=BlockKind.HEADING, level=2),
-            b("Share more specifics to help us review this item and protect our marketplace from bad actors.", 1),
+            b(
+                "Share more specifics to help us review this item and protect our marketplace from bad actors.",
+                1,
+            ),
             b("It's not handmade, vintage, or craft supplies", 2),
             b("Handmade Stoneware Coffee Mug", 3, kind=BlockKind.HEADING, level=1),
             b("Price: USD 99.60", 4),
@@ -452,12 +549,18 @@ class TestMarketplaceSections:
             b("Return Policies", 9, kind=BlockKind.HEADING, level=2),
             b("Returns and exchanges accepted within 14 days.", 10),
             b("Did you know?", 11, kind=BlockKind.HEADING, level=2),
-            b(f"{PROSE} Purchase protection means you get what you ordered or your money back.", 12),
+            b(
+                f"{PROSE} Purchase protection means you get what you ordered or your money back.",
+                12,
+            ),
             b("Meet your seller", 13, kind=BlockKind.HEADING, level=2),
             b("Paul Fryman", 14),
             b(f"{PROSE} Owner of the store, usually responds within a few hours.", 15),
             b("Shop policies for PotteryParkStore", 16, kind=BlockKind.HEADING, level=2),
-            b(f"{PROSE} Cancellations accepted within 24 hours of purchase; secure payment options.", 17),
+            b(
+                f"{PROSE} Cancellations accepted within 24 hours of purchase; secure payment options.",
+                17,
+            ),
         ]
         return blocks
 
@@ -468,8 +571,17 @@ class TestMarketplaceSections:
         assert texts[0] == "Handmade Stoneware Coffee Mug"
         assert "Materials: Ceramic" in texts and "Return Policies" in texts
         assert "Returns and exchanges accepted within 14 days." in texts
-        assert not any(t.startswith(("Did you know", "Meet your seller", "Paul Fryman", "Shop policies", "What")) for t in texts)
-        assert not any("Purchase protection" in t or "Cancellations accepted" in t or "responds within" in t for t in texts)
+        assert not any(
+            t.startswith(
+                ("Did you know", "Meet your seller", "Paul Fryman", "Shop policies", "What")
+            )
+            for t in texts
+        )
+        assert not any(
+            "Purchase protection" in t or "Cancellations accepted" in t or "responds within" in t
+            for t in texts
+        )
+
 
 class TestRivers:
     """cbsnews.com: a "Trending News" box dropped between the third and fourth paragraphs,
@@ -479,18 +591,29 @@ class TestRivers:
     @staticmethod
     def article() -> list[Block]:
         def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
-            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+            return Block(
+                text=text,
+                tag="p",
+                xpath=f"/html/body/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+            )
 
         blocks = [b("Video shows dramatic rescue", 0, kind=BlockKind.HEADING, level=1)]
         blocks += [b(f"{PROSE} Paragraph {i}.", 1 + i) for i in range(3)]
         blocks.append(b("Trending News", 4, kind=BlockKind.HEADING, level=2))
-        blocks.append(b("White teen accused of plotting deadly attack", 5, kind=BlockKind.LIST_ITEM))
+        blocks.append(
+            b("White teen accused of plotting deadly attack", 5, kind=BlockKind.LIST_ITEM)
+        )
         blocks.append(b("Woman risks her life to save a koala", 6, kind=BlockKind.LIST_ITEM))
         blocks += [b(f"{PROSE} Paragraph {i}.", 7 + i) for i in range(3, 6)]
         blocks.append(b("Most Read", 10, kind=BlockKind.HEADING, level=2))
         for i in range(4):
             blocks.append(b(f"Teaser headline {i}", 11 + 2 * i, kind=BlockKind.HEADING, level=3))
-            blocks.append(b(f"A one-sentence blurb about teaser {i} that reads like news.", 12 + 2 * i))
+            blocks.append(
+                b(f"A one-sentence blurb about teaser {i} that reads like news.", 12 + 2 * i)
+            )
         return blocks
 
     def test_inline_box_ends_where_the_prose_resumes(self) -> None:
@@ -509,7 +632,6 @@ class TestRivers:
         assert "Most Read" not in texts and "Trending News" not in texts
         assert texts[0] == "Video shows dramatic rescue"
 
-
     def test_a_river_of_kickers_at_its_own_level_ends_at_the_short_paragraphs(self) -> None:
         """thesun.co.uk: "Most read in world news" is an <h3> over <h3> kickers, each with a
         one-line blurb, dropped mid-article; the article's paragraphs are twenty words --
@@ -518,23 +640,48 @@ class TestRivers:
         from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
 
         def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
-            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+            return Block(
+                text=text,
+                tag="p",
+                xpath=f"/html/body/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+            )
 
         short = "In May this year travellers were left stranded in Mongolia after an outbreak of the disease there."
-        blocks = [b("Hunter diagnosed with plague", 0, kind=BlockKind.HEADING, level=1), b(short, 1), b(short + " Again.", 2)]
+        blocks = [
+            b("Hunter diagnosed with plague", 0, kind=BlockKind.HEADING, level=1),
+            b(short, 1),
+            b(short + " Again.", 2),
+        ]
         tail: list[tuple[str, BlockKind]] = [("Most read in world news", BlockKind.HEADING)]
         for i in range(6):
             tail += [("", BlockKind.IMAGE), (f"KICKER {i}", BlockKind.HEADING)]
             if i == 3:
                 tail.append(("Warning", BlockKind.PARAGRAPH))
-            tail.append((f"Teaser blurb number {i} about some other story on the site today.", BlockKind.PARAGRAPH))
+            tail.append(
+                (
+                    f"Teaser blurb number {i} about some other story on the site today.",
+                    BlockKind.PARAGRAPH,
+                )
+            )
         tail += [
-            ("Authorities in western Mongolia, close to the Russian frontier, instituted a quarantine.", BlockKind.PARAGRAPH),
-            ("American, Dutch and German tourists were marooned in the town for six days.", BlockKind.PARAGRAPH),
+            (
+                "Authorities in western Mongolia, close to the Russian frontier, instituted a quarantine.",
+                BlockKind.PARAGRAPH,
+            ),
+            (
+                "American, Dutch and German tourists were marooned in the town for six days.",
+                BlockKind.PARAGRAPH,
+            ),
             ("How is the plague spread?", BlockKind.HEADING),
             (f"{PROSE} Plague is caused by the bacteria Yersinia pestis.", BlockKind.PARAGRAPH),
         ]
-        blocks += [b(text, 3 + i, kind=kind, level=3 if kind is BlockKind.HEADING else 0) for i, (text, kind) in enumerate(tail)]
+        blocks += [
+            b(text, 3 + i, kind=kind, level=3 if kind is BlockKind.HEADING else 0)
+            for i, (text, kind) in enumerate(tail)
+        ]
 
         texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
         assert not any(t.startswith("KICKER") or t.startswith("Teaser blurb") for t in texts)
@@ -550,11 +697,23 @@ class TestRivers:
         from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
 
         def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
-            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+            return Block(
+                text=text,
+                tag="p",
+                xpath=f"/html/body/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+            )
 
         blocks = [b(f"{PROSE} Opening.", 0), b("Trending now", 1, kind=BlockKind.HEADING, level=2)]
-        blocks += [b(f"Story {i} headline", 2 + i, kind=BlockKind.HEADING, level=2) for i in range(3)]
-        blocks += [b("What happens next", 5, kind=BlockKind.HEADING, level=2), b(f"{PROSE} Closing.", 6)]
+        blocks += [
+            b(f"Story {i} headline", 2 + i, kind=BlockKind.HEADING, level=2) for i in range(3)
+        ]
+        blocks += [
+            b("What happens next", 5, kind=BlockKind.HEADING, level=2),
+            b(f"{PROSE} Closing.", 6),
+        ]
         texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
         assert texts == [f"{PROSE} Opening.", "What happens next", f"{PROSE} Closing."]
 
@@ -565,15 +724,25 @@ class TestRivers:
         from webgraph.main_content import _RIVER_SECTION, _prune_other_sections
 
         def b(text: str, i: int, *, kind: BlockKind = BlockKind.PARAGRAPH, level: int = 0) -> Block:
-            return Block(text=text, tag="p", xpath=f"/html/body/p[{i + 1}]", dom_index=i, kind=kind, level=level)
+            return Block(
+                text=text,
+                tag="p",
+                xpath=f"/html/body/p[{i + 1}]",
+                dom_index=i,
+                kind=kind,
+                level=level,
+            )
 
         blocks = [b("Latest news", 0, kind=BlockKind.HEADING, level=2)]
         for i in range(40):
             blocks.append(b(f"Headline {i}", 1 + 2 * i, kind=BlockKind.HEADING, level=2))
-            blocks.append(b(f"A one-sentence blurb about story {i} that reads like news copy.", 2 + 2 * i))
+            blocks.append(
+                b(f"A one-sentence blurb about story {i} that reads like news copy.", 2 + 2 * i)
+            )
         texts = [x.text for x in _prune_other_sections(blocks, _RIVER_SECTION)]
         assert "Latest news" not in texts
         assert sum(1 for t in texts if t.startswith("Headline")) == 40
+
 
 class TestSpecSheetFallback:
     """lttlabs.com: a review that is a spec sheet -- forty two-word lines and no prose -- never
@@ -584,15 +753,58 @@ class TestSpecSheetFallback:
     @staticmethod
     def sheet() -> list[Block]:
         rows = [
-            ("Height", "3.2 cm"), ("Width Max", "31.0 cm"), ("Depth", "12.0 cm"), ("Weight", "653 g"),
-            ("Switches", "Gateron G Pro Brown"), ("Keycaps", "ABS double-shot"), ("Connection", "USB Type-C, Bluetooth 5.1"),
-            ("Battery", "4000 mAh"), ("Backlight", "White LED"), ("Layout", "75% ANSI"), ("Hot-swap", "Yes"), ("Case", "Aluminium frame"),
+            ("Height", "3.2 cm"),
+            ("Width Max", "31.0 cm"),
+            ("Depth", "12.0 cm"),
+            ("Weight", "653 g"),
+            ("Switches", "Gateron G Pro Brown"),
+            ("Keycaps", "ABS double-shot"),
+            ("Connection", "USB Type-C, Bluetooth 5.1"),
+            ("Battery", "4000 mAh"),
+            ("Backlight", "White LED"),
+            ("Layout", "75% ANSI"),
+            ("Hot-swap", "Yes"),
+            ("Case", "Aluminium frame"),
         ]
-        blocks = [Block(text="Keychron K2 Wireless Mechanical Keyboard (Version 2)", tag="h1", xpath="/html/body/main/h1", dom_index=0, kind=BlockKind.HEADING, level=1, in_main=True)]
+        blocks = [
+            Block(
+                text="Keychron K2 Wireless Mechanical Keyboard (Version 2)",
+                tag="h1",
+                xpath="/html/body/main/h1",
+                dom_index=0,
+                kind=BlockKind.HEADING,
+                level=1,
+                in_main=True,
+            )
+        ]
         for i, (k, v) in enumerate(rows, 1):
-            blocks.append(Block(text=k, tag="p", xpath=f"/html/body/main/div[{i}]/p[1]", dom_index=2 * i - 1, in_main=True))
-            blocks.append(Block(text=v, tag="p", xpath=f"/html/body/main/div[{i}]/p[2]", dom_index=2 * i, in_main=True))
-        blocks.append(Block(text="Purchases made through these links may provide compensation to the site that runs this review.", tag="p", xpath="/html/body/main/p[99]", dom_index=99, in_main=True))
+            blocks.append(
+                Block(
+                    text=k,
+                    tag="p",
+                    xpath=f"/html/body/main/div[{i}]/p[1]",
+                    dom_index=2 * i - 1,
+                    in_main=True,
+                )
+            )
+            blocks.append(
+                Block(
+                    text=v,
+                    tag="p",
+                    xpath=f"/html/body/main/div[{i}]/p[2]",
+                    dom_index=2 * i,
+                    in_main=True,
+                )
+            )
+        blocks.append(
+            Block(
+                text="Purchases made through these links may provide compensation to the site that runs this review.",
+                tag="p",
+                xpath="/html/body/main/p[99]",
+                dom_index=99,
+                in_main=True,
+            )
+        )
         return blocks
 
     def test_product_policy_returns_the_whole_sheet(self) -> None:
@@ -615,10 +827,32 @@ class TestRepeatedQuotes:
         post = f"{PROSE} The season is one of the wildest in football history, with minnows everywhere."
         return [
             Block(text=post, tag="p", xpath="/html/body/div[1]/p", dom_index=0),
-            Block(text=f"{PROSE} A second post that is its own words entirely, about fixtures.", tag="p", xpath="/html/body/div[2]/p", dom_index=1),
-            Block(text=f"Outer Armatonisdaristan wrote: {post}", tag="blockquote", xpath="/html/body/div[3]/blockquote", dom_index=2, kind=BlockKind.QUOTE),
-            Block(text="Dutch eredivisie fixtures are out, and the schedule is brutal for the small clubs this year.", tag="blockquote", xpath="/html/body/div[3]/blockquote[2]", dom_index=3, kind=BlockKind.QUOTE),
-            Block(text=f"{PROSE} A reply that answers the quoted post with new words of its own.", tag="p", xpath="/html/body/div[3]/p", dom_index=4),
+            Block(
+                text=f"{PROSE} A second post that is its own words entirely, about fixtures.",
+                tag="p",
+                xpath="/html/body/div[2]/p",
+                dom_index=1,
+            ),
+            Block(
+                text=f"Outer Armatonisdaristan wrote: {post}",
+                tag="blockquote",
+                xpath="/html/body/div[3]/blockquote",
+                dom_index=2,
+                kind=BlockKind.QUOTE,
+            ),
+            Block(
+                text="Dutch eredivisie fixtures are out, and the schedule is brutal for the small clubs this year.",
+                tag="blockquote",
+                xpath="/html/body/div[3]/blockquote[2]",
+                dom_index=3,
+                kind=BlockKind.QUOTE,
+            ),
+            Block(
+                text=f"{PROSE} A reply that answers the quoted post with new words of its own.",
+                tag="p",
+                xpath="/html/body/div[3]/p",
+                dom_index=4,
+            ),
         ]
 
     def test_a_quote_of_an_earlier_post_is_dropped_and_an_original_one_kept(self) -> None:
@@ -631,7 +865,9 @@ class TestRepeatedQuotes:
         assert len(kept) == 4
 
     def test_off_by_config(self) -> None:
-        kept = select_main_content(self.thread(), config=MainContentConfig(drop_repeated_quotes=False))
+        kept = select_main_content(
+            self.thread(), config=MainContentConfig(drop_repeated_quotes=False)
+        )
         assert any(b.text.startswith("Outer Armatonisdaristan wrote") for b in kept)
 
 
@@ -647,17 +883,33 @@ class TestGridInstances:
             return Block(text=text, tag="p", xpath=xpath, dom_index=i, in_main=True, **kw)  # type: ignore[arg-type]
 
         blocks = [
-            b("Next 3 pack ladies top black, white & green size 6", "/html/body/main/h1", 0, kind=BlockKind.HEADING, level=1),
+            b(
+                "Next 3 pack ladies top black, white & green size 6",
+                "/html/body/main/h1",
+                0,
+                kind=BlockKind.HEADING,
+                level=1,
+            ),
             b("Condition: not specified", "/html/body/main/div[1]/p[1]", 1),
             b("Delivery: Varies", "/html/body/main/div[1]/p[2]", 2),
-            b("Seller assumes all responsibility for this listing. The item ships from the UK within three working days.", "/html/body/main/div[1]/p[3]", 3),
+            b(
+                "Seller assumes all responsibility for this listing. The item ships from the UK within three working days.",
+                "/html/body/main/div[1]/p[3]",
+                3,
+            ),
         ]
         i = 10
         for n in range(1, 7):
             base = f"/html/body/main/ul/li[{n}]/div/section/div[1]"
             card = [
                 b("", f"{base}/div/div[1]/div/img", i, kind=BlockKind.IMAGE),
-                b(f"Next Blouse Top Size {n} Womens Green Black White Casual", f"{base}/div/div[2]/div/h3", i + 1, kind=BlockKind.HEADING, level=3),
+                b(
+                    f"Next Blouse Top Size {n} Womens Green Black White Casual",
+                    f"{base}/div/div[2]/div/h3",
+                    i + 1,
+                    kind=BlockKind.HEADING,
+                    level=3,
+                ),
                 b(f"${10 + n}.40", f"{base}/div/div[2]/div/div[1]/div[2]", i + 2),
                 b(f"+ ${20 + n}.69 delivery", f"{base}/div/div[2]/div/div[2]", i + 3),
             ]
@@ -686,21 +938,49 @@ class TestAdaptiveCostRatio:
         from webgraph.pipeline import build_document
 
         words = [
-            "run", "walk", "rest", "hill", "tempo", "long", "easy", "strides", "drills", "stretch",
-            "core", "yoga", "swim", "bike", "fuel", "hydrate", "sleep", "recover", "pace", "form",
+            "run",
+            "walk",
+            "rest",
+            "hill",
+            "tempo",
+            "long",
+            "easy",
+            "strides",
+            "drills",
+            "stretch",
+            "core",
+            "yoga",
+            "swim",
+            "bike",
+            "fuel",
+            "hydrate",
+            "sleep",
+            "recover",
+            "pace",
+            "form",
         ]
 
         def line(i: int) -> str:
-            return f"Day {i}: " + " ".join(words[(i + k) % len(words)] for k in range(7)) + " today."
+            return (
+                f"Day {i}: " + " ".join(words[(i + k) % len(words)] for k in range(7)) + " today."
+            )
 
         rows = "".join(
-            f"<tr><td>Week {w}</td>" + "".join(f"<td>{k + w} mile {words[(w + k) % 20]} run</td>" for k in range(6)) + "</tr>"
+            f"<tr><td>Week {w}</td>"
+            + "".join(f"<td>{k + w} mile {words[(w + k) % 20]} run</td>" for k in range(6))
+            + "</tr>"
             for w in range(1, 8)
         )
-        table = "<table><tr><th>Plan</th>" + "".join(f"<th>Day {d}</th>" for d in range(6)) + f"</tr>{rows}</table>"
+        table = (
+            "<table><tr><th>Plan</th>"
+            + "".join(f"<th>Day {d}</th>" for d in range(6))
+            + f"</tr>{rows}</table>"
+        )
         before = "".join(f"<p>{line(i)}</p>" for i in range(20))
         after = "".join(f"<p>{line(i)}</p>" for i in range(20, 40))
-        html = f"<html><body><main><h1>Beginner plan</h1>{before}{table}{after}</main></body></html>"
+        html = (
+            f"<html><body><main><h1>Beginner plan</h1>{before}{table}{after}</main></body></html>"
+        )
         return list(build_document(html, "https://plan.test/beginner").blocks)
 
     def test_short_lines_beside_a_table_are_kept(self) -> None:
@@ -741,11 +1021,15 @@ class TestCostBlockCap:
     def test_one_giant_block_does_not_price_the_page(self) -> None:
         kept = select_main_content(self._release_post(), config=MainContentConfig())
         assert sum(1 for b in kept if b.text.startswith("Create colour")) == 15
-        assert sum(1 for b in kept if b.text.startswith("Feature ")) >= 14  # the first sits before the run's start
+        assert (
+            sum(1 for b in kept if b.text.startswith("Feature ")) >= 14
+        )  # the first sits before the run's start
 
     def test_uncapped_the_same_page_loses_its_sections(self) -> None:
         """Pins the mechanism the cap exists for."""
         from dataclasses import replace
 
-        kept = select_main_content(self._release_post(), config=replace(MainContentConfig(), cost_block_cap=10**6))
+        kept = select_main_content(
+            self._release_post(), config=replace(MainContentConfig(), cost_block_cap=10**6)
+        )
         assert sum(1 for b in kept if b.text.startswith("Create colour")) < 15

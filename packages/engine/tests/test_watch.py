@@ -223,7 +223,9 @@ class TestStoreRoundTrip:
 
         WatchStore(db)
         with sqlite3.connect(db) as conn:
-            names = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            names = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
         assert {"watches", "runs", "pages", "changes"} <= names
 
     def test_deleting_a_watch_takes_its_runs_along(self, db: Path) -> None:
@@ -269,10 +271,19 @@ class TestIncrementalRun:
         assert "Baseline" in summary.summary()
         store = WatchStore(db)
         pages = store.pages_of(summary.run_id)
-        assert set(pages) == {site.url, f"{site.url}about.html", f"{site.url}circulars.html", f"{site.url}old.html"}
+        assert set(pages) == {
+            site.url,
+            f"{site.url}about.html",
+            f"{site.url}circulars.html",
+            f"{site.url}old.html",
+        }
         about = pages[f"{site.url}about.html"]
         assert about.content_hash
-        assert [s["heading"] for s in about.sections if s["heading"]] == ["About", "History", "Contact"]
+        assert [s["heading"] for s in about.sections if s["heading"]] == [
+            "About",
+            "History",
+            "Contact",
+        ]
 
     def test_the_second_run_reports_added_removed_and_changed_with_sections(
         self, site: Site, db: Path
@@ -318,7 +329,9 @@ class TestIncrementalRun:
         recorded = list_changes(watch.id, store=db)
         assert {c.url: c.kind for c in recorded} == {e["url"]: e["kind"] for e in streamed}
 
-    def test_the_page_events_are_forwarded_without_their_markdown(self, site: Site, db: Path) -> None:
+    def test_the_page_events_are_forwarded_without_their_markdown(
+        self, site: Site, db: Path
+    ) -> None:
         watch = create_watch(site.url, CONFIG, store=db)
         pages = [e for e in stream_watch(watch.id, store=db) if e["type"] == "page"]
         assert pages and all("markdown" not in e and e["content_hash"] for e in pages if e["ok"])
@@ -343,11 +356,15 @@ class TestIncrementalRun:
         assert summary.pages_failed == 1
         assert not summary.any_change
 
-    def test_a_page_the_cap_never_reached_is_unverified_not_gone(self, site: Site, db: Path) -> None:
+    def test_a_page_the_cap_never_reached_is_unverified_not_gone(
+        self, site: Site, db: Path
+    ) -> None:
         watch = create_watch(site.url, CONFIG, store=db)
         run_watch(watch.id, store=db)
         site.serve(version_two())
-        summary = run_watch(watch.id, store=db, adjust=lambda c: c.__class__(**{**_fields(c), "max_pages": 1}))
+        summary = run_watch(
+            watch.id, store=db, adjust=lambda c: c.__class__(**{**_fields(c), "max_pages": 1})
+        )
         assert summary.stopped_by == "pages"
         assert summary.removed == 0
         assert summary.unverified == 3
@@ -409,23 +426,50 @@ class TestIncrementalRun:
         from webgraph.watch import _compare
 
         before = PageRecord(
-            url="https://x.test/", content_hash="a", sections=(
-                {"heading": "Students", "level": 2, "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)"},
-                {"heading": "Message", "level": 2, "text": "The new millennium has seen unprecedented challenges."},
+            url="https://x.test/",
+            content_hash="a",
+            sections=(
+                {
+                    "heading": "Students",
+                    "level": 2,
+                    "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)",
+                },
+                {
+                    "heading": "Message",
+                    "level": 2,
+                    "text": "The new millennium has seen unprecedented challenges.",
+                },
             ),
         )
         after = PageRecord(
-            url="https://x.test/", content_hash="b", sections=(
-                {"heading": "Students", "level": 2, "text": "The new millennium has seen unprecedented challenges."},
-                {"heading": "Message", "level": 2, "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)"},
+            url="https://x.test/",
+            content_hash="b",
+            sections=(
+                {
+                    "heading": "Students",
+                    "level": 2,
+                    "text": "The new millennium has seen unprecedented challenges.",
+                },
+                {
+                    "heading": "Message",
+                    "level": 2,
+                    "text": "- [facebook](https://f.test)\n\n[Conference](https://c.test)",
+                },
             ),
         )
         verdict = _compare(before, after, NoiseRules.default())
         assert verdict.kind is None and verdict.suppressed
         # But a block that is new is a change, however the rest moved.
         grown = PageRecord(
-            url="https://x.test/", content_hash="c", sections=(
-                *after.sections, {"heading": "Circulars", "level": 2, "text": "Fee notification for the odd semester examinations."},
+            url="https://x.test/",
+            content_hash="c",
+            sections=(
+                *after.sections,
+                {
+                    "heading": "Circulars",
+                    "level": 2,
+                    "text": "Fee notification for the odd semester examinations.",
+                },
             ),
         )
         assert _compare(before, grown, NoiseRules.default()).kind == "changed"
@@ -515,7 +559,12 @@ class TestSections:
     def test_headings_own_what_follows(self) -> None:
         md = "Lead.\n\n# Title\n\nPara one.\n\n## Part A\n\nText a.\n\n```\n# not a heading\n```\n\n## Part B ¶\n\nText b."
         sections = sections_from_markdown(md)
-        assert [(s.level, s.heading) for s in sections] == [(0, ""), (1, "Title"), (2, "Part A"), (2, "Part B")]
+        assert [(s.level, s.heading) for s in sections] == [
+            (0, ""),
+            (1, "Title"),
+            (2, "Part A"),
+            (2, "Part B"),
+        ]
         assert sections[0].text == "Lead."
         assert "# not a heading" in sections[2].text
         assert sections[3].text == "Text b."
@@ -532,11 +581,30 @@ class TestFeeds:
         run = store.start_run(watch.id)
         store.finish_run(run.id, pages_ok=2, pages_failed=0, stopped_by=None)
         store.add_change(
-            run.id, watch.id, url="https://example.test/circulars", kind="changed", title="Circulars",
-            before_hash="a", after_hash="b",
-            sections=[{"kind": "edited", "heading": "2026", "before": "two items", "after": "three items & more"}],
+            run.id,
+            watch.id,
+            url="https://example.test/circulars",
+            kind="changed",
+            title="Circulars",
+            before_hash="a",
+            after_hash="b",
+            sections=[
+                {
+                    "kind": "edited",
+                    "heading": "2026",
+                    "before": "two items",
+                    "after": "three items & more",
+                }
+            ],
         )
-        store.add_change(run.id, watch.id, url="https://example.test/new", kind="added", title="New", after_hash="c")
+        store.add_change(
+            run.id,
+            watch.id,
+            url="https://example.test/new",
+            kind="added",
+            title="New",
+            after_hash="c",
+        )
         return watch.id
 
     def test_rss_is_well_formed_and_complete(self, db: Path) -> None:
@@ -553,8 +621,12 @@ class TestFeeds:
         for item in items:
             for required in ("title", "link", "guid", "pubDate", "description"):
                 assert item.findtext(required), required
-        assert "2026" in (items[0].findtext("title") or "") or "2026" in (items[1].findtext("title") or "")
-        assert "&" not in xml.replace("&amp;", "").replace("&lt;", "").replace("&gt;", "").replace("&quot;", "").replace("&#", "")
+        assert "2026" in (items[0].findtext("title") or "") or "2026" in (
+            items[1].findtext("title") or ""
+        )
+        assert "&" not in xml.replace("&amp;", "").replace("&lt;", "").replace("&gt;", "").replace(
+            "&quot;", ""
+        ).replace("&#", "")
 
     def test_atom_is_well_formed_and_complete(self, db: Path) -> None:
         watch_id = self._watch_with_changes(db)
@@ -586,7 +658,12 @@ class TestFeeds:
 
     def test_since_filters(self, db: Path) -> None:
         watch_id = self._watch_with_changes(db)
-        assert json.loads(export_changes(watch_id, since=time.time() + 60, fmt="json", store=db))["changes"] == []
+        assert (
+            json.loads(export_changes(watch_id, since=time.time() + 60, fmt="json", store=db))[
+                "changes"
+            ]
+            == []
+        )
 
     def test_an_unknown_format_is_refused(self, db: Path) -> None:
         watch_id = self._watch_with_changes(db)
@@ -595,7 +672,9 @@ class TestFeeds:
 
 
 class TestCli:
-    def test_create_run_changes(self, site: Site, db: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_create_run_changes(
+        self, site: Site, db: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         assert main(["watch", "create", site.url, "--db", str(db), "--max-pages", "20"]) == 0
         watch_id = capsys.readouterr().out.strip()
         assert len(watch_id) == 12
@@ -617,17 +696,38 @@ class TestCli:
         xml = capsys.readouterr().out
         assert ET.fromstring(xml).tag == "rss"
 
-        assert main(["watch", "changes", watch_id, "--db", str(db), "--since", "1h", "--format", "json"]) == 0
+        assert (
+            main(
+                ["watch", "changes", watch_id, "--db", str(db), "--since", "1h", "--format", "json"]
+            )
+            == 0
+        )
         assert len(json.loads(capsys.readouterr().out)["changes"]) == 4
 
         assert main(["watch", "run", watch_id, "--db", str(db), "--json"]) == 0
         summary = json.loads(capsys.readouterr().out)
         assert summary["changed"] == 0 and summary["unchanged"] == 4
 
-    def test_a_watch_config_file_is_read(self, site: Site, db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_a_watch_config_file_is_read(
+        self, site: Site, db: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         config_file = tmp_path / "watch.json"
         config_file.write_text(json.dumps({**CONFIG, "noise": False}), encoding="utf-8")
-        assert main(["watch", "create", site.url, "--db", str(db), "--config", str(config_file), "--json"]) == 0
+        assert (
+            main(
+                [
+                    "watch",
+                    "create",
+                    site.url,
+                    "--db",
+                    str(db),
+                    "--config",
+                    str(config_file),
+                    "--json",
+                ]
+            )
+            == 0
+        )
         created = json.loads(capsys.readouterr().out)
         assert created["config"]["noise"] is False
         assert created["config"]["max_pages"] == 20
@@ -636,8 +736,19 @@ class TestCli:
 class TestRunSummary:
     def test_round_trips_through_its_dict(self) -> None:
         summary = RunSummary(
-            watch_id="w", run_id=1, baseline=False, pages_ok=3, pages_failed=0, stopped_by=None,
-            added=1, removed=0, changed=1, suppressed=1, unchanged=0, unverified=0, duration_seconds=1.0,
+            watch_id="w",
+            run_id=1,
+            baseline=False,
+            pages_ok=3,
+            pages_failed=0,
+            stopped_by=None,
+            added=1,
+            removed=0,
+            changed=1,
+            suppressed=1,
+            unchanged=0,
+            unverified=0,
+            duration_seconds=1.0,
         )
         assert summary.any_change
         assert summary.as_dict()["changes"] == []

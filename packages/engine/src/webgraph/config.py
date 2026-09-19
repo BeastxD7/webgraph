@@ -140,9 +140,24 @@ MIN_PAGE_BESIDE_WALL_WORDS = 20
 # a real one -- a trailing slash, `www.` or scheme change is not a redirect to anything --
 # and a page asked for at a login URL is the login page, not a wall.
 LOGIN_PATH_MARKERS = (
-    "/login", "/login.php", "/login.aspx", "/signin", "/sign-in", "/sign_in", "/sso",
-    "/auth", "/authenticate", "/oauth", "/oauth2", "/authorize", "/accounts/login",
-    "/session/new", "/sessions/new", "/user/login", "/users/sign_in", "/wp-login.php",
+    "/login",
+    "/login.php",
+    "/login.aspx",
+    "/signin",
+    "/sign-in",
+    "/sign_in",
+    "/sso",
+    "/auth",
+    "/authenticate",
+    "/oauth",
+    "/oauth2",
+    "/authorize",
+    "/accounts/login",
+    "/session/new",
+    "/sessions/new",
+    "/user/login",
+    "/users/sign_in",
+    "/wp-login.php",
 )
 # A login page also gives itself away by the parameter that says where to go afterwards:
 # `dest=` (reddit), `session_redirect=` (linkedin), `next=` (Django), `redirect_to=`
@@ -150,8 +165,18 @@ LOGIN_PATH_MARKERS = (
 # names the URL that was asked for, so a `?redirect=` on an unrelated page is not a login.
 # Compared case-insensitively with `_` and `-` removed (`returnUrl`, `return_url`, `ReturnURL`).
 LOGIN_RETURN_PARAMS = (
-    "dest", "next", "redirect", "redirectto", "redirecturi", "redirecturl", "return",
-    "returnto", "returnurl", "continue", "sessionredirect", "goto",
+    "dest",
+    "next",
+    "redirect",
+    "redirectto",
+    "redirecturi",
+    "redirecturl",
+    "return",
+    "returnto",
+    "returnurl",
+    "continue",
+    "sessionredirect",
+    "goto",
 )
 # A login redirect is a wall when the document it lands on holds a password field, or has
 # fewer words than this: a login page has a form and a footer, not an article. Measured:

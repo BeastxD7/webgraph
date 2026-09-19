@@ -70,7 +70,9 @@ def _body_markdown(change: Change) -> str:
 
 def _body_html(change: Change) -> str:
     """A small HTML body for readers that render one. Escaped by ElementTree on output."""
-    parts = [f'<p><b>{change.kind}</b> — <a href="{change.url}">{change.title or change.url}</a></p>']
+    parts = [
+        f'<p><b>{change.kind}</b> — <a href="{change.url}">{change.title or change.url}</a></p>'
+    ]
     if change.sections:
         parts.append("<ul>")
         for section in change.sections:
@@ -96,7 +98,9 @@ def to_rss(watch: Watch, changes: Iterable[Change], *, feed_url: str = "") -> st
     channel = ET.SubElement(rss, "channel")
     ET.SubElement(channel, "title").text = f"Changes on {watch.root}"
     ET.SubElement(channel, "link").text = watch.root
-    ET.SubElement(channel, "description").text = (
+    ET.SubElement(
+        channel, "description"
+    ).text = (
         f"What changed on {watch.root}, section by section, as webgraph watch {watch.id} saw it."
     )
     latest = max((c.detected_at for c in changes), default=watch.created_at)
@@ -154,9 +158,7 @@ def to_markdown(watch: Watch, changes: Iterable[Change]) -> str:
     counts = {"added": 0, "removed": 0, "changed": 0}
     for change in changes:
         counts[change.kind] += 1
-    lines.append(
-        f"{counts['added']} new, {counts['removed']} gone, {counts['changed']} changed."
-    )
+    lines.append(f"{counts['added']} new, {counts['removed']} gone, {counts['changed']} changed.")
     lines.append("")
     for change in changes:
         stamp = _when(change.detected_at).strftime("%Y-%m-%d %H:%M UTC")

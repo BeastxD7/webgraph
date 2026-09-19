@@ -75,13 +75,18 @@ Note the directional ones are folded to one predicate but *not* reversed -- `tau
 mapped to `teaches` only when the extractor also swaps subject and object, which
 `extract.py` does for the entries in `REVERSED`."""
 
-REVERSED: Final[frozenset[str]] = frozenset({"taught_by", "headed_by", "led_by", "founded_by", "established_by", "offered_by"})
+REVERSED: Final[frozenset[str]] = frozenset(
+    {"taught_by", "headed_by", "led_by", "founded_by", "established_by", "offered_by"}
+)
 
 _EVIDENCE: Final[dict[str, Any]] = {
     "type": "object",
     "properties": {
         "block": {"type": "string", "description": "the [bN] marker of the block the quote is in"},
-        "quote": {"type": "string", "description": "verbatim text copied from that block, 3-40 words"},
+        "quote": {
+            "type": "string",
+            "description": "verbatim text copied from that block, 3-40 words",
+        },
     },
     "required": ["block", "quote"],
     "additionalProperties": False,
@@ -183,7 +188,9 @@ def extract_prompt(
     )
 
 
-ANSWER_SYSTEM: Final[str] = """You answer a question about one website using only the numbered evidence provided.
+ANSWER_SYSTEM: Final[
+    str
+] = """You answer a question about one website using only the numbered evidence provided.
 
 Rules:
 1. Every sentence that states a fact ends with the citation(s) that support it, written

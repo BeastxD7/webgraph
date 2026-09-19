@@ -40,7 +40,7 @@ class TestBalancedJson:
         assert find_balanced_json(text, 0) == text
 
     def test_arrays(self) -> None:
-        assert find_balanced_json('[1, [2, 3], 4] trailing', 0) == "[1, [2, 3], 4]"
+        assert find_balanced_json("[1, [2, 3], 4] trailing", 0) == "[1, [2, 3], 4]"
 
     def test_unterminated_returns_none(self) -> None:
         assert find_balanced_json('{"a": 1', 0) is None
@@ -150,10 +150,14 @@ class TestRscFlight:
 
     def test_split_mid_value_still_parses(self) -> None:
         line = '2:{"deeply":{"nested":{"value":"ok"}}}\n'
-        html = "<html><body><p>x</p><script>" + "".join(
-            f"self.__next_f.push([1,{json.dumps(line[i:i + 7])}]);"
-            for i in range(0, len(line), 7)
-        ) + "</script></body></html>"
+        html = (
+            "<html><body><p>x</p><script>"
+            + "".join(
+                f"self.__next_f.push([1,{json.dumps(line[i : i + 7])}]);"
+                for i in range(0, len(line), 7)
+            )
+            + "</script></body></html>"
+        )
         payloads = extract_rsc_flight(html)
         assert payloads[0].data["deeply"]["nested"]["value"] == "ok"
 
@@ -191,11 +195,13 @@ class TestInitialState:
 
     def test_function_call_form_is_skipped(self) -> None:
         """Nuxt 3 devalue payloads cannot be read without executing JS -- skip, don't guess."""
-        html = '<html><body><script>window.__NUXT__ = (function(a){return {b:a}})(1);</script></body></html>'
+        html = "<html><body><script>window.__NUXT__ = (function(a){return {b:a}})(1);</script></body></html>"
         assert extract_initial_state(html) == []
 
     def test_trailing_code_not_swallowed(self) -> None:
-        html = '<html><body><script>window.__NUXT__={"a":1};var other={"b":2};</script></body></html>'
+        html = (
+            '<html><body><script>window.__NUXT__={"a":1};var other={"b":2};</script></body></html>'
+        )
         payloads = extract_initial_state(html)
         assert len(payloads) == 1
         assert payloads[0].data == {"a": 1}

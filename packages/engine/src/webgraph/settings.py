@@ -85,19 +85,31 @@ class Settings:
             raw = env.get(name, "").strip()
             return Path(raw) if raw else None
 
-        origins = tuple(o.strip() for o in env.get("WEBGRAPH_ALLOWED_ORIGINS", "").split(",") if o.strip())
+        origins = tuple(
+            o.strip() for o in env.get("WEBGRAPH_ALLOWED_ORIGINS", "").split(",") if o.strip()
+        )
         return cls(
             max_pages=integer("WEBGRAPH_MAX_PAGES", config.DEPLOY_MAX_PAGES),
             max_concurrency=integer("WEBGRAPH_MAX_CONCURRENCY", config.DEPLOY_MAX_CONCURRENCY),
-            max_concurrent_renders=integer("WEBGRAPH_MAX_CONCURRENT_RENDERS", config.DEPLOY_MAX_CONCURRENT_RENDERS),
-            max_concurrent_crawls=integer("WEBGRAPH_MAX_CONCURRENT_CRAWLS", config.DEPLOY_MAX_CONCURRENT_CRAWLS),
+            max_concurrent_renders=integer(
+                "WEBGRAPH_MAX_CONCURRENT_RENDERS", config.DEPLOY_MAX_CONCURRENT_RENDERS
+            ),
+            max_concurrent_crawls=integer(
+                "WEBGRAPH_MAX_CONCURRENT_CRAWLS", config.DEPLOY_MAX_CONCURRENT_CRAWLS
+            ),
             max_browsers=integer("WEBGRAPH_MAX_BROWSERS", config.DEPLOY_MAX_BROWSERS),
-            trace_dir=path("WEBGRAPH_TRACE_DIR") or (Path(config.DEPLOY_TRACE_DIR) if config.DEPLOY_TRACE_DIR else None),
-            trace_file=path("WEBGRAPH_TRACE") or (Path(config.DEPLOY_TRACE_FILE) if config.DEPLOY_TRACE_FILE else None),
-            graph_dir=path("WEBGRAPH_GRAPH_DIR") or (Path(config.DEPLOY_GRAPH_DIR) if config.DEPLOY_GRAPH_DIR else None),
-            kg_enabled=env.get("WEBGRAPH_KG", "").strip().lower() in {"1", "true", "yes", "on"} or config.DEPLOY_KG,
-            kg_dir=path("WEBGRAPH_KG_DIR") or (Path(config.DEPLOY_KG_DIR) if config.DEPLOY_KG_DIR else None),
-            watch_db=path("WEBGRAPH_WATCH_DB") or (Path(config.DEPLOY_WATCH_DB) if config.DEPLOY_WATCH_DB else None),
+            trace_dir=path("WEBGRAPH_TRACE_DIR")
+            or (Path(config.DEPLOY_TRACE_DIR) if config.DEPLOY_TRACE_DIR else None),
+            trace_file=path("WEBGRAPH_TRACE")
+            or (Path(config.DEPLOY_TRACE_FILE) if config.DEPLOY_TRACE_FILE else None),
+            graph_dir=path("WEBGRAPH_GRAPH_DIR")
+            or (Path(config.DEPLOY_GRAPH_DIR) if config.DEPLOY_GRAPH_DIR else None),
+            kg_enabled=env.get("WEBGRAPH_KG", "").strip().lower() in {"1", "true", "yes", "on"}
+            or config.DEPLOY_KG,
+            kg_dir=path("WEBGRAPH_KG_DIR")
+            or (Path(config.DEPLOY_KG_DIR) if config.DEPLOY_KG_DIR else None),
+            watch_db=path("WEBGRAPH_WATCH_DB")
+            or (Path(config.DEPLOY_WATCH_DB) if config.DEPLOY_WATCH_DB else None),
             allowed_origins=origins or tuple(config.DEPLOY_ALLOWED_ORIGINS),
             chromium_args=env.get("WEBGRAPH_CHROMIUM_ARGS", "") or config.DEPLOY_CHROMIUM_ARGS,
             contact=env.get("WEBGRAPH_CONTACT", "").strip() or config.DEPLOY_CONTACT,
@@ -128,7 +140,11 @@ def describe_config() -> dict[str, dict[str, object]]:
     section = ""
     for index, line in enumerate(lines):
         # Section banners: a "# ===" line, a "# Title" line, a "# ===" line.
-        if line.startswith("# ===") and index + 1 < len(lines) and lines[index + 1].startswith("# "):
+        if (
+            line.startswith("# ===")
+            and index + 1 < len(lines)
+            and lines[index + 1].startswith("# ")
+        ):
             section = lines[index + 1][2:].strip()
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -139,7 +155,9 @@ def describe_config() -> dict[str, dict[str, object]]:
         # The comment block immediately above, and any trailing comment on the line.
         comment: list[str] = []
         cursor = node.lineno - 2
-        while cursor >= 0 and lines[cursor].startswith("#") and not lines[cursor].startswith("# ==="):
+        while (
+            cursor >= 0 and lines[cursor].startswith("#") and not lines[cursor].startswith("# ===")
+        ):
             comment.insert(0, lines[cursor][1:].strip())
             cursor -= 1
         trailing = lines[node.lineno - 1].partition("#")[2].strip()
@@ -148,7 +166,11 @@ def describe_config() -> dict[str, dict[str, object]]:
         # Which banner this setting sits under.
         heading = ""
         for index in range(node.lineno - 1, -1, -1):
-            if lines[index].startswith("# ===") and index + 1 < len(lines) and lines[index + 1].startswith("# "):
+            if (
+                lines[index].startswith("# ===")
+                and index + 1 < len(lines)
+                and lines[index + 1].startswith("# ")
+            ):
                 heading = lines[index + 1][2:].strip()
                 break
         value = getattr(config, name)

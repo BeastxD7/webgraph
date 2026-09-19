@@ -223,8 +223,7 @@ class TestFallback:
         """Anchoring a majority of blocks to a minority of measurements would be source order
         wearing a measurement's name."""
         blocks = [block("measured", 0, 0, dom_index=0)] + [
-            Block(text=f"u{i}", tag="p", xpath=f"/p[{i + 2}]", dom_index=i + 1)
-            for i in range(5)
+            Block(text=f"u{i}", tag="p", xpath=f"/p[{i + 2}]", dom_index=i + 1) for i in range(5)
         ]
         _ordered, method = order_blocks(blocks)
         assert method is ReadingOrderMethod.DOM_FALLBACK
@@ -265,8 +264,10 @@ class TestRobustness:
 
     @pytest.mark.parametrize("count", [0, 1, 2, 5, 50])
     def test_never_drops_or_duplicates_blocks(self, count: int) -> None:
-        blocks = [block(f"b{i}", (i % 3) * 250.0, (i // 3) * 40.0, w=200, dom_index=i)
-                  for i in range(count)]
+        blocks = [
+            block(f"b{i}", (i % 3) * 250.0, (i // 3) * 40.0, w=200, dom_index=i)
+            for i in range(count)
+        ]
         ordered, _ = order_blocks(blocks)
         assert sorted(b.dom_index for b in ordered) == sorted(b.dom_index for b in blocks)
 
@@ -297,8 +298,12 @@ class TestRowBanding:
 
     def test_a_nav_bar_reads_left_to_right_despite_subpixel_offsets(self) -> None:
         blocks = self._row(
-            [("Product", 332.0, 71.0), ("Developers", 421.7, 71.0),
-             ("Pricing", 635.2, 70.4), ("Docs", 701.0, 70.4)]
+            [
+                ("Product", 332.0, 71.0),
+                ("Developers", 421.7, 71.0),
+                ("Pricing", 635.2, 70.4),
+                ("Docs", 701.0, 70.4),
+            ]
         )
         ordered, _ = order_blocks(list(reversed(blocks)))
         assert [b.text for b in ordered] == ["Product", "Developers", "Pricing", "Docs"]
@@ -318,15 +323,24 @@ class TestRowBanding:
         measured against the taller block, not the shorter.
         """
         sidebar = Block(
-            text="sidebar", tag="nav", xpath="/html/body/nav", dom_index=0,
+            text="sidebar",
+            tag="nav",
+            xpath="/html/body/nav",
+            dom_index=0,
             rect=Rect(x=900.0, y=0.0, width=200.0, height=400.0),
         )
         upper = Block(
-            text="upper", tag="p", xpath="/html/body/p[1]", dom_index=1,
+            text="upper",
+            tag="p",
+            xpath="/html/body/p[1]",
+            dom_index=1,
             rect=Rect(x=100.0, y=50.0, width=500.0, height=30.0),
         )
         lower = Block(
-            text="lower", tag="p", xpath="/html/body/p[2]", dom_index=2,
+            text="lower",
+            tag="p",
+            xpath="/html/body/p[2]",
+            dom_index=2,
             rect=Rect(x=100.0, y=300.0, width=500.0, height=30.0),
         )
         ordered, _ = order_blocks([sidebar, lower, upper])

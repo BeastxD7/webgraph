@@ -17,7 +17,8 @@ def sample_graph():
     builder = GraphBuilder(BASE)
     builder.add(
         build_document(
-            '<html><body><h1>Home</h1><p>' + "The widget is a fastener. " * 12
+            "<html><body><h1>Home</h1><p>"
+            + "The widget is a fastener. " * 12
             + '<a href="/pricing">what it costs</a></p>'
             '<script type="application/ld+json">'
             '{"@type":"Organization","name":"Acme","@id":"https://example.com/#org"}'
@@ -28,7 +29,8 @@ def sample_graph():
     )
     builder.add(
         build_document(
-            "<html><body><h1>Plans</h1><p>" + "Team tier is 99 dollars. " * 12
+            "<html><body><h1>Plans</h1><p>"
+            + "Team tier is 99 dollars. " * 12
             + "</p></body></html>",
             f"{BASE}pricing",
         )
@@ -75,9 +77,7 @@ class TestJsonlRoundTrip:
             index for index, kind in enumerate(kinds) if kind in {"page", "section", "entity"}
         )
         first_edge = min(
-            index
-            for index, kind in enumerate(kinds)
-            if kind in {"link", "mention", "section_link"}
+            index for index, kind in enumerate(kinds) if kind in {"link", "mention", "section_link"}
         )
         assert last_node < first_edge
 
@@ -97,8 +97,7 @@ class TestCypher:
         builder = GraphBuilder(BASE)
         builder.add(
             build_document(
-                "<html><body><h1>It's a Trap's Trap</h1><p>" + "words " * 40
-                + "</p></body></html>",
+                "<html><body><h1>It's a Trap's Trap</h1><p>" + "words " * 40 + "</p></body></html>",
                 BASE,
             )
         )

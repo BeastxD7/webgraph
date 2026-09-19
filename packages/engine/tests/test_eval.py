@@ -88,19 +88,23 @@ class TestPageScore:
 class TestRunScore:
     def test_page_level_versus_field_accuracy(self) -> None:
         """Field accuracy overstates page-level success -- the effect the metric exists for."""
-        run = score_run([
-            score_page("a", "u", {"x": 1, "y": 2, "z": 3}, {"x": 1, "y": 2, "z": 3}),
-            score_page("b", "u", {"x": 1, "y": 2, "z": 3}, {"x": 1, "y": 2, "z": 99}),
-        ])
+        run = score_run(
+            [
+                score_page("a", "u", {"x": 1, "y": 2, "z": 3}, {"x": 1, "y": 2, "z": 3}),
+                score_page("b", "u", {"x": 1, "y": 2, "z": 3}, {"x": 1, "y": 2, "z": 99}),
+            ]
+        )
         assert run.page_level_success == 0.5
         assert run.field_accuracy == pytest.approx(5 / 6)
         assert run.field_accuracy > run.page_level_success
 
     def test_per_field_breakdown(self) -> None:
-        run = score_run([
-            score_page("a", "u", {"x": 1}, {"x": 1}),
-            score_page("b", "u", {"x": 1}, {"x": 2}),
-        ])
+        run = score_run(
+            [
+                score_page("a", "u", {"x": 1}, {"x": 1}),
+                score_page("b", "u", {"x": 1}, {"x": 2}),
+            ]
+        )
         assert run.per_field["x"] == (1, 2)
 
     def test_empty_run(self) -> None:
@@ -123,25 +127,29 @@ def corpus(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (tmp_path / "gold.json").write_text(
-        json.dumps({
-            "cases": [{
-                "id": "c1",
-                "url": "https://example.com/w",
-                "html": "pages/p.html",
-                "site_type": "ecommerce",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string"},
-                        "offers": {
+        json.dumps(
+            {
+                "cases": [
+                    {
+                        "id": "c1",
+                        "url": "https://example.com/w",
+                        "html": "pages/p.html",
+                        "site_type": "ecommerce",
+                        "schema": {
                             "type": "object",
-                            "properties": {"price": {"type": "number"}},
+                            "properties": {
+                                "name": {"type": "string"},
+                                "offers": {
+                                    "type": "object",
+                                    "properties": {"price": {"type": "number"}},
+                                },
+                            },
                         },
-                    },
-                },
-                "expected": {"name": "Widget", "offers.price": 49.0},
-            }]
-        }),
+                        "expected": {"name": "Widget", "offers.price": 49.0},
+                    }
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     return tmp_path

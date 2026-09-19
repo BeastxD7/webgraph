@@ -82,7 +82,9 @@ def _batched(rows: list[dict[str, Any]]) -> Iterator[list[dict[str, Any]]]:
         yield rows[start : start + BATCH_SIZE]
 
 
-def plan_batches(store: KGStore, *, typed_edges: bool = False) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
+def plan_batches(
+    store: KGStore, *, typed_edges: bool = False
+) -> Iterator[tuple[str, str, list[dict[str, Any]]]]:
     """`(label, cypher, rows)` in dependency order: constraints, pages, sections, evidence,
     entities, labels, mentions, attributes, relations."""
     for statement in CONSTRAINTS:
@@ -135,10 +137,17 @@ def plan_batches(store: KGStore, *, typed_edges: bool = False) -> Iterator[tuple
         )
         by_label.setdefault(_label(entity.type), []).append({"id": entity.id})
         mention_rows += [
-            {"entity_id": entity.id, "evidence_id": m.evidence.id, "surface": m.surface} for m in entity.mentions
+            {"entity_id": entity.id, "evidence_id": m.evidence.id, "surface": m.surface}
+            for m in entity.mentions
         ]
         attribute_rows += [
-            {"entity_id": entity.id, "evidence_id": a.evidence.id, "key": key, "value": a.value, "unit": a.unit}
+            {
+                "entity_id": entity.id,
+                "evidence_id": a.evidence.id,
+                "key": key,
+                "value": a.value,
+                "unit": a.unit,
+            }
             for key, values in entity.attributes.items()
             for a in values
         ]

@@ -78,8 +78,7 @@ class TestSiteNameSuffix:
             )
         ]
         assert (
-            facts_for_page(page, PageType.ARTICLE).facts["name"].value
-            == "What is Cloud Computing?"
+            facts_for_page(page, PageType.ARTICLE).facts["name"].value == "What is Cloud Computing?"
         )
 
     def test_a_leading_site_name_is_trimmed_too(self) -> None:

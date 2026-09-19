@@ -77,7 +77,6 @@ engine makes everywhere else: do not make a correct answer wrong in order to fix
 wrong one."""
 
 
-
 @dataclass(frozen=True, slots=True)
 class OrderingConfig:
     """Tuning for cut detection.
@@ -128,6 +127,7 @@ class OrderingConfig:
     rendered document's. Four sites in a robustness sweep -- lemonde.fr, shopify.com,
     ar.wikipedia and aljazeera -- sat between 0.34 and 0.47 and read in source order.
     """
+
 
 def order_blocks(
     blocks: list[Block],
@@ -258,7 +258,10 @@ def _card_of(
     for match in matches:  # outermost first
         template = xpath[: match.start()] + "[*]"
         instance = xpath[: match.end()]
-        if len(siblings.get(template, ())) >= _MIN_CARD_SIBLINGS and sizes.get(instance, 0) <= limit:
+        if (
+            len(siblings.get(template, ())) >= _MIN_CARD_SIBLINGS
+            and sizes.get(instance, 0) <= limit
+        ):
             return instance
     return None
 
@@ -619,6 +622,7 @@ def _tolerant_cut(
     out.extend(unmeasured)
     return out
 
+
 def _extents(blocks: list[Block], axis: str) -> list[tuple[float, float, Block]]:
     out: list[tuple[float, float, Block]] = []
     for b in blocks:
@@ -632,9 +636,7 @@ def _extents(blocks: list[Block], axis: str) -> list[tuple[float, float, Block]]
     return out
 
 
-def _find_gaps(
-    blocks: list[Block], *, axis: str, min_gap: float
-) -> tuple[list[float], float]:
+def _find_gaps(blocks: list[Block], *, axis: str, min_gap: float) -> tuple[list[float], float]:
     """Locate whitespace bands along `axis`.
 
     Returns the cut positions and the width of the widest qualifying gap. The width is
@@ -680,9 +682,7 @@ def _find_gaps(
     return boundaries, widest
 
 
-def _partition(
-    blocks: list[Block], *, axis: str, boundaries: list[float]
-) -> list[list[Block]]:
+def _partition(blocks: list[Block], *, axis: str, boundaries: list[float]) -> list[list[Block]]:
     """Split blocks into groups delimited by `boundaries` along `axis`."""
     groups: list[list[Block]] = [[] for _ in range(len(boundaries) + 1)]
     for start, _end, block in _extents(blocks, axis):

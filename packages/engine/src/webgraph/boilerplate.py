@@ -101,6 +101,7 @@ every other type gains. `header` stays: a page's `<header>` carries its own titl
 byline, and `_restore_title` depends on finding them.
 """
 
+
 def strip_landmarks(blocks: Sequence[Block], *, title_block: Block | None = None) -> list[Block]:
     """Drop blocks inside `<nav>`, `<footer>` and `<aside>`, and inside named panels.
 
@@ -165,6 +166,7 @@ STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent", "rail"
 navigation over the catalogue and a cookie dialog is nobody's content, whatever element
 either is built from. See `Block.widget`."""
 
+
 def strip_comments(blocks: Sequence[Block], *, max_share: float = 1.0) -> list[Block]:
     """Drop the comments section (`Block.widget == "comments"`) -- unless the comments are
     the page.
@@ -194,7 +196,9 @@ def strip_comments(blocks: Sequence[Block], *, max_share: float = 1.0) -> list[B
     prose = sum(
         word_count(b.text)
         for b in kept
-        if b.kind in _PROSE_KINDS and word_count(b.text) >= _PROSE_BLOCK_WORDS and link_density(b) < 0.5
+        if b.kind in _PROSE_KINDS
+        and word_count(b.text) >= _PROSE_BLOCK_WORDS
+        and link_density(b) < 0.5
     )
     if prose < MIN_COMMENT_HOST_WORDS:
         return list(blocks)
@@ -347,9 +351,7 @@ def detect_boilerplate(
     )
 
 
-def strip_boilerplate(
-    blocks: Sequence[Block], profile: BoilerplateProfile
-) -> list[Block]:
+def strip_boilerplate(blocks: Sequence[Block], profile: BoilerplateProfile) -> list[Block]:
     """Remove site chrome from one page, preserving its own leading heading.
 
     The heading guard exists because a page's title frequently also appears in the site
@@ -368,10 +370,7 @@ def strip_boilerplate(
             continue
 
         is_leading_heading = (
-            block.kind is BlockKind.HEADING
-            and block.level <= 2
-            and not heading_kept
-            and not kept
+            block.kind is BlockKind.HEADING and block.level <= 2 and not heading_kept and not kept
         )
         if is_leading_heading:
             kept.append(block)

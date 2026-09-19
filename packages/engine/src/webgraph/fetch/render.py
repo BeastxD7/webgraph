@@ -78,11 +78,12 @@ except ImportError:  # pragma: no cover
 
 
 @cache
-
 @dataclass(frozen=True, slots=True)
 class RenderConfig:
     timeout_ms: int = config.RENDER_TIMEOUT_MS
-    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = config.RENDER_WAIT_UNTIL  # type: ignore[assignment]
+    wait_until: Literal["commit", "domcontentloaded", "load", "networkidle"] = (
+        config.RENDER_WAIT_UNTIL  # type: ignore[assignment]
+    )
     """`load`, not `networkidle`.
 
     `networkidle` waits for 500ms of no network activity, which **never happens** on sites
@@ -137,6 +138,7 @@ class RenderConfig:
     block_resources: tuple[str, ...] = config.RENDER_BLOCK_RESOURCES
     """Skipped to cut bandwidth and time. Fonts are blocked deliberately: metrics shift
     slightly without them, but not enough to change column structure."""
+
 
 def _script(name: str) -> str:
     """Browser-side program `fetch/js/<name>.js`, read once per process.
@@ -377,9 +379,7 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
 
             navigation_note: str | None = None
             try:
-                response = page.goto(
-                    url, timeout=config.timeout_ms, wait_until=config.wait_until
-                )
+                response = page.goto(url, timeout=config.timeout_ms, wait_until=config.wait_until)
             except PlaywrightTimeoutError as exc:
                 # A navigation timeout is not an empty page. `wait_until="load"` waits for
                 # every image, advert and tracker a commercial page pulls in, and on an
@@ -449,7 +449,9 @@ def render_page(url: str, *, config: RenderConfig | None = None) -> RenderResult
             # resolves against the real host. Reporting the requested address resolved them
             # all against the short-link domain, the crawl's scope rejected every one as
             # off-site, and a whole-site crawl of Amazon discovered exactly one page.
-            payload["landed_url"] = page.url if page.url.startswith(("http://", "https://")) else url
+            payload["landed_url"] = (
+                page.url if page.url.startswith(("http://", "https://")) else url
+            )
             payload["status"] = response.status if response is not None else None
             payload["gate_dismissed"] = gate_dismissed
             payload["gate_note"] = gate_note

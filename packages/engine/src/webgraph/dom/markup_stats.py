@@ -25,15 +25,124 @@ from webgraph.types import MarkupStats
 __all__ = ["CLASS_BUCKETS", "COUNTED_TAGS", "markup_stats"]
 
 CLASS_BUCKETS: Final[dict[str, frozenset[str]]] = {
-    "card": frozenset({"card", "cards", "tile", "tiles", "teaser", "teasers", "item", "items", "entry", "entries"}),
-    "grid": frozenset({"grid", "row", "col", "cols", "columns", "masonry", "list", "listing", "listings"}),
-    "product": frozenset({"product", "products", "sku", "price", "prices", "cart", "basket", "add-to-cart", "variant", "variants", "swatch"}),
-    "post": frozenset({"post", "posts", "blog", "article", "articles", "entry-content", "excerpt", "byline", "author", "date", "published"}),
-    "service": frozenset({"hero", "features", "feature", "testimonial", "testimonials", "pricing", "plans", "plan", "cta", "benefits", "clients", "logos", "partners", "faq", "banner"}),
-    "forum": frozenset({"comment", "comments", "reply", "replies", "thread", "threads", "topic", "topics", "post-body", "message", "messages", "avatar", "votes", "vote", "upvote", "answer", "answers", "question"}),
-    "docs": frozenset({"sidebar", "toc", "docs", "doc", "documentation", "api", "reference", "code", "highlight", "codeblock", "prose", "markdown", "content-wrapper", "nav-tree", "version"}),
-    "filter": frozenset({"filter", "filters", "facet", "facets", "facets-list", "sort", "sorting", "refine", "refinement", "pagination", "pager", "page-numbers", "results", "result", "search-results"}),
-    "nav": frozenset({"nav", "navbar", "menu", "breadcrumb", "breadcrumbs", "footer", "header", "sidebar"}),
+    "card": frozenset(
+        {"card", "cards", "tile", "tiles", "teaser", "teasers", "item", "items", "entry", "entries"}
+    ),
+    "grid": frozenset(
+        {"grid", "row", "col", "cols", "columns", "masonry", "list", "listing", "listings"}
+    ),
+    "product": frozenset(
+        {
+            "product",
+            "products",
+            "sku",
+            "price",
+            "prices",
+            "cart",
+            "basket",
+            "add-to-cart",
+            "variant",
+            "variants",
+            "swatch",
+        }
+    ),
+    "post": frozenset(
+        {
+            "post",
+            "posts",
+            "blog",
+            "article",
+            "articles",
+            "entry-content",
+            "excerpt",
+            "byline",
+            "author",
+            "date",
+            "published",
+        }
+    ),
+    "service": frozenset(
+        {
+            "hero",
+            "features",
+            "feature",
+            "testimonial",
+            "testimonials",
+            "pricing",
+            "plans",
+            "plan",
+            "cta",
+            "benefits",
+            "clients",
+            "logos",
+            "partners",
+            "faq",
+            "banner",
+        }
+    ),
+    "forum": frozenset(
+        {
+            "comment",
+            "comments",
+            "reply",
+            "replies",
+            "thread",
+            "threads",
+            "topic",
+            "topics",
+            "post-body",
+            "message",
+            "messages",
+            "avatar",
+            "votes",
+            "vote",
+            "upvote",
+            "answer",
+            "answers",
+            "question",
+        }
+    ),
+    "docs": frozenset(
+        {
+            "sidebar",
+            "toc",
+            "docs",
+            "doc",
+            "documentation",
+            "api",
+            "reference",
+            "code",
+            "highlight",
+            "codeblock",
+            "prose",
+            "markdown",
+            "content-wrapper",
+            "nav-tree",
+            "version",
+        }
+    ),
+    "filter": frozenset(
+        {
+            "filter",
+            "filters",
+            "facet",
+            "facets",
+            "facets-list",
+            "sort",
+            "sorting",
+            "refine",
+            "refinement",
+            "pagination",
+            "pager",
+            "page-numbers",
+            "results",
+            "result",
+            "search-results",
+        }
+    ),
+    "nav": frozenset(
+        {"nav", "navbar", "menu", "breadcrumb", "breadcrumbs", "footer", "header", "sidebar"}
+    ),
 }
 """Class-name vocabularies, one per thing a page might be made of.
 
@@ -42,8 +151,25 @@ more conventional than one might expect: Bootstrap, Tailwind component kits and 
 copied templates converge on `card`, `price`, `comment`, `pricing`."""
 
 COUNTED_TAGS: Final[tuple[str, ...]] = (
-    "input", "select", "button", "form", "time", "article", "section", "table", "img", "a",
-    "li", "h2", "h3", "iframe", "video", "pre", "blockquote", "label", "option",
+    "input",
+    "select",
+    "button",
+    "form",
+    "time",
+    "article",
+    "section",
+    "table",
+    "img",
+    "a",
+    "li",
+    "h2",
+    "h3",
+    "iframe",
+    "video",
+    "pre",
+    "blockquote",
+    "label",
+    "option",
 )
 
 _SPLIT: Final[re.Pattern[str]] = re.compile(r"[\s_]+|(?<=[a-z])(?=[A-Z])|-+")

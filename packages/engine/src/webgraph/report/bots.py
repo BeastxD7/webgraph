@@ -41,12 +41,36 @@ Purpose = Literal["search", "assistant", "training"]
 Access = Literal["allowed", "partly", "blocked"]
 Via = Literal["named", "wildcard", "none"]
 
-ADMIN_PATHS: Final[frozenset[str]] = frozenset({
-    "wp-admin", "wp-login.php", "wp-includes", "wp-json", "xmlrpc.php", "wp-content/plugins",
-    "wp-content/cache", "cgi-bin", "admin", "administrator", "login", "logout", "signin",
-    "signup", "register", "account", "my-account", "cart", "checkout", "search", "tmp",
-    "cdn-cgi", "api", "_next", "static", "assets",
-})
+ADMIN_PATHS: Final[frozenset[str]] = frozenset(
+    {
+        "wp-admin",
+        "wp-login.php",
+        "wp-includes",
+        "wp-json",
+        "xmlrpc.php",
+        "wp-content/plugins",
+        "wp-content/cache",
+        "cgi-bin",
+        "admin",
+        "administrator",
+        "login",
+        "logout",
+        "signin",
+        "signup",
+        "register",
+        "account",
+        "my-account",
+        "cart",
+        "checkout",
+        "search",
+        "tmp",
+        "cdn-cgi",
+        "api",
+        "_next",
+        "static",
+        "assets",
+    }
+)
 """First path segments (or `segment/segment`) that a robots.txt disallows for housekeeping,
 not to keep content from anyone: the CMS back office, sign-in and account pages, the cart,
 site search, build assets. A `Disallow` on one of these is not a restriction on reading the
@@ -218,7 +242,9 @@ def policy_for_bot(robots: str, bot: WellKnownBot) -> BotPolicy:
     deciding = [
         value
         for key, value in rules
-        if key == "disallow" and value and (decides(rules, _example_path(value)) or ("",))[0] == "disallow"
+        if key == "disallow"
+        and value
+        and (decides(rules, _example_path(value)) or ("",))[0] == "disallow"
     ]
     content = tuple(dict.fromkeys(v for v in deciding if not is_administrative(v)))
     verdict = decides(rules, "/")

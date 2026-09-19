@@ -53,6 +53,7 @@ def _key(url: str) -> str:
         key = url
     return key.split("://", 1)[-1]
 
+
 __all__ = ["Corpus", "CrossSiteEdge"]
 
 MIN_ENTITY_NAME_CHARS: Final[int] = 4

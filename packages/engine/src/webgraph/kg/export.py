@@ -164,7 +164,11 @@ def _selector(ev: Evidence) -> dict[str, Any]:
         "oa:hasSelector": {
             "@type": "oa:XPathSelector",
             "oa:value": ev.block_xpath,
-            "oa:refinedBy": {"@type": "oa:TextPositionSelector", "oa:start": ev.span[0], "oa:end": ev.span[1]},
+            "oa:refinedBy": {
+                "@type": "oa:TextPositionSelector",
+                "oa:start": ev.span[0],
+                "oa:end": ev.span[1],
+            },
         },
         "oa:exact": ev.quote,
     }

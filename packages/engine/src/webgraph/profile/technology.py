@@ -114,7 +114,10 @@ class RuntimeEvidence:
     @property
     def present(self) -> bool:
         return bool(
-            self.versions or self.custom_globals or self.requests or self.cookies
+            self.versions
+            or self.custom_globals
+            or self.requests
+            or self.cookies
             or self.bundle_source
         )
 
@@ -328,7 +331,9 @@ def _clauses(items: Sequence[tuple[Any, Any]]) -> list[Clause]:
             elif op is sre_parse.BRANCH:
                 chosen = [_best_clause(_clauses(branch)) for branch in av[1]]
                 if all(chosen):
-                    clauses.append(tuple(sorted({n for clause in chosen if clause for n in clause})))
+                    clauses.append(
+                        tuple(sorted({n for clause in chosen if clause for n in clause}))
+                    )
             elif op is sre_parse.ATOMIC_GROUP:
                 clauses.extend(_clauses(av))
 
@@ -454,9 +459,13 @@ def same_site_assets(html: str, url: str = "", *, folded: str | None = None) -> 
 
 TECH_RULES: Final[tuple[TechRule, ...]] = (
     # --- Web servers, languages, server extensions (headers only) ---
-    _rule("Apache HTTP Server", "Web servers", header=("server", r"Apache(?:/(?P<version>[\d.]+))?")),
+    _rule(
+        "Apache HTTP Server", "Web servers", header=("server", r"Apache(?:/(?P<version>[\d.]+))?")
+    ),
     _rule("nginx", "Web servers", header=("server", r"nginx(?:/(?P<version>[\d.]+))?")),
-    _rule("Microsoft IIS", "Web servers", header=("server", r"Microsoft-IIS(?:/(?P<version>[\d.]+))?")),
+    _rule(
+        "Microsoft IIS", "Web servers", header=("server", r"Microsoft-IIS(?:/(?P<version>[\d.]+))?")
+    ),
     _rule("LiteSpeed", "Web servers", header=("server", r"LiteSpeed")),
     _rule("Caddy", "Web servers", header=("server", r"Caddy")),
     _rule("Envoy", "Web servers", header=("server", r"envoy")),
@@ -465,9 +474,12 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("ASP.NET", "Programming languages", header=("x-powered-by", r"ASP\.NET")),
     _rule("Express", "Programming languages", header=("x-powered-by", r"Express")),
     _rule("Ruby on Rails", "Programming languages", header=("x-powered-by", r"Phusion Passenger")),
-    _rule("OpenSSL", "Web server extensions", header=("server", r"OpenSSL(?:/(?P<version>[\d.\w]+))?")),
-    _rule("mod_perl", "Web server extensions", header=("server", r"mod_perl(?:/(?P<version>[\d.]+))?")),
-
+    _rule(
+        "OpenSSL", "Web server extensions", header=("server", r"OpenSSL(?:/(?P<version>[\d.\w]+))?")
+    ),
+    _rule(
+        "mod_perl", "Web server extensions", header=("server", r"mod_perl(?:/(?P<version>[\d.]+))?")
+    ),
     # --- CDN / hosting ---
     _rule("Cloudflare", "CDN", header=("server", r"cloudflare")),
     _rule("Fastly", "CDN", header=("x-served-by", r"cache-")),
@@ -478,7 +490,6 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Netlify", "Hosting", header=("server", r"Netlify")),
     _rule("GitHub Pages", "Hosting", header=("server", r"GitHub\.com")),
     _rule("Amazon S3", "Hosting", header=("server", r"AmazonS3")),
-
     # ------------------------------------------------------------------
     # Runtime signals: globals, network requests, cookies, bundle source
     # ------------------------------------------------------------------
@@ -486,7 +497,6 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     # is frequently silent about what a page is actually running: a Vite bundle names no
     # framework, an analytics SDK injected at runtime appears in no `<script>` tag, and a
     # CDN's bot challenge is a request and a cookie and nothing else.
-
     # --- Product analytics and error tracking ---
     _rule("PostHog", "Analytics", js=r"^(?:posthog|__PosthogExtensions__|_POSTHOG_REMOTE_CONFIG)$"),
     _rule("PostHog", "Analytics", request=r"https?://[^/]*\.i\.posthog\.com/"),
@@ -510,18 +520,20 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Plausible", "Analytics", js=r"^plausible$"),
     _rule("Matomo", "Analytics", js=r"^(?:_paq|Matomo|Piwik)$"),
     _rule("Sentry", "Miscellaneous", js=r"^(?:__SENTRY__|Sentry)$"),
-    _rule("Sentry", "Miscellaneous", request=r"\.ingest\.(?:us\.|de\.)?sentry\.io|browser\.sentry-cdn\.com"),
+    _rule(
+        "Sentry",
+        "Miscellaneous",
+        request=r"\.ingest\.(?:us\.|de\.)?sentry\.io|browser\.sentry-cdn\.com",
+    ),
     _rule("Vercel Analytics", "Analytics", request=r"/_vercel/insights/"),
     _rule("Vercel Speed Insights", "Performance", request=r"/_vercel/speed-insights/"),
     _rule("Cloudflare Web Analytics", "Analytics", request=r"static\.cloudflareinsights\.com"),
-
     # --- Security / bot management (a request and a cookie, nothing in the markup) ---
     _rule("Cloudflare Bot Management", "Security", cookie=r"^__cf_bm$"),
     _rule("Cloudflare Bot Management", "Security", request=r"/cdn-cgi/challenge-platform/"),
     _rule("Cloudflare Turnstile", "Security", request=r"challenges\.cloudflare\.com/turnstile"),
     _rule("hCaptcha", "Security", request=r"hcaptcha\.com/1/api\.js"),
     _rule("reCAPTCHA", "Security", request=r"google\.com/recaptcha/"),
-
     # --- Frameworks and routers that announce themselves on `window` ---
     _rule("React Router", "JavaScript frameworks", js=r"^__react[Rr]outer(?:Version|Context)$"),
     _rule("Next.js", "JavaScript frameworks", js=r"^__NEXT_DATA__$"),
@@ -535,7 +547,6 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Turbo", "JavaScript libraries", js=r"^Turbo$"),
     _rule("Livewire", "JavaScript libraries", js=r"^Livewire$"),
     _rule("Stimulus", "JavaScript libraries", js=r"^Stimulus$"),
-
     # --- Libraries with a global but no markup trace ---
     _rule("core-js", "JavaScript libraries", js=r"^__core-js_shared__$"),
     _rule("Lenis", "JavaScript libraries", js=r"^lenis(?:Version)?$"),
@@ -544,7 +555,11 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Three.js", "JavaScript libraries", js=r"^THREE$"),
     _rule("Lottie", "JavaScript libraries", js=r"^(?:lottie|bodymovin)$"),
     _rule("Chart.js", "JavaScript libraries", js=r"^Chart$"),
-    _rule("Leaflet", "JavaScript libraries", request=r"unpkg\.com/leaflet|leaflet[.-][\d.]*(?:min\.)?js"),
+    _rule(
+        "Leaflet",
+        "JavaScript libraries",
+        request=r"unpkg\.com/leaflet|leaflet[.-][\d.]*(?:min\.)?js",
+    ),
     _rule("Mapbox GL JS", "JavaScript libraries", js=r"^mapboxgl$"),
     _rule("Algolia", "JavaScript libraries", js=r"^(?:algoliasearch|instantsearch)$"),
     _rule("Stripe", "Ecommerce", js=r"^Stripe$"),
@@ -555,26 +570,41 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Intercom", "Marketing", js=r"^(?:Intercom|intercomSettings)$"),
     _rule("Drift", "Marketing", js=r"^(?:drift|driftt)$"),
     _rule("Crisp", "Marketing", js=r"^\$crisp$"),
-
     # --- Hosting inferred from where the assets come from ---
     _rule("Cloudflare R2", "Hosting", request=r"https?://[^/]*\.r2\.dev/"),
     _rule("Amazon S3", "Hosting", request=r"https?://[^/]*\.s3[.-][a-z0-9-]*\.amazonaws\.com/"),
     _rule("jsDelivr", "CDN", request=r"cdn\.jsdelivr\.net"),
     _rule("unpkg", "CDN", request=r"unpkg\.com"),
     _rule("cdnjs", "CDN", request=r"cdnjs\.cloudflare\.com"),
-
     # --- Read out of the page's own bundle ---
     # Radix and shadcn only mount their data attributes once a component opens, so a
     # homepage that ships a dialog but never opens it looks like neither. The bundle
     # still names them. Source patterns are anchored to package or attribute strings so
     # a comment mentioning the library does not match.
     _rule("Radix UI", "UI frameworks", source=r"@radix-ui/|data-radix-[a-z-]+", confidence=90),
-    _rule("shadcn/ui", "UI frameworks", source=r'data-slot=|"data-slot"|class-variance-authority', confidence=70),
-    _rule("Tailwind CSS", "UI frameworks", source=r"tailwind-merge|tw-merge|tailwindcss", confidence=80),
+    _rule(
+        "shadcn/ui",
+        "UI frameworks",
+        source=r'data-slot=|"data-slot"|class-variance-authority',
+        confidence=70,
+    ),
+    _rule(
+        "Tailwind CSS",
+        "UI frameworks",
+        source=r"tailwind-merge|tw-merge|tailwindcss",
+        confidence=80,
+    ),
     _rule("React", "JavaScript frameworks", source=r"react-dom|__reactContainer\$", confidence=90),
-    _rule("Vue.js", "JavaScript frameworks", source=r"__vue_app__|@vue/runtime-core", confidence=90),
+    _rule(
+        "Vue.js", "JavaScript frameworks", source=r"__vue_app__|@vue/runtime-core", confidence=90
+    ),
     _rule("Zustand", "JavaScript libraries", source=r"zustand", confidence=70),
-    _rule("TanStack Query", "JavaScript libraries", source=r"@tanstack/(?:react-)?query", confidence=80),
+    _rule(
+        "TanStack Query",
+        "JavaScript libraries",
+        source=r"@tanstack/(?:react-)?query",
+        confidence=80,
+    ),
     _rule("Embla Carousel", "JavaScript libraries", source=r"embla-carousel", confidence=80),
     _rule("Swiper", "JavaScript libraries", source=r"swiper-slide|swiper-wrapper", confidence=80),
     _rule("Sonner", "UI frameworks", source=r"\bsonner\b", confidence=80),
@@ -584,8 +614,12 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("React Hook Form", "JavaScript libraries", source=r"react-hook-form", confidence=85),
     _rule("Framer Motion", "JavaScript libraries", source=r"framer-motion", confidence=85),
     _rule("Lucide", "Font scripts", source=r"lucide-react", confidence=85),
-    _rule("class-variance-authority", "JavaScript libraries", source=r"class-variance-authority", confidence=85),
-
+    _rule(
+        "class-variance-authority",
+        "JavaScript libraries",
+        source=r"class-variance-authority",
+        confidence=85,
+    ),
     # --- Component libraries, icon sets and scroll/motion runtimes ---
     # Anchored to the attributes these libraries actually emit. A page that merely writes
     # about Radix or Lucide has no `data-radix-*` attribute and no `class="lucide ..."`.
@@ -600,7 +634,6 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
         html=r"class=[\"'][^\"']*\b(?:sm|md|lg|xl|2xl):[a-z][a-z0-9-]*(?:-[a-z0-9./\[\]]+)?\b",
         confidence=85,
     ),
-
     # --- Product analytics loaded as modules (no global to probe) ---
     _rule("PostHog", "Analytics", html=r"posthog\.init\(|(?:src|href)=[\"'][^\"']*posthog"),
     _rule("PostHog", "Analytics", html=r"(?:us|eu)-assets\.i\.posthog\.com", confidence=70),
@@ -608,39 +641,60 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Plausible", "Analytics", html=r"(?:src|href)=[\"'][^\"']*plausible\.io"),
     _rule("Umami", "Analytics", html=r"(?:src|href)=[\"'][^\"']*umami"),
     _rule("Vercel Analytics", "Analytics", html=r"(?:src|href)=[\"'][^\"']*/_vercel/insights"),
-
     # --- Standards a page either implements or does not ---
     _rule("Open Graph", "Miscellaneous", html=r"<meta[^>]+property=[\"']og:"),
     _rule("PWA", "Miscellaneous", html=r"<link[^>]+rel=[\"']manifest[\"']"),
     _rule("Priority Hints", "Performance", html=r"fetchpriority=[\"'](?:high|low)[\"']"),
     _rule("HTTP/3", "Performance", header=("alt-svc", r"h3")),
-
     # --- Security ---
     _rule("HSTS", "Security", header=("strict-transport-security", r".")),
     _rule("reCAPTCHA", "Security", html=r"grecaptcha\.|google\.com/recaptcha/api"),
     _rule("Cloudflare Bot Management", "Security", html=r"__cf_bm|challenge-platform"),
-
     # --- JavaScript frameworks ---
-    _rule("Next.js", "JavaScript frameworks", html=r'id="__NEXT_DATA__"|/_next/static|self\.__next_f'),
+    _rule(
+        "Next.js", "JavaScript frameworks", html=r'id="__NEXT_DATA__"|/_next/static|self\.__next_f'
+    ),
     _rule("Next.js", "JavaScript frameworks", header=("x-powered-by", r"Next\.js")),
     _rule("Nuxt", "JavaScript frameworks", html=r"window\.__NUXT__|/_nuxt/"),
     _rule("Gatsby", "JavaScript frameworks", html=r"___gatsby|window\.___chunkMapping"),
     _rule("SvelteKit", "JavaScript frameworks", html=r"__sveltekit_|data-sveltekit"),
-    _rule("Astro", "JavaScript frameworks", html=r'name="generator"\s+content="Astro v(?P<version>[\d.]+)"'),
-    _rule("Astro", "JavaScript frameworks", html=r"/_astro/|astro-island|data-astro-|<astro-", confidence=90),
+    _rule(
+        "Astro",
+        "JavaScript frameworks",
+        html=r'name="generator"\s+content="Astro v(?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "Astro",
+        "JavaScript frameworks",
+        html=r"/_astro/|astro-island|data-astro-|<astro-",
+        confidence=90,
+    ),
     _rule("Remix", "JavaScript frameworks", html=r"__remixContext|window\.__remixManifest"),
     _rule("Angular", "JavaScript frameworks", html=r'ng-version="(?P<version>[\d.]+)"'),
     _rule("Angular", "JavaScript frameworks", html=r"_nghost-|_ngcontent-", confidence=80),
     _rule("Vue.js", "JavaScript frameworks", html=r"data-v-[0-9a-f]{6,}|__VUE__|vue(?:\.min)?\.js"),
-    _rule("React", "JavaScript frameworks", html=r"data-reactroot|__REACT_DEVTOOLS|react(?:-dom)?(?:\.production)?(?:\.min)?\.js"),
+    _rule(
+        "React",
+        "JavaScript frameworks",
+        html=r"data-reactroot|__REACT_DEVTOOLS|react(?:-dom)?(?:\.production)?(?:\.min)?\.js",
+    ),
     _rule("Ember.js", "JavaScript frameworks", html=r"ember(?:\.min)?\.js|data-ember"),
-    _rule("Alpine.js", "JavaScript frameworks", html=r'\\sx-data=|(?:src)=\"[^\"]*alpinejs[^\"]*\"'),
+    _rule(
+        "Alpine.js", "JavaScript frameworks", html=r"\\sx-data=|(?:src)=\"[^\"]*alpinejs[^\"]*\""
+    ),
     _rule("HTMX", "JavaScript frameworks", html=r"htmx(?:\.min)?\.js|hx-get="),
-
     # --- JavaScript libraries ---
-    _rule("jQuery", "JavaScript libraries", html=r"jquery[.-](?P<version>\d+\.\d+(?:\.\d+)?)(?:\.min)?\.js"),
+    _rule(
+        "jQuery",
+        "JavaScript libraries",
+        html=r"jquery[.-](?P<version>\d+\.\d+(?:\.\d+)?)(?:\.min)?\.js",
+    ),
     _rule("jQuery", "JavaScript libraries", html=r'src="[^"]*jquery[^"]*\.js"', confidence=85),
-    _rule("jQuery UI", "JavaScript libraries", html=r"jquery-ui[.-]?(?P<version>[\d.]+)?(?:\.min)?\.js"),
+    _rule(
+        "jQuery UI",
+        "JavaScript libraries",
+        html=r"jquery-ui[.-]?(?P<version>[\d.]+)?(?:\.min)?\.js",
+    ),
     _rule("Lodash", "JavaScript libraries", html=r"lodash(?:\.min)?\.js"),
     _rule("Moment.js", "JavaScript libraries", html=r"moment(?:\.min)?\.js"),
     _rule("Axios", "JavaScript libraries", html=r"axios(?:\.min)?\.js"),
@@ -650,20 +704,39 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("AOS", "JavaScript libraries", html=r"aos(?:\.min)?\.(?:js|css)"),
     _rule("GSAP", "JavaScript libraries", html=r"gsap(?:\.min)?\.js|TweenMax"),
     _rule("Chart.js", "JavaScript libraries", html=r'src="[^"]*chart(?:\.min)?\.js"'),
-    _rule("Modernizr", "JavaScript libraries", html=r"modernizr[.-]?(?P<version>[\d.]+)?(?:\.min)?\.js"),
+    _rule(
+        "Modernizr",
+        "JavaScript libraries",
+        html=r"modernizr[.-]?(?P<version>[\d.]+)?(?:\.min)?\.js",
+    ),
     _rule("Popper.js", "JavaScript libraries", html=r"popper(?:\.min)?\.js"),
-
     # --- UI frameworks ---
-    _rule("Bootstrap", "UI frameworks", html=r"bootstrap[.-](?P<version>\d+\.\d+(?:\.\d+)?)(?:\.min)?\.(?:js|css)"),
-    _rule("Bootstrap", "UI frameworks", html=r"bootstrap(?:\.bundle)?(?:\.min)?\.(?:js|css)", confidence=85),
-    _rule("Tailwind CSS", "UI frameworks", html=r"tailwind(?:css)?(?:\.min)?\.css|cdn\.tailwindcss\.com"),
+    _rule(
+        "Bootstrap",
+        "UI frameworks",
+        html=r"bootstrap[.-](?P<version>\d+\.\d+(?:\.\d+)?)(?:\.min)?\.(?:js|css)",
+    ),
+    _rule(
+        "Bootstrap",
+        "UI frameworks",
+        html=r"bootstrap(?:\.bundle)?(?:\.min)?\.(?:js|css)",
+        confidence=85,
+    ),
+    _rule(
+        "Tailwind CSS",
+        "UI frameworks",
+        html=r"tailwind(?:css)?(?:\.min)?\.css|cdn\.tailwindcss\.com",
+    ),
     _rule("Foundation", "UI frameworks", html=r"foundation(?:\.min)?\.(?:js|css)"),
     _rule("Bulma", "UI frameworks", html=r"bulma(?:\.min)?\.css"),
     _rule("Material UI", "UI frameworks", html=r"MuiBox-root|material-ui"),
     _rule("Font Awesome", "UI frameworks", html=r"font-?awesome[.-]?(?P<version>[\d.]+)?"),
-
     # --- Analytics ---
-    _rule("Google Analytics", "Analytics", html=r"google-analytics\.com/analytics\.js|gtag/js\?id=UA-|ga\('create'"),
+    _rule(
+        "Google Analytics",
+        "Analytics",
+        html=r"google-analytics\.com/analytics\.js|gtag/js\?id=UA-|ga\('create'",
+    ),
     _rule("Google Analytics 4", "Analytics", html=r"gtag/js\?id=G-|gtag\('config',\s*'G-"),
     _rule("Hotjar", "Analytics", html=r"_hjSettings|static\.hotjar\.com/c/hotjar"),
     _rule("Matomo", "Analytics", html=r'(?:src|href)=["\'][^"\']*(?:matomo\.js|piwik\.js)'),
@@ -674,16 +747,23 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Microsoft Clarity", "Analytics", html=r'(?:src|href)=["\'][^"\']*(?:clarity\.ms)'),
     _rule("Facebook Pixel", "Analytics", html=r"fbq\(\s*.init."),
     _rule("LinkedIn Insight", "Analytics", html=r'(?:src|href)=["\'][^"\']*(?:snap\.licdn\.com)'),
-
     # --- Tag managers ---
-    _rule("Google Tag Manager", "Tag managers", html=r"googletagmanager\.com/gtm\.js|GTM-[A-Z0-9]+"),
+    _rule(
+        "Google Tag Manager", "Tag managers", html=r"googletagmanager\.com/gtm\.js|GTM-[A-Z0-9]+"
+    ),
     _rule("Tealium", "Tag managers", html=r'(?:src|href)=["\'][^"\']*(?:tags\.tiqcdn\.com)'),
-
     # --- Font scripts ---
-    _rule("Google Font API", "Font scripts", html=r'(?:src|href)=["\'][^"\']*(?:fonts\.googleapis\.com|fonts\.gstatic\.com)'),
+    _rule(
+        "Google Font API",
+        "Font scripts",
+        html=r'(?:src|href)=["\'][^"\']*(?:fonts\.googleapis\.com|fonts\.gstatic\.com)',
+    ),
     _rule("Adobe Fonts", "Font scripts", html=r'(?:src|href)=["\'][^"\']*(?:use\.typekit\.net)'),
-    _rule("Font Awesome CDN", "Font scripts", html=r'(?:src|href)=["\'][^"\']*(?:cdnjs\.cloudflare\.com/ajax/libs/font-awesome)'),
-
+    _rule(
+        "Font Awesome CDN",
+        "Font scripts",
+        html=r'(?:src|href)=["\'][^"\']*(?:cdnjs\.cloudflare\.com/ajax/libs/font-awesome)',
+    ),
     # --- CMS ---
     # A bare `/wp-content/` match fires on a *link to somebody else's* WordPress. Hacker
     # News was reported as WordPress because its front page linked to a PDF hosted on one.
@@ -704,8 +784,11 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("Ghost", "CMS", html=r'content="Ghost (?P<version>[\d.]+)"|/ghost/api/'),
     _rule("Contentful", "CMS", html=r"cdn\.contentful\.com|images\.ctfassets\.net"),
     _rule("Sanity", "CMS", html=r"cdn\.sanity\.io"),
-    _rule("Strapi", "CMS", html=r'strapi\.io|\.strapiapp\.com|cdn\.strapi"[^\"]*strapi[^\"]*\"|strapi\\.io/uploads'),
-
+    _rule(
+        "Strapi",
+        "CMS",
+        html=r'strapi\.io|\.strapiapp\.com|cdn\.strapi"[^\"]*strapi[^\"]*\"|strapi\\.io/uploads',
+    ),
     # --- Ecommerce ---
     _rule("Shopify", "Ecommerce", html=r"cdn\.shopify\.com|Shopify\.theme|/cdn/shop/"),
     _rule("WooCommerce", "Ecommerce", html=r"\bwc-ajax\b"),
@@ -716,33 +799,85 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("PrestaShop", "Ecommerce", html=r"var prestashop"),
     _rule("PrestaShop", "Ecommerce", asset=r"/themes/[^/]+/assets/.*prestashop"),
     _rule("Stripe", "Ecommerce", html=r'(?:src|href)=["\'][^"\']*(?:js\.stripe\.com)'),
-    _rule("PayPal", "Ecommerce", html=r'(?:src|href)=["\'][^"\']*(?:paypal\.com/sdk|paypalobjects\.com)'),
-
+    _rule(
+        "PayPal",
+        "Ecommerce",
+        html=r'(?:src|href)=["\'][^"\']*(?:paypal\.com/sdk|paypalobjects\.com)',
+    ),
     # --- Website builders ---
     _rule("Webflow", "Website builders", html=r"data-wf-page|data-wf-site|webflow\.js"),
     _rule("Wix", "Website builders", html=r"static\.wixstatic\.com|_wixCssImports"),
-    _rule("Squarespace", "Website builders", html=r"static1\.squarespace\.com|Static\.SQUARESPACE_CONTEXT"),
+    _rule(
+        "Squarespace",
+        "Website builders",
+        html=r"static1\.squarespace\.com|Static\.SQUARESPACE_CONTEXT",
+    ),
     _rule("Framer", "Website builders", html=r"framerusercontent\.com"),
-
     # --- Static site generators ---
-    _rule("Hugo", "Static site generators", html=r'name="generator"\s+content="Hugo (?P<version>[\d.]+)"'),
+    _rule(
+        "Hugo",
+        "Static site generators",
+        html=r'name="generator"\s+content="Hugo (?P<version>[\d.]+)"',
+    ),
     _rule("Jekyll", "Static site generators", html=r'content="Jekyll(?: v(?P<version>[\d.]+))?"'),
-    _rule("Eleventy", "Static site generators", html=r'content="Eleventy(?: v(?P<version>[\d.]+))?"'),
-    _rule("Docusaurus", "Static site generators", html=r'name="generator"\s+content="Docusaurus v(?P<version>[\d.]+)"'),
-    _rule("Docusaurus", "Static site generators", html=r"docusaurus\.config|__docusaurus", confidence=90),
-    _rule("Starlight", "Static site generators", html=r'name="generator"\s+content="Starlight v(?P<version>[\d.]+)"'),
-    _rule("Gatsby", "JavaScript frameworks", html=r'name="generator"\s+content="Gatsby (?P<version>[\d.]+)"'),
-    _rule("Next.js", "JavaScript frameworks", html=r'name="generator"\s+content="Next\.js (?P<version>[\d.]+)"'),
-    _rule("Nuxt", "JavaScript frameworks", html=r'name="generator"\s+content="Nuxt (?P<version>[\d.]+)"'),
+    _rule(
+        "Eleventy", "Static site generators", html=r'content="Eleventy(?: v(?P<version>[\d.]+))?"'
+    ),
+    _rule(
+        "Docusaurus",
+        "Static site generators",
+        html=r'name="generator"\s+content="Docusaurus v(?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "Docusaurus",
+        "Static site generators",
+        html=r"docusaurus\.config|__docusaurus",
+        confidence=90,
+    ),
+    _rule(
+        "Starlight",
+        "Static site generators",
+        html=r'name="generator"\s+content="Starlight v(?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "Gatsby",
+        "JavaScript frameworks",
+        html=r'name="generator"\s+content="Gatsby (?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "Next.js",
+        "JavaScript frameworks",
+        html=r'name="generator"\s+content="Next\.js (?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "Nuxt",
+        "JavaScript frameworks",
+        html=r'name="generator"\s+content="Nuxt (?P<version>[\d.]+)"',
+    ),
     _rule("SvelteKit", "JavaScript frameworks", html=r'name="generator"\s+content="SvelteKit'),
-    _rule("VuePress", "Static site generators", html=r'name="generator"\s+content="VuePress (?P<version>[\d.]+)"'),
-    _rule("MkDocs", "Static site generators", html=r'name="generator"\s+content="mkdocs-(?P<version>[\d.]+)'),
-    _rule("Sphinx", "Static site generators", html=r'name="generator"\s+content="(?:Docutils|Sphinx) ?(?P<version>[\d.]+)?'),
+    _rule(
+        "VuePress",
+        "Static site generators",
+        html=r'name="generator"\s+content="VuePress (?P<version>[\d.]+)"',
+    ),
+    _rule(
+        "MkDocs",
+        "Static site generators",
+        html=r'name="generator"\s+content="mkdocs-(?P<version>[\d.]+)',
+    ),
+    _rule(
+        "Sphinx",
+        "Static site generators",
+        html=r'name="generator"\s+content="(?:Docutils|Sphinx) ?(?P<version>[\d.]+)?',
+    ),
     _rule("Wix", "Website builders", html=r'name="generator"\s+content="Wix\.com'),
     _rule("MkDocs", "Static site generators", html=r'content="mkdocs'),
-
     # --- WordPress themes and page builders (extremely common, previously invisible) ---
-    _rule("Astra", "UI frameworks", html=r'wp-content/themes/astra|astra-theme-css|class=\"[^\"]*\bast-(?:container|header|desktop|mobile|site)'),
+    _rule(
+        "Astra",
+        "UI frameworks",
+        html=r"wp-content/themes/astra|astra-theme-css|class=\"[^\"]*\bast-(?:container|header|desktop|mobile|site)",
+    ),
     _rule("GeneratePress", "UI frameworks", asset=r"wp-content/themes/generatepress"),
     _rule("OceanWP", "UI frameworks", asset=r"wp-content/themes/oceanwp"),
     _rule("Divi", "UI frameworks", html=r"\bet_pb_"),
@@ -752,15 +887,26 @@ TECH_RULES: Final[tuple[TechRule, ...]] = (
     _rule("WPBakery", "UI frameworks", html=r"js_composer|vc_row"),
     _rule("Beaver Builder", "UI frameworks", html=r"fl-builder"),
     _rule("Kadence", "UI frameworks", asset=r"wp-content/themes/kadence"),
-    _rule("Yoast SEO", "Miscellaneous", html=r"This site is optimized with the Yoast|yoast-schema-graph"),
+    _rule(
+        "Yoast SEO",
+        "Miscellaneous",
+        html=r"This site is optimized with the Yoast|yoast-schema-graph",
+    ),
     _rule("WPForms", "Miscellaneous", html=r"wpforms-form"),
     _rule("WPForms", "Miscellaneous", asset=r"wp-content/plugins/wpforms"),
     _rule("Contact Form 7", "Miscellaneous", html=r"wpcf7-form"),
     _rule("Contact Form 7", "Miscellaneous", asset=r"plugins/contact-form-7"),
-
     # --- Marketing ---
-    _rule("HubSpot", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:js\.hs-scripts\.com|js\.hsforms\.net)'),
-    _rule("Mailchimp", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:chimpstatic\.com|list-manage\.com)'),
+    _rule(
+        "HubSpot",
+        "Marketing",
+        html=r'(?:src|href)=["\'][^"\']*(?:js\.hs-scripts\.com|js\.hsforms\.net)',
+    ),
+    _rule(
+        "Mailchimp",
+        "Marketing",
+        html=r'(?:src|href)=["\'][^"\']*(?:chimpstatic\.com|list-manage\.com)',
+    ),
     _rule("Intercom", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:widget\.intercom\.io)'),
     _rule("Drift", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:js\.driftt\.com)'),
     _rule("Crisp", "Marketing", html=r'(?:src|href)=["\'][^"\']*(?:client\.crisp\.chat)'),
@@ -1036,9 +1182,7 @@ def detect_technologies(
                 continue
 
         if rule.html is not None and html:
-            match = _prefiltered_search(
-                rule.html, rule.html_needles, folded, html, seen_in_html
-            )
+            match = _prefiltered_search(rule.html, rule.html_needles, folded, html, seen_in_html)
             if match:
                 _consider(rule, match, f"markup: {match.group(0)[:60]}")
                 continue

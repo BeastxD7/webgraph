@@ -97,7 +97,11 @@ def rule_that_applied(robots: str, url: str) -> tuple[str, str] | None:
             continue  # `Disallow:` with nothing is "allow everything"
         pattern = value.rstrip("$")
         matches = path.startswith(pattern) if "*" not in pattern else _wildcard(path, pattern)
-        if matches and (winner is None or len(value) > len(winner[1]) or (len(value) == len(winner[1]) and key == "allow")):
+        if matches and (
+            winner is None
+            or len(value) > len(winner[1])
+            or (len(value) == len(winner[1]) and key == "allow")
+        ):
             winner = (key, value)
     if winner is None or winner[0] == "allow":
         return None

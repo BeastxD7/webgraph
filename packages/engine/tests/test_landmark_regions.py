@@ -58,11 +58,14 @@ class TestNoscriptShell:
 
     def test_both_guards_are_required(self) -> None:
         # Shell, but the noscript is a sentence: nothing to rescue.
-        html = "<html><body><div id='app'></div><noscript><p>Enable JS.</p></noscript></body></html>"
+        html = (
+            "<html><body><div id='app'></div><noscript><p>Enable JS.</p></noscript></body></html>"
+        )
         assert unwrap_noscript_shell(parse_html(html)) == 0
         # Substantial noscript, but the page is not a shell: leave it stripped.
         html = (
-            "<html><body>" + "".join(f"<p>{PARAGRAPH}{i}.</p>" for i in range(30))
+            "<html><body>"
+            + "".join(f"<p>{PARAGRAPH}{i}.</p>" for i in range(30))
             + f"<noscript>{posts(20)}</noscript></body></html>"
         )
         assert unwrap_noscript_shell(parse_html(html)) == 0
@@ -100,7 +103,9 @@ class TestFormControls:
         assert "Solo Founder" in " ".join(texts)
 
 
-def page(main_tag: str = "main", main_attrs: str = "", nav_tag: str = "nav", nav_attrs: str = "") -> str:
+def page(
+    main_tag: str = "main", main_attrs: str = "", nav_tag: str = "nav", nav_attrs: str = ""
+) -> str:
     body = "".join(f"<p>{PARAGRAPH}{i}.</p>" for i in range(20))
     return (
         f"<html><body><{nav_tag} {nav_attrs}><a href='/'>Home</a> <a href='/a'>About</a></{nav_tag}>"
@@ -121,7 +126,9 @@ class TestRegions:
         assert all(b.in_main for b in document.blocks if b.region == "main")
 
     def test_aria_roles_count_as_landmarks(self) -> None:
-        html = page(main_tag="div", main_attrs='role="main"', nav_tag="div", nav_attrs='role="navigation"')
+        html = page(
+            main_tag="div", main_attrs='role="main"', nav_tag="div", nav_attrs='role="navigation"'
+        )
         document = build_document(html, "https://x.test/")
         regions = {b.text[:5]: b.region for b in document.blocks}
         assert regions["Home "] == "nav"
@@ -141,7 +148,9 @@ class TestRegions:
 
 class TestStripLandmarksByRole:
     def test_role_navigation_is_stripped(self) -> None:
-        html = page(main_tag="div", main_attrs='role="main"', nav_tag="div", nav_attrs='role="navigation"')
+        html = page(
+            main_tag="div", main_attrs='role="main"', nav_tag="div", nav_attrs='role="navigation"'
+        )
         kept = strip_landmarks(build_document(html, "https://x.test/").blocks)
         assert not any("Home" in b.text for b in kept)
         assert any("Title" in b.text for b in kept)

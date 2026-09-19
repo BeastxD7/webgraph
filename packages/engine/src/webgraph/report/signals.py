@@ -258,14 +258,17 @@ def fetch_capped(url: str, *, config: FetchConfig, cap: int = SMALL_CAP) -> Fetc
     }
     started = time.monotonic()
     try:
-        with httpx.Client(
-            http2=config.http2,
-            follow_redirects=True,
-            max_redirects=config.max_redirects,
-            timeout=config.timeout_seconds,
-            headers=headers,
-            event_hooks={"request": [guard.hook]},
-        ) as client, client.stream("GET", url) as response:
+        with (
+            httpx.Client(
+                http2=config.http2,
+                follow_redirects=True,
+                max_redirects=config.max_redirects,
+                timeout=config.timeout_seconds,
+                headers=headers,
+                event_hooks={"request": [guard.hook]},
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
             status = int(response.status_code)
             got = joined_headers(response.headers.multi_items())
             body = b""
@@ -292,8 +295,14 @@ def fetch_capped(url: str, *, config: FetchConfig, cap: int = SMALL_CAP) -> Fetc
             )
     except httpx.HTTPError as exc:
         return FetchResult(
-            url=url, requested_url=url, status=0, html="", content_type="",
-            elapsed_seconds=0.0, ok=False, error=f"{type(exc).__name__}: {exc}",
+            url=url,
+            requested_url=url,
+            status=0,
+            html="",
+            content_type="",
+            elapsed_seconds=0.0,
+            ok=False,
+            error=f"{type(exc).__name__}: {exc}",
         )
 
 
@@ -305,7 +314,11 @@ def joined_headers(items: Iterable[tuple[str, str]]) -> dict[str, str]:
     joined: dict[str, str] = {}
     for key, value in items:
         name = key.lower()
-        joined[name] = f"{joined[name]}, {value}" if name in joined and value else joined.get(name, value) or value
+        joined[name] = (
+            f"{joined[name]}, {value}"
+            if name in joined and value
+            else joined.get(name, value) or value
+        )
     return joined
 
 
@@ -330,13 +343,27 @@ def _size(result: FetchResult) -> int:
 _H1: Final[re.Pattern[str]] = re.compile(r"^#\s+(.+?)\s*$", re.MULTILINE)
 _H2: Final[re.Pattern[str]] = re.compile(r"^##\s+\S", re.MULTILINE)
 _MD_LINK: Final[re.Pattern[str]] = re.compile(r"\[[^\]]+\]\(((?:https?://|/)[^)\s]+)\)")
-_LICENSE_LINE: Final[re.Pattern[str]] = re.compile(r"^\s*license:\s*(\S+)", re.IGNORECASE | re.MULTILINE)
-_KEY_VALUE: Final[re.Pattern[str]] = re.compile(r"([a-z][a-z0-9-]*)\s*=\s*([a-z0-9-]+)", re.IGNORECASE)
+_LICENSE_LINE: Final[re.Pattern[str]] = re.compile(
+    r"^\s*license:\s*(\S+)", re.IGNORECASE | re.MULTILINE
+)
+_KEY_VALUE: Final[re.Pattern[str]] = re.compile(
+    r"([a-z][a-z0-9-]*)\s*=\s*([a-z0-9-]+)", re.IGNORECASE
+)
 _RSL_NS: Final[str] = "https://rslstandard.org/rsl"
 _NOAI_TOKENS: Final[frozenset[str]] = frozenset({"noai", "noimageai"})
 _SNIPPET_TOKENS: Final[tuple[str, ...]] = (
-    "noindex", "nofollow", "none", "noarchive", "nosnippet", "noimageindex", "notranslate",
-    "indexifembedded", "max-snippet", "max-image-preview", "max-video-preview", "unavailable_after",
+    "noindex",
+    "nofollow",
+    "none",
+    "noarchive",
+    "nosnippet",
+    "noimageindex",
+    "notranslate",
+    "indexifembedded",
+    "max-snippet",
+    "max-image-preview",
+    "max-video-preview",
+    "unavailable_after",
 )
 
 
@@ -347,7 +374,9 @@ def read_llms_file(result: FetchResult, path: str) -> LlmsFile:
     body = result.html.lstrip("﻿")
     first = next((line for line in body.splitlines() if line.strip()), "")
     if not result.ok or not body.strip() or _is_html(result) or not first.startswith("# "):
-        return LlmsFile(path=path, found=False, status=result.status, bytes=_size(result) if result.ok else 0)
+        return LlmsFile(
+            path=path, found=False, status=result.status, bytes=_size(result) if result.ok else 0
+        )
     title = _H1.search(body)
     return LlmsFile(
         path=path,
@@ -469,7 +498,9 @@ def _jsonld_types(root: Any) -> tuple[str, ...]:
             for item in node:
                 walk(item)
 
-    for script in root.xpath('//script[translate(@type, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="application/ld+json"]'):
+    for script in root.xpath(
+        '//script[translate(@type, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")="application/ld+json"]'
+    ):
         text = (script.text or "").strip()
         if not text:
             continue
@@ -544,9 +575,11 @@ def _read_head(html: str, base: str) -> _Head:
             hreflang += 1
         if "canonical" in rels and href and canonical is None:
             canonical = urljoin(base, href)
-        is_feed = kind in ("application/rss+xml", "application/atom+xml", "application/feed+json") or (
-            kind == "application/json" and "feed" in href.lower()
-        )
+        is_feed = kind in (
+            "application/rss+xml",
+            "application/atom+xml",
+            "application/feed+json",
+        ) or (kind == "application/json" and "feed" in href.lower())
         if "alternate" in rels and href and is_feed:
             feeds.append((kind, urljoin(base, href)))
         if "alternate" in rels and href and kind == "text/markdown":
@@ -554,7 +587,9 @@ def _read_head(html: str, base: str) -> _Head:
         if "describedby" in rels and href:
             describedby.append(urljoin(base, href))
         if "license" in rels and href:
-            licenses.append(urljoin(base, href) + (" (RSL)" if kind == "application/rsl+xml" else ""))
+            licenses.append(
+                urljoin(base, href) + (" (RSL)" if kind == "application/rsl+xml" else "")
+            )
         if "manifest" in rels and href and manifest is None:
             manifest = urljoin(base, href)
     return _Head(
@@ -644,12 +679,30 @@ _LABELS: Final[dict[str, str]] = {
 }
 
 _GROUP_OF: Final[dict[str, SignalGroup]] = {
-    "content_signal": "ai", "content_usage": "ai", "llms_txt": "ai", "ai_txt": "ai", "rsl": "ai",
-    "tdm": "ai", "noai": "ai", "robots_meta": "ai",
-    "sitemap": "discovery", "feeds": "discovery", "markdown_alternate": "discovery", "indexnow": "discovery",
-    "agent_card": "agents", "agents_json": "agents", "mcp": "agents", "api_catalog": "agents",
-    "json_ld": "metadata", "open_graph": "metadata", "hreflang": "metadata", "canonical": "metadata",
-    "security_txt": "trust", "humans_txt": "trust", "manifest": "trust", "speculation_rules": "trust",
+    "content_signal": "ai",
+    "content_usage": "ai",
+    "llms_txt": "ai",
+    "ai_txt": "ai",
+    "rsl": "ai",
+    "tdm": "ai",
+    "noai": "ai",
+    "robots_meta": "ai",
+    "sitemap": "discovery",
+    "feeds": "discovery",
+    "markdown_alternate": "discovery",
+    "indexnow": "discovery",
+    "agent_card": "agents",
+    "agents_json": "agents",
+    "mcp": "agents",
+    "api_catalog": "agents",
+    "json_ld": "metadata",
+    "open_graph": "metadata",
+    "hreflang": "metadata",
+    "canonical": "metadata",
+    "security_txt": "trust",
+    "humans_txt": "trust",
+    "manifest": "trust",
+    "speculation_rules": "trust",
 }
 
 
@@ -678,7 +731,10 @@ def _signal(
 
 _SIGNAL_WORDS: Final[dict[str, tuple[str, str]]] = {
     "search": ("index it for search and link back", "not build a search index from it"),
-    "ai-input": ("use it as input to AI answers (retrieval, grounding)", "not feed it to AI answers"),
+    "ai-input": (
+        "use it as input to AI answers (retrieval, grounding)",
+        "not feed it to AI answers",
+    ),
     "ai-train": ("train or fine-tune AI models on it", "not train AI models on it"),
 }
 
@@ -701,7 +757,9 @@ def content_signal_meaning(values: Mapping[str, str]) -> str:
         parts.append("they may " + _join(may))
     if must_not:
         parts.append(("but should " if may else "they should ") + _join(must_not))
-    sentence = "Your robots.txt tells AI systems " + (", ".join(parts) if parts else "nothing definite")
+    sentence = "Your robots.txt tells AI systems " + (
+        ", ".join(parts) if parts else "nothing definite"
+    )
     if unspoken:
         sentence += f"; it says nothing about {_join(unspoken)}, which grants and restricts nothing"
     return sentence + ". Honoured voluntarily by the bots that read Content-Signal; not enforced."
@@ -716,7 +774,9 @@ def _join(items: list[str]) -> str:
 class _Probe:
     """The paced, robots-respecting fetch the collection uses, counting requests."""
 
-    def __init__(self, *, fetch_config: FetchConfig, policy: RobotsPolicy | None, pacer: Pacer) -> None:
+    def __init__(
+        self, *, fetch_config: FetchConfig, policy: RobotsPolicy | None, pacer: Pacer
+    ) -> None:
         self.fetch_config = fetch_config
         self.policy = policy
         self.pacer = pacer
@@ -755,7 +815,11 @@ def collect_signals(
     probe = _Probe(fetch_config=fetch_config, policy=policy, pacer=pacer)
     parts = urlsplit(root)
     origin = f"{parts.scheme}://{parts.netloc}"
-    robots = robots_text if robots_text is not None else (policy.text if policy is not None and policy.fetched else "")
+    robots = (
+        robots_text
+        if robots_text is not None
+        else (policy.text if policy is not None and policy.fetched else "")
+    )
     robots_url = urljoin(origin, "/robots.txt")
     notes: list[str] = []
     signals: list[Signal] = []
@@ -768,16 +832,31 @@ def collect_signals(
     if root_result is not None:
         root_status = root_result.status
         root_headers = {
-            k: v for k, v in root_result.headers.items()
-            if k in ("x-robots-tag", "link", "tdm-reservation", "tdm-policy", "content-usage", "content-type", "vary", "crawler-price")
+            k: v
+            for k, v in root_result.headers.items()
+            if k
+            in (
+                "x-robots-tag",
+                "link",
+                "tdm-reservation",
+                "tdm-policy",
+                "content-usage",
+                "content-type",
+                "vary",
+                "crawler-price",
+            )
         }
-        head = _read_head(root_result.html if root_result.ok and _is_html(root_result) else "", root_result.url)
+        head = _read_head(
+            root_result.html if root_result.ok and _is_html(root_result) else "", root_result.url
+        )
         if root_result.status == 402:
             notes.append(
                 f"the root answered 402 Payment Required{' with crawler-price ' + root_result.headers['crawler-price'] if 'crawler-price' in root_result.headers else ''}: "
                 "a pay-per-crawl wall, shown to crawlers that did not offer a price"
             )
-    links = parse_link_header(root_headers.get("link", ""), root) if root_headers.get("link") else []
+    links = (
+        parse_link_header(root_headers.get("link", ""), root) if root_headers.get("link") else []
+    )
     rels: dict[str, list[tuple[str, dict[str, str]]]] = {}
     for url, params in links:
         for rel in params.get("rel", "").split():
@@ -787,7 +866,9 @@ def collect_signals(
     content_signals = parse_content_signals(robots)
     if content_signals:
         first = content_signals[0]
-        where = f"under User-agent: {', '.join(first.agents)}" if first.agents else "outside any group"
+        where = (
+            f"under User-agent: {', '.join(first.agents)}" if first.agents else "outside any group"
+        )
         detail = ", ".join(f"{k}={v}" for k, v in first.values.items()) + f" ({where})"
         if len(content_signals) > 1:
             detail += f"; {len(content_signals)} lines in all"
@@ -800,18 +881,31 @@ def collect_signals(
             )
         signals.append(_signal("content_signal", True, detail, meaning, source=robots_url))
     else:
-        signals.append(_signal(
-            "content_signal", False, "no Content-Signal line",
-            "robots.txt states no preference about search, AI answers or AI training in the Content-Signal vocabulary; per the policy, silence grants and restricts nothing. The suggested robots.txt has a commented example.",
-            source=robots_url,
-        ))
+        signals.append(
+            _signal(
+                "content_signal",
+                False,
+                "no Content-Signal line",
+                "robots.txt states no preference about search, AI answers or AI training in the Content-Signal vocabulary; per the policy, silence grants and restricts nothing. The suggested robots.txt has a commented example.",
+                source=robots_url,
+            )
+        )
 
     usage = parse_content_usage(robots, root_headers)
-    signals.append(_signal(
-        "content_usage", bool(usage), "; ".join(usage) if usage else "no Content-Usage header or robots.txt line",
-        "The IETF's draft AI-preference vocabulary (train-ai, ai-use, search: y/n)" + (" is declared here." if usage else " is not used; nothing is expected to read it yet."),
-        source=root if usage and usage[0].startswith("header") else robots_url,
-    ))
+    signals.append(
+        _signal(
+            "content_usage",
+            bool(usage),
+            "; ".join(usage) if usage else "no Content-Usage header or robots.txt line",
+            "The IETF's draft AI-preference vocabulary (train-ai, ai-use, search: y/n)"
+            + (
+                " is declared here."
+                if usage
+                else " is not used; nothing is expected to read it yet."
+            ),
+            source=root if usage and usage[0].startswith("header") else robots_url,
+        )
+    )
 
     # llms.txt, llms-full.txt, and a sample of the links.
     llms: dict[str, LlmsFile] = {}
@@ -833,8 +927,15 @@ def collect_signals(
                 if answer.status < 400:
                     answering += 1
             parsed = LlmsFile(
-                path=parsed.path, found=True, status=parsed.status, bytes=parsed.bytes, sections=parsed.sections,
-                links=parsed.links, title=parsed.title, links_checked=checked, links_answering=answering,
+                path=parsed.path,
+                found=True,
+                status=parsed.status,
+                bytes=parsed.bytes,
+                sections=parsed.sections,
+                links=parsed.links,
+                title=parsed.title,
+                links_checked=checked,
+                links_answering=answering,
             )
         llms[path] = parsed
     main, full = llms["/llms.txt"], llms["/llms-full.txt"]
@@ -845,24 +946,59 @@ def collect_signals(
         if full.found:
             detail += f"; llms-full.txt present ({full.bytes:,} bytes)"
         meaning = (
-            "The site publishes a curated Markdown index for language models" + (f" titled '{main.title}'" if main.title else "") +
-            ". Useful to a person pasting it into an assistant; near-worthless as discovery -- 97% of such files get no requests (Ahrefs, June 2026)."
+            "The site publishes a curated Markdown index for language models"
+            + (f" titled '{main.title}'" if main.title else "")
+            + ". Useful to a person pasting it into an assistant; near-worthless as discovery -- 97% of such files get no requests (Ahrefs, June 2026)."
         )
     else:
-        detail = "no llms.txt" + (" (the answer was an HTML page, not the format)" if main.status == 200 else f" (HTTP {main.status})" if main.status else "")
+        detail = "no llms.txt" + (
+            " (the answer was an HTML page, not the format)"
+            if main.status == 200
+            else f" (HTTP {main.status})"
+            if main.status
+            else ""
+        )
         meaning = "No llms.txt. Optional: it costs nothing and changes little; the draft below is built from the pages sampled."
-    signals.append(_signal("llms_txt", main.found, detail, meaning, source=urljoin(origin, "/llms.txt"), status=main.status or None))
+    signals.append(
+        _signal(
+            "llms_txt",
+            main.found,
+            detail,
+            meaning,
+            source=urljoin(origin, "/llms.txt"),
+            status=main.status or None,
+        )
+    )
 
     ai_txt = probe.get(urljoin(origin, "/ai.txt"))
-    ai_present: bool | None = None if ai_txt is None else bool(
-        ai_txt.ok and not _is_html(ai_txt) and re.search(r"^\s*(user-agent|disallow|allow)\s*:", ai_txt.html, re.I | re.M)
+    ai_present: bool | None = (
+        None
+        if ai_txt is None
+        else bool(
+            ai_txt.ok
+            and not _is_html(ai_txt)
+            and re.search(r"^\s*(user-agent|disallow|allow)\s*:", ai_txt.html, re.I | re.M)
+        )
     )
-    signals.append(_signal(
-        "ai_txt", ai_present,
-        "robots-shaped ai.txt present" if ai_present else "not checked (disallowed)" if ai_present is None else "no ai.txt",
-        "Spawning's opt-out file for AI training datasets" + (" is published." if ai_present else " is absent; only Spawning's tooling reads it, so this is not a gap."),
-        source=urljoin(origin, "/ai.txt"), status=None if ai_txt is None else ai_txt.status,
-    ))
+    signals.append(
+        _signal(
+            "ai_txt",
+            ai_present,
+            "robots-shaped ai.txt present"
+            if ai_present
+            else "not checked (disallowed)"
+            if ai_present is None
+            else "no ai.txt",
+            "Spawning's opt-out file for AI training datasets"
+            + (
+                " is published."
+                if ai_present
+                else " is absent; only Spawning's tooling reads it, so this is not a gap."
+            ),
+            source=urljoin(origin, "/ai.txt"),
+            status=None if ai_txt is None else ai_txt.status,
+        )
+    )
 
     # RSL: the License line, the Link header, the <link rel=license type=rsl>, the inline block, then /rsl.xml.
     rsl_sources: list[str] = []
@@ -883,47 +1019,91 @@ def collect_signals(
             rsl_status = rsl.status
             if rsl.ok and not _is_html(rsl) and _RSL_NS in rsl.html:
                 rsl_sources.append(f"/rsl.xml ({_RSL_NS})")
-    signals.append(_signal(
-        "rsl", bool(rsl_sources), "; ".join(rsl_sources) if rsl_sources else "no License: line, RSL link or /rsl.xml",
-        "The site publishes machine-readable licence terms for its content (what AI may do with it, and at what price)." if rsl_sources
-        else "No Really Simple Licensing terms: the site states no price or licence for AI use in machine-readable form. A choice, not a gap.",
-        source=urljoin(origin, "/rsl.xml") if not rsl_sources or rsl_sources[0].startswith("/rsl") else robots_url, status=rsl_status,
-    ))
+    signals.append(
+        _signal(
+            "rsl",
+            bool(rsl_sources),
+            "; ".join(rsl_sources) if rsl_sources else "no License: line, RSL link or /rsl.xml",
+            "The site publishes machine-readable licence terms for its content (what AI may do with it, and at what price)."
+            if rsl_sources
+            else "No Really Simple Licensing terms: the site states no price or licence for AI use in machine-readable form. A choice, not a gap.",
+            source=urljoin(origin, "/rsl.xml")
+            if not rsl_sources or rsl_sources[0].startswith("/rsl")
+            else robots_url,
+            status=rsl_status,
+        )
+    )
 
     # TDM reservation: header, meta, well-known file.
     tdm_sources: list[str] = []
     tdm_reserved = False
     if root_headers.get("tdm-reservation"):
         tdm_reserved = tdm_reserved or root_headers["tdm-reservation"].strip() == "1"
-        tdm_sources.append(f"header tdm-reservation: {root_headers['tdm-reservation']}" + (f", tdm-policy: {root_headers['tdm-policy']}" if root_headers.get("tdm-policy") else ""))
+        tdm_sources.append(
+            f"header tdm-reservation: {root_headers['tdm-reservation']}"
+            + (
+                f", tdm-policy: {root_headers['tdm-policy']}"
+                if root_headers.get("tdm-policy")
+                else ""
+            )
+        )
     if head.tdm_reservation is not None:
         tdm_reserved = tdm_reserved or head.tdm_reservation.strip() == "1"
-        tdm_sources.append(f"<meta tdm-reservation> {head.tdm_reservation}" + (f", policy {head.tdm_policy}" if head.tdm_policy else ""))
+        tdm_sources.append(
+            f"<meta tdm-reservation> {head.tdm_reservation}"
+            + (f", policy {head.tdm_policy}" if head.tdm_policy else "")
+        )
     tdmrep = probe.get(urljoin(origin, "/.well-known/tdmrep.json"))
     tdm_status = None if tdmrep is None else tdmrep.status
     rules = _json(tdmrep) if tdmrep is not None else None
-    if isinstance(rules, list) and rules and all(isinstance(r, dict) and "tdm-reservation" in r for r in rules):
+    if (
+        isinstance(rules, list)
+        and rules
+        and all(isinstance(r, dict) and "tdm-reservation" in r for r in rules)
+    ):
         reserved = sum(1 for r in rules if str(r.get("tdm-reservation")) == "1")
         tdm_reserved = tdm_reserved or reserved > 0
-        tdm_sources.append(f"/.well-known/tdmrep.json: {len(rules)} rule{'s' if len(rules) != 1 else ''}, {reserved} reserving")
-    signals.append(_signal(
-        "tdm", bool(tdm_sources), "; ".join(tdm_sources) if tdm_sources else "no TDM-Reservation header, meta or tdmrep.json",
-        ("The site reserves its text-and-data-mining rights under EU law: mining it for AI needs a licence." if tdm_reserved
-         else "The site declares TDM rights unreserved (0): mining is permitted.") if tdm_sources
-        else "No text-and-data-mining reservation: under the EU directive, the site has not opted out in machine-readable form.",
-        source=urljoin(origin, "/.well-known/tdmrep.json"), status=tdm_status,
-    ))
+        tdm_sources.append(
+            f"/.well-known/tdmrep.json: {len(rules)} rule{'s' if len(rules) != 1 else ''}, {reserved} reserving"
+        )
+    signals.append(
+        _signal(
+            "tdm",
+            bool(tdm_sources),
+            "; ".join(tdm_sources)
+            if tdm_sources
+            else "no TDM-Reservation header, meta or tdmrep.json",
+            (
+                "The site reserves its text-and-data-mining rights under EU law: mining it for AI needs a licence."
+                if tdm_reserved
+                else "The site declares TDM rights unreserved (0): mining is permitted."
+            )
+            if tdm_sources
+            else "No text-and-data-mining reservation: under the EU directive, the site has not opted out in machine-readable form.",
+            source=urljoin(origin, "/.well-known/tdmrep.json"),
+            status=tdm_status,
+        )
+    )
 
     # noai / noimageai and the indexing directives, from meta and X-Robots-Tag together.
-    x_robots = [v for k, v in root_result.headers.items() if k == "x-robots-tag"] if root_result is not None else []
+    x_robots = (
+        [v for k, v in root_result.headers.items() if k == "x-robots-tag"]
+        if root_result is not None
+        else []
+    )
     tokens = robots_tokens([*head.robots, *x_robots])
     noai = tuple(t for t in tokens if t in _NOAI_TOKENS)
-    signals.append(_signal(
-        "noai", bool(noai), ", ".join(noai) if noai else "no noai / noimageai token",
-        "The page asks AI dataset builders not to use its content (noai) or images (noimageai) -- DeviantArt's convention, read by a few tools." if noai
-        else "No noai/noimageai token. Only a handful of tools read them; robots.txt is where AI crawlers look.",
-        source=root,
-    ))
+    signals.append(
+        _signal(
+            "noai",
+            bool(noai),
+            ", ".join(noai) if noai else "no noai / noimageai token",
+            "The page asks AI dataset builders not to use its content (noai) or images (noimageai) -- DeviantArt's convention, read by a few tools."
+            if noai
+            else "No noai/noimageai token. Only a handful of tools read them; robots.txt is where AI crawlers look.",
+            source=root,
+        )
+    )
     directives = tuple(t for t in tokens if t.split(":")[0] in _SNIPPET_TOKENS)
     where_from: list[str] = []
     if head.robots:
@@ -932,8 +1112,14 @@ def collect_signals(
         where_from.append("X-Robots-Tag")
     if directives:
         blocking = [t for t in directives if t in ("noindex", "none")]
-        snippet = [t for t in directives if t.startswith(("nosnippet", "max-snippet", "max-image-preview", "max-video-preview"))]
-        meaning = "The root " + ("asks search engines not to index it" if blocking else "is indexable")
+        snippet = [
+            t
+            for t in directives
+            if t.startswith(("nosnippet", "max-snippet", "max-image-preview", "max-video-preview"))
+        ]
+        meaning = "The root " + (
+            "asks search engines not to index it" if blocking else "is indexable"
+        )
         if snippet:
             meaning += f" and bounds what they may quote or preview ({', '.join(snippet)}) -- the one AI-related control Google enforces (its AI answers obey nosnippet/max-snippet)"
         meaning += "."
@@ -946,17 +1132,50 @@ def collect_signals(
     # ---- Discovery ----
     declared = policy.sitemaps if policy is not None else ()
     if sitemap_found:
-        detail = f"found, {sitemap_urls:,} URL{'s' if sitemap_urls != 1 else ''} read" + (", an index of sitemaps" if sitemap_index else "") + (f", declared in robots.txt ({len(declared)})" if declared else ", not declared in robots.txt")
-        meaning = "Crawlers and agents can take the page list from the sitemap instead of guessing." + ("" if declared else " Naming it in robots.txt (`Sitemap:`) lets them find it without trying the default path.")
+        detail = (
+            f"found, {sitemap_urls:,} URL{'s' if sitemap_urls != 1 else ''} read"
+            + (", an index of sitemaps" if sitemap_index else "")
+            + (
+                f", declared in robots.txt ({len(declared)})"
+                if declared
+                else ", not declared in robots.txt"
+            )
+        )
+        meaning = (
+            "Crawlers and agents can take the page list from the sitemap instead of guessing."
+            + (
+                ""
+                if declared
+                else " Naming it in robots.txt (`Sitemap:`) lets them find it without trying the default path."
+            )
+        )
     else:
-        detail = "no sitemap parsed" + (f"; robots.txt names {len(declared)}" if declared else "; none declared")
+        detail = "no sitemap parsed" + (
+            f"; robots.txt names {len(declared)}" if declared else "; none declared"
+        )
         meaning = "No sitemap: crawlers discover pages only by following links. Publish one and name it in robots.txt."
-    signals.append(_signal("sitemap", sitemap_found, detail, meaning, source=declared[0] if declared else urljoin(origin, "/sitemap.xml")))
+    signals.append(
+        _signal(
+            "sitemap",
+            sitemap_found,
+            detail,
+            meaning,
+            source=declared[0] if declared else urljoin(origin, "/sitemap.xml"),
+        )
+    )
 
     if head.feeds:
-        feed_names = {"application/rss+xml": "RSS", "application/atom+xml": "Atom", "application/feed+json": "JSON Feed", "application/json": "JSON Feed"}
+        feed_names = {
+            "application/rss+xml": "RSS",
+            "application/atom+xml": "Atom",
+            "application/feed+json": "JSON Feed",
+            "application/json": "JSON Feed",
+        }
         kinds = ", ".join(dict.fromkeys(feed_names.get(k, k) for k, _ in head.feeds))
-        detail = f"{len(head.feeds)} feed link{'s' if len(head.feeds) != 1 else ''} ({kinds}): " + ", ".join(u for _, u in head.feeds[:2])
+        detail = (
+            f"{len(head.feeds)} feed link{'s' if len(head.feeds) != 1 else ''} ({kinds}): "
+            + ", ".join(u for _, u in head.feeds[:2])
+        )
         meaning = "The root advertises a feed: readers and aggregators, AI ones included, get what changed without crawling."
     else:
         detail = "no feed autodiscovery link on the root"
@@ -973,17 +1192,28 @@ def collect_signals(
         md_sources.append(f"rel=describedby -> {url}")
     if "text/markdown" in root_headers.get("content-type", ""):
         md_sources.append("the root itself answered text/markdown")
-    signals.append(_signal(
-        "markdown_alternate", bool(md_sources), "; ".join(md_sources) if md_sources else "no text/markdown alternate or describedby link",
-        "The site offers pages as Markdown to machines that ask -- the form assistants read most cheaply (llms.txt v2 convention)." if md_sources
-        else "No Markdown twin advertised. Optional; two of the five sites this was calibrated on (vercel.com, cloudflare.com) do it.",
-        source=root,
-    ))
-    signals.append(_signal(
-        "indexnow", None, "not measurable: the key file is named by the key",
-        "Whether the site pushes URL changes to Bing/Yandex via IndexNow cannot be seen from outside; the key file /<key>.txt is only findable by whoever holds the key.",
-        source=None,
-    ))
+    signals.append(
+        _signal(
+            "markdown_alternate",
+            bool(md_sources),
+            "; ".join(md_sources)
+            if md_sources
+            else "no text/markdown alternate or describedby link",
+            "The site offers pages as Markdown to machines that ask -- the form assistants read most cheaply (llms.txt v2 convention)."
+            if md_sources
+            else "No Markdown twin advertised. Optional; two of the five sites this was calibrated on (vercel.com, cloudflare.com) do it.",
+            source=root,
+        )
+    )
+    signals.append(
+        _signal(
+            "indexnow",
+            None,
+            "not measurable: the key file is named by the key",
+            "Whether the site pushes URL changes to Bing/Yandex via IndexNow cannot be seen from outside; the key file /<key>.txt is only findable by whoever holds the key.",
+            source=None,
+        )
+    )
 
     # ---- Agents ----
     card: dict[str, Any] | None = None
@@ -995,38 +1225,70 @@ def collect_signals(
             continue
         card_status = result.status
         data = _json(result)
-        if isinstance(data, dict) and isinstance(data.get("name"), str) and ("skills" in data or "capabilities" in data or "url" in data):
+        if (
+            isinstance(data, dict)
+            and isinstance(data.get("name"), str)
+            and ("skills" in data or "capabilities" in data or "url" in data)
+        ):
             card, card_url = data, urljoin(origin, path)
             break
     if card is not None:
         raw_skills = card.get("skills")
         skills: list[Any] = raw_skills if isinstance(raw_skills, list) else []
-        detail = f"'{card['name']}', {len(skills)} skill{'s' if len(skills) != 1 else ''}" + (f" (protocol {card['protocolVersion']})" if card.get("protocolVersion") else "") + f" at {urlsplit(card_url or '').path}"
+        detail = (
+            f"'{card['name']}', {len(skills)} skill{'s' if len(skills) != 1 else ''}"
+            + (f" (protocol {card['protocolVersion']})" if card.get("protocolVersion") else "")
+            + f" at {urlsplit(card_url or '').path}"
+        )
         if card_url and card_url.endswith("/agent.json"):
             detail += " -- the pre-0.3 path; A2A 1.0 reads /.well-known/agent-card.json"
         meaning = f"The site publishes an A2A agent card: an AI agent can discover '{card['name']}' and what it can do here without a human reading the site."
     else:
         detail = "no agent card at /.well-known/agent-card.json or /.well-known/agent.json"
         meaning = "No A2A agent card: agents cannot discover a machine interface to this site by convention. Rare on the web today; not a gap unless the site runs an agent."
-    signals.append(_signal("agent_card", card is not None, detail, meaning, source=card_url or urljoin(origin, "/.well-known/agent-card.json"), status=card_status))
+    signals.append(
+        _signal(
+            "agent_card",
+            card is not None,
+            detail,
+            meaning,
+            source=card_url or urljoin(origin, "/.well-known/agent-card.json"),
+            status=card_status,
+        )
+    )
 
     agents = probe.get(urljoin(origin, "/.well-known/agents.json"))
     agents_data = _json(agents) if agents is not None else None
-    agents_ok = isinstance(agents_data, dict) and ("siteInfo" in agents_data or "capabilities" in agents_data or "$schema" in agents_data)
+    agents_ok = isinstance(agents_data, dict) and (
+        "siteInfo" in agents_data or "capabilities" in agents_data or "$schema" in agents_data
+    )
     if agents_ok and isinstance(agents_data, dict):
         raw_info = agents_data.get("siteInfo")
         info: dict[str, Any] = raw_info if isinstance(raw_info, dict) else {}
         raw_caps = agents_data.get("capabilities")
         caps: list[Any] = raw_caps if isinstance(raw_caps, list) else []
-        detail = f"'{info.get('name', 'unnamed')}', {len(caps)} capabilit{'ies' if len(caps) != 1 else 'y'}" + (f", schema {agents_data['$schema']}" if isinstance(agents_data.get("$schema"), str) else "")
+        detail = (
+            f"'{info.get('name', 'unnamed')}', {len(caps)} capabilit{'ies' if len(caps) != 1 else 'y'}"
+            + (
+                f", schema {agents_data['$schema']}"
+                if isinstance(agents_data.get("$schema"), str)
+                else ""
+            )
+        )
     else:
         detail = "no agents.json"
-    signals.append(_signal(
-        "agents_json", None if agents is None else bool(agents_ok), detail,
-        "The site describes its AI-facing content and endpoints (llms.txt, Markdown pages, capabilities) in an agents.json." if agents_ok
-        else "No agents.json. A vendor convention few sites use; not a gap.",
-        source=urljoin(origin, "/.well-known/agents.json"), status=None if agents is None else agents.status,
-    ))
+    signals.append(
+        _signal(
+            "agents_json",
+            None if agents is None else bool(agents_ok),
+            detail,
+            "The site describes its AI-facing content and endpoints (llms.txt, Markdown pages, capabilities) in an agents.json."
+            if agents_ok
+            else "No agents.json. A vendor convention few sites use; not a gap.",
+            source=urljoin(origin, "/.well-known/agents.json"),
+            status=None if agents is None else agents.status,
+        )
+    )
 
     mcp_sources: list[str] = []
     mcp = probe.get(urljoin(origin, "/.well-known/mcp.json"))
@@ -1034,53 +1296,100 @@ def collect_signals(
     if isinstance(mcp_data, dict) and isinstance(mcp_data.get("mcpServers"), dict):
         servers = mcp_data["mcpServers"]
         names = [str(v.get("name") or k) for k, v in servers.items() if isinstance(v, dict)]
-        mcp_sources.append(f"/.well-known/mcp.json: {len(servers)} server{'s' if len(servers) != 1 else ''} ({', '.join(names[:3])})")
+        mcp_sources.append(
+            f"/.well-known/mcp.json: {len(servers)} server{'s' if len(servers) != 1 else ''} ({', '.join(names[:3])})"
+        )
     for url, params in rels.get("service-desc", []) + rels.get("ai-catalog", []):
         if "mcp" in url.lower():
             mcp_sources.append(f"Link rel={params.get('rel')} -> {url}")
-    signals.append(_signal(
-        "mcp", None if mcp is None and not mcp_sources else bool(mcp_sources), "; ".join(mcp_sources) if mcp_sources else "no mcp.json or MCP link",
-        "The site advertises an MCP server or AI catalog: an assistant can be connected to it as a tool." if mcp_sources
-        else "No MCP server advertised. MCP itself defines no site-level discovery file, so absence means only that the site follows no convention for it.",
-        source=urljoin(origin, "/.well-known/mcp.json"), status=None if mcp is None else mcp.status,
-    ))
+    signals.append(
+        _signal(
+            "mcp",
+            None if mcp is None and not mcp_sources else bool(mcp_sources),
+            "; ".join(mcp_sources) if mcp_sources else "no mcp.json or MCP link",
+            "The site advertises an MCP server or AI catalog: an assistant can be connected to it as a tool."
+            if mcp_sources
+            else "No MCP server advertised. MCP itself defines no site-level discovery file, so absence means only that the site follows no convention for it.",
+            source=urljoin(origin, "/.well-known/mcp.json"),
+            status=None if mcp is None else mcp.status,
+        )
+    )
 
     catalog = rels.get("api-catalog", [])
     extra = [(r, u) for r in ("agent-skills", "ai-catalog") for u, _ in rels.get(r, [])]
-    signals.append(_signal(
-        "api_catalog", bool(catalog or extra),
-        "; ".join([f"rel=api-catalog -> {u}" for u, _ in catalog] + [f"rel={r} -> {u}" for r, u in extra]) if catalog or extra else "no api-catalog, ai-catalog or agent-skills Link on the root",
-        "The root's Link header points machines at the site's API catalog" + (" and agent resources" if extra else "") + " (RFC 9727): an agent can find the API without reading the docs." if catalog or extra
-        else "No API catalog link. Only relevant to a site with an API.",
-        source=root,
-    ))
+    signals.append(
+        _signal(
+            "api_catalog",
+            bool(catalog or extra),
+            "; ".join(
+                [f"rel=api-catalog -> {u}" for u, _ in catalog]
+                + [f"rel={r} -> {u}" for r, u in extra]
+            )
+            if catalog or extra
+            else "no api-catalog, ai-catalog or agent-skills Link on the root",
+            "The root's Link header points machines at the site's API catalog"
+            + (" and agent resources" if extra else "")
+            + " (RFC 9727): an agent can find the API without reading the docs."
+            if catalog or extra
+            else "No API catalog link. Only relevant to a site with an API.",
+            source=root,
+        )
+    )
 
     # ---- Metadata ----
-    signals.append(_signal(
-        "json_ld", bool(head.jsonld_types), ", ".join(head.jsonld_types[:8]) + (" …" if len(head.jsonld_types) > 8 else "") if head.jsonld_types else "no JSON-LD in the plain HTML",
-        f"The root tells machines what it is in Schema.org terms ({', '.join(head.jsonld_types[:3])}) without JavaScript." if head.jsonld_types
-        else "The plain HTML of the root carries no JSON-LD: an agent that does not run JavaScript learns what the site is only from the prose. Add Organization / WebSite at least." + (" (The pages table shows whether it arrives with JavaScript.)"),
-        source=root,
-    ))
+    signals.append(
+        _signal(
+            "json_ld",
+            bool(head.jsonld_types),
+            ", ".join(head.jsonld_types[:8]) + (" …" if len(head.jsonld_types) > 8 else "")
+            if head.jsonld_types
+            else "no JSON-LD in the plain HTML",
+            f"The root tells machines what it is in Schema.org terms ({', '.join(head.jsonld_types[:3])}) without JavaScript."
+            if head.jsonld_types
+            else "The plain HTML of the root carries no JSON-LD: an agent that does not run JavaScript learns what the site is only from the prose. Add Organization / WebSite at least."
+            + (" (The pages table shows whether it arrives with JavaScript.)"),
+            source=root,
+        )
+    )
     og_present = head.og > 0
-    signals.append(_signal(
-        "open_graph", og_present, f"{head.og} og:* tag{'s' if head.og != 1 else ''}, {head.twitter} twitter:* tag{'s' if head.twitter != 1 else ''}" if og_present or head.twitter else "no og:* or twitter:* tags",
-        "Links to the site unfurl with a title, description and image in chat apps and assistants." + ("" if head.twitter else " No Twitter card tags; X falls back to OpenGraph.") if og_present
-        else "No OpenGraph: a link to the root shows bare in Slack, iMessage and assistants. Add og:title, og:description, og:image.",
-        source=root,
-    ))
-    signals.append(_signal(
-        "hreflang", head.hreflang > 0, f"{head.hreflang} hreflang link{'s' if head.hreflang != 1 else ''}" if head.hreflang else "no hreflang links",
-        f"The root names {head.hreflang} language editions so search engines show the right one." if head.hreflang
-        else "No hreflang: fine for a single-language site.",
-        source=root,
-    ))
-    signals.append(_signal(
-        "canonical", head.canonical is not None, head.canonical or "no rel=canonical",
-        "The root declares its one true URL, so duplicates are folded into it." if head.canonical
-        else "No canonical URL on the root: search engines pick one themselves. Add <link rel=canonical>.",
-        source=root,
-    ))
+    signals.append(
+        _signal(
+            "open_graph",
+            og_present,
+            f"{head.og} og:* tag{'s' if head.og != 1 else ''}, {head.twitter} twitter:* tag{'s' if head.twitter != 1 else ''}"
+            if og_present or head.twitter
+            else "no og:* or twitter:* tags",
+            "Links to the site unfurl with a title, description and image in chat apps and assistants."
+            + ("" if head.twitter else " No Twitter card tags; X falls back to OpenGraph.")
+            if og_present
+            else "No OpenGraph: a link to the root shows bare in Slack, iMessage and assistants. Add og:title, og:description, og:image.",
+            source=root,
+        )
+    )
+    signals.append(
+        _signal(
+            "hreflang",
+            head.hreflang > 0,
+            f"{head.hreflang} hreflang link{'s' if head.hreflang != 1 else ''}"
+            if head.hreflang
+            else "no hreflang links",
+            f"The root names {head.hreflang} language editions so search engines show the right one."
+            if head.hreflang
+            else "No hreflang: fine for a single-language site.",
+            source=root,
+        )
+    )
+    signals.append(
+        _signal(
+            "canonical",
+            head.canonical is not None,
+            head.canonical or "no rel=canonical",
+            "The root declares its one true URL, so duplicates are folded into it."
+            if head.canonical
+            else "No canonical URL on the root: search engines pick one themselves. Add <link rel=canonical>.",
+            source=root,
+        )
+    )
 
     # ---- Trust ----
     sec_url: str | None = None
@@ -1091,7 +1400,11 @@ def collect_signals(
         if result is None:
             continue
         sec_status = result.status
-        if result.ok and not _is_html(result) and re.search(r"^\s*contact:", result.html, re.I | re.M):
+        if (
+            result.ok
+            and not _is_html(result)
+            and re.search(r"^\s*contact:", result.html, re.I | re.M)
+        ):
             sec_url = urljoin(origin, path)
             for raw in result.html.splitlines():
                 line = raw.split("#", 1)[0].strip()
@@ -1100,22 +1413,54 @@ def collect_signals(
                     sec_fields.setdefault(key.strip().lower(), value.strip())
             break
     if sec_url:
-        detail = f"Contact: {sec_fields.get('contact', '')}" + (f"; Expires: {sec_fields['expires']}" if "expires" in sec_fields else "; no Expires (RFC 9116 requires one)") + ("; Policy" if "policy" in sec_fields else "")
+        detail = (
+            f"Contact: {sec_fields.get('contact', '')}"
+            + (
+                f"; Expires: {sec_fields['expires']}"
+                if "expires" in sec_fields
+                else "; no Expires (RFC 9116 requires one)"
+            )
+            + ("; Policy" if "policy" in sec_fields else "")
+        )
         if sec_url.endswith("/security.txt") and "/.well-known/" not in sec_url:
             detail += "; at the legacy root path only"
-        meaning = "Security researchers know whom to tell about a vulnerability." + ("" if "expires" in sec_fields else " Add an Expires line to conform.")
+        meaning = "Security researchers know whom to tell about a vulnerability." + (
+            "" if "expires" in sec_fields else " Add an Expires line to conform."
+        )
     else:
         detail = "no security.txt at /.well-known/ or the root"
         meaning = "No security.txt: a researcher who finds a hole has no published address to report it to. The template below takes two minutes."
-    signals.append(_signal("security_txt", sec_url is not None, detail, meaning, source=sec_url or urljoin(origin, "/.well-known/security.txt"), status=sec_status))
+    signals.append(
+        _signal(
+            "security_txt",
+            sec_url is not None,
+            detail,
+            meaning,
+            source=sec_url or urljoin(origin, "/.well-known/security.txt"),
+            status=sec_status,
+        )
+    )
 
     humans = probe.get(urljoin(origin, "/humans.txt"))
-    humans_ok = None if humans is None else bool(humans.ok and not _is_html(humans) and humans.html.strip())
-    signals.append(_signal(
-        "humans_txt", humans_ok, "present" if humans_ok else "not checked (disallowed)" if humans_ok is None else "no humans.txt",
-        "The site credits the people who built it in humans.txt. For people; no machine reads it." if humans_ok else "No humans.txt. Nothing reads it; nothing is missing.",
-        source=urljoin(origin, "/humans.txt"), status=None if humans is None else humans.status,
-    ))
+    humans_ok = (
+        None if humans is None else bool(humans.ok and not _is_html(humans) and humans.html.strip())
+    )
+    signals.append(
+        _signal(
+            "humans_txt",
+            humans_ok,
+            "present"
+            if humans_ok
+            else "not checked (disallowed)"
+            if humans_ok is None
+            else "no humans.txt",
+            "The site credits the people who built it in humans.txt. For people; no machine reads it."
+            if humans_ok
+            else "No humans.txt. Nothing reads it; nothing is missing.",
+            source=urljoin(origin, "/humans.txt"),
+            status=None if humans is None else humans.status,
+        )
+    )
 
     manifest_ok: bool | None = False
     manifest_detail = "no <link rel=manifest> on the root"
@@ -1130,24 +1475,41 @@ def collect_signals(
             data = _json(result)
             if isinstance(data, dict) and (data.get("name") or data.get("short_name")):
                 manifest_ok = True
-                manifest_detail = f"'{data.get('name') or data.get('short_name')}'" + (f", display {data['display']}" if data.get("display") else "") + f", {len(data.get('icons') or [])} icons"
+                manifest_detail = (
+                    f"'{data.get('name') or data.get('short_name')}'"
+                    + (f", display {data['display']}" if data.get("display") else "")
+                    + f", {len(data.get('icons') or [])} icons"
+                )
             else:
                 manifest_detail = f"linked ({head.manifest}) but did not parse as a manifest (HTTP {result.status})"
-    signals.append(_signal(
-        "manifest", manifest_ok, manifest_detail,
-        "The site can be installed as an app; the manifest names it for the browser." if manifest_ok
-        else "No web app manifest. Only matters if the site wants to be installable.",
-        source=head.manifest or root, status=manifest_status,
-    ))
-    signals.append(_signal(
-        "speculation_rules", head.speculation_rules, "present on the root" if head.speculation_rules else "none on the root",
-        "The root tells Chromium which pages to prerender next -- a speed hint, nothing declared to crawlers." if head.speculation_rules
-        else "No speculation rules. A performance option, not a signal to machines.",
-        source=root,
-    ))
+    signals.append(
+        _signal(
+            "manifest",
+            manifest_ok,
+            manifest_detail,
+            "The site can be installed as an app; the manifest names it for the browser."
+            if manifest_ok
+            else "No web app manifest. Only matters if the site wants to be installable.",
+            source=head.manifest or root,
+            status=manifest_status,
+        )
+    )
+    signals.append(
+        _signal(
+            "speculation_rules",
+            head.speculation_rules,
+            "present on the root" if head.speculation_rules else "none on the root",
+            "The root tells Chromium which pages to prerender next -- a speed hint, nothing declared to crawlers."
+            if head.speculation_rules
+            else "No speculation rules. A performance option, not a signal to machines.",
+            source=root,
+        )
+    )
 
     if probe.skipped:
-        notes.append(f"{len(probe.skipped)} probe{'s' if len(probe.skipped) != 1 else ''} not made: robots.txt disallows the path for this client ({', '.join(urlsplit(u).path for u in probe.skipped[:4])})")
+        notes.append(
+            f"{len(probe.skipped)} probe{'s' if len(probe.skipped) != 1 else ''} not made: robots.txt disallows the path for this client ({', '.join(urlsplit(u).path for u in probe.skipped[:4])})"
+        )
     return Signals(
         signals=tuple(signals),
         llms_txt=main,

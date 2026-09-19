@@ -50,7 +50,9 @@ class TestFlatFile:
             ("webgraph.graph.retrieve", "B", "GRAPH_BM25_B"),
         ],
     )
-    def test_modules_read_their_constants_from_config(self, module: str, name: str, setting: str) -> None:
+    def test_modules_read_their_constants_from_config(
+        self, module: str, name: str, setting: str
+    ) -> None:
         import importlib
 
         from webgraph import config
@@ -68,7 +70,9 @@ class TestFlatFile:
             ("webgraph.dom.reading_order", "OrderingConfig", "max_depth", "ORDER_MAX_DEPTH"),
         ],
     )
-    def test_config_classes_default_to_the_file(self, module: str, name: str, field: str, setting: str) -> None:
+    def test_config_classes_default_to_the_file(
+        self, module: str, name: str, field: str, setting: str
+    ) -> None:
         import importlib
 
         from webgraph import config
@@ -121,4 +125,6 @@ class TestSettings:
         """A deploy script that exports `WEBGRAPH_MAX_PAGES=` must not crash the process."""
         from webgraph.settings import Settings
 
-        assert Settings.from_env({"WEBGRAPH_MAX_PAGES": "", "WEBGRAPH_TRACE_DIR": " "}).max_pages == 0
+        assert (
+            Settings.from_env({"WEBGRAPH_MAX_PAGES": "", "WEBGRAPH_TRACE_DIR": " "}).max_pages == 0
+        )

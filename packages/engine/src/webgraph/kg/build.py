@@ -85,6 +85,7 @@ def order_sections(graph: SiteGraph) -> list[tuple[PageNode, Section]]:
     A capped build covers what the site itself points at most; the home page, the
     programme list and the contact page come before the 40th news item.
     """
+
     def page_rank(page: PageNode) -> tuple[int, int, str]:
         return (-len(graph.linked_from.get(page.key, ())), page.depth, page.key)
 
@@ -117,7 +118,11 @@ class KGBuilder:
     def known_entities(self, page_key: str) -> list[tuple[str, str]]:
         known: list[tuple[str, str]] = []
         for entity in self.graph.entities.values():
-            if page_key in entity.pages and entity.name and entity.type not in {"Subject", "Symbol"}:
+            if (
+                page_key in entity.pages
+                and entity.name
+                and entity.type not in {"Subject", "Symbol"}
+            ):
                 known.append((entity.name[:80], STRUCTURED_TYPE_MAP.get(entity.type, entity.type)))
         return sorted(set(known))[:24]
 
@@ -155,14 +160,32 @@ class KGBuilder:
             if self.config.max_sections and len(prepared) >= self.config.max_sections:
                 skipped["section_cap"] += 1
                 continue
-            prepared.append(prepare(section, page, self.known_entities(page.key), heading_path=self.heading_path(section)))
+            prepared.append(
+                prepare(
+                    section,
+                    page,
+                    self.known_entities(page.key),
+                    heading_path=self.heading_path(section),
+                )
+            )
         return prepared, skipped
 
     def estimate(self, prepared: list[Prepared], skipped: Counter[str]) -> dict[str, Any]:
-        cached = 0 if self.config.rebuild else sum(
-            1 for p in prepared if self.store.cache_get(cache_key(self.model, p.section.text, p.known)) is not None
+        cached = (
+            0
+            if self.config.rebuild
+            else sum(
+                1
+                for p in prepared
+                if self.store.cache_get(cache_key(self.model, p.section.text, p.known)) is not None
+            )
         )
-        uncached = [p for p in prepared if self.config.rebuild or self.store.cache_get(cache_key(self.model, p.section.text, p.known)) is None]
+        uncached = [
+            p
+            for p in prepared
+            if self.config.rebuild
+            or self.store.cache_get(cache_key(self.model, p.section.text, p.known)) is None
+        ]
         input_tokens = int(sum(p.input_chars for p in uncached) / CHARS_PER_TOKEN)
         output_tokens = int(input_tokens * OUTPUT_SHARE)
         usage = Usage(input_tokens, output_tokens)
@@ -190,7 +213,11 @@ class KGBuilder:
         estimate = self.estimate(prepared, skipped)
         yield estimate
 
-        yield {"type": "stage", "stage": "extract", "message": f"Reading {len(prepared)} sections with {self.model}"}
+        yield {
+            "type": "stage",
+            "stage": "extract",
+            "message": f"Reading {len(prepared)} sections with {self.model}",
+        }
         results: dict[int, Extracted] = {}
         usage = Usage()
         rejected: Counter[str] = Counter()
@@ -213,7 +240,9 @@ class KGBuilder:
             if self.config.max_input_tokens and projected > self.config.max_input_tokens:
                 return "max_input_tokens"
             if self.config.max_usd:
-                projected_usd = self.provider.config.usd(Usage(projected, int(projected * OUTPUT_SHARE))) or 0.0
+                projected_usd = (
+                    self.provider.config.usd(Usage(projected, int(projected * OUTPUT_SHARE))) or 0.0
+                )
                 if projected_usd > self.config.max_usd:
                     return "max_usd"
             return ""
@@ -238,14 +267,22 @@ class KGBuilder:
         window = max(1, self.config.concurrency) * 2
         pending: dict[Future[tuple[int, Extracted]], Prepared] = {}
         queue = list(enumerate(prepared))
-        with ThreadPoolExecutor(max_workers=max(1, self.config.concurrency), thread_name_prefix="webgraph-kg") as pool:
+        with ThreadPoolExecutor(
+            max_workers=max(1, self.config.concurrency), thread_name_prefix="webgraph-kg"
+        ) as pool:
             while queue or pending:
                 while queue and len(pending) < window and not truncated:
                     if self.should_stop():
                         truncated, truncated_reason = True, "stopped"
                         break
                     index, item = queue[0]
-                    in_cache = not self.config.rebuild and self.store.cache_get(cache_key(self.model, item.section.text, item.known)) is not None
+                    in_cache = (
+                        not self.config.rebuild
+                        and self.store.cache_get(
+                            cache_key(self.model, item.section.text, item.known)
+                        )
+                        is not None
+                    )
                     reason = "" if in_cache else over_budget(item.input_chars)
                     if reason:
                         truncated, truncated_reason = True, reason
@@ -274,7 +311,15 @@ class KGBuilder:
                     except LLMError as exc:
                         errors += 1
                         in_flight = max(0, in_flight - int(item.input_chars / CHARS_PER_TOKEN))
-                        yield {"type": "section", "page": item.page.url, "section_id": item.section.id, "heading": item.section.heading, "error": str(exc), "done": done, "total": len(prepared)}
+                        yield {
+                            "type": "section",
+                            "page": item.page.url,
+                            "section_id": item.section.id,
+                            "heading": item.section.heading,
+                            "error": str(exc),
+                            "done": done,
+                            "total": len(prepared),
+                        }
                         if errors >= 5 and errors > done // 2:
                             truncated, truncated_reason = True, "provider_errors"
                             queue.clear()
@@ -298,7 +343,10 @@ class KGBuilder:
                         "rejected_reasons": dict(extracted.rejected),
                         "misnumbered": extracted.misnumbered,
                         "cached": extracted.cached,
-                        "tokens": {"in": extracted.usage.input_tokens, "out": extracted.usage.output_tokens},
+                        "tokens": {
+                            "in": extracted.usage.input_tokens,
+                            "out": extracted.usage.output_tokens,
+                        },
                         "usd": spent_usd(),
                         "done": done,
                         "total": len(prepared),
@@ -314,7 +362,11 @@ class KGBuilder:
         merged = merger.finish()
         yield {"type": "merge", **merged.stats}
 
-        yield {"type": "stage", "stage": "store", "message": f"Writing {len(merged.entities)} entities and {len(merged.relations)} relations"}
+        yield {
+            "type": "stage",
+            "stage": "store",
+            "message": f"Writing {len(merged.entities)} entities and {len(merged.relations)} relations",
+        }
         self.store.replace_graph(merged)
         self.store.set_meta("root", self.graph.root)
         self.store.set_meta("prompt_version", PROMPT_VERSION)
@@ -332,7 +384,9 @@ class KGBuilder:
             "accepted": accepted,
             "rejected": total_rejected,
             "rejected_reasons": dict(rejected),
-            "rejection_rate": round(total_rejected / (accepted + total_rejected), 4) if accepted + total_rejected else 0.0,
+            "rejection_rate": round(total_rejected / (accepted + total_rejected), 4)
+            if accepted + total_rejected
+            else 0.0,
             "misnumbered": misnumbered,
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,

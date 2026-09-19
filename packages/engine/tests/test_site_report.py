@@ -19,7 +19,9 @@ from webgraph.fetch.static import FetchConfig, FetchResult
 Served = dict[str, tuple[int, str] | tuple[int, str, str] | tuple[int, str, str, dict[str, str]]]
 """path -> (status, body[, content-type[, response headers]])."""
 
-PAGE_WORDS = "Enough words here to be a page of its own, with a second sentence so nothing is refused."
+PAGE_WORDS = (
+    "Enough words here to be a page of its own, with a second sentence so nothing is refused."
+)
 
 ROOT = (
     "<html lang='en'><head><title>Acme College | Home</title>"
@@ -36,12 +38,18 @@ ADMISSIONS = (
     "<html><head><title>Admissions | Acme College</title></head><body><h1>Admissions</h1>"
     f"<p>{PAGE_WORDS}</p><a href='/'>Home</a></body></html>"
 )
-ABOUT = f"<html><head><title>About</title></head><body><h1>About</h1><p>{PAGE_WORDS}</p></body></html>"
+ABOUT = (
+    f"<html><head><title>About</title></head><body><h1>About</h1><p>{PAGE_WORDS}</p></body></html>"
+)
 BLOG = f"<html><head><title>Post 1 - Acme</title></head><body><h1>Post 1</h1><p>{PAGE_WORDS}</p></body></html>"
 
 
 def _result(
-    url: str, status: int, body: str, content_type: str = "text/html", headers: dict[str, str] | None = None
+    url: str,
+    status: int,
+    body: str,
+    content_type: str = "text/html",
+    headers: dict[str, str] | None = None,
 ) -> FetchResult:
     return FetchResult(
         url=url,
@@ -147,7 +155,11 @@ class TestReadingRobotsPerBot:
         policies = [policy_for_bot(robots, b) for b in BOTS]
         assert all(p.access == "allowed" for p in policies)
         assert all(p.disallowed == 3 and p.content_paths == () for p in policies)
-        assert is_administrative("/cgi-bin/") and is_administrative("/login") and is_administrative("/?s=")
+        assert (
+            is_administrative("/cgi-bin/")
+            and is_administrative("/login")
+            and is_administrative("/?s=")
+        )
         assert not is_administrative("/news/") and not is_administrative("/wp-content/uploads/")
 
     def test_content_disallows_are_partly_restricted_with_the_paths(self) -> None:
@@ -183,7 +195,10 @@ class TestReadingRobotsPerBot:
         from webgraph.report.bots import BOTS, policy_for_bot
 
         bot = next(b for b in BOTS if b.token == "PerplexityBot")
-        assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /\nAllow: /\n", bot).access == "allowed"
+        assert (
+            policy_for_bot("User-agent: PerplexityBot\nDisallow: /\nAllow: /\n", bot).access
+            == "allowed"
+        )
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /$\n", bot).access == "blocked"
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow: /*\n", bot).access == "blocked"
         assert policy_for_bot("User-agent: PerplexityBot\nDisallow:\n", bot).access == "allowed"
@@ -229,7 +244,9 @@ class TestResolvedPageCarriesWordsAndTheStaticSide:
         from webgraph.resolve import Strategy, resolve_page
 
         page = f"<html><body><h1>Served to the browser</h1><p>{PAGE_WORDS}</p></body></html>"
-        serve(monkeypatch, {"/": (403, "<html><body>Forbidden</body></html>")}, rendered={"/": page})
+        serve(
+            monkeypatch, {"/": (403, "<html><body>Forbidden</body></html>")}, rendered={"/": page}
+        )
         resolved = resolve_page("https://acme.test/")
         assert resolved.strategy is Strategy.RENDERED_ONLY
         assert resolved.static_error is not None and "HTTP 403" in resolved.static_error
@@ -247,7 +264,9 @@ class TestResolvedPageCarriesWordsAndTheStaticSide:
 
 
 class TestTheReport:
-    def test_the_root_and_one_page_per_section_are_sampled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_root_and_one_page_per_section_are_sampled(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         serve(monkeypatch, BASIC)
@@ -258,7 +277,9 @@ class TestTheReport:
         assert paths == ["/", "/admissions/", "/about", "/blog/post-1"]
         assert [p.section for p in report.pages] == ["/", "admissions", "about", "blog"]
 
-    def test_readability_is_the_engines_numbers_per_page(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_readability_is_the_engines_numbers_per_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A shell of 3 words that renders to 30 is reported as 3 / 30 and scores below a
         page whose words are all in the HTML."""
         from webgraph.report import build_site_report
@@ -285,7 +306,9 @@ class TestTheReport:
         assert readable.recommendation is not None and "Server-render" in readable.recommendation
         assert readable.source == pricing.url
 
-    def test_readability_is_unmeasured_when_nothing_rendered(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_readability_is_unmeasured_when_nothing_rendered(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """No render means static equals union by construction; that is not 100%."""
         from webgraph.report import build_site_report
 
@@ -296,7 +319,9 @@ class TestTheReport:
         assert not readable.measured and readable.score is None
         assert report.score.measured_weight == 100 - readable.weight
 
-    def test_weights_sum_to_one_hundred_and_a_clean_site_scores_high(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_weights_sum_to_one_hundred_and_a_clean_site_scores_high(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
         from webgraph.report.score import WEIGHTS
 
@@ -308,9 +333,17 @@ class TestTheReport:
         )
         served = {
             **BASIC,
-            "/robots.txt": (200, "User-agent: *\nAllow: /\nSitemap: https://acme.test/sitemap.xml\n", "text/plain"),
+            "/robots.txt": (
+                200,
+                "User-agent: *\nAllow: /\nSitemap: https://acme.test/sitemap.xml\n",
+                "text/plain",
+            ),
             "/sitemap.xml": (200, sitemap, "application/xml"),
-            "/llms.txt": (200, "# Acme\n\n> A college.\n\n## Pages\n- [Home](https://acme.test/)\n", "text/plain"),
+            "/llms.txt": (
+                200,
+                "# Acme\n\n> A college.\n\n## Pages\n- [Home](https://acme.test/)\n",
+                "text/plain",
+            ),
         }
         served["/"] = (200, ROOT.replace("<a href='/missing'>Gone</a>", ""))
         serve(monkeypatch, served)
@@ -325,9 +358,15 @@ class TestTheReport:
         assert by["dead_links"].score == by["dead_links"].weight
         assert report.score.total >= 90
         assert report.llms_txt is not None and report.llms_txt.found
-        assert report.llms_txt.sections == 1 and report.llms_txt.links == 1 and report.llms_txt.title == "Acme"
+        assert (
+            report.llms_txt.sections == 1
+            and report.llms_txt.links == 1
+            and report.llms_txt.title == "Acme"
+        )
 
-    def test_a_catch_all_html_answer_is_not_an_llms_txt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_catch_all_html_answer_is_not_an_llms_txt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         served = {**BASIC, "/llms.txt": (200, "<html><body><h1>Not found</h1></body></html>")}
@@ -352,7 +391,9 @@ class TestTheReport:
         assert "GPTBot" in sub.evidence
         assert sub.recommendation is not None and "legitimate" in sub.recommendation
 
-    def test_dead_links_are_counted_once_and_rate_limited_by_the_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_dead_links_are_counted_once_and_rate_limited_by_the_cap(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         serve(monkeypatch, BASIC)
@@ -366,7 +407,9 @@ class TestTheReport:
         assert dead.score == pytest.approx(dead.weight * 0.8)
         assert "https://acme.test/missing -> 404" in dead.evidence
 
-    def test_the_suggested_robots_txt_keeps_the_existing_file_verbatim(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_suggested_robots_txt_keeps_the_existing_file_verbatim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         existing = "# Acme's rules\nUser-agent: *\nDisallow: /private/\nCrawl-delay: 2\n"
@@ -374,11 +417,17 @@ class TestTheReport:
         report = build_site_report("https://acme.test/", pages=1, today=date(2026, 9, 16))
         suggestion = report.suggested_robots_txt
         assert suggestion is not None and suggestion.startswith(existing)
-        added = suggestion[len(existing):]
-        assert all(line.startswith("#") or not line.strip() for line in added.splitlines()), "every added line is a comment"
+        added = suggestion[len(existing) :]
+        assert all(line.startswith("#") or not line.strip() for line in added.splitlines()), (
+            "every added line is a comment"
+        )
         assert "# User-agent: GPTBot\n# Allow: /" in added, "variant A allows"
-        assert "# User-agent: GPTBot\n# Disallow: /" in added, "variant B disallows training crawlers"
-        assert "# User-agent: OAI-SearchBot\n# Disallow: /" not in added, "search bots are never disallowed"
+        assert "# User-agent: GPTBot\n# Disallow: /" in added, (
+            "variant B disallows training crawlers"
+        )
+        assert "# User-agent: OAI-SearchBot\n# Disallow: /" not in added, (
+            "search bots are never disallowed"
+        )
         assert "Sitemap: https://acme.test/sitemap.xml" in added
 
     def test_the_llms_txt_draft_follows_llmstxt_org(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -396,7 +445,9 @@ class TestTheReport:
         assert "- [Admissions](https://acme.test/admissions/)" in lines
         assert "Optional" in report.llms_txt_note and "97%" in report.llms_txt_note
 
-    def test_a_walled_root_ends_the_report_without_a_score(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_walled_root_ends_the_report_without_a_score(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         wall = "<html><body><p>Sorry, you have been blocked. Ray ID: abc</p></body></html>"
@@ -407,16 +458,26 @@ class TestTheReport:
         assert report.refusal is not None and "block page" in report.refusal
         assert report.measured is not None and report.measured.pages_sampled == 0
 
-    def test_a_root_disallowed_for_this_client_ends_the_report(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_root_disallowed_for_this_client_ends_the_report(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
-        fetched = serve(monkeypatch, {**BASIC, "/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain")})
+        fetched = serve(
+            monkeypatch,
+            {**BASIC, "/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain")},
+        )
         report = build_site_report("https://acme.test/")
         assert not report.reachable and report.score is None
-        assert report.refusal is not None and "robots.txt disallows / for this client" in report.refusal
+        assert (
+            report.refusal is not None
+            and "robots.txt disallows / for this client" in report.refusal
+        )
         assert "https://acme.test/" not in fetched, "the root was never fetched"
 
-    def test_a_page_that_cannot_be_read_is_a_row_not_an_abort(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_page_that_cannot_be_read_is_a_row_not_an_abort(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         wall = "<html><body><p>Sorry, you have been blocked. Ray ID: abc</p></body></html>"
@@ -440,12 +501,12 @@ class TestTheReport:
         assert "never impersonates" in report.measured.statement
         payload = report.as_dict()
         assert payload["measured"]["statement"] == report.measured.statement
-        assert isinstance(payload["pages"], list) and payload["score"]["total"] == report.score.total  # type: ignore[union-attr]
+        assert (
+            isinstance(payload["pages"], list) and payload["score"]["total"] == report.score.total
+        )  # type: ignore[union-attr]
 
 
-OFFSCREEN_LINKS = "".join(
-    f"<a href='https://spam{i}.example/slot'>slot {i}</a> " for i in range(8)
-)
+OFFSCREEN_LINKS = "".join(f"<a href='https://spam{i}.example/slot'>slot {i}</a> " for i in range(8))
 INJECTED_STATIC = (
     "<html><head><title>Acme</title></head><body><h1>Acme</h1>"
     f"<p>{PAGE_WORDS}</p>"
@@ -461,10 +522,16 @@ INJECTED_RENDERED = (
 
 
 class TestInjectedLinks:
-    def test_offscreen_links_to_many_hosts_are_a_likely_injection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_offscreen_links_to_many_hosts_are_a_likely_injection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
-        serve(monkeypatch, {"/": (200, INJECTED_STATIC), "/about": (200, ABOUT)}, rendered={"/": INJECTED_RENDERED})
+        serve(
+            monkeypatch,
+            {"/": (200, INJECTED_STATIC), "/about": (200, ABOUT)},
+            rendered={"/": INJECTED_RENDERED},
+        )
         report = build_site_report("https://acme.test/", pages=1)
         root = report.pages[0]
         assert root.hidden_links == 8 and root.offscreen_links == 8
@@ -478,7 +545,9 @@ class TestInjectedLinks:
         hidden = next(s for s in report.score.subscores if s.key == "no_hidden_content")
         assert hidden.score == 0
 
-    def test_the_static_style_is_read_when_the_browser_never_measured(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_static_style_is_read_when_the_browser_never_measured(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """A plain fetch has no marks; `left: -2e13px` in the markup is the same evidence."""
         from webgraph.report import build_site_report
 
@@ -487,7 +556,9 @@ class TestInjectedLinks:
         assert report.pages[0].offscreen_external_hosts == 8
         assert any(f.kind == "injected_links" for f in report.findings)
 
-    def test_below_the_host_threshold_it_is_reported_not_judged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_below_the_host_threshold_it_is_reported_not_judged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         few = "".join(f"<a href='https://partner{i}.example/'>p{i}</a> " for i in range(2))
@@ -501,7 +572,9 @@ class TestInjectedLinks:
         hidden = next(s for s in report.score.subscores if s.key == "no_hidden_content")
         assert hidden.score == 5
 
-    def test_a_hidden_menu_to_the_sites_own_hosts_is_not_external(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_hidden_menu_to_the_sites_own_hosts_is_not_external(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """vtu.ac.in's menus link to report.vtu.ac.in, iqac.vtu.ac.in: the site's own."""
         from webgraph.report import build_site_report
 
@@ -511,9 +584,13 @@ class TestInjectedLinks:
         report = build_site_report("https://www.acme.ac.in/", pages=1)
         assert report.pages[0].hidden_links == 8
         assert report.pages[0].hidden_external_hosts == 0
-        assert not any(f.kind in ("injected_links", "hidden_external_links") for f in report.findings)
+        assert not any(
+            f.kind in ("injected_links", "hidden_external_links") for f in report.findings
+        )
 
-    def test_a_dropdown_menu_of_foreign_hosts_is_not_a_verdict(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_a_dropdown_menu_of_foreign_hosts_is_not_a_verdict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """vtu.ac.in's `display: none` menus link to 187 affiliated colleges. A dropdown is
         hidden the way every dropdown is; the injection is what is parked off the page."""
         from webgraph.report import build_site_report
@@ -524,20 +601,25 @@ class TestInjectedLinks:
             f"<ul data-wg-hidden='display'>{menu}</ul>",
         )
         static = INJECTED_STATIC.replace(
-            f"<div style='position:absolute; left:-20914565266523px'>{OFFSCREEN_LINKS}</div>", f"<ul>{menu}</ul>"
+            f"<div style='position:absolute; left:-20914565266523px'>{OFFSCREEN_LINKS}</div>",
+            f"<ul>{menu}</ul>",
         )
         serve(monkeypatch, {"/": (200, static)}, rendered={"/": rendered})
         report = build_site_report("https://acme.test/", pages=1)
         root = report.pages[0]
         assert root.hidden_links == 20 and root.hidden_external_hosts == 20
         assert root.offscreen_links == 0 and root.offscreen_external_hosts == 0
-        assert not any(f.kind in ("injected_links", "hidden_external_links") for f in report.findings)
+        assert not any(
+            f.kind in ("injected_links", "hidden_external_links") for f in report.findings
+        )
         assert report.score is not None
         hidden = next(s for s in report.score.subscores if s.key == "no_hidden_content")
         assert hidden.score == hidden.weight
         assert "dropdown" in hidden.evidence
 
-    def test_one_injection_across_pages_is_one_finding(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_one_injection_across_pages_is_one_finding(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from webgraph.report import build_site_report
 
         about = INJECTED_STATIC.replace("<title>Acme</title>", "<title>About</title>")
@@ -567,7 +649,9 @@ class TestStackAge:
         wordpress, nextjs, jquery = entries
         assert wordpress.released == date(2019, 2, 21) and wordpress.age_years == 7.6
         assert nextjs.released == date(2025, 10, 22) and nextjs.age_years == 0.9
-        assert jquery.released is None and jquery.age_years is None, "not in the table: version only"
+        assert jquery.released is None and jquery.age_years is None, (
+            "not in the table: version only"
+        )
         findings = integrity_findings([], entries)
         assert [f.kind for f in findings] == ["outdated_stack"]
         assert "WordPress 5.1.1 is 7.6 years old" in findings[0].title
@@ -580,7 +664,10 @@ class TestCli:
     ) -> None:
         from webgraph.cli import main
 
-        serve(monkeypatch, {**BASIC, "/robots.txt": (200, "User-agent: GPTBot\nDisallow: /\n", "text/plain")})
+        serve(
+            monkeypatch,
+            {**BASIC, "/robots.txt": (200, "User-agent: GPTBot\nDisallow: /\n", "text/plain")},
+        )
         assert main(["report", "https://acme.test/", "--pages", "2"]) == 0
         out = capsys.readouterr().out
         assert "AI-READINESS" in out and "/100" in out
@@ -590,7 +677,9 @@ class TestCli:
         assert "SUGGESTED llms.txt" in out and "# Acme College" in out
         assert "never impersonates" in out
 
-    def test_json_is_the_whole_report(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_json_is_the_whole_report(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
         import json
 
         from webgraph.cli import main
@@ -606,7 +695,10 @@ class TestCli:
     ) -> None:
         from webgraph.cli import main
 
-        serve(monkeypatch, {**BASIC, "/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain")})
+        serve(
+            monkeypatch,
+            {**BASIC, "/robots.txt": (200, "User-agent: *\nDisallow: /\n", "text/plain")},
+        )
         assert main(["report", "https://acme.test/"]) == 1
         out = capsys.readouterr().out
         assert "NO REPORT" in out and "robots.txt disallows" in out

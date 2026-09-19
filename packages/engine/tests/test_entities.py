@@ -52,7 +52,7 @@ class TestPageSubjects:
         assert derive_page_subjects(builder.graph) == 0
 
     def test_anchors_that_name_the_act_of_linking_are_ignored(self) -> None:
-        """"click here" describes the link, not the target."""
+        """ "click here" describes the link, not the target."""
         builder = builder_with(
             [
                 (BASE, "<h1>Home</h1><p>" + "intro " * 40 + "</p>", [("/tpl", "click here")]),
@@ -111,13 +111,19 @@ class TestCodeSymbols:
         builder = builder_with(
             [
                 (f"{BASE}api", "<h1>render_template</h1><p>" + "renders " * 30 + "</p>", []),
-                (f"{BASE}g", "<h1>Guide</h1><p>Call <code>render_template</code> now. "
-                 + "text " * 30 + "</p>", []),
+                (
+                    f"{BASE}g",
+                    "<h1>Guide</h1><p>Call <code>render_template</code> now. "
+                    + "text " * 30
+                    + "</p>",
+                    [],
+                ),
             ]
         )
-        assert "Symbol:render_template" in builder.graph.entities or derive_code_symbols(
-            builder.graph
-        ) >= 1
+        assert (
+            "Symbol:render_template" in builder.graph.entities
+            or derive_code_symbols(builder.graph) >= 1
+        )
 
 
 class TestDeriveEntities:
@@ -148,7 +154,7 @@ class TestFragmentAnchors:
         for source in ("a", "b"):
             builder.add(
                 build_document(
-                    f'<html><body><h1>{source}</h1><p>{"text " * 40}'
+                    f"<html><body><h1>{source}</h1><p>{'text ' * 40}"
                     '<a href="/api/#Undefined">Undefined</a></p></body></html>',
                     f"{BASE}{source}",
                 ),
@@ -168,7 +174,8 @@ class TestFragmentAnchors:
         builder = GraphBuilder(BASE)
         builder.add(
             build_document(
-                "<html><body><h1>Home</h1><p>" + "text " * 40
+                "<html><body><h1>Home</h1><p>"
+                + "text " * 40
                 + '<a href="/api/#X">X</a></p></body></html>',
                 BASE,
             ),

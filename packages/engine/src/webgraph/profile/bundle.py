@@ -36,6 +36,7 @@ MAX_TOTAL_BYTES = config.PROFILE_MAX_TOTAL_BYTES
 
 __all__ = ["MAX_SCRIPTS", "MAX_TOTAL_BYTES", "collect_bundle_source"]
 
+
 def collect_bundle_source(
     html: str,
     base_url: str,

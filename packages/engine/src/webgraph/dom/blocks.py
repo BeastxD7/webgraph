@@ -41,20 +41,63 @@ __all__ = [
     "strip_permalinks",
 ]
 
-BLOCK_TAGS: Final[frozenset[str]] = frozenset({
-    "p", "div", "section", "article", "main", "aside", "header", "footer", "nav",
-    "h1", "h2", "h3", "h4", "h5", "h6",
-    "li", "dt", "dd", "td", "th", "caption",
-    "blockquote", "pre", "figcaption", "figure", "summary", "details",
-    "address", "label", "button", "legend", "fieldset", "form",
-})
+BLOCK_TAGS: Final[frozenset[str]] = frozenset(
+    {
+        "p",
+        "div",
+        "section",
+        "article",
+        "main",
+        "aside",
+        "header",
+        "footer",
+        "nav",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "dt",
+        "dd",
+        "td",
+        "th",
+        "caption",
+        "blockquote",
+        "pre",
+        "figcaption",
+        "figure",
+        "summary",
+        "details",
+        "address",
+        "label",
+        "button",
+        "legend",
+        "fieldset",
+        "form",
+    }
+)
 """Block-level containers. Inline tags are deliberately absent so that `<p>a <a>b</a> c</p>`
 stays one block instead of three."""
 
 SKIP_TAGS: Final[tuple[str, ...]] = (
-    "script", "style", "noscript", "template", "svg",
-    "iframe", "object", "embed", "audio", "video", "source", "track", "param",
-    "select", "datalist", "textarea",
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "svg",
+    "iframe",
+    "object",
+    "embed",
+    "audio",
+    "video",
+    "source",
+    "track",
+    "param",
+    "select",
+    "datalist",
+    "textarea",
 )
 """Stripped from the tree before extraction. Their text is never page content -- leaving a
 `<script>` in place makes an ancestor's `text_content()` return JavaScript source.
@@ -571,11 +614,24 @@ heading would also mutilate the ones that legitimately end in one.
 """
 
 
-SR_ONLY_CLASSES: Final[frozenset[str]] = frozenset({
-    "sr-only", "visually-hidden", "visuallyhidden", "screen-reader-text", "screen-reader-only",
-    "a11y-hidden", "u-visually-hidden", "is-visually-hidden", "sr_only", "visually_hidden",
-    "assistive-text", "hidden-visually", "offscreen", "clip-hidden",
-})
+SR_ONLY_CLASSES: Final[frozenset[str]] = frozenset(
+    {
+        "sr-only",
+        "visually-hidden",
+        "visuallyhidden",
+        "screen-reader-text",
+        "screen-reader-only",
+        "a11y-hidden",
+        "u-visually-hidden",
+        "is-visually-hidden",
+        "sr_only",
+        "visually_hidden",
+        "assistive-text",
+        "hidden-visually",
+        "offscreen",
+        "clip-hidden",
+    }
+)
 """Class names that clip an element to a 1px box off screen: Bootstrap and Tailwind's
 `sr-only` / `visually-hidden`, WordPress's `screen-reader-text`, and the house variants.
 
@@ -666,31 +722,44 @@ def _sr_only_is_content(element: HtmlElement) -> bool:
     return len(element.text_content().split()) >= 4
 
 
-RTL_LANGUAGES: Final[frozenset[str]] = frozenset({
-    "ar",    # Arabic
-    "arc",   # Aramaic
-    "ckb",   # Sorani Kurdish
-    "dv",    # Divehi
-    "fa",    # Persian
-    "he",    # Hebrew
-    "iw",    # Hebrew, deprecated code still emitted by older systems
-    "ji",    # Yiddish, deprecated code
-    "ks",    # Kashmiri
-    "ku",    # Kurdish
-    "nqo",   # N'Ko
-    "prs",   # Dari
-    "ps",    # Pashto
-    "sd",    # Sindhi
-    "syr",   # Syriac
-    "ug",    # Uyghur
-    "ur",    # Urdu
-    "yi",    # Yiddish
-})
+RTL_LANGUAGES: Final[frozenset[str]] = frozenset(
+    {
+        "ar",  # Arabic
+        "arc",  # Aramaic
+        "ckb",  # Sorani Kurdish
+        "dv",  # Divehi
+        "fa",  # Persian
+        "he",  # Hebrew
+        "iw",  # Hebrew, deprecated code still emitted by older systems
+        "ji",  # Yiddish, deprecated code
+        "ks",  # Kashmiri
+        "ku",  # Kurdish
+        "nqo",  # N'Ko
+        "prs",  # Dari
+        "ps",  # Pashto
+        "sd",  # Sindhi
+        "syr",  # Syriac
+        "ug",  # Uyghur
+        "ur",  # Urdu
+        "yi",  # Yiddish
+    }
+)
 """Primary language subtags written right-to-left."""
 
-RTL_SCRIPTS: Final[frozenset[str]] = frozenset({
-    "arab", "hebr", "thaa", "syrc", "nkoo", "adlm", "rohg", "yezi", "mand", "samr",
-})
+RTL_SCRIPTS: Final[frozenset[str]] = frozenset(
+    {
+        "arab",
+        "hebr",
+        "thaa",
+        "syrc",
+        "nkoo",
+        "adlm",
+        "rohg",
+        "yezi",
+        "mand",
+        "samr",
+    }
+)
 """Script subtags written right-to-left, for tags like `az-Arab` or `pa-Arab`, where the
 language is written in more than one script and only the script settles the direction."""
 
@@ -765,17 +834,12 @@ def _text_maps(
 
         own = bool(normalize_text(element.text))
         from_children = any(
-            has_text.get(child, False) or bool(normalize_text(child.tail))
-            for child in element
+            has_text.get(child, False) or bool(normalize_text(child.tail)) for child in element
         )
         has_text[element] = own or from_children
 
         has_block_descendant[element] = any(
-            (
-                isinstance(child.tag, str)
-                and child.tag in BLOCK_TAGS
-                and has_text.get(child, False)
-            )
+            (isinstance(child.tag, str) and child.tag in BLOCK_TAGS and has_text.get(child, False))
             or has_block_descendant.get(child, False)
             for child in element
         )

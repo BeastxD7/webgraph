@@ -33,9 +33,7 @@ def math_of(inner: str, attrs: str = ""):  # type: ignore[no-untyped-def]
     """
     from lxml import html as lxml_html
 
-    tree = lxml_html.document_fromstring(
-        f"<html><body><math {attrs}>{inner}</math></body></html>"
-    )
+    tree = lxml_html.document_fromstring(f"<html><body><math {attrs}>{inner}</math></body></html>")
     return tree.xpath("//*[local-name()='math']")[0]
 
 
@@ -51,11 +49,16 @@ class TestTheCascade:
         assert latex_from_math(element) == r"\int_0^1 f(x)\,dx"
 
     def test_alttext_is_next(self) -> None:
-        assert latex_from_math(math_of("<mi>q</mi>", 'alttext="\\alpha + \\beta"')) == r"\alpha + \beta"
+        assert (
+            latex_from_math(math_of("<mi>q</mi>", 'alttext="\\alpha + \\beta"'))
+            == r"\alpha + \beta"
+        )
 
     def test_otherwise_the_markup_is_converted(self) -> None:
-        element = math_of("<mrow><msub><mi>R</mi><mn>1</mn></msub><mo>=</mo>"
-                          "<mfrac><mi>a</mi><mi>b</mi></mfrac></mrow>")
+        element = math_of(
+            "<mrow><msub><mi>R</mi><mn>1</mn></msub><mo>=</mo>"
+            "<mfrac><mi>a</mi><mi>b</mi></mfrac></mrow>"
+        )
         assert latex_from_math(element) == r"R_1=\frac{a}{b}"
 
 
@@ -120,7 +123,10 @@ class TestComplexStructures:
         assert latex_from_math(math_of(markup)) == r"\begin{array}{c} 1 & 2 \\ 3 & 4 \end{array}"
 
     def test_menclose_radical_becomes_a_square_root(self) -> None:
-        assert latex_from_math(math_of('<menclose notation="radical"><mi>x</mi></menclose>')) == r"\sqrt{x}"
+        assert (
+            latex_from_math(math_of('<menclose notation="radical"><mi>x</mi></menclose>'))
+            == r"\sqrt{x}"
+        )
 
     def test_menclose_box_becomes_boxed(self) -> None:
         markup = '<menclose notation="box"><mi>x</mi><mo>+</mo><mi>y</mi></menclose>'
@@ -130,7 +136,10 @@ class TestComplexStructures:
         """`longdiv` has no plain-LaTeX equivalent without extra packages. The enclosure is
         not claimed -- nothing here says a box was drawn -- but the number under it is not
         silently deleted either."""
-        assert latex_from_math(math_of('<menclose notation="longdiv"><mn>123</mn></menclose>')) == "123"
+        assert (
+            latex_from_math(math_of('<menclose notation="longdiv"><mn>123</mn></menclose>'))
+            == "123"
+        )
 
 
 class TestVisualDuplicates:
@@ -148,7 +157,7 @@ class TestVisualDuplicates:
         markup = (
             '<mjx-container class="MathJax" jax="CHTML">'
             '<mjx-math aria-hidden="true"><mjx-mi>GARBLED</mjx-mi></mjx-math>'
-            '<mjx-assistive-mml><math><msup><mi>x</mi><mn>2</mn></msup></math></mjx-assistive-mml>'
+            "<mjx-assistive-mml><math><msup><mi>x</mi><mn>2</mn></msup></math></mjx-assistive-mml>"
             "</mjx-container>"
         )
         assert text_of(f"<p>See {markup} here.</p>") == "See $x^2$ here."
@@ -159,9 +168,9 @@ class TestVisualDuplicates:
         cascade and the duplicate-container removal work together, not just in isolation."""
         markup = (
             '<span class="katex"><span class="katex-mathml"><math><semantics>'
-            '<mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>'
+            "<mrow><mi>x</mi><mo>+</mo><mn>1</mn></mrow>"
             '<annotation encoding="application/x-tex">x + 1</annotation>'
-            '</semantics></math></span>'
+            "</semantics></math></span>"
             '<span class="katex-html" aria-hidden="true">GARBLED</span></span>'
         )
         assert text_of(f"<p>Consider {markup} and so on.</p>") == "Consider $x + 1$ and so on."
@@ -176,7 +185,7 @@ class TestVisualDuplicates:
         sibling it was never duplicating."""
         markup = (
             '<span class="my-katex-mathml-widget"><math><mi>x</mi></math></span> '
-            '<span>KEEP ME</span>'
+            "<span>KEEP ME</span>"
         )
         assert text_of(f"<p>{markup}</p>") == "$x$ KEEP ME"
 
@@ -199,8 +208,10 @@ class TestInThePage:
         assert text_of("<p>Then <math><mi>x</mi></math> follows.</p>") == "Then $x$ follows."
 
     def test_a_display_equation_becomes_its_own_block(self) -> None:
-        out = text_of('<p>Before.</p><math display="block"><mrow><mi>E</mi><mo>=</mo>'
-                      "<mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow></math><p>After.</p>")
+        out = text_of(
+            '<p>Before.</p><math display="block"><mrow><mi>E</mi><mo>=</mo>'
+            "<mi>m</mi><msup><mi>c</mi><mn>2</mn></msup></mrow></math><p>After.</p>"
+        )
         assert out == "Before.\n\n$$E=mc^2$$\n\nAfter."
 
     def test_dropping_an_empty_equation_keeps_the_sentence(self) -> None:
@@ -238,7 +249,9 @@ class TestFallbackImages:
         from webgraph.pipeline import build_document
         from webgraph.render_markdown import to_markdown
 
-        out = to_markdown(build_document(f"<html><body>{self.WIKI}</body></html>", "https://x.test/"))
+        out = to_markdown(
+            build_document(f"<html><body>{self.WIKI}</body></html>", "https://x.test/")
+        )
         assert "$" in out and "displaystyle x" in out
         assert "math/render" not in out
         assert "is it." in out
@@ -260,7 +273,7 @@ class TestFallbackImages:
         from webgraph.render_markdown import to_markdown
 
         html = (
-            '<p><span><math></math></span>'
+            "<p><span><math></math></span>"
             '<img alt="{\\displaystyle z}" src="https://wikimedia.org/api/rest_v1/media/math/render/svg/z" width="40" height="40"></p>'
         )
         out = to_markdown(build_document(f"<html><body>{html}</body></html>", "https://x.test/"))
@@ -299,12 +312,12 @@ class TestMathSourceDelimiters:
         assert "$hello$" not in out
 
     def test_no_delimiters_means_no_change(self) -> None:
-        assert text_of("<p>Plain prose about (parentheses).</p>") == "Plain prose about (parentheses)."
+        assert (
+            text_of("<p>Plain prose about (parentheses).</p>") == "Plain prose about (parentheses)."
+        )
 
     def test_a_direct_call_reports_how_many(self) -> None:
-        tree = parse_html(
-            r"<html><body><p>\(a\)</p><p>\(b\)</p></body></html>"
-        )
+        tree = parse_html(r"<html><body><p>\(a\)</p><p>\(b\)</p></body></html>")
         # parse_html already ran the rewrite once; re-running finds nothing left to do.
         assert normalize_math_delimiters(tree) == 0
         assert tree.xpath("//p")[0].text == "$a$"
