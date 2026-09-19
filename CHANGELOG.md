@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI (2026-09-19, PR #171)
+- Fixed: the Options panel opens above the button when the viewport has more room there
+  (the prompt at the foot of the home page opened a panel whose bottom was off-screen),
+  and is never taller than the space it has; it scrolls inside.
+
 ### Engine (2026-09-19, PR #169) -- a link is not its label; card links
 - Fixed: a plain label followed by a link with the same words is two blocks, not a
   duplicate -- lakshx.in's sidebar says "Slash Commands" as a group label and again as the
