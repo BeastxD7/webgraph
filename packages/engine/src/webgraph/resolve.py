@@ -438,6 +438,11 @@ def union_documents(
     over two thousand blocks that the rendered one lacks, and every one of them landed after
     the article instead of inside it.
 
+    "Only in the static one" means the render *lost* it, not that it was never built: a
+    block under a client-template directive (`Block.templated`) that the render did not
+    produce is a branch the framework chose not to take, and stays out -- see
+    `never_built` below.
+
     They are now placed by **observed adjacency**, not by guesswork. A static-only block is
     inserted after the nearest preceding block that appears in *both* documents. That is the
     same principle as anchoring unmeasured blocks within one document, and it is sound across
@@ -485,10 +490,41 @@ def union_documents(
     def runs_into_rendered(key: str) -> bool:
         return any(key.startswith(k) or key.endswith(k) for k in long_rendered)
 
-    def hidden_in_render(key: str) -> bool:
-        return hidden is not None and hidden.holds(key, min_chars=_HIDDEN_MIN_CHARS)
+    static_by_key: dict[str, Block] = {}
+    for block in static_doc.blocks:
+        if block.text.strip():
+            static_by_key.setdefault(_key(block), block)
 
-    candidates = {k for k in static_keys - rendered_keys if not runs_into_rendered(k)}
+    def hidden_in_render(key: str) -> bool:
+        if hidden is None:
+            return False
+        if hidden.holds(key, min_chars=_HIDDEN_MIN_CHARS):
+            return True
+        block = static_by_key.get(key)
+        return (
+            block is not None
+            and bool(block.rows)
+            and hidden.holds_cells(block.rows, min_chars=_HIDDEN_MIN_CHARS)
+        )
+
+    # A block under a template directive (`v-if`, `x-show`, `ng-if` -- see
+    # `Block.templated`) is a branch the framework builds or not at run time, and the
+    # static HTML ships every branch. One the render did not build was never on the page:
+    # not lost, not hidden, never there. Only the render can say so, and only a render
+    # that built *something* -- an empty render (a WebGL page in a headless browser)
+    # says nothing about any branch. allbirds.com's product page: three `v-if` arms of
+    # one "notify me" modal, 15 static-only blocks, of which the union kept the form,
+    # "It's Official" and "Oops! Something went wrong", and the content step then chose
+    # that modal as the page's main content.
+    empty_render = not any(b.text.strip() for b in rendered_doc.blocks)
+
+    def never_built(key: str) -> bool:
+        block = static_by_key.get(key)
+        return not empty_render and block is not None and block.templated is not None
+
+    candidates = {
+        k for k in static_keys - rendered_keys if not runs_into_rendered(k) and not never_built(k)
+    }
     behind = {k for k in candidates if hidden_in_render(k)}
     # A gate is *one* hidden element holding more than the whole visible render, and what
     # it holds is the page's own prose -- not a standalone link, not a block inside a
@@ -595,7 +631,6 @@ def union_documents(
     # crawl that read links from it would find none while the plain fetch's page had them.
     # An empty render also has no title and no description worth keeping over the static
     # page's.
-    empty_render = not any(b.text.strip() for b in rendered_doc.blocks)
     update: dict[str, Any] = {
         "blocks": tuple(merged),
         "structured_data": tuple(payloads),

@@ -661,6 +661,37 @@ class TestHiddenInRender:
         assert any("Basic syntax" in b.text for b in merged.blocks)
         assert only_static == 4
 
+    def test_a_hidden_table_is_matched_by_its_cells(self) -> None:
+        """A table block's key is its rows joined with pipes, which no text node has, so
+        `holds` never saw one: allbirds.com's privacy modal (`display: none`) holds a
+        six-row table of personal-data categories, and the union put it back from the
+        static page while the paragraphs around it stayed out."""
+        from webgraph.fetch.render import hidden_matter
+
+        table = (
+            "<table><tr><th>Category</th><th>Examples of personal information</th></tr>"
+            "<tr><td>Identifiers</td><td>Name, email address, billing address</td></tr>"
+            "<tr><td>Commercial information</td><td>Purchase history, returns</td></tr>"
+            "</table>"
+        )
+        static_doc = build_document(
+            f"<html><body><main><p>The page's own paragraph, shown to everyone.</p>"
+            f"<div id='modal-privacy'>{table}</div></main></body></html>",
+            "https://x.test/",
+        )
+        rendered_html = (
+            "<html><body><main><p>The page's own paragraph, shown to everyone.</p>"
+            f"<div id='modal-privacy' data-wg-hidden='display'>{table}</div></main>"
+            "</body></html>"
+        )
+        rendered_doc = build_document(rendered_html, "https://x.test/")
+        assert not any(b.rows for b in rendered_doc.blocks)
+        merged, only_static, _ = union_documents(
+            static_doc, rendered_doc, hidden=hidden_matter(rendered_html)
+        )
+        assert not any(b.rows for b in merged.blocks)
+        assert only_static == 0
+
     def test_a_short_visible_word_is_not_matched_inside_hidden_text(self) -> None:
         from webgraph.fetch.render import hidden_matter
 
@@ -671,6 +702,67 @@ class TestHiddenInRender:
         assert hidden.holds("thelonghiddensentence", min_chars=12)  # past the guard, a substring
         assert not hidden.holds("home", min_chars=12)  # short, and not a hidden line of its own
         assert not hidden.holds("nothere", min_chars=12)
+
+
+class TestNeverBuilt:
+    """A static-only block under a template directive is a branch the render did not build.
+
+    allbirds.com's product page ships three `v-if` arms of one "notify me" modal in its
+    HTML -- the form, "It's Official", "Oops! Something went wrong" -- and Chromium builds
+    none of them. They are not in the render, so `hidden_matter` cannot see them, and the
+    union kept all three; the content step then chose that modal as the page's content.
+    """
+
+    STATIC = (
+        "<html><body><main><h1>Trino Tubers</h1><p>Color: Onyx (limited edition)</p>"
+        "<div v-if='!isNotifyModalSuccess'><h3>Notify me when back in stock</h3>"
+        "<p>Sign up and we will let you know when they are here.</p></div>"
+        "<div v-else><h3>It's Official</h3></div>"
+        "<p v-show='soldOut'>Sold out for now.</p>"
+        "<p>Only in the static page: a paragraph the render unmounted.</p>"
+        "</main></body></html>"
+    )
+    RENDERED = (
+        "<html><body><main><h1>Trino Tubers</h1><p>Color: Onyx (limited edition)</p>"
+        "</main></body></html>"
+    )
+
+    def test_branches_the_render_did_not_build_stay_out(self) -> None:
+        static_doc = build_document(self.STATIC, "https://x.test/")
+        rendered_doc = build_document(self.RENDERED, "https://x.test/")
+        marks = [b.templated for b in static_doc.blocks]
+        assert marks == [None, None, "v-if", "v-if", "v-else", "v-show", None]
+        merged, only_static, _ = union_documents(static_doc, rendered_doc)
+        texts = [b.text for b in merged.blocks]
+        assert "Notify me when back in stock" not in texts
+        assert "It's Official" not in texts
+        assert "Sold out for now." not in texts
+        # Lost, not never built: a plain static-only block is still recovered.
+        assert "Only in the static page: a paragraph the render unmounted." in texts
+        assert only_static == 1
+
+    def test_a_branch_the_render_built_is_the_page(self) -> None:
+        rendered = (
+            "<html><body><main><h1>Trino Tubers</h1><p>Color: Onyx (limited edition)</p>"
+            "<div v-if='!isNotifyModalSuccess'><h3>Notify me when back in stock</h3>"
+            "<p>Sign up and we will let you know when they are here.</p></div>"
+            "</main></body></html>"
+        )
+        merged, _, _ = union_documents(
+            build_document(self.STATIC, "https://x.test/"),
+            build_document(rendered, "https://x.test/"),
+        )
+        assert "Notify me when back in stock" in [b.text for b in merged.blocks]
+
+    def test_an_empty_render_says_nothing_about_any_branch(self) -> None:
+        """A WebGL page renders as an empty body; the static page is kept whole."""
+        merged, _, _ = union_documents(
+            build_document(self.STATIC, "https://x.test/"),
+            build_document("<html><body></body></html>", "https://x.test/"),
+        )
+        texts = [b.text for b in merged.blocks]
+        assert "Notify me when back in stock" in texts
+        assert "Sold out for now." in texts
 
 
 class TestLoginWalls:

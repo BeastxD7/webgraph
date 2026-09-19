@@ -118,6 +118,25 @@
       }
       if (!scrollable) { el.setAttribute(HIDDEN, 'offscreen'); continue; }
     }
+    // A fixed box entirely outside the viewport is likewise somewhere no reader can
+    // scroll to: fixed positioning does not move with the page. allbirds.com parks its
+    // cart drawer at `position: fixed; transform: translateX(100%)` -- a 531px panel whose
+    // left edge is the viewport's right edge -- and "Cart (0) / Your cart is empty" was
+    // read as page content. Only when the element or an ancestor is fixed, and the box is
+    // wholly past an edge; a fixed bar half in view is in view, and a scrollable ancestor
+    // between them (a fixed sidebar that scrolls itself) makes the box reachable. `<body>`
+    // itself does not count: theguardian.com sets `body { position: fixed }` as a scroll
+    // lock, and with it every paragraph below the fold would be "unreachable".
+    if ((box.left >= window.innerWidth || box.top >= window.innerHeight ||
+         box.right <= 0 || box.bottom <= 0) && (el.textContent || '').trim()) {
+      let fixed = style.position === 'fixed' && el !== document.body, scrollable = false;
+      for (let a = el.parentElement; a && !fixed && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+        const as = window.getComputedStyle(a);
+        if (/(auto|scroll)/.test(as.overflowX + ' ' + as.overflowY)) { scrollable = true; break; }
+        if (as.position === 'fixed') fixed = true;
+      }
+      if (fixed && !scrollable) { el.setAttribute(HIDDEN, 'offscreen'); continue; }
+    }
     rects[id] = { x: px, y: py, width: box.width, height: box.height };
   }
   // Library versions are frequently only available at runtime. `jquery.min.js` carries no

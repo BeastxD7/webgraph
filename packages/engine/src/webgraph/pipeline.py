@@ -99,8 +99,11 @@ def build_document(
         blocks = _attach_geometry(blocks, geometry)
         # A rule the browser gave no box -- `hr { height: 0; border: 0 }`, a stylesheet's
         # way of removing one -- is not a line the reader sees, and an unmeasured block
-        # would also turn the page's reading order from measured into anchored.
-        blocks = [b for b in blocks if b.rect is not None or b.kind not in STRUCTURE_ONLY]
+        # would also turn the page's reading order from measured into anchored. A frame
+        # the browser gave no box is a beacon: Shopify mounts its web-pixel sandboxes as
+        # 0x0 `<iframe>`s (six on an allbirds.com product page, each a "media not
+        # transcribed" line), the measured form of the 1x1 rule in `_media_block`.
+        blocks = [b for b in blocks if b.rect is not None or b.kind not in _NEEDS_A_BOX]
 
     ordered, method = order_blocks(list(blocks), rtl=rtl, config=ordering)
     ordered = _deduplicate(ordered)
@@ -370,6 +373,10 @@ def _outranks(later: Block, earlier: Block) -> bool:
     later_chrome = (later.region or "") in _CHROME_REGIONS
     earlier_chrome = (earlier.region or "") in _CHROME_REGIONS
     return (later.in_main or not later_chrome) and earlier_chrome and not later_chrome
+
+
+_NEEDS_A_BOX = STRUCTURE_ONLY | {BlockKind.MEDIA}
+"""Kinds that are nothing without a box on a measured page: a rule and an embedded frame."""
 
 
 def _attach_geometry(blocks: list[Block], geometry: dict[str, Rect]) -> list[Block]:

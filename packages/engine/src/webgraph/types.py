@@ -313,6 +313,16 @@ class Block(BaseModel):
     inside `<main>` -- an in-page table of contents -- is both inside the main content and
     navigation, and the two questions have different answers."""
 
+    templated: str | None = None
+    """The client-side template directive this block sits under, when the markup carries
+    one -- `v-if`, `v-else`, `v-show` (Vue), `x-show`, `x-if` (Alpine), `ng-if`, `ng-show`
+    (AngularJS) -- on the element or an ancestor. None otherwise.
+
+    Such an element is a *branch*: the framework decides at run time whether to build it,
+    and the static HTML ships every branch. The union of the static and rendered documents
+    reads this: a branch the render did not build was never on the page, and is not
+    something the render lost (see `resolve.union_documents`)."""
+
     rich_text: str | None = None
     """Inline Markdown for this block: links, emphasis and inline code preserved.
 

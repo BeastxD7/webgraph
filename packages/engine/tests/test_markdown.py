@@ -666,6 +666,37 @@ class TestMediaPlaceholders:
         html = '<iframe src="https://a.example/px" width="1" height="1"></iframe>'
         assert not [b for b in blocks(html) if b.kind is BlockKind.MEDIA]
 
+    def test_a_frame_the_browser_gave_no_box_is_not_media(self) -> None:
+        """The measured form of the beacon rule: Shopify mounts its web-pixel sandboxes as
+        0x0 iframes with no declared size (six on an allbirds.com product page), and the
+        browser reports no box for them. A frame with a box stays."""
+        from webgraph.pipeline import build_document
+        from webgraph.types import Rect
+
+        html = (
+            "<html><body><p>The page's one paragraph, long enough to be measured.</p>"
+            '<iframe src="https://shop.example/web-pixels/sandbox"></iframe>'
+            '<iframe src="https://www.youtube.com/embed/abc" title="Demo"></iframe>'
+            "</body></html>"
+        )
+        geometry = {
+            "/html/body/p": Rect(x=0, y=0, width=800, height=20),
+            "/html/body/iframe[2]": Rect(x=0, y=40, width=560, height=315),
+        }
+        doc = build_document(html, "https://example.com/", geometry=geometry)
+        media = [b for b in doc.blocks if b.kind is BlockKind.MEDIA]
+        assert [m.href for m in media] == ["https://www.youtube.com/embed/abc"]
+        # Unmeasured, both are kept: a static parse has no box for anything.
+        static = build_document(html, "https://example.com/")
+        assert len([b for b in static.blocks if b.kind is BlockKind.MEDIA]) == 2
+
+    def test_a_frame_the_browser_hid_is_not_media(self) -> None:
+        html = (
+            '<iframe src="https://a.example/player" title="Player" width="560" height="315" '
+            "data-wg-hidden='display'></iframe>"
+        )
+        assert not [b for b in blocks(html) if b.kind is BlockKind.MEDIA]
+
     def test_the_placeholder_renders_as_an_aside(self) -> None:
         """Italic, not a link or an image: it is a note *about* the document rather than
         content in it, and must not be mistaken for something that was transcribed."""

@@ -506,6 +506,9 @@ def _media_block(element: HtmlElement, base: str, index: int, tree: object) -> B
     tag = element.tag
     if not isinstance(tag, str):
         return None
+    # Hidden by the renderer's measure: a `display: none` player is not on the page.
+    if element.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS:
+        return None
 
     src = _absolute(element.get("src"), base) or _absolute(element.get("data"), base)
     if not src:
@@ -2085,6 +2088,7 @@ def extract_rich_blocks(
     float_cache: dict[HtmlElement, HtmlElement | None] = {}
     body_cache: dict[HtmlElement, HtmlElement | None] = {}
     widget_cache: dict[HtmlElement, str | None] = {}
+    templated_cache: dict[HtmlElement, str | None] = {}
     editors: set[str] = set()
     hidden_code: set[str] = set()
     body_words = len(root.text_content().split())
@@ -2118,6 +2122,9 @@ def extract_rich_blocks(
         widget = _widget_of(element, widget_cache, body_words)
         if widget is not None:
             block = block.model_copy(update={"widget": widget})
+        templated = _templated_of(element, templated_cache)
+        if templated is not None:
+            block = block.model_copy(update={"templated": templated})
         blocks.append(block)
         index += 1
 
@@ -2870,6 +2877,46 @@ _BODY_NAMES: Final[frozenset[str]] = frozenset(
     }
 )
 _BODY_TAGS: Final[frozenset[str]] = frozenset({"div", "section", "article", "main"})
+
+
+_TEMPLATE_DIRECTIVES: Final[tuple[str, ...]] = (
+    "v-if",
+    "v-else-if",
+    "v-else",
+    "v-show",
+    "x-if",
+    "x-show",
+    "ng-if",
+    "ng-show",
+    "ng-hide",
+    "ng-switch-when",
+    "ng-switch-default",
+)
+"""Attributes under which a framework decides at run time whether an element exists on the
+page: Vue's `v-if` family and `v-show`, Alpine's `x-if`/`x-show`, AngularJS's `ng-if`,
+`ng-show`/`ng-hide` and `ng-switch` arms. Server-rendered Vue and Alpine pages ship every
+branch in the HTML; the framework removes the false ones on mount. allbirds.com's product
+page carries three `v-if` branches of one "notify me" modal -- the form, "It's Official",
+"Oops! Something went wrong" -- none of which Chromium ever builds."""
+
+
+def _templated_of(element: HtmlElement, cache: dict[HtmlElement, str | None]) -> str | None:
+    """The template directive on `element` or its nearest ancestor that carries one."""
+    if element in cache:
+        return cache[element]
+    found: str | None = None
+    for node in (element, *element.iterancestors()):
+        if not isinstance(node.tag, str):
+            continue
+        if node in cache:
+            found = cache[node]
+            break
+        directive = next((d for d in _TEMPLATE_DIRECTIVES if node.get(d) is not None), None)
+        if directive is not None:
+            found = directive
+            break
+    cache[element] = found
+    return found
 
 
 def _names_body(element: HtmlElement) -> bool:
