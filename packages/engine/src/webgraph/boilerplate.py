@@ -115,6 +115,13 @@ def strip_landmarks(blocks: Sequence[Block], *, title_block: Block | None = None
     to Cart" as the product. The blocks under that one `<aside>` element are kept; every
     other aside on the page is stripped as before.
     """
+    # A dropdown's choices go first and unconditionally: the fail-open guards below exist
+    # so a page whose landmarks hold everything is not gutted, and a 200-country selector
+    # beside a two-line page would ride through them and then win the boundary step on
+    # sheer word count -- glossier.com's failure, back by another door.
+    without_selects = [block for block in blocks if block.widget != "select"]
+    if without_selects:
+        blocks = without_selects
     kept_aside = _aside_of(title_block) if title_block is not None else None
     if kept_aside is not None:
         # The page's subject, so the later steps read it as main: the boundary step gives
@@ -164,7 +171,8 @@ through `role="navigation"` and `role="contentinfo"` which the XPath cannot see,
 STRIPPED_WIDGETS: Final[frozenset[str]] = frozenset({"filter", "consent", "rail", "post-furniture"})
 """Named panels `strip_landmarks` removes with the landmarks: a faceted-search filter is
 navigation over the catalogue and a cookie dialog is nobody's content, whatever element
-either is built from. See `Block.widget`."""
+either is built from. A dropdown's choices (`select`) are removed before these, ahead of
+the fail-open guards -- see the top of `strip_landmarks`. See `Block.widget`."""
 
 
 def strip_comments(blocks: Sequence[Block], *, max_share: float = 1.0) -> list[Block]:

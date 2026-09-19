@@ -77,16 +77,29 @@ class TestNoscriptShell:
 
 
 class TestFormControls:
-    def test_select_options_are_not_content(self) -> None:
+    def test_select_options_are_on_the_page_and_not_content(self) -> None:
+        """glossier.com's 200-country selector was returned *instead of* the article once:
+        the choices are one block marked `widget="select"`, on the whole page (Chromium
+        shows them; dclt.co.uk's date and location filters are 118 of its 734 words) and
+        stripped by the content step with the filters and consent dialogs."""
+        from webgraph.content import select_content
+
         options = "".join(f"<option>Country {i} / CUR</option>" for i in range(200))
         html = (
-            f"<html><body><select>{options}</select>"
-            "<main><h1>Terms</h1><p>Receive ten percent off your purchase of three products.</p></main>"
+            f"<html><body><form><select name='country'>{options}</select></form>"
+            "<main><h1>Terms</h1><p>Receive ten percent off your purchase of three products, "
+            "on any day of the week, in every store that carries the range.</p></main>"
             "</body></html>"
         )
         document = build_document(html, "https://x.test/")
-        assert not any("Country 7" in b.text for b in document.blocks)
-        assert any("ten percent" in b.text for b in document.blocks)
+        selects = [b for b in document.blocks if b.widget == "select"]
+        assert len(selects) == 1 and selects[0].tag == "select" and selects[0].alt == "country"
+        assert "Country 7 / CUR · Country 8 / CUR" in selects[0].text
+        # Once, as the control's block; never run into the form's own text.
+        assert sum("Country 7" in b.text for b in document.blocks) == 1
+        content = select_content(document.blocks, title="Terms")
+        assert not any("Country 7" in b.text for b in content.blocks)
+        assert any("ten percent" in b.text for b in content.blocks)
 
     def test_textarea_and_datalist_too(self) -> None:
         html = (

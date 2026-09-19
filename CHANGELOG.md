@@ -20,6 +20,11 @@ All notable changes to this project are documented here. The format follows
   withdrawn the same day: on the 300-page random-web sample it cost a store that keeps its
   size chart, delivery and payment in slide-in panels 60% of its words. An off-canvas panel
   a button opens is a collapsed tray, not hidden matter (#160).
+- Changed: a `<select>`'s choices are one block of the whole page (`Block.widget ==
+  "select"`, tag `select`, choices joined by ` · `) and never part of the content:
+  Chromium shows them, and dclt.co.uk's news listing kept 118 of its 734 words in two
+  filter dropdowns. WCXB unchanged; fidelity board php.net and cppreference 0.99 -> 1.00.
+  `content_hash` changes once for pages that carry a dropdown (#161).
 - Changed: cards nest in the reading order. Inside a card, a row of side-by-side cards is
   read one card at a time; stacked or overlapping siblings are left to geometry (#153).
 - Style: the engine is `ruff format`ted, and CI checks it (#154).
