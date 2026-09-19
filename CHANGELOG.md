@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Web UI (2026-09-19, PR #170)
+- Removed: the example-site chips (vtu.ac.in, docs.python.org, …) under the address box.
+  Owner's request; the prompt is the address, the mode and the run's options.
+
 ### Web UI, engine (2026-09-19, PR #168) -- options at the prompt; a file per page
 - Added: an **Options** button on the address box opens the run's options -- max pages,
   max depth, within path, exact host, include/exclude paths, respect robots.txt, the
