@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Engine (2026-09-19, PR #166) -- slides are not hidden menus; a 404 to the browser
+- Fixed: a hidden element with a *showing* twin under the same parent (same tag, same
+  leading class, outside `nav`/`header`/`footer`) is a carousel slide, not hidden matter,
+  and its static copy stays in the union. blueheroncap.com's three testimonials, of which
+  the render showed one: 300 -> 468 words, truth recall 0.478 -> 0.991.
+- Fixed: a 404/410 served to the browser is a page that does not exist (`PageMissingError`)
+  unless the plain fetch was served the page, in which case the browser was the refused
+  side. es.ogs.ny.gov/veterans came back as the four words of an nginx 404 page.
+- Fixed: HTTP 402 and "experiencing an access issue" are refusals (investopedia.com).
+
 ### Web UI and SDK (2026-09-19, PR #164) -- the whole page is the default
 - Changed: the extract views open on **Full page**; "Content only" is the opt-in. The SDK
   docs, the package README and the `webgraph` docstring show `to_markdown(page.document)`
