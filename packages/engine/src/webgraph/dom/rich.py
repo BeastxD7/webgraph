@@ -649,6 +649,55 @@ them as layout evidence threw away real data tables. Measured on WebMainBench: a
 cell wrapped its number in a `<p>`. Zero tables were extracted from that page."""
 
 
+_SELECT_SEPARATOR: Final[str] = " \u00b7 "
+"""What joins a dropdown's choices, as for a diagram's labels: a middle dot, so the words
+stay words and the block still reads as one control."""
+
+
+def _select_choices(element: HtmlElement) -> str:
+    """A `<select>`'s choices joined for one block, empty when it has none worth a word."""
+    if element.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS:
+        return ""
+    labels: list[str] = []
+    for node in element.iter("optgroup", "option"):
+        if not isinstance(node.tag, str) or node.get(HIDDEN_ATTRIBUTE) in _ABSENT_KINDS:
+            continue
+        text = (
+            normalize_text(node.get("label"))
+            if node.tag == "optgroup"
+            else normalize_text(node.text_content())
+        )
+        if text:
+            labels.append(text)
+    return _SELECT_SEPARATOR.join(labels)
+
+
+def _select_block(
+    element: HtmlElement, choices: str | None, index: int, tree: object
+) -> Block | None:
+    """One paragraph of a `<select>`'s choices, in order, marked `widget="select"`.
+
+    The choices are on the page -- Chromium's `innerText` lists every `<option>` on a line
+    of its own -- and the whole-page document keeps what the page shows. They are not the
+    page's content, and the content step strips the widget with the filters and consent
+    dialogs (`boilerplate.STRIPPED_WIDGETS`); the measurement behind that is on
+    `dom.blocks.SKIP_TAGS`. `<optgroup>` labels are included where they fall, as the
+    browser shows them. `tag` says `select`, and `alt` carries the control's own name or
+    label attribute when it has one."""
+    if not choices:
+        return None
+    name = normalize_text(element.get("aria-label")) or normalize_text(element.get("name"))
+    return Block(
+        text=choices,
+        tag="select",
+        xpath=_path(element, tree),
+        dom_index=index,
+        kind=BlockKind.PARAGRAPH,
+        alt=name or None,
+        widget="select",
+    )
+
+
 def _is_page_like(cell: HtmlElement) -> bool:
     """Whether this cell is holding a page rather than a value."""
     if any(node.tag in _PAGE_LEVEL_TAGS for node in cell.iter() if node is not cell):
@@ -2068,7 +2117,7 @@ def extract_rich_blocks(
     # Media survives this strip so it can become a placeholder; see `MEDIA_TAGS`. Its own
     # children (`<source>`, `<track>`) are read by `_media_block` and never emitted.
     _stamp_paths(root)
-    keep = MEDIA_TAGS | _MEDIA_CHILDREN | {"svg"}
+    keep = MEDIA_TAGS | _MEDIA_CHILDREN | {"svg", "select"}
     etree.strip_elements(root, *(t for t in SKIP_TAGS if t not in keep), with_tail=False)
     etree.strip_elements(root, etree.Comment, with_tail=False)
     _drop_svg_icons(root)
@@ -2079,6 +2128,20 @@ def extract_rich_blocks(
     _drop_closed_dialogs(root)
     _drop_hidden_twins(root)
     _drop_unreachable_hidden(root)
+
+    # A dropdown's choices are read now and blanked in the tree, before the walk collects
+    # any container's own text: left in place they would run together in the enclosing
+    # form's orphan text as "Any dateJuly 2026June 2019", the corruption `select` was once
+    # stripped to avoid. The walk emits the block where the control sits.
+    select_choices: dict[HtmlElement, str] = {}
+    for element in root.iter("select"):
+        choices = _select_choices(element)
+        if choices:
+            select_choices[element] = choices
+        for node in element.iter():
+            if isinstance(node.tag, str):
+                node.text = None
+                node.tail = None
 
     tree = root.getroottree()
     blocks: list[Block] = []
@@ -2120,7 +2183,7 @@ def extract_rich_blocks(
         if depth:
             block = block.model_copy(update={"quoted": depth})
         widget = _widget_of(element, widget_cache, body_words)
-        if widget is not None:
+        if widget is not None and block.widget is None:
             block = block.model_copy(update={"widget": widget})
         templated = _templated_of(element, templated_cache)
         if templated is not None:
@@ -2186,6 +2249,10 @@ def extract_rich_blocks(
 
         elif tag == "svg":
             block = _svg_block(element, index, tree)
+            consumed.update(element.iterdescendants())
+
+        elif tag == "select":
+            block = _select_block(element, select_choices.get(element), index, tree)
             consumed.update(element.iterdescendants())
 
         elif tag == "table":

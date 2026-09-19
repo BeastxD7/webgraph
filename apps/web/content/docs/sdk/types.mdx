@@ -66,7 +66,7 @@ came from and, on a rendered page, where it was drawn.
 | `language` | `str \| None` | A code block's declared language |
 | `region` | `str \| None` | The innermost landmark the block sits in, by tag or ARIA role: `main`, `nav`, `header`, `footer`, `aside`. `None` outside any |
 | `in_main` | `bool` | Whether any ancestor is a `main` landmark — a `<nav>` inside `<main>` is both, and the two questions differ |
-| `widget` | `str \| None` | The interactive panel the block sits in, when the markup names one: `filter`, `consent`, `rail`, `post-furniture`, `comments` |
+| `widget` | `str \| None` | The interactive panel the block sits in, when the markup names one: `filter`, `consent`, `rail`, `post-furniture`, `comments`; `select` for a dropdown's choices, one block per `<select>` with the choices joined by ` · `, on the whole page and never in the content |
 | `quoted` | `int` | How many `<blockquote>`s the block is inside |
 | `body_of` | `str \| None` | XPath of the outermost ancestor that declares itself the article body (`itemprop="articleBody"`, `entry-content`, …) |
 | `float_of` | `str \| None` | XPath of the outermost floated ancestor the renderer measured, so a float's pieces are read together |

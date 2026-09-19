@@ -282,7 +282,7 @@ class Block(BaseModel):
     other things named as such (`breaking-news`, `most-read`, `share-bar`, `ad-slot`, a
     Taboola or Outbrain unit), `post-furniture` for a forum post's signature or user card
     (phpBB `signature` / `postprofile`, XenForo `message-signature` / `message-userExtras`),
-    `comments` for the
+    `select` for a dropdown's choices (one block per `<select>`), `comments` for the
     comments under an article -- which the content step strips for every page type but a
     forum, where the comments are the content. Filters are the one kind of chrome that lives *inside* `main`
     on a collection page and is link-dense by design, so no density rule can find it; the

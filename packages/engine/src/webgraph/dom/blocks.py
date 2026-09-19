@@ -111,6 +111,14 @@ scores highest, so on glossier.com the selector returned the country list *inste
 article (recall 0.06 against a 1.00 ceiling). `<button>` is kept: its label is one or two
 words and occasionally the only text an interstitial has.
 
+`select` is stripped *here*, in the plain extractor, and kept by the rich one
+(`dom.rich.extract_rich_blocks`), which turns it into one block of its choices marked
+`widget="select"` so the content step still drops it. The whole-page document is the page
+as a reader sees it, and a reader sees a dropdown's choices: on dclt.co.uk's news listing
+the date and location filters are 118 of Chromium's 734 words, and a cinema's programme
+page lists its dates in one. Both were missing from the whole page while the content
+step, rightly, never wanted them.
+
 `noscript` is stripped here but see `unwrap_noscript_shell`, which runs first and rescues
 the case where it is the *only* place the content exists.
 
