@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Engine (2026-09-19, PR #167) -- a backdrop is not a column
+- Fixed: a textless block whose box holds three or more other blocks -- a decorative
+  background image laid under the first screen -- is taken out of the geometry before the
+  reading order is cut. lakshx.in/docs/* read the sidebar's lower entries between the
+  article's paragraphs on every page; reading-order board 0.9929 -> 0.9931 overall,
+  0.934 -> 0.939 on the pairs the two orderings disagree on.
+
 ### Engine, API, Settings (2026-09-19, PR #165) -- robots.txt is honoured on request
 - Changed: `respect_robots` defaults to **off** for a single page (`PAGE_RESPECT_ROBOTS`,
   `FetchConfig`, the API's `fetch`) and for a crawl (`CRAWL_RESPECT_ROBOTS`, `SiteConfig`,
