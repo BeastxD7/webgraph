@@ -7,7 +7,7 @@ pipeline that extracts payloads afterwards returns nothing while looking perfect
 from __future__ import annotations
 
 from webgraph.pipeline import build_document, content_hash_of
-from webgraph.types import PayloadSource, ReadingOrderMethod, Rect
+from webgraph.types import BlockKind, PayloadSource, ReadingOrderMethod, Rect
 
 SAMPLE = """
 <html><head>
@@ -200,6 +200,36 @@ class TestDuplicateResolution:
             "This module implements a number of iterator building blocks."
         )
         assert texts.index("Recipes") < texts.index(heading[0].text)
+
+    def test_a_label_and_then_its_link_are_two(self) -> None:
+        """lakshx.in/docs: the sidebar says "Slash Commands" as a group label and again as
+        the link under it. Text alone for identity dropped the link -- the copy a reader
+        can follow."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><body><nav><div><p>Slash Commands</p><ul><li><a href='/docs/slash-commands'>"
+            "Slash Commands</a></li></ul></div></nav><main><h1>Title</h1><p>Body text here, "
+            "long enough to be a paragraph.</p></main></body></html>"
+        )
+        blocks = build_document(html, "https://x.test/").blocks
+        copies = [b for b in blocks if b.text == "Slash Commands"]
+        assert [b.kind for b in copies] == [BlockKind.PARAGRAPH, BlockKind.LIST_ITEM]
+        assert copies[1].rich_text == "[Slash Commands](https://x.test/docs/slash-commands)"
+
+    def test_two_links_with_the_same_words_are_still_one(self) -> None:
+        """Measured on WCXB: keeping both copies of a title linked from a listing's picture
+        and again from its caption cost 0.864 -> 0.863 and doubled the repeated blocks.
+        Only a plain label before its link is two things."""
+        from webgraph.pipeline import build_document
+
+        html = (
+            "<html><body><div><a href='/p/1'><p>Tree Runner in Natural Black</p></a>"
+            "<a href='/p/1?ref=caption'><p>Tree Runner in Natural Black</p></a></div>"
+            "</body></html>"
+        )
+        blocks = build_document(html, "https://x.test/").blocks
+        assert sum(1 for b in blocks if b.text == "Tree Runner in Natural Black") == 1
 
     def test_copies_differing_only_by_a_missing_space_are_one(self) -> None:
         """The static and rendered readings of one line differ by a space between two inline
