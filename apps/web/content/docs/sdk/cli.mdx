@@ -1,0 +1,80 @@
+---
+title: Command line
+description: The webgraph command - the same jobs as the library from a shell, with every flag.
+---
+
+Installing the package puts a `webgraph` command on the path. Each subcommand is a thin
+wrapper over the functions on the previous pages; `--help` on any of them prints the full
+option list.
+
+## One page
+
+```bash
+webgraph text https://example.com/                 # plain text in reading order
+webgraph text https://example.com/ --markdown      # Markdown (-m)
+webgraph text https://example.com/ -m --content    # content only (-c): navigation, footers, boilerplate removed
+webgraph text https://example.com/ --json          # text plus diagnostics
+webgraph text ./saved.html -m                      # a local file, or file:///…
+```
+
+| Flag | Library equivalent |
+|---|---|
+| `--render` | `resolve_page(url)` renders by default when Playwright is installed; the flag forces a render and fails loudly if it cannot |
+| `--rtl` | `rtl=True` |
+| `--include-hidden-text` | `include_hidden_text=True` |
+| `--markdown`, `-m` | `to_markdown(document)` |
+| `--front-matter` | `MarkdownOptions(front_matter=True)`, with `--markdown` |
+| `--content`, `-c` | `select_content(document.blocks, title=document.title)` before rendering; the first line reports what was kept, `# content: 2/3 blocks kept (main-content)` |
+| `--json` | `url`, `content_hash`, `reading_order`, `dom_order_differs`, `blocks`, `frameworks`, `requires_render`, `payloads`, `text` |
+
+`webgraph --quiet …` silences the notes on stderr. A local path or `file://` URL is read
+without any fetch, as `resolve_supplied` does.
+
+## Facts against a schema
+
+```bash
+webgraph extract https://example.com/product --schema product.schema.json
+```
+
+Maps the page to a JSON Schema with provenance for every value and no guessing: a field
+with no evidence on the page is left out. The schema conventions are on the API's
+[extract](/docs/api/extract) page.
+
+## A site
+
+```bash
+webgraph analyze https://example.com/            # stage 0 only: technology, render behaviour, page count
+webgraph site https://example.com/ --max-pages 50 [--concurrency 4] [--schema s.json]
+webgraph report https://example.com/ [--pages 20] [--json]
+```
+
+`analyze` is `webgraph.analyze.analyze_site`: the root fetched both ways and measured,
+robots and sitemaps read, the strategy the crawl would use. `site` is the batch path,
+`webgraph.site.extract_site` — enumerate, verify the inventory, then fetch — and prints a
+staged summary; `stream_site` is the streaming path the API and the web UI use. `report`
+is the [site report](/docs/site-report): what the site shows people and machines, and how
+ready it is for agents.
+
+## Graphs, diffs and watches
+
+```bash
+webgraph graph https://a.example/ https://b.example/ --max-pages 200 --format jsonl --out graph.jsonl
+webgraph diff https://example.com/ --max-pages 100 [--dry-run] [--fail-on-change]
+webgraph watch create https://example.com/ ; webgraph watch run <id> ; webgraph watch changes <id>
+webgraph kg …                                    # WebGraph knowledge graph, behind WEBGRAPH_KG=1
+```
+
+`graph` crawls one or more sites into one graph (`jsonl`, or `cypher` for Neo4j); `diff`
+crawls again and reports what changed against the stored baseline, exiting non-zero with
+`--fail-on-change` for a scheduled job; `watch` keeps a site under observation — see
+[Watch](/docs/watch) and [WebGraph](/docs/webgraph).
+
+## Benchmarks
+
+```bash
+webgraph bench benchmark/corpus-v0 --min-page-success 0.80
+```
+
+Scores the engine against a labelled corpus and exits non-zero below the threshold, which is
+how CI gates a change. The public boards have their own runners under `benchmark/`; see
+[Running them](/docs/benchmarks/running-them).

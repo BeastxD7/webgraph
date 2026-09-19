@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "getting-started",
+    "sdk",
     "api",
     "how-it-reads-a-page",
     "crawling",

@@ -1,0 +1,113 @@
+---
+title: Markdown and other formats
+description: to_markdown and every MarkdownOptions switch, plain text, JSON, and how to render only the blocks you selected.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## `to_markdown`
+
+```python
+from webgraph import to_markdown, MarkdownOptions
+
+markdown = to_markdown(document, options=MarkdownOptions())
+```
+
+Renders a [`Document`](/docs/sdk/types#document)'s blocks as Markdown, in the document's
+order. Headings keep their level, lists their nesting and numbering, code its language,
+tables their cells, images their `alt` and source, links their targets. It is the format
+the [benchmarks](/docs/benchmarks) score, and the one the API's `markdown` field carries.
+
+| Parameter | Type | Default | What it does |
+|---|---|---|---|
+| `document` | `Document` | — | What to render. To render a subset, pass a copy with fewer blocks (below) |
+| `options` | `MarkdownOptions \| None` | `None` = `MarkdownOptions()` | The switches |
+
+## `MarkdownOptions`
+
+Keyword arguments only.
+
+| Field | Type | Default | On | Off |
+|---|---|---|---|---|
+| `include_images` | `bool` | `True` | `![alt](src)` for each image, and `[![alt](src)](link)` when the image is the whole content of a link. On by default because the alt text and caption around an image often carry information found nowhere else in the markup | Image blocks are dropped, inside table cells too |
+| `include_tables` | `bool` | `True` | Tables as pipe tables; a table with merged cells or a nested table keeps its own cleaned `<table>` markup, because pipes cannot say that a cell spans three columns | Table blocks are dropped |
+| `include_links` | `bool` | `True` | Inline links, emphasis and inline code preserved (`[label](url)`, `**bold**`), in table cells too | Plain text everywhere; a link's label stays, its target goes |
+| `heading_offset` | `int` | `0` | Added to every heading level, clamped to 1–6. `heading_offset=1` turns the page's `<h1>` into `##`, for embedding a page under a heading of your own | — |
+| `escape_text` | `bool` | `False` | Backslash-escape `\` `` ` `` `*` `_` `[` `]` in plain text so that a literal asterisk in a paragraph cannot become emphasis | Text as written. A `$` before a digit and a `>` opening a line are escaped regardless, since either would otherwise become markup |
+| `front_matter` | `bool` | `False` | A YAML block first: `url`, `content_hash`, `reading_order`, `blocks` | Nothing before the first block |
+
+```python
+to_markdown(document, options=MarkdownOptions(front_matter=True))
+```
+
+```markdown
+---
+url: https://docs.python.org/3/tutorial/introduction.html
+content_hash: ec1a08f6a2fd2a9573e95c72d364cacb5b21a82b7448…
+reading_order: geometric-anchored
+blocks: 164
+---
+![Python logo](https://docs.python.org/3/_static/py.svg)
+
+- [Python](https://www.python.org/) »
+…
+```
+
+Measured on that page: 22,679 characters with everything on, 18,670 with links off, 22,563
+with images and tables off (it has no tables and one image).
+
+## Rendering only some blocks
+
+`Document` is immutable. To render a selection — the output of
+[`select_content`](/docs/sdk/content), or your own filter — copy the document with those
+blocks:
+
+```python
+from webgraph import BlockKind, select_content, to_markdown
+
+body = select_content(page.document.blocks, title=page.document.title)
+content_md = to_markdown(page.document.model_copy(update={"blocks": tuple(body.blocks)}))
+
+prose = tuple(b for b in page.document.blocks if b.kind in (BlockKind.HEADING, BlockKind.PARAGRAPH))
+prose_md = to_markdown(page.document.model_copy(update={"blocks": prose}))
+```
+
+## Plain text
+
+```python
+page.document.text
+```
+
+The blocks' text joined by blank lines, in reading order, with no markup: no link targets,
+no image sources, table rows as `cell | cell`. This is what `content_hash` is computed over
+and what the fidelity benchmark compares with Chromium's own view of the page. 18,091
+characters for the page above, against 22,679 of Markdown.
+
+## JSON
+
+```python
+data = page.document.model_dump(mode="json", exclude={"html"})
+json.dumps(data)
+```
+
+`Document` and `Block` are Pydantic models. `model_dump` gives every block with its `kind`,
+`text`, `rich_text`, source `xpath`, `dom_index`, measured `rect`, landmark `region`, and
+the rest of the fields on the [Types](/docs/sdk/types#block) page — enough to rebuild any
+other format, or to cite where a sentence came from. `exclude={"html"}` leaves out the raw
+page, which is usually most of the bytes (120 KB with it excluded for the page above).
+`Document.model_validate(data)` reads it back.
+
+## Choosing a format
+
+| You want | Use |
+|---|---|
+| To feed a language model, index for search, or show a person | Markdown |
+| To hash, diff or compare pages | `document.text` (that is what `content_hash` hashes) |
+| To keep provenance — which element on which page said this | JSON, or the `Block` objects directly |
+| Markdown of the content without the site's furniture | `select_content` first, then `to_markdown` on the copy |
+
+<Callout type="info">
+There is no HTML output. The engine reads HTML; what it writes is the page's *content*, and
+Markdown is the format that carries structure without carrying the site's presentation.
+A table that Markdown cannot express is the one exception, and it is emitted as HTML inline.
+</Callout>

@@ -1,0 +1,118 @@
+---
+title: Python SDK
+description: The engine as a library - install it, read a page or a site in ten lines, and find every function, parameter and default in the pages that follow.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+The engine is a plain Python package with no dependency on the API or the web UI. Everything
+the HTTP API does, it does by calling the functions on these pages; the API adds streaming
+over HTTP, per-request option validation and host-level caps, nothing else. If you are
+writing Python, call the library.
+
+<Callout title="The package name is provisional" type="warn">
+The code imports as `webgraph` and this documentation is written that way. `webgraph` on
+PyPI belongs to another project, so the distribution name (what you `pip install`) will
+change before the first release, and the import name may change with it. Until then the
+package installs from the repository; the snippets need only the import line changed.
+</Callout>
+
+## Install
+
+```bash
+pip install "webgraph[render] @ git+https://github.com/BeastxD7/webgraph#subdirectory=packages/engine"
+playwright install chromium
+```
+
+Python 3.12 or newer. The `render` extra installs Playwright; `playwright install chromium`
+downloads the browser it drives. Without either, everything still works from the plain
+HTTP fetch alone and says so (`reading_order_method` is `dom-fallback`, `render_error` is
+`"rendering not available"`); with them, every page is also rendered and its layout measured,
+which is what makes the reading order a measurement rather than a guess.
+
+## Ten lines
+
+```python
+from webgraph import resolve_page, select_content, to_markdown
+
+page = resolve_page("https://docs.python.org/3/tutorial/introduction.html")
+print(page.strategy, page.document.reading_order_method)   # union geometric-anchored
+
+# The whole page, in reading order.
+print(to_markdown(page.document))
+
+# The content alone: navigation, footer and boilerplate taken out.
+body = select_content(page.document.blocks, title=page.document.title)
+print(to_markdown(page.document.model_copy(update={"blocks": tuple(body.blocks)})))
+```
+
+A whole site streams as it goes:
+
+```python
+from webgraph import SiteConfig, stream_site
+
+config = SiteConfig(max_pages=50, within_path=True)
+for event in stream_site("https://docs.python.org/3/tutorial/", config=config):
+    if event["type"] == "page":
+        print(event["url"], len(event["content_markdown"].split()), "words")
+    elif event["type"] == "done":
+        print(event["pages_ok"], "pages in", event["duration_seconds"], "s")
+```
+
+Measured as written: the first snippet resolves the tutorial page in about 3 s (both
+fetches), 164 blocks, and `select_content` keeps 116 of them; the crawl reads three pages in
+11 s at the default politeness of one page a second per host.
+
+## What is in the box
+
+Every name below is importable from `webgraph` itself, and its signature is kept stable
+across minor versions. Everything else in the package is importable from its module and
+documented there, but may move.
+
+| Job | Call | Page |
+|---|---|---|
+| Read one page, both ways, merged | `resolve_page(url, ...)` → `ResolvedPage` | [Pages](/docs/sdk/pages) |
+| Read HTML you already have | `resolve_supplied(html, url)` | [Pages](/docs/sdk/pages#html-you-already-have) |
+| Parse HTML into blocks yourself | `build_document(html, url, ...)` → `Document` | [Pages](/docs/sdk/pages#build_document) |
+| Render a document as Markdown | `to_markdown(document, options=)` | [Markdown and other formats](/docs/sdk/markdown) |
+| Keep the content, drop the chrome | `select_content(blocks, ...)` → `ContentSelection` | [Content selection](/docs/sdk/content) |
+| Classify a page and pick its policy | `default_router().route(document)`, `policy_for(page_type)` | [Content selection](/docs/sdk/content#page-types) |
+| Read the page's own metadata | `read_metadata(html, url, structured_data=)` → `PageMetadata` | [Types](/docs/sdk/types#pagemetadata) |
+| Crawl a site, streaming | `stream_site(root, config=SiteConfig(...))` | [Sites](/docs/sdk/sites) |
+| Tune a fetch or a render | `FetchConfig`, `RenderConfig` | [Pages](/docs/sdk/pages#fetchconfig) |
+| Tune the content boundary | `MainContentConfig` | [Content selection](/docs/sdk/content#maincontentconfig) |
+| Handle a refusal | `PageMissingError`, `PageDisallowedError`, `PageBlockedError`, `PageShellError` | [Pages](/docs/sdk/pages#when-a-page-is-refused) |
+| The data | `Document`, `Block`, `BlockKind`, `Rect`, `ReadingOrderMethod`, `Strategy`, `PageType`, `Routing` | [Types](/docs/sdk/types) |
+
+`webgraph.__version__` is the installed version.
+
+## Output formats
+
+The engine produces one data structure, a [`Document`](/docs/sdk/types#document) of ordered
+blocks, and every format is a view of it:
+
+| Format | How | Notes |
+|---|---|---|
+| Markdown | `to_markdown(document)` | Headings, lists, tables, code, images and links preserved; the default and the one the benchmarks score |
+| Plain text | `document.text` | Blocks joined by blank lines, no markup at all |
+| JSON | `document.model_dump(mode="json")` | Every block with its kind, position, source XPath and provenance; `exclude={"html"}` drops the raw page |
+| Blocks | `document.blocks` | The tuple of `Block` objects, for anything else |
+
+## How the reading is done
+
+There is one mode today, and it is deterministic: rules and two small gradient-boosted
+models shipped as JSON (a page-type router and an optional per-block classifier), no
+language model anywhere in the path. The same page read twice gives the same output, which
+is what makes the [benchmarks](/docs/benchmarks) reproducible. An LLM-assisted or hybrid
+mode is a possible future addition and would be a separate, opt-in setting; nothing on
+these pages depends on one.
+
+<Cards>
+  <Card title="Pages" href="/docs/sdk/pages">resolve_page, the strategies, FetchConfig and RenderConfig, refusals.</Card>
+  <Card title="Markdown and other formats" href="/docs/sdk/markdown">to_markdown and MarkdownOptions, text, JSON.</Card>
+  <Card title="Content selection" href="/docs/sdk/content">select_content, page types and policies, every knob.</Card>
+  <Card title="Sites" href="/docs/sdk/sites">stream_site, SiteConfig and the event stream.</Card>
+  <Card title="Types" href="/docs/sdk/types">Document, Block, ResolvedPage, PageMetadata.</Card>
+  <Card title="Command line" href="/docs/sdk/cli">The same jobs from a shell.</Card>
+</Cards>

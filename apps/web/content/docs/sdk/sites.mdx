@@ -1,0 +1,176 @@
+---
+title: Sites
+description: stream_site, every SiteConfig field with its default and what turning it does, the events the crawl yields, and how to stop, seed and save a crawl.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+## `stream_site`
+
+```python
+from webgraph import stream_site, SiteConfig
+
+for event in stream_site(
+    root,
+    config=SiteConfig(),   # SiteConfig | None
+    schema=None,           # dict | None -- a JSON Schema to extract facts against
+    should_stop=None,      # Callable[[], bool] | None -- polled as each page lands
+    seeds=None,            # Iterable[str] | None -- addresses queued at depth 1 beside the sitemap's
+    builder=None,          # GraphBuilder | None -- filled in as pages arrive
+):
+    ...
+```
+
+A generator: it profiles the site, reads `robots.txt` and the sitemaps, then crawls and
+extracts *interleaved* — every page's links extend the queue, breadth-first, so the first
+result arrives in seconds and the crawl reaches what the sitemap forgot. Each yielded event
+is a `dict` with a `type`; `page` events carry the page. It is exactly what
+[`/api/site/stream`](/docs/api/site-stream) sends, one event per line.
+
+| Parameter | Type | Default | What it does |
+|---|---|---|---|
+| `root` | `str` | — | Where to start. Redirects are followed and the crawl is scoped to where the root *lands* (`docs.pydantic.dev` redirects to `pydantic.dev/docs/...`, and scoping to the request would reject every link) |
+| `config` | `SiteConfig \| None` | `None` = `SiteConfig()` | Limits, scope, politeness, fetch and render settings — [below](#siteconfig) |
+| `schema` | `dict \| None` | `None` | A JSON Schema. Each page is also mapped against it with provenance for every value, and the `done` event carries `site_facts` / `fact_sources`. See the API's [extract](/docs/api/extract) for the schema conventions |
+| `should_stop` | `Callable[[], bool] \| None` | `None` | Polled after each page. Return `True` to end the run cleanly: the pages in flight finish and are reported, then `done` arrives with `stopped: true`. A generator cannot be interrupted from another thread while a render is in flight, so this flag is how a client that went away stops a crawl |
+| `seeds` | `Iterable[str] \| None` | `None` | Addresses queued at depth 1 beside the sitemap's, cited `via: "seed"`. A watch passes the previous run's URLs, so a page nothing links to any more is still fetched and its 404 recorded as the page going away |
+| `builder` | `GraphBuilder \| None` | `None` | A `webgraph.graph` builder to fill in as pages arrive; it stays yours, so the graph is usable during a long crawl and after a stopped one |
+
+The root is fetched once: the profiling fetch is the crawl's first result.
+
+## Reading the events
+
+```python
+from webgraph import SiteConfig, stream_site
+
+pages = {}
+for event in stream_site("https://docs.python.org/3/tutorial/", config=SiteConfig(max_pages=3, max_depth=1, within_path=True)):
+    match event["type"]:
+        case "analysis":
+            print("built with", [t["name"] for t in event["technologies"]], "| strategy", event["strategy"])
+        case "discovery":
+            print("robots:", event["robots"]["found"], "| sitemap urls:", event["sitemaps"]["total_urls"], "| seeded:", event["seeds"])
+        case "page":
+            if event["ok"]:
+                pages[event["url"]] = event["content_markdown"] or event["markdown"]
+            else:
+                print("refused", event["url"], event["error"])
+        case "done":
+            print(event["pages_ok"], "of", event["pages_total"], "pages;", "stopped by", event["stopped_by"], "in", event["duration_seconds"], "s")
+```
+
+Measured as written on 19 September: three pages in 11.3 s, `stopped_by: "pages"`, 39
+addresses discovered, at one page a second per host.
+
+| `type` | When | Carries |
+|---|---|---|
+| `stage` | Three times: `analyze`, `enumerate`, `extract` | `stage`, `message`; the extract stage adds the applied `max_pages`, `max_seconds`, `max_queue`, `unlimited` |
+| `analysis` | Once, after the root was fetched both ways | `technologies`, `frameworks`, `strategy` (the one the crawl will use), `static_chars` / `rendered_chars` / `union_chars`, `render_required`, `render_loses_content`, `metadata` (the root's `<head>`, see [`PageMetadata`](/docs/sdk/types#pagemetadata)) |
+| `discovery` | Once | `robots` (found, the rules for this client, `crawl_delay`), `sitemaps` (each attempt with status and URL count), `seeds` accepted, `common_crawl` (what Common Crawl's index last saw of the host, or `null`) |
+| `frontier` | Once, after seeding | `queued`, `discovered`, `depth_counts`, `discovered_kinds` (page, pdf, image, …), `refused` by reason |
+| `fetching` | Before each batch | `urls` in flight, `queued`, `extracted`, `failed` |
+| `page` | One per page, refused or not | `url`, `title`, `depth`, `citation` (how the address was found: `via`, `found_on`, `anchor`), `ok`, `error`, `markdown`, `content_markdown`, `content_methods`, `content_blocks`, `page_type` and its confidence, `strategy`, `static_chars`, `rendered_chars`, `links_out`, `canvas`, `render_note`, running counters |
+| `warning` | When three distinct URLs return byte-identical text | `code: "identical-content"`, `urls` |
+| `done` | Last, always | `pages_ok`, `pages_total`, `failed`, `discovered`, `remaining_queued`, `exhausted`, `stopped`, `stopped_by` (`"pages"`, `"time"`, `"queue"` or `None`), `refused` / `refused_total` / `refused_urls`, `chrome_blocks`, `total_chars`, `duration_seconds`, the `graph` counts, `site_facts` when a schema was given |
+| `error` | Instead of everything, when the root itself cannot be crawled | `message` |
+
+Every field of every event is documented on the [API page](/docs/api/site-stream#events-in-order);
+the dicts are the same objects.
+
+<Callout type="info">
+`content_markdown` is empty when nothing was removed — the content *is* the page. Take
+`event["content_markdown"] or event["markdown"]` to always have something.
+</Callout>
+
+## `SiteConfig`
+
+A frozen dataclass. Every field's default is a constant in `webgraph.config` and is what
+the API applies when a request leaves the option out.
+
+### Limits
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `max_pages` | `int` | `500` | Pages to attempt, refusals included, before stopping. `0` is an explicit ask for an unbounded crawl. `done.stopped_by == "pages"` when this ended the run |
+| `max_seconds` | `float` | `3600` | Wall-clock budget from the start of the analysis. `0` is no limit. Checked as each page lands, so the run overshoots by at most `concurrency` pages. `stopped_by == "time"` |
+| `max_queue` | `int` | `20000` | Queued addresses beyond which the frontier turns new ones away (counted as `queue-cap` in `refused`). `0` is no limit. A run that drained a capped queue reports `stopped_by == "queue"` and is not `exhausted` |
+| `max_depth` | `int` | `12` | Links away from the root. `0` is the root alone; `1` adds what it links to or its sitemap lists. Breadth-first, so a page budget is spent near the root, where the pages that describe a site live |
+
+### Scope
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `strict_domain` | `bool` | `True` | Stay on the root's host (`www.example.com` and `example.com` are one host). `False` follows subdomains too — `blog.`, `shop.`, `status.` — which are usually separate applications; pair it with `max_pages` |
+| `within_path` | `bool` | `False` | Stay under the root's path: from `example.com/docs/guide`, `/docs/...` is followed and `/blog/...` is turned away as `not-included` |
+| `include_paths` | `str` | `""` | Comma-separated regular expressions searched in the path (never the host). When set, only matching addresses are crawled; the rest are counted `not-included`. A pattern that does not compile raises |
+| `exclude_paths` | `str` | `""` | Comma-separated regular expressions; a match is turned away as `excluded`, whatever else says |
+| `fetch_files` | `bool` | `False` | Queue links to PDFs and other files. Off, they are counted in `discovered_kinds` and listed under `skipped_urls`, never requested |
+| `sitemap_limit` | `int` | `50000` | URLs read from sitemaps at most; sitemap indexes are followed up to 20 files |
+| `common_crawl` | `bool` | `True` | Ask Common Crawl's index, in the background, what it last saw on the host; reported in `discovery.common_crawl`. Nothing is asked of the site |
+| `seed_from_common_crawl` | `bool` | `False` | Also queue what Common Crawl listed, at depth 1. Off because a stale listing is full of pages that are gone, each fetched and recorded as a 404 |
+
+### Politeness
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `respect_robots` | `bool` | `True` | Turn away at the frontier what `robots.txt` disallows for this client. The per-page check inside `resolve_page` is `fetch.respect_robots` |
+| `host_interval_seconds` | `float` | `1.0` | At most one page per this many seconds from one host, across every worker. The site's `Crawl-delay` replaces it when larger. This is the number that makes a crawl take as long as it takes |
+| `delay_seconds` | `float` | `0.3` | Pause before each fetch, per worker |
+| `concurrency` | `int` | `4` | Workers fetching at once. On one host the interval above is the real bound; concurrency helps when the crawl follows into subdomains |
+
+### What comes out
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `remove_chrome` | `bool` | `True` | Produce `content_markdown` on each page: landmarks, cross-page site chrome and boilerplate removed. Chrome needs six pages before it can say anything and applies from then on |
+| `main_content` | `bool` | `True` | Also draw the main-content boundary when producing `content_markdown`. Off for a site whose pages are link hubs by design |
+| `strategy` | `Strategy \| None` | `None` | Force `STATIC_ONLY`, `RENDERED_ONLY` or `UNION` for every page. `None` uses the verdict of the root's analysis: `STATIC_ONLY` when the static HTML was measured complete, `UNION` otherwise |
+| `fetch` | `FetchConfig` | `FetchConfig()` | The plain fetch, see [Pages](/docs/sdk/pages#fetchconfig) |
+| `render` | `RenderConfig` | `RenderConfig()` | The browser, see [Pages](/docs/sdk/pages#renderconfig) |
+
+### Discovery (batch path only)
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `verify_inventory` | `bool` | `True` | Check each sitemap URL with a cheap request before spending a page on it |
+| `follow_links` | `bool` | `True` | Discover by following links as well as reading the sitemap |
+| `discovery_limit` | `int` | `400` | URLs harvested by link-following before verification |
+
+These three drive `webgraph.site.extract_site`, the enumerate-then-fetch path behind the
+CLI's `webgraph site`. `stream_site` discovers continuously and does not read them.
+
+## Saving a crawl
+
+```python
+from pathlib import Path
+from webgraph import SiteConfig, stream_site
+
+out = Path("crawl"); out.mkdir(exist_ok=True)
+config = SiteConfig(max_pages=200, within_path=True, exclude_paths=r"/print/|\?page=")
+for event in stream_site("https://docs.python.org/3/tutorial/", config=config):
+    if event["type"] == "page" and event["ok"]:
+        name = event["url"].split("://", 1)[1].strip("/").replace("/", "__") or "index"
+        (out / f"{name}.md").write_text(event["content_markdown"] or event["markdown"])
+```
+
+## Stopping a crawl
+
+```python
+import threading
+stop = threading.Event()
+
+def crawl():
+    for event in stream_site(root, should_stop=stop.is_set):
+        ...
+
+threading.Thread(target=crawl).start()
+...
+stop.set()      # the pages in flight finish; `done` arrives with stopped=True
+```
+
+<Callout type="warn">
+`max_pages=0` with `strict_domain=False` is a crawl of everything a site links to within
+its subdomains, for as long as `max_seconds` allows. Politeness still holds — one page a
+second per host, `robots.txt` honoured — but the queue can reach `max_queue` on a large
+site, and the `done` event will say so.
+</Callout>
