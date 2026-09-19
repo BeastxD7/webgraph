@@ -17,12 +17,12 @@ Accepted by `/api/text`, `/api/text/stream` and `/api/site/stream` as `fetch`. G
 |---|---|---|---|
 | `timeout_seconds` | number 1–120 | `20.0` (`FETCH_TIMEOUT_SECONDS`) | Seconds to wait for a plain HTTP response |
 | `retries` | integer 0–5 | `1` (`FETCH_RETRIES`) | Extra attempts after a `429`/`503` (honouring `Retry-After` up to `5.0` s) or a transport error. A definite answer such as `403` or `404` is never retried |
-| `respect_robots` | boolean | `true` (`PAGE_RESPECT_ROBOTS`) | Ask the host's `robots.txt` before fetching and refuse a page it disallows for this client, quoting the rule and naming what the site offers instead. `false` is the caller's explicit choice |
+| `respect_robots` | boolean | `false` (`PAGE_RESPECT_ROBOTS`) | Off by default: the engine reads every page it can reach. `true` asks the host's `robots.txt` before fetching and refuses a page it disallows for this client, quoting the rule and naming what the site offers instead. Politeness (one page a second per host, `Crawl-delay`) applies either way |
 
 The fetch speaks HTTP the way a browser does - HTTP/2, brotli, the `Sec-Fetch-*` navigation headers - under a User-Agent that still names `webgraph` and carries a contact URL. Those are not overridable per request. The robots check asks for the `webgraph` token (`ROBOTS_AGENT_TOKEN`), not the browser prefix, and caches a host's file for `ROBOTS_CACHE_SECONDS = 3600`.
 
 ```json
-{ "fetch": { "timeout_seconds": 45, "retries": 2, "respect_robots": false } }
+{ "fetch": { "timeout_seconds": 45, "retries": 2, "respect_robots": true } }
 ```
 
 ## `RenderOptions`
@@ -68,7 +68,7 @@ Accepted by `/api/site/stream` only, as `crawl`. `max_pages`, `concurrency` and 
 | `follow_links` | boolean | `true` (`CRAWL_FOLLOW_LINKS`) | Discover pages by following links as well as reading the sitemap — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
 | `discovery_limit` | integer 0–10000 | `400` (`CRAWL_DISCOVERY_LIMIT`) | URLs harvested by link-following before verification — **accepted but not applied by `/api/site/stream`**: it drives the CLI's `webgraph site` enumeration (`extract_site`) only; the streaming crawl discovers by links continuously and has no separate verification pass |
 | `sitemap_limit` | integer 0–200000 | `50000` (`CRAWL_SITEMAP_LIMIT`) | URLs read from sitemaps, at most; sitemap indexes are followed up to `MAX_SITEMAP_DOCUMENTS = 20` files |
-| `respect_robots` | boolean | `true` (`CRAWL_RESPECT_ROBOTS`) | Skip URLs `robots.txt` disallows for this client at the frontier. Distinct from `fetch.respect_robots`, which checks again per page inside `resolve_page` |
+| `respect_robots` | boolean | `false` (`CRAWL_RESPECT_ROBOTS`) | Off by default: the crawl explores every page it can discover. `true` turns away at the frontier what `robots.txt` disallows for this client (the file is read for its sitemaps either way). Distinct from `fetch.respect_robots`, which checks per page inside `resolve_page`. The Site Report always obeys the file, since it measures what the site declares |
 | `remove_chrome` | boolean | `true` (`CRAWL_REMOVE_CHROME`) | Produce `content_markdown` with landmarks, cross-page site chrome and boilerplate removed. Chrome is a block seen on `CHROME_THRESHOLD = 0.9` of pages, judged once `CHROME_MIN_PAGES = 6` pages exist, never removing more than half a page |
 | `main_content` | boolean | `true` (`CRAWL_MAIN_CONTENT`) | Also draw the main-content boundary when producing `content_markdown`. Turn off for a site whose pages are link hubs by design, where the list of links is the content |
 

@@ -115,7 +115,7 @@ the API applies when a request leaves the option out.
 
 | Field | Type | Default | What it does |
 |---|---|---|---|
-| `respect_robots` | `bool` | `True` | Turn away at the frontier what `robots.txt` disallows for this client. The per-page check inside `resolve_page` is `fetch.respect_robots` |
+| `respect_robots` | `bool` | `False` | Off by default: the crawl explores every page it can discover. `True` turns away at the frontier what `robots.txt` disallows for this client; the file is read for its sitemaps either way, and the Site Report always obeys it. The per-page check inside `resolve_page` is `fetch.respect_robots`
 | `host_interval_seconds` | `float` | `1.0` | At most one page per this many seconds from one host, across every worker. The site's `Crawl-delay` replaces it when larger. This is the number that makes a crawl take as long as it takes |
 | `delay_seconds` | `float` | `0.3` | Pause before each fetch, per worker |
 | `concurrency` | `int` | `4` | Workers fetching at once. On one host the interval above is the real bound; concurrency helps when the crawl follows into subdomains |

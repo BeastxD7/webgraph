@@ -748,12 +748,21 @@ class TestRobotsOnASinglePage:
         from webgraph.fetch import robots
 
         robots.forget()
-        response = client.post("/api/text", json={"url": f"{closed_server}/article.html"})
+        response = client.post(
+            "/api/text",
+            json={"url": f"{closed_server}/article.html", "fetch": {"respect_robots": True}},
+        )
         assert response.status_code == 502
         detail = response.json()["detail"]
         assert "robots.txt disallows /article.html" in detail
         assert "Disallow: /" in detail
         assert "supply the HTML" in detail
+
+    def test_the_default_reads_it(self, client: TestClient, closed_server: str) -> None:
+        """Off by default since 19 Sep 2026: the engine reads what it can reach and the
+        caller asks for the site's rules to be obeyed."""
+        response = client.post("/api/text", json={"url": f"{closed_server}/article.html"})
+        assert response.status_code == 200
 
     def test_the_caller_can_decline_the_check(self, client: TestClient, closed_server: str) -> None:
         from webgraph.fetch import robots
