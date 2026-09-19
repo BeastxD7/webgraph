@@ -39,10 +39,11 @@ from webgraph import resolve_page, select_content, to_markdown
 page = resolve_page("https://docs.python.org/3/tutorial/introduction.html")
 print(page.strategy, page.document.reading_order_method)   # union geometric-anchored
 
-# The whole page, in reading order.
+# The whole page, in reading order. This is the default output: nothing a reader sees
+# is left out, and the engine says how it read the page.
 print(to_markdown(page.document))
 
-# The content alone: navigation, footer and boilerplate taken out.
+# Opt in to the content alone: navigation, footer and boilerplate taken out.
 body = select_content(page.document.blocks, title=page.document.title)
 print(to_markdown(page.document.model_copy(update={"blocks": tuple(body.blocks)})))
 ```
@@ -55,7 +56,7 @@ from webgraph import SiteConfig, stream_site
 config = SiteConfig(max_pages=50, within_path=True)
 for event in stream_site("https://docs.python.org/3/tutorial/", config=config):
     if event["type"] == "page":
-        print(event["url"], len(event["content_markdown"].split()), "words")
+        print(event["url"], len(event["markdown"].split()), "words")
     elif event["type"] == "done":
         print(event["pages_ok"], "pages in", event["duration_seconds"], "s")
 ```
@@ -115,7 +116,8 @@ blocks, and every format is a view of it:
 
 | Format | How | Notes |
 |---|---|---|
-| Markdown | `to_markdown(document)` | Headings, lists, tables, code, images and links preserved; the default and the one the benchmarks score |
+| Markdown, whole page | `to_markdown(document)` | **The default.** Headings, lists, tables, code, images and links preserved, nothing a reader sees left out; what the fidelity benchmarks score |
+| Markdown, content only | `select_content(...)` then `to_markdown` on the copy | Opt-in: navigation, footer and boilerplate removed; what the main-content benchmarks score |
 | Plain text | `document.text` | Blocks joined by blank lines, no markup at all |
 | JSON | `document.model_dump(mode="json")` | Every block with its kind, position, source XPath and provenance; `exclude={"html"}` drops the raw page |
 | Blocks | `document.blocks` | The tuple of `Block` objects, for anything else |

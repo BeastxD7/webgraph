@@ -37,10 +37,10 @@ from webgraph import resolve_page, select_content, to_markdown
 page = resolve_page("https://docs.python.org/3/tutorial/introduction.html")
 print(page.strategy, page.document.reading_order_method)  # union, geometric-xy-cut
 
-# The whole page, in reading order.
+# The whole page, in reading order -- the default output.
 print(to_markdown(page.document))
 
-# Just the content: navigation, footer and boilerplate taken out.
+# Opt in to just the content: navigation, footer and boilerplate taken out.
 body = select_content(page.document.blocks, title=page.document.title)
 print(to_markdown(page.document.model_copy(update={"blocks": tuple(body.blocks)})))
 ```
@@ -52,7 +52,7 @@ from webgraph import SiteConfig, stream_site
 
 for event in stream_site("https://example.com/", config=SiteConfig(max_pages=50)):
     if event["type"] == "page":
-        print(event["url"], len(event["content_markdown"].split()), "words")
+        print(event["url"], len(event["markdown"].split()), "words")
     elif event["type"] == "done":
         print(event["pages_ok"], "pages in", event["duration_seconds"], "s")
 ```

@@ -52,7 +52,7 @@ for event in stream_site("https://docs.python.org/3/tutorial/", config=SiteConfi
             print("robots:", event["robots"]["found"], "| sitemap urls:", event["sitemaps"]["total_urls"], "| seeded:", event["seeds"])
         case "page":
             if event["ok"]:
-                pages[event["url"]] = event["content_markdown"] or event["markdown"]
+                pages[event["url"]] = event["markdown"]          # the whole page; content_markdown is the opt-in reduction
             else:
                 print("refused", event["url"], event["error"])
         case "done":
@@ -78,8 +78,10 @@ Every field of every event is documented on the [API page](/docs/api/site-stream
 the dicts are the same objects.
 
 <Callout type="info">
-`content_markdown` is empty when nothing was removed — the content *is* the page. Take
-`event["content_markdown"] or event["markdown"]` to always have something.
+`markdown` is the whole page and the default thing to keep. `content_markdown` is the
+opt-in reduction (landmarks, chrome and boilerplate removed) and is empty when nothing was
+removed — the content *is* the page — so a consumer who wants it takes
+`event["content_markdown"] or event["markdown"]`.
 </Callout>
 
 ## `SiteConfig`
@@ -150,7 +152,7 @@ config = SiteConfig(max_pages=200, within_path=True, exclude_paths=r"/print/|\?p
 for event in stream_site("https://docs.python.org/3/tutorial/", config=config):
     if event["type"] == "page" and event["ok"]:
         name = event["url"].split("://", 1)[1].strip("/").replace("/", "__") or "index"
-        (out / f"{name}.md").write_text(event["content_markdown"] or event["markdown"])
+        (out / f"{name}.md").write_text(event["markdown"])
 ```
 
 ## Stopping a crawl

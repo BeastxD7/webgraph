@@ -163,7 +163,9 @@ export default function SinglePageRun({ url }: { url: string }) {
 
   // Landmarks are declared on the page itself, so a single page gets a content-only view
   // without the whole-site crawl that cross-page chrome detection needs.
-  const [contentOnly, setContentOnly] = useState(true);
+  // The whole page by default: the engine's promise is that nothing a reader sees is lost,
+  // and the content-only view is the reduction a reader opts into. Owner's call, 19 Sep 2026.
+  const [contentOnly, setContentOnly] = useState(false);
   // Rendered by default. Markdown is what the engine produces, but a reader checking whether
   // the extraction is right reads the page, not the syntax.
   const [preview, setPreview] = useState(true);
@@ -490,8 +492,8 @@ export default function SinglePageRun({ url }: { url: string }) {
                 {hasCleanView && (
                   <div role="group" aria-label="What to show" className="flex rounded-full bg-sunk p-0.5">
                     {[
-                      { id: true, label: "Content only" },
                       { id: false, label: "Full page" },
+                      { id: true, label: "Content only" },
                     ].map((option) => (
                       <button
                         key={String(option.id)}
