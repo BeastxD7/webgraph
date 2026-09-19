@@ -1,0 +1,11 @@
+# Optional local hooks: `uv run pre-commit install` once, then every commit is linted and
+# formatted the way CI checks it. CI is the gate; this just moves the red earlier.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^(packages/engine|apps/api)/
+      - id: ruff-format
+        files: ^(packages/engine|apps/api)/

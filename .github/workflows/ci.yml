@@ -38,6 +38,7 @@ jobs:
           enable-cache: true
       - run: uv sync --all-packages --group dev
       - run: uv run --package webgraph-api ruff check apps/api
+      - run: uv run --package webgraph-api ruff format --check apps/api
       - run: uv run --package webgraph-api mypy --config-file apps/api/pyproject.toml apps/api/src
       - run: uv run --package webgraph-api pytest apps/api/tests -q
 

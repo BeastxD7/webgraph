@@ -47,7 +47,9 @@ def kg_enabled() -> bool:
     """Read per request, not at import: a test flips the variable and expects the change."""
     from webgraph import config
 
-    return os.environ.get("WEBGRAPH_KG", "").strip().lower() in {"1", "true", "yes", "on"} or bool(config.DEPLOY_KG)
+    return os.environ.get("WEBGRAPH_KG", "").strip().lower() in {"1", "true", "yes", "on"} or bool(
+        config.DEPLOY_KG
+    )
 
 
 def _require_enabled() -> None:
@@ -56,11 +58,16 @@ def _require_enabled() -> None:
 
 
 class ProviderIn(BaseModel):
-    provider: str | None = Field(default=None, description="openai-compatible | anthropic | gemini, or a preset name such as ollama, groq, openai")
+    provider: str | None = Field(
+        default=None,
+        description="openai-compatible | anthropic | gemini, or a preset name such as ollama, groq, openai",
+    )
     base_url: str | None = None
     model: str | None = None
     answer_model: str | None = None
-    api_key: str | None = Field(default=None, description="Used for this request only; never stored or logged.")
+    api_key: str | None = Field(
+        default=None, description="Used for this request only; never stored or logged."
+    )
     api_key_env: str | None = None
     json_mode: Literal["json_schema", "json_object", "prompt"] | None = None
     price_per_m_in: float | None = None
@@ -88,7 +95,10 @@ class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     provider: ProviderIn | None = None
     max_hops: int = Field(default=2, ge=0, le=3)
-    no_model: bool = Field(default=False, description="Answer with the top quotes verbatim; no answer model, even if the server has one configured.")
+    no_model: bool = Field(
+        default=False,
+        description="Answer with the top quotes verbatim; no answer model, even if the server has one configured.",
+    )
 
 
 class SyncRequest(BaseModel):
@@ -104,7 +114,9 @@ def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, default=str)}\n\n"
 
 
-def _stream(events: Iterator[dict[str, Any]], *, on_end: Callable[[], None] | None = None) -> StreamingResponse:
+def _stream(
+    events: Iterator[dict[str, Any]], *, on_end: Callable[[], None] | None = None
+) -> StreamingResponse:
     """Run a blocking event generator in the pool and relay it as SSE."""
 
     async def generate() -> AsyncIterator[str]:
@@ -119,9 +131,13 @@ def _stream(events: Iterator[dict[str, Any]], *, on_end: Callable[[], None] | No
                         return
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except LLMError as exc:
-                loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": f"provider: {exc}"})
+                loop.call_soon_threadsafe(
+                    queue.put_nowait, {"type": "error", "message": f"provider: {exc}"}
+                )
             except Exception as exc:  # the stream must end with a reason, not hang
-                loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+                loop.call_soon_threadsafe(
+                    queue.put_nowait, {"type": "error", "message": f"{type(exc).__name__}: {exc}"}
+                )
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, None)
 
@@ -147,7 +163,9 @@ def _stream(events: Iterator[dict[str, Any]], *, on_end: Callable[[], None] | No
 def _provider_for(body: ProviderIn | None, *, required: bool) -> Provider | None:
     try:
         config = ProviderConfig.from_dict(
-            body.model_dump(exclude_none=True) if body else {}, base=ProviderConfig.from_env(), trusted=False
+            body.model_dump(exclude_none=True) if body else {},
+            base=ProviderConfig.from_env(),
+            trusted=False,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
@@ -163,7 +181,10 @@ def _provider_for(body: ProviderIn | None, *, required: bool) -> Provider | None
 
 def _store_for(url: str, *, must_exist: bool) -> KGStore:
     if must_exist and not KGStore.exists_for(url):
-        raise HTTPException(status_code=404, detail=f"No knowledge graph for {url}. Build it first with POST /api/graph/build.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No knowledge graph for {url}. Build it first with POST /api/graph/build.",
+        )
     return KGStore.for_site(url)
 
 
@@ -180,12 +201,17 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
         _require_enabled()
         graph = recall_graph(request.url)
         if graph is None or not graph.sections:
-            raise HTTPException(status_code=404, detail=f"No crawled graph for {request.url}. Run /api/site/stream first.")
+            raise HTTPException(
+                status_code=404,
+                detail=f"No crawled graph for {request.url}. Run /api/site/stream first.",
+            )
         provider = _provider_for(request.provider, required=True)
         assert provider is not None
         with _builds_lock:
             if request.url in _building:
-                raise HTTPException(status_code=409, detail="A build for this site is already running.")
+                raise HTTPException(
+                    status_code=409, detail="A build for this site is already running."
+                )
             _building.add(request.url)
 
         def release() -> None:
@@ -230,7 +256,12 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
         _require_enabled()
         store = _store_for(request.url, must_exist=True)
         provider = None if request.no_model else _provider_for(request.provider, required=False)
-        retriever = KGRetriever(store, provider, graph=recall_graph(request.url), retrieval=RetrievalConfig(max_hops=request.max_hops))
+        retriever = KGRetriever(
+            store,
+            provider,
+            graph=recall_graph(request.url),
+            retrieval=RetrievalConfig(max_hops=request.max_hops),
+        )
 
         def events() -> Iterator[dict[str, Any]]:
             try:
@@ -255,7 +286,9 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
         _require_enabled()
         store = _store_for(url, must_exist=True)
         try:
-            entities = store.entity_summaries(limit=max(1, min(limit, 5000)), min_evidence=max(1, min_evidence))
+            entities = store.entity_summaries(
+                limit=max(1, min(limit, 5000)), min_evidence=max(1, min_evidence)
+            )
             ids = {e["id"] for e in entities}
             return {"url": url, "nodes": entities, "edges": store.relation_summaries(ids)}
         finally:
@@ -272,7 +305,10 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
                 raise HTTPException(status_code=404, detail=f"No entity {id}.")
             relation_ids = [rid for _, rid, _ in store.adjacency().get(id, [])]
             relations = store.relations(relation_ids)
-            neighbours = store.entities([r.subject_id for r in relations.values()] + [r.object_id for r in relations.values()])
+            neighbours = store.entities(
+                [r.subject_id for r in relations.values()]
+                + [r.object_id for r in relations.values()]
+            )
             return {
                 "id": found.id,
                 "type": found.type,
@@ -280,17 +316,38 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
                 "aliases": list(found.aliases),
                 "generic": found.generic,
                 "extractor": found.extractor.value,
-                "mentions": [{"surface": m.surface, **m.evidence.as_dict(), "anchor": m.evidence.anchor} for m in found.mentions],
+                "mentions": [
+                    {"surface": m.surface, **m.evidence.as_dict(), "anchor": m.evidence.anchor}
+                    for m in found.mentions
+                ],
                 "attributes": {
-                    key: [{"value": a.value, "unit": a.unit, **a.evidence.as_dict(), "anchor": a.evidence.anchor} for a in values]
+                    key: [
+                        {
+                            "value": a.value,
+                            "unit": a.unit,
+                            **a.evidence.as_dict(),
+                            "anchor": a.evidence.anchor,
+                        }
+                        for a in values
+                    ]
                     for key, values in found.attributes.items()
                 },
                 "relations": [
                     {
                         "id": r.id,
                         "predicate": r.predicate,
-                        "subject": {"id": r.subject_id, "name": neighbours[r.subject_id].name if r.subject_id in neighbours else r.subject_id},
-                        "object": {"id": r.object_id, "name": neighbours[r.object_id].name if r.object_id in neighbours else r.object_id},
+                        "subject": {
+                            "id": r.subject_id,
+                            "name": neighbours[r.subject_id].name
+                            if r.subject_id in neighbours
+                            else r.subject_id,
+                        },
+                        "object": {
+                            "id": r.object_id,
+                            "name": neighbours[r.object_id].name
+                            if r.object_id in neighbours
+                            else r.object_id,
+                        },
                         "fact": r.fact,
                         "weight": r.weight,
                         "evidence": [{**e.as_dict(), "anchor": e.anchor} for e in r.evidence],
@@ -302,7 +359,9 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
             store.close()
 
     @router.get("/export")
-    async def export(url: str, fmt: Literal["jsonl", "cypher", "jsonld"] = "jsonl") -> StreamingResponse:
+    async def export(
+        url: str, fmt: Literal["jsonl", "cypher", "jsonld"] = "jsonl"
+    ) -> StreamingResponse:
         _require_enabled()
         store = _store_for(url, must_exist=True)
         host = url.replace("https://", "").replace("http://", "").strip("/").replace("/", "_")
@@ -320,10 +379,16 @@ def create_router(recall_graph: Callable[[str], SiteGraph | None]) -> APIRouter:
             finally:
                 store.close()
 
-        media = {"jsonl": "application/x-ndjson", "cypher": "text/plain; charset=utf-8", "jsonld": "application/ld+json"}[fmt]
+        media = {
+            "jsonl": "application/x-ndjson",
+            "cypher": "text/plain; charset=utf-8",
+            "jsonld": "application/ld+json",
+        }[fmt]
         extension = {"jsonl": "kg.jsonl", "cypher": "kg.cypher", "jsonld": "kg.jsonld"}[fmt]
         return StreamingResponse(
-            lines(), media_type=media, headers={"Content-Disposition": f'attachment; filename="{host}.{extension}"'}
+            lines(),
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{host}.{extension}"'},
         )
 
     @router.post("/sync/neo4j")
