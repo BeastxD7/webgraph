@@ -284,7 +284,10 @@ def build_site_report(
     refuses to do; `pages` is clamped to `1..REPORT_MAX_PAGES`."""
     started = time.monotonic()
     wanted = max(1, min(pages or config.REPORT_PAGES, config.REPORT_MAX_PAGES))
-    fetch_config = fetch_config or FetchConfig()
+    # The report measures what the site declares to automated readers, so it obeys the
+    # site's robots.txt whatever the engine's default is: a report that read a disallowed
+    # page could not honestly say how the site treats a reader that asks.
+    fetch_config = replace(fetch_config or FetchConfig(), respect_robots=True)
     pacer = Pacer()
     generated_at = datetime.now(UTC).isoformat(timespec="seconds")
     version, commit = engine_build()

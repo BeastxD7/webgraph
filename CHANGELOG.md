@@ -16,6 +16,15 @@ All notable changes to this project are documented here. The format follows
   side. es.ogs.ny.gov/veterans came back as the four words of an nginx 404 page.
 - Fixed: HTTP 402 and "experiencing an access issue" are refusals (investopedia.com).
 
+### Engine, API, Settings (2026-09-19, PR #165) -- robots.txt is honoured on request
+- Changed: `respect_robots` defaults to **off** for a single page (`PAGE_RESPECT_ROBOTS`,
+  `FetchConfig`, the API's `fetch`) and for a crawl (`CRAWL_RESPECT_ROBOTS`, `SiteConfig`,
+  the API's `crawl`, Settings). The engine explores and reads every page it can reach; a
+  caller who wants the site's rules obeyed sets the switch. Unchanged: politeness (one
+  page a second per host, `Crawl-delay`), the robots file being read for its sitemaps,
+  and the Site Report, which always obeys the file because it measures what the site
+  declares. Owner's decision.
+
 ### Web UI and SDK (2026-09-19, PR #164) -- the whole page is the default
 - Changed: the extract views open on **Full page**; "Content only" is the opt-in. The SDK
   docs, the package README and the `webgraph` docstring show `to_markdown(page.document)`

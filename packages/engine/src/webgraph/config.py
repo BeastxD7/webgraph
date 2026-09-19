@@ -444,15 +444,20 @@ CRAWL_DISCOVERY_LIMIT = 400
 # URLs read from sitemaps, at most.
 CRAWL_SITEMAP_LIMIT = 50_000
 
-# Honour robots.txt.
-CRAWL_RESPECT_ROBOTS = True
+# Honour robots.txt on a crawl: turn away at the frontier what the file disallows for this
+# client. Off by default since 19 Sep 2026, by the owner's decision: the engine explores
+# and reads every page it can reach, and a caller who wants the site's rules obeyed asks
+# for it (`SiteConfig.respect_robots`, the API's `crawl.respect_robots`, Settings). The
+# file is still read -- for its sitemaps, and for the site report, which measures what
+# the site declares and always obeys it. Politeness is not a robots rule and is never
+# off: one page a second per host, and the file's `Crawl-delay` when larger.
+CRAWL_RESPECT_ROBOTS = False
 
-# Honour robots.txt for a single page too (`resolve_page`, `/api/text`). The crawl always
-# did; a single URL never was checked, so the API read pages the site had asked automated
-# clients not to (Stack Overflow, The Sun: `User-agent: * / Disallow: /`). A disallowed
-# page is refused with the file and the rule quoted, and the sanctioned paths named
-# (`ROBOTS_SANCTIONED_SOURCES`, the caller's own HTML). Per request: `FetchConfig.respect_robots`.
-PAGE_RESPECT_ROBOTS = True
+# Honour robots.txt for a single page (`resolve_page`, `/api/text`). Same default and
+# same reason as the crawl. When on, a disallowed page is refused with the file and the
+# rule quoted and the sanctioned paths named (`ROBOTS_SANCTIONED_SOURCES`). Per request:
+# `FetchConfig.respect_robots`, the API's `fetch.respect_robots`.
+PAGE_RESPECT_ROBOTS = False
 
 # The name this client answers to in a robots.txt `User-agent:` line. `urllib.robotparser`
 # takes the first `/`-split token of the User-Agent string, which for the browser-shaped
