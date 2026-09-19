@@ -35,7 +35,7 @@ fetch alone and says so in `reading_order_method`.
 from webgraph import resolve_page, select_content, to_markdown
 
 page = resolve_page("https://docs.python.org/3/tutorial/introduction.html")
-print(page.strategy, page.document.reading_order_method)   # union, geometric-xy-cut
+print(page.strategy, page.document.reading_order_method)  # union, geometric-xy-cut
 
 # The whole page, in reading order.
 print(to_markdown(page.document))
