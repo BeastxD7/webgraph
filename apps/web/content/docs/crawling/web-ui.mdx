@@ -11,6 +11,23 @@ The web app (`apps/web`) is a Next.js client that talks only to the API from the
 `static-only`; `&max=N` sets the page cap. Everything on screen is drawn from the stream
 in [Outputs and provenance](/docs/crawling/outputs-and-provenance).
 
+## Options at the prompt
+
+The **Options** button beside the mode row opens the run's options without leaving the
+address box: max pages, max depth, stay within the path, stay on the exact host, include
+and exclude path patterns, respect robots.txt (one switch for the crawl and the page
+fetch), and the rendering switches — reveal collapsed, click collapsed, dismiss gates —
+plus the fetch timeout. Every field is empty until you change it; the placeholder is the
+engine's default from `config.py`. Values are saved in the browser and sent with every run,
+the same store the [Settings page](/settings) edits, which holds the full list with each
+default's comment.
+
+Anything changed shows as a chip under the address — **runs with · max depth 1 ×** —
+before the run starts, and the × clears it. A saved depth of 1 once turned a 24-page site
+into a 7-page crawl with nothing on the prompt to say so; the chips exist so a cap can
+never be silent again, and the run summary names it when it applied: *every page within
+depth 1 crawled · 209 addresses were past the depth cap and not crawled*.
+
 ## The site run
 
 <Steps>
@@ -92,7 +109,10 @@ tree, Site graph.
 and table counts and the share of the page identified as chrome; open it for the Markdown,
 with two independent switches — **content only** (filtered; the whole page is the default) and preview vs
 source. **Copy all** and **Download .md** hand over every successful page as one document
-headed by its URL, following the same checkbox.
+headed by its URL, following the same checkbox. **.zip, a file per page** hands over the
+same pages as one Markdown file each, named by host and path (`lakshx.in/docs/sign-in.md`,
+the root as `index.md`), each opening with `url` and `title` front matter so a file read
+alone still says where it came from — the shape a folder of pages is expected in.
 
 </Step>
 <Step>

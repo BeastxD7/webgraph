@@ -5,6 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import PageRow from "./PageRow";
 import CopyButton from "@/components/ui/CopyButton";
 import type { PageEvent } from "@/lib/api";
+import { pageFileName, withFrontMatter, zipText } from "@/lib/zip";
 
 export default function PageList({
   pages,
@@ -61,15 +62,39 @@ export default function PageList({
     [pages, contentOnly],
   );
 
-  const download = useCallback(() => {
-    const blob = new Blob([everything], { type: "text/markdown" });
+  const save = useCallback((blob: Blob, name: string) => {
     const href = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = href;
-    anchor.download = `${new URL(siteUrl).hostname}.md`;
+    anchor.download = name;
     anchor.click();
     URL.revokeObjectURL(href);
-  }, [everything, siteUrl]);
+  }, []);
+
+  const download = useCallback(() => {
+    save(new Blob([everything], { type: "text/markdown" }), `${new URL(siteUrl).hostname}.md`);
+  }, [everything, siteUrl, save]);
+
+  /** The same pages as one file each, named by their path, with `url` and `title` front
+   *  matter -- the shape a folder of pages is expected in (Firecrawl's export, most
+   *  static-site tools). The owner asked for it after downloading a 24-page site as one
+   *  file and wanting the pages apart. */
+  const downloadZip = useCallback(() => {
+    const entries = pages
+      .filter((page) => page.ok)
+      .slice()
+      .reverse()
+      .map((page) => ({
+        name: pageFileName(page.url),
+        content: withFrontMatter(
+          page.url,
+          page.title,
+          contentOnly && page.content_markdown ? page.content_markdown : page.markdown,
+        ),
+      }));
+    const bytes = zipText(entries);
+    save(new Blob([bytes], { type: "application/zip" }), `${new URL(siteUrl).hostname}.zip`);
+  }, [pages, contentOnly, siteUrl, save]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-line bg-surface shadow-card">
@@ -112,9 +137,18 @@ export default function PageList({
           <button
             type="button"
             onClick={download}
+            title="Every page in one Markdown file, in crawl order"
             className="rounded-full bg-ink px-3.5 py-1.5 font-bold text-inverse transition-opacity hover:opacity-85"
           >
             Download .md
+          </button>
+          <button
+            type="button"
+            onClick={downloadZip}
+            title="One Markdown file per page, named by its path, with url and title front matter"
+            className="rounded-full border border-line-strong bg-surface px-3.5 py-1.5 font-bold text-ink transition-colors hover:bg-haze"
+          >
+            .zip, a file per page
           </button>
         </div>
       </header>
