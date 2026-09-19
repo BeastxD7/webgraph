@@ -110,6 +110,23 @@ GATE_MAX_TEXT = 4000
 GATE_MAX_LINKS = 1
 GATE_MIN_GAIN = 1.5
 
+# Click collapsed content open when nothing else reaches it: tabs, accordions and "show
+# more" panels wired in JavaScript alone, which `reveal.js` (attributes only) cannot open.
+# Runs after the page was measured once, only when at least CLICK_MIN_HIDDEN_WORDS words
+# are still hidden outside the site's chrome; tries at most CLICK_MAX_CANDIDATES controls
+# with the page's own click(), stops after CLICK_MAX_FUTILE that opened nothing. Every
+# element a click opened is forced visible again and the page measured a second time;
+# that measurement is kept only if the page still holds what it held.
+RENDER_CLICK_COLLAPSED = True
+CLICK_MIN_HIDDEN_WORDS = 30
+CLICK_MAX_CANDIDATES = 10
+CLICK_MAX_FUTILE = 4
+CLICK_SETTLE_MS = 200
+# The clicks happen after the page was measured once, so a click that navigates or
+# empties the page costs nothing: the second measurement is simply not taken. The
+# clicking is given this long in all.
+CLICK_BUDGET_MS = 6_000
+
 # ======================================================================================
 # Resolving a page (deciding what came back)
 # ======================================================================================

@@ -321,3 +321,62 @@ class TestRevealCollapsed:
         assert 'id="menu" style="display:none"' in html
         menu = next(b for b in document.blocks if "Alpha link" in b.text)
         assert menu.rect is None
+
+
+class TestClickCollapsed:
+    """`panel_probe.js` + `_open_panels`: tabs wired in JavaScript alone -- no
+    `aria-controls`, no `data-target`, an `href="javascript:void(0)"` -- are clicked open,
+    every panel ends up showing, a popup is closed again and not counted, and a link that
+    navigates is undone."""
+
+    HTML = """<!doctype html><html><body>
+    <style>.tabcontent{display:none} #popup{display:none;position:fixed;inset:20%}</style>
+    <main>
+      <h1>Cities</h1>
+      <ul class="tab">
+        <li><a href="javascript:void(0)" class="tablinks" onclick="showCity('London')">London</a></li>
+        <li><a href="javascript:void(0)" class="tablinks" onclick="showCity('Paris')">Paris</a></li>
+        <li><a href="javascript:void(0)" class="tablinks" onclick="showCity('Tokyo')">Tokyo</a></li>
+      </ul>
+      <div id="London" class="tabcontent" style="display:block"><p>London is the capital city of England, on the Thames.</p></div>
+      <div id="Paris" class="tabcontent"><p>Paris is the capital of France, on the Seine, with two million people.</p></div>
+      <div id="Tokyo" class="tabcontent"><p>Tokyo is the capital of Japan, the largest city in the world by population.</p></div>
+      <button class="toggle" onclick="document.getElementById('popup').style.display='block'">Contact sales</button>
+      <div id="popup"><p>Close. Leave your email and a sales representative will call you back within a day.</p></div>
+      <a href="javascript:void(0)" class="more" onclick="location.href='other.html'">Read more</a>
+    </main>
+    <script>function showCity(id){for(const p of document.querySelectorAll('.tabcontent'))p.style.display='none';document.getElementById(id).style.display='block'}</script>
+    </body></html>"""
+
+    def test_js_only_tabs_are_clicked_open_and_all_panels_show(
+        self, tmp_path: pathlib.Path
+    ) -> None:
+        page = tmp_path / "tabs.html"
+        page.write_text(self.HTML, encoding="utf-8")
+        (tmp_path / "other.html").write_text("<html><body><p>Elsewhere.</p></body></html>")
+        result = render_page(
+            page.as_uri(),
+            # `dismiss_gates` off: the fixture is tiny and link-less, which is the shape of
+            # a gate, and the gate step would click "Contact sales" on its own account.
+            config=RenderConfig(
+                wait_until="load", settle_ms=150, click_collapsed=True, dismiss_gates=False
+            ),
+        )
+        assert result.ok, result.error
+        assert result.clicked_open == 2, result.click_note
+        assert "'Paris' opened" in (result.click_note or "") and "'Tokyo' opened" in (
+            result.click_note or ""
+        )
+        document = build_document(
+            result.html, page.as_uri(), geometry=geometry_by_xpath(result.html, result.rects)
+        )
+        texts = " ".join(b.text for b in document.blocks)
+        # Every panel, not just the last one clicked: the finish step forces them visible.
+        assert "London is the capital" in texts
+        assert "Paris is the capital" in texts
+        assert "Tokyo is the capital" in texts
+        # The popup was a fixed layer: closed again, not content.
+        assert "sales representative" not in texts
+        # Still the same page: the "Read more" link that navigates was undone, or never
+        # reached because the futile-click cap stopped the step first.
+        assert result.url.endswith("tabs.html")

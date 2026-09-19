@@ -35,6 +35,7 @@ const SOURCE: Record<"crawl" | "fetch" | "renderOptions", Record<string, string>
     settle_ms: "RENDER_SETTLE_MS",
     dismiss_gates: "RENDER_DISMISS_GATES",
     reveal_collapsed: "RENDER_REVEAL_COLLAPSED",
+    click_collapsed: "RENDER_CLICK_COLLAPSED",
     viewport_width: "RENDER_VIEWPORT_WIDTH",
     viewport_height: "RENDER_VIEWPORT_HEIGHT",
   },

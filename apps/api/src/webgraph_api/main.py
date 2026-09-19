@@ -203,6 +203,7 @@ class RenderOptions(BaseModel):
     settle_ms: int | None = Field(default=None, ge=0, le=10_000)
     dismiss_gates: bool | None = None
     reveal_collapsed: bool | None = None
+    click_collapsed: bool | None = None
     viewport_width: int | None = Field(default=None, ge=320, le=3840)
     viewport_height: int | None = Field(default=None, ge=320, le=2160)
 

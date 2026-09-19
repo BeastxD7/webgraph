@@ -29,6 +29,12 @@
   descend(document.documentElement);
 
   for (const el of nodes) {
+    // Measured again after the click step: every mark is the previous measurement's
+    // verdict, and a panel that was `display: none` then and is open now must not keep
+    // the mark that says it is hidden.
+    el.removeAttribute(HIDDEN);
+    el.removeAttribute(BREAK);
+    el.removeAttribute(FLOAT);
     const id = String(counter++);
     el.setAttribute(MARKER, id);
 
